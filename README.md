@@ -50,7 +50,7 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | Drag a node | Move it, handles and all |
 | Drag a handle | Move it, preserving whatever relationship the pair already had |
 | **Alt**-drag a handle | Move it alone, breaking the pair |
-| Drag the outline | Move the whole shape |
+| Drag the outline | Move the whole shape — but if any of its nodes are selected, only those move. That is a defect, not a design: [review](docs/REVIEW-2026-08-11.md), Class 8 |
 | Double-click the outline | Insert a node exactly there, without changing the curve |
 | Double-click a node | Cycle corner → smooth → symmetric |
 | Drag on empty canvas | Marquee-select |
@@ -97,10 +97,15 @@ them as independent too.
 The `Corner`/`Smooth`/`Symm` buttons are a readout of what the handles currently
 say, and clicking one moves the handles to make it so. `Corner` removes them;
 `Smooth` and `Symm` on a corner grow them where the hollow ghosts sit, a third
-along each neighbouring segment. Two clicks genuinely have nothing to do — the
-end of an open path has no second handle to line up with, and a symmetric node
-is *already* smooth, since collinear-and-equal is a special case of collinear.
-Both say so in the status line rather than looking broken.
+along each neighbouring segment, then align them — which does move the drawing,
+by about 1.5 units on a right-angle corner with 10-unit sides.
+
+Two clicks have nothing to align against: the end of an open path has no second
+handle, and a symmetric node is *already* smooth, since collinear-and-equal is a
+special case of collinear. Both say so in the status line. Three more are silent
+and should not be — `Corner` on a corner, `Symm` on a symmetric node, `Smooth` on
+an already-smooth one — and the open-path case currently changes the path before
+declining. See [the review](docs/REVIEW-2026-08-11.md), Class 1.
 
 ### Circles, rectangles and circularising
 
@@ -121,8 +126,11 @@ their nodes have no handles at all.
 near-circle and makes it exact. Every node keeps its angle about the best-fit
 centre and moves to the fitted radius, then the handles are rebuilt from the
 angle each segment now spans, at `r · 4/3 · tan(θ/4)`. Nodes stay where they
-were around the ring and none are added, so unevenly spaced ones come out as
-round as evenly spaced ones. The status line says which radius it found and how
+were around the ring and none are added. Unevenly spaced nodes are *less* round
+than evenly spaced ones, not equally round — the error grows with the widest
+span, and a closed contour with a gap wider than 180° is currently destroyed
+rather than circularised. See [the review](docs/REVIEW-2026-08-11.md), Class 2.
+The status line says which radius it found and how
 far the furthest node had to travel — with a genuine near-circle that number is
 small, and when it isn't, that is the honest measure of how much of a circle
 this was to start with.
@@ -167,8 +175,13 @@ that node. Nothing moves at all.
 Double-click a name in the Shapes list to rename it. The name is what the
 exported `id` carries, and an `id` is an XML Name — no spaces, no quotes, not
 starting with a digit — so anything that will not fit is hyphenated on the way
-out and the status line says what the export will read. The name in the editor
-is left exactly as typed.
+out, a leading digit gains an `n`, a name that sanitises to nothing becomes
+`shape`, and the status line says what the export will read. The name in the
+editor is left exactly as typed.
+
+Nothing enforces uniqueness, so two shapes with the same name — or two whose
+names differ only in punctuation — export the same `id` and the file is invalid.
+[Review](docs/REVIEW-2026-08-11.md), Class 7.
 
 ### Combining shapes
 

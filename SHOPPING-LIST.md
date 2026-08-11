@@ -5,6 +5,10 @@ S = an afternoon. M = a day, needs tests. L = a project in itself.
 
 Status: `[ ]` not started · `[~]` partial · `[x]` done
 
+The 2026-08-11 review of the primitives/rename/tooltips commit is in
+[`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) — ten defect classes,
+none fixed yet. Several entries below were downgraded from `[x]` to `[~]` by it.
+
 ---
 
 ## Snapping — the precision story
@@ -51,10 +55,10 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 
 | | Feature | Source | Size |
 |---|---|---|---|
-| `[x]` | **Primitive tools** — done. Ellipse and rectangle draw tools (`E`, `R`), Shift to constrain, Alt from the centre, and a corner radius for the rectangle. Built as nodes and handles, so there is nothing to convert before editing one. | every editor | M |
-| `[x]` | **Circularise** — done. Fits a circle through a contour's nodes by least squares, moves each onto it at its own angle, and rebuilds handles at `r·4/3·tan(θ/4)` so uneven spacing is as round as even. Reports the radius and the furthest node's travel. | Inkscape's "make circle" | M |
-| `[x]` | **Rename shapes** — done. Double-click the name in the list. It is what the exported `id` carries, sanitised to an XML Name on the way out. | every editor | S |
-| `[x]` | **Tooltips** — done. One layer, fed by the markup's own `title` attributes, with the shortcut pulled out as a key cap. Needed once the toolbar became icons. | — | S |
+| `[~]` | **Primitive tools** — ellipse and rectangle draw tools (`E`, `R`), Shift to constrain, Alt from the centre, and a corner radius for the rectangle. Built as nodes and handles, so there is nothing to convert before editing one. The drag itself has four defects — it snaps to the shape's own nodes, commits degenerate shapes, collapses under Shift, and `Ctrl+E`/`Ctrl+R` switch tools as a side effect — [review](docs/REVIEW-2026-08-11.md), Classes 6 and 9. | every editor | M |
+| `[~]` | **Circularise** — fits a circle through a contour's nodes by least squares, moves each onto it at its own angle, and rebuilds handles at `r·4/3·tan(θ/4)`. Reports the radius and the furthest node's travel. **Broken for a closed contour with a gap wider than 180°**, which it retraces rather than closes while reporting success — [review](docs/REVIEW-2026-08-11.md), Class 2. Uneven spacing is less round than even, not equally round. | Inkscape's "make circle" | M |
+| `[~]` | **Rename shapes** — double-click the name in the list. It is what the exported `id` carries, sanitised to an XML Name on the way out. Uniqueness is not enforced, so two shapes can export the same `id` and the file is invalid; clicking inside the rename field also destroys the selection — [review](docs/REVIEW-2026-08-11.md), Classes 7 and 8. | every editor | S |
+| `[~]` | **Tooltips** — one layer, fed by the markup's own `title` attributes. The key cap needs a *trailing* parenthesis, so the two buttons shipped alongside it (`Ellipse (E) — …`) do not get one, and `adopt()` removes each control's accessible description without replacing it — [review](docs/REVIEW-2026-08-11.md), Classes 3 and 10. | — | S |
 | `[x]` | **Application shell** — done. One fixed grid filling the window, canvas edge to edge, no page scroll; the toolbar is icons, the source is a drawer you open (`Ctrl+E`) and the inspector collapses (`Ctrl+B`). Panels take space from the canvas rather than floating over it, and a `ResizeObserver` re-fits the camera when they do. | Figma, Rive | M |
 | `[~]` | **Measurement readout** — the pointer's document coordinates are in the status strip. Live length and angle *while dragging* is the part still missing. | Illustrator, IPE | S |
 | `[ ]` | **On-canvas transform box** — drag handles to scale/rotate a selection, instead of only the rail buttons. | every editor | M |

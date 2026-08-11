@@ -123,11 +123,21 @@ changes nothing. `corner` removes both handles. `smooth` and `symmetric` used to
 decline outright on a node that had none, which was correct about the model and
 useless as a button: nothing moved and nothing said why. They now materialise
 the missing handles where the hollow ghosts are drawn — a third along each
-neighbouring segment — and align from there. A handle sitting on its own chord
-leaves that segment the same straight line it was, so the drawing does not jump;
-only its spelling changes, from `L` to a `C` that traces it.
+neighbouring segment — and align from there.
 
-Two cases still have nothing to do, and both now say so:
+**The drawing does jump, and an earlier version of this section said it did
+not.** The handles are placed on their chords and then rotated to the *averaged*
+direction, which pulls both off. Clicking `Smooth` on a right-angle corner with
+10-unit sides moves the curve by 1.48 units. The materialisation is sound; the
+claim that it was invisible was not, and it was never measured. Worse, when the
+two neighbouring chords are equal — a square, any regular polygon — each
+materialised handle is a third of an equal length, so `smooth` lands on
+`symmetric` and the documented three-state cycle is a two-state toggle.
+
+Two cases have nothing to align against. Neither is handled correctly yet:
+the open-end case **mutates and then declines** (see
+[the review](REVIEW-2026-08-11.md), Class 1), which leaves a straight segment
+carrying a handle and so breaks §3.
 
 | | Why |
 |---|---|
@@ -282,10 +292,20 @@ the conditioning sane far from the origin). Each node then keeps its angle and
 moves to the fitted radius.
 
 The handles are rebuilt at `r · 4/3 · tan(θ/4)` for the angle θ each segment now
-spans, which is the exact handle length for a circular arc and reduces to KAPPA
-at a quarter turn. That is what makes the result independent of how the nodes
-happened to be distributed: three bunched into a corner and two spread over the
-rest come out as round as four even ones. Fitting is a compromise by nature — it
+spans, which reduces to KAPPA at a quarter turn. It is the standard
+midpoint-matching approximation, **not an exact arc** — a cubic cannot be one —
+and its error grows steeply with the span: 2.7e-4 of the radius at 90°, 8.9e-3
+at 160°, 1.8e-2 at 180°.
+
+So the result is **not** independent of how the nodes are distributed, and an
+earlier version of this section claimed it was. This document's own example —
+five nodes at 0°, 10°, 20°, 140°, 260° — measures 1.54e-3 against 2.73e-4 for
+four even ones, 5.7× less round. `test/primitives.test.ts:244` already asserted
+the looser bound while the prose above it claimed parity; the test was right.
+
+Worse, a closed contour with any gap wider than 180° is not circularised at all
+but destroyed, and the operation reports success. See
+[the review](REVIEW-2026-08-11.md), Class 2. Fitting is a compromise by nature — it
 cannot know which node was the mistake — so the operation reports the radius it
 found and how far the furthest node had to travel, and lets the reader judge.
 
