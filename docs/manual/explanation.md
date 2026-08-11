@@ -102,6 +102,28 @@ whose nodes are on the grid ends on the grid; one that is not keeps its offsets.
 Node dragging is different, and does snap the position, because there is only one
 node and its position is what you are choosing.
 
+## The transform box keeps its distance
+
+A selection's box has to be drawn around whatever is selected, and the handles
+have to sit on it. Which puts them exactly on top of the shape's own nodes,
+because a bounding box touches the drawing at its extremes by definition. The
+corner of a rectangle and the corner handle of its box are the same point.
+
+Handles are drawn in front of nodes, so drawn honestly the box would take every
+click aimed at a corner. You could rotate the rectangle and never drag its corner
+again.
+
+So the box and its handles are drawn a few pixels outside the true bounds. The
+arithmetic still uses the real box, and the drag remembers how far the pointer
+was from the corner when you pressed, which is why nothing jumps on the first
+move.
+
+Rotation had the same problem and a worse version of it. A rotation zone big
+enough to find by accident is much larger than a handle, and centred on the
+corner it swallowed the corner node completely. It now sits diagonally outside
+the corner instead, which is where every other editor puts it, and where you
+were going to try first anyway.
+
 ## Transforms are baked, never stored
 
 Rotating a shape rewrites its coordinates. There is no `transform` attribute

@@ -24,6 +24,7 @@ import type { HandlePart, NodeRef } from '../model/doc';
 import {
   alignNodes,
   breakAt,
+  captureNodes,
   circulariseSubpath,
   closeSubpath,
   deleteNode,
@@ -43,10 +44,13 @@ import {
   setSegmentCurved,
   snap as snapTo,
   splitSegment,
+  transformCaptured,
   transformShape,
 } from '../model/ops';
-import type { AlignMode } from '../model/ops';
+import type { AlignMode, NodeSnapshot } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
+import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/transform';
+import type { TransformPart } from '../model/transform';
 import { ellipseSubpath, rectSubpath } from '../core/primitives';
 import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
@@ -61,9 +65,22 @@ type DragKind =
   | { kind: 'none' }
   | { kind: 'pan'; client: Pt; camera: Pt; k: number }
   | { kind: 'marquee'; from: Pt }
-  /* Sliding the tracing image into place. Not a document edit, so it opens no
-     batch and records no history -- the same bargain the camera makes. */
+  /* Sliding the tracing image into place. Not part of the document, but still
+     an edit: the whole drag is one history entry. See `Backdrop`. */
   | { kind: 'backdrop'; from: Pt; origin: Pt }
+  /* Dragging the selection box. `box` and `saved` are both frozen at the press:
+     the box because a live one would chase the shape it is resizing, and the
+     geometry because every frame is recomputed from the original rather than
+     stacked on the frame before it. `grab` corrects for the handle being drawn
+     outside the true box, so nothing jumps on the first move. */
+  | {
+      kind: 'transform';
+      mode: 'scale' | 'rotate';
+      part: TransformPart;
+      box: Box;
+      saved: NodeSnapshot[];
+      grab: Pt;
+    }
   | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
   /* Moving a selection. The total translation is tracked from the press rather
@@ -76,6 +93,16 @@ type DragKind =
      history entry either. */
   | { kind: 'create'; tool: 'ellipse' | 'rect'; from: Pt; id: string | null }
   | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number };
+
+/** One decimal at most, and no trailing zero to make an angle look measured. */
+const fmt = (v: number): string => (+v.toFixed(1)).toString();
+
+/**
+ * A scale factor as a percentage. Whole numbers only: a readout that flickers
+ * through 99.7, 100.2, 99.9 while the pointer sits still is harder to read than
+ * one that says 100.
+ */
+const pct = (k: number): string => `${Math.round(k * 100)} %`;
 
 export class Controller {
   /**
@@ -154,8 +181,11 @@ export class Controller {
     const s = this.store.state;
     this.canvas.setCamera(s.camera);
     this.canvas.renderArtwork(s.doc, s);
+    // Shown while idle and while it is itself being dragged, so a scale or a
+    // rotation has something to read against. Hidden during every other drag,
+    // where a box chasing the thing it measures is noise.
     this.extras.selectionBox =
-      this.drag.kind === 'none' && s.selection.shapes.size > 0 ? selectionBBox(s.doc, s.selection) : null;
+      this.drag.kind === 'none' || this.drag.kind === 'transform' ? this.transformBox() : null;
     this.canvas.renderOverlay(s, this.extras);
   }
 
@@ -203,16 +233,20 @@ export class Controller {
     ref: NodeRef | null;
     shape: string | null;
     seg: number | null;
+    /** Compass position, for the transform box's handles. */
+    part: string | null;
   } | null {
     const t = e.target as Element | null;
     const kind = t?.getAttribute?.('data-hit');
     if (!kind || !t) return null;
     const shape = t.getAttribute('data-shape');
-    if (kind === 'outline' || !shape) return { kind, shape, ref: null, seg: null };
+    const part = t.getAttribute('data-part');
+    if (kind === 'outline' || !shape) return { kind, shape, part, ref: null, seg: null };
     const segAttr = t.getAttribute('data-seg');
     return {
       kind,
       shape,
+      part,
       seg: segAttr === null ? null : Number(segAttr),
       ref: { shape, sp: Number(t.getAttribute('data-sp')), i: Number(t.getAttribute('data-i')) },
     };
@@ -230,6 +264,27 @@ export class Controller {
     if (!this.batchOpen) return;
     this.store.endBatch();
     this.batchOpen = false;
+  }
+
+  /**
+   * The box the transform handles hang off, or `null` for no box at all.
+   *
+   * Refused when the selection has no extent in either direction, which is a
+   * single node: there is nothing to scale it against, and the handles would
+   * pile up on the node itself. A selection flat in one direction keeps its
+   * box, because stretching a row of nodes sideways is a real thing to want.
+   *
+   * Only in the select tool. The pen and the primitive tools own the canvas
+   * while they are active, and handles under the cursor would take clicks meant
+   * for drawing.
+   */
+  private transformBox(): Box | null {
+    const s = this.store.state;
+    if (s.tool !== 'select') return null;
+    const b = selectionBBox(s.doc, s.selection);
+    if (!b) return null;
+    if (Math.abs(b.x1 - b.x0) < 1e-9 && Math.abs(b.y1 - b.y0) < 1e-9) return null;
+    return b;
   }
 
   private selectedNodeRefs(): NodeRef[] {
@@ -296,6 +351,32 @@ export class Controller {
     }
 
     const hit = this.hitOf(e);
+
+    // Before anchors, because a handle sits in front of one on screen and has
+    // to be what you grabbed when it does.
+    if ((hit?.kind === 'scale' || hit?.kind === 'rotate') && hit.part) {
+      const box = this.transformBox();
+      if (box) {
+        const part = hit.part as TransformPart;
+        const at = handlePoint(box, part);
+        this.openBatch();
+        this.store.checkpoint();
+        this.drag = {
+          kind: 'transform',
+          mode: hit.kind === 'rotate' ? 'rotate' : 'scale',
+          part,
+          box,
+          saved: captureNodes(s.doc, this.selectedNodeRefs()),
+          // For a scale, the pointer is a few pixels outside the corner it is
+          // about to drag, because that is where the handle is drawn. Recording
+          // the difference is what stops the selection twitching on the first
+          // move. A rotation measures an angle from wherever the press landed,
+          // so it wants the raw point.
+          grab: hit.kind === 'rotate' ? p : [p[0] - at[0], p[1] - at[1]],
+        };
+        return;
+      }
+    }
 
     if (hit?.kind === 'anchor' && hit.ref) {
       const key = nodeKey(hit.ref);
@@ -474,6 +555,36 @@ export class Controller {
         return;
       }
 
+      case 'transform': {
+        const d = this.drag;
+        const s2 = this.store.state;
+        let m;
+        if (d.mode === 'rotate') {
+          // Shift snaps to fifteen degrees, the interval every editor uses:
+          // it divides the right angle and the eighth turn both.
+          const r = rotateMatrix(boxCentre(d.box), d.grab, p, e.shiftKey ? 15 : 0);
+          m = r.m;
+          this.onMessage?.(`Rotate ${fmt(r.deg)}°`, true);
+        } else {
+          const want: Pt = [p[0] - d.grab[0], p[1] - d.grab[1]];
+          /* Grid only, deliberately. `this.snap` would also weld the corner of
+             a bounding box to any node within eight pixels, and a box corner is
+             not a point on the drawing: welding it to an unrelated shape's node
+             would scale the selection by whatever ratio that happened to
+             produce. */
+          const to = s2.snapToGrid && s2.gridStep > 0 ? snapTo(want, s2.gridStep) : want;
+          m = scaleMatrix(d.box, d.part, to, {
+            // Read every frame rather than sampled at the press, because both
+            // are things people reach for once a drag is already under way.
+            fromCentre: e.altKey,
+            keepAspect: e.shiftKey,
+          });
+          this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
+        }
+        this.store.update((st) => transformCaptured(st.doc, d.saved, m));
+        return;
+      }
+
       case 'backdrop': {
         const d = this.drag;
         const s2 = this.store.state;
@@ -576,6 +687,23 @@ export class Controller {
         }
       });
       this.extras.marquee = null;
+    }
+
+    /* The live readout during a transform is a measurement, not an outcome.
+       Restating it as a sentence on release is what turns the last thing on
+       screen into a record of what was done. */
+    if (this.drag.kind === 'transform') {
+      const d = this.drag;
+      const now = selectionBBox(this.store.state.doc, this.store.state.selection);
+      if (d.mode === 'rotate') {
+        const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), e.shiftKey ? 15 : 0);
+        this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
+      } else if (now) {
+        this.onMessage?.(
+          `Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`,
+          true,
+        );
+      }
     }
 
     // A create drag that never grew past nothing opened no batch, so there is

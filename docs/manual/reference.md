@@ -27,6 +27,8 @@ as the centre rather than a corner.
 | Drag an outline | Move the shape, and everything else selected with it |
 | Double-click an outline | Insert a node there, without changing the curve |
 | Double-click a node | Cycle corner, smooth, symmetric |
+| Drag a box handle | Scale the selection. `Shift` keeps the proportions, `Alt` works from the centre |
+| Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
 | Drag on empty canvas | Marquee-select nodes |
 | `Shift`-click | Add to or remove from the selection |
 | Drag the bend dot | Bow a segment. Appears when both its end nodes are selected |
@@ -195,6 +197,30 @@ example `1 · every 5 drawn`.
 - **Minify** shortens the spelling only. Drops unnecessary separators and leading
   zeros, drops repeated command letters, and prefers relative commands when they
   are shorter.
+
+## The transform box
+
+Select a shape, or two or more of its nodes, and a dashed box appears around it
+with eight square handles.
+
+| To | Do |
+|---|---|
+| Scale in one direction | Drag a handle on an edge |
+| Scale in both | Drag a corner handle |
+| Keep the proportions | Hold `Shift` while dragging a corner |
+| Scale about the centre | Hold `Alt` |
+| Mirror | Drag a handle past the opposite side |
+| Rotate | Drag just outside a corner, where the cursor turns |
+| Rotate in steps of 15° | Hold `Shift` while rotating |
+| Abandon the drag | `Escape` |
+
+The status line reads out the scale or the angle while you drag, and states the
+new size when you let go. The whole drag is one undo step.
+
+Handles are drawn a few pixels outside the true bounds, so a node sitting on the
+edge of its own bounding box stays clickable. The box does not appear for a
+single node, which has no extent to scale, or in the pen and shape tools, which
+own the canvas while they are active.
 
 ## Source drawer
 

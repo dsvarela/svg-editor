@@ -22,6 +22,8 @@ import { serialisePath } from '../core/serialise';
 import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
+import { CORNER_PARTS, TRANSFORM_PARTS, handlePoint } from '../model/transform';
+import type { TransformPart } from '../model/transform';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
 import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
@@ -34,9 +36,37 @@ export interface OverlayExtras {
   /** Rubber-band preview while the pen tool is placing a node. */
   penFrom?: Pt | null;
   penTo?: Pt | null;
-  /** Bounding box of the current selection. */
+  /** Bounding box of the current selection, drawn with its transform handles. */
   selectionBox?: Box | null;
 }
+
+/**
+ * How far outside the selection's true bounds the box and its handles are
+ * drawn, in screen pixels.
+ *
+ * Not decoration. A shape's own nodes sit on its bounding box by definition, so
+ * a rectangle's corner anchor and its north-west scale handle would land on
+ * exactly the same point. Handles are in front of anchors in paint order and
+ * would win every click, which would make the corners of a rectangle
+ * undraggable. Six pixels puts them clear of each other.
+ */
+const BOX_PAD = 6;
+
+/** Drawn size of a scale handle, in screen pixels. */
+const HANDLE_SIZE = 8;
+
+/**
+ * Side of the invisible square that rotates, placed with its inner corner on
+ * the box's corner so the whole of it lies outside.
+ *
+ * Outside, not centred. Centred was the first attempt and it took every click
+ * aimed at a corner node: a 26 pixel square centred on the corner of a
+ * rectangle covers that rectangle's corner anchor completely, so the shape
+ * could be rotated and its corner could never be dragged again. Sitting the
+ * zone diagonally outside leaves the anchor clear, and puts rotation where
+ * every other editor puts it.
+ */
+const ROTOR_SIZE = 22;
 
 export class Canvas {
   readonly artwork: SVGSVGElement;
@@ -59,6 +89,9 @@ export class Canvas {
   private selBox: SVGRectElement;
   private insertDot: SVGCircleElement;
   private penLine: SVGPathElement;
+  /** Fixed set: eight scale handles and four rotation zones, made once. */
+  private tRotors: { part: TransformPart; el: SVGRectElement }[] = [];
+  private tHandles: { part: TransformPart; el: SVGRectElement }[] = [];
 
   /** Live `<path>` per shape id, so we only touch `d` when it changes. */
   private shapeEls = new Map<string, SVGPathElement>();
@@ -103,6 +136,22 @@ export class Canvas {
     this.insertDot = svg('circle', { class: 'insert-dot' });
     this.penLine = svg('path', { class: 'pen-preview' });
     this.chrome.append(this.selBox, this.marquee, this.insertDot, this.penLine);
+
+    /* Rotors before handles, so the handle wins the middle of a corner and the
+       rotor keeps the ring around it. Both are in `chrome`, which is the last
+       overlay layer, so they are also in front of the anchors: a transform
+       handle overlapping a node has to be the thing you grabbed, or the box
+       would be decoration. */
+    for (const part of CORNER_PARTS) {
+      const el = svg('rect', { class: 'rotor', 'data-hit': 'rotate', 'data-part': part });
+      this.tRotors.push({ part, el });
+      this.chrome.appendChild(el);
+    }
+    for (const part of TRANSFORM_PARTS) {
+      const el = svg('rect', { class: 'thandle', 'data-hit': 'scale', 'data-part': part });
+      this.tHandles.push({ part, el });
+      this.chrome.appendChild(el);
+    }
 
     this.root.append(this.artwork, this.overlay);
   }
@@ -393,7 +442,8 @@ export class Canvas {
     };
 
     box(this.marquee, extras.marquee);
-    box(this.selBox, extras.selectionBox);
+    box(this.selBox, padded(extras.selectionBox, BOX_PAD * k));
+    this.renderTransform(extras.selectionBox, k);
 
     if (extras.insertAt) {
       this.insertDot.removeAttribute('display');
@@ -413,6 +463,60 @@ export class Canvas {
       this.penLine.setAttribute('display', 'none');
     }
   }
+
+  /**
+   * Place the eight scale handles and the four rotation zones.
+   *
+   * Everything here is sized in document units scaled by `k`, so it stays a
+   * constant size on screen. The handles are drawn on the padded box while the
+   * controller does its arithmetic on the true one, which is why grabbing a
+   * corner does not jump: the drag records the offset between the two at the
+   * moment of the press.
+   *
+   * A selection with no height, such as a row of nodes on one line, hides the
+   * handles that would only stretch it vertically. They would have nothing to
+   * multiply and would sit on top of the ones that do.
+   */
+  private renderTransform(b: Box | null | undefined, k: number): void {
+    const hide = (el: SVGElement): void => el.setAttribute('display', 'none');
+    if (!b) {
+      for (const { el } of this.tRotors) hide(el);
+      for (const { el } of this.tHandles) hide(el);
+      return;
+    }
+
+    const pad = padded(b, BOX_PAD * k)!;
+    const flatX = Math.abs(b.x1 - b.x0) < 1e-9;
+    const flatY = Math.abs(b.y1 - b.y0) < 1e-9;
+
+    const place = (el: SVGRectElement, part: TransformPart, size: number): void => {
+      const p = handlePoint(pad, part);
+      el.removeAttribute('display');
+      setAttrs(el, { x: p[0] - size / 2, y: p[1] - size / 2, width: size, height: size });
+    };
+
+    // Pushed outward by half its own size, which puts its inner corner exactly
+    // on the box's corner and the rest of it in clear space.
+    const rot = ROTOR_SIZE * k;
+    for (const { part, el } of this.tRotors) {
+      const c = handlePoint(pad, part);
+      const x = c[0] + (part.includes('w') ? -rot / 2 : rot / 2);
+      const y = c[1] + (part.includes('n') ? -rot / 2 : rot / 2);
+      el.removeAttribute('display');
+      setAttrs(el, { x: x - rot / 2, y: y - rot / 2, width: rot, height: rot });
+    }
+    for (const { part, el } of this.tHandles) {
+      const useless = (flatY && (part === 'n' || part === 's')) || (flatX && (part === 'e' || part === 'w'));
+      if (useless) hide(el);
+      else place(el, part, HANDLE_SIZE * k);
+    }
+  }
+}
+
+/** The same box grown by `d` on every side. Used for drawn chrome only. */
+function padded(b: Box | null | undefined, d: number): Box | null {
+  if (!b) return null;
+  return { x0: b.x0 - d, y0: b.y0 - d, x1: b.x1 + d, y1: b.y1 + d };
 }
 
 /** Sample a subpath's outline, used by marquee selection. */

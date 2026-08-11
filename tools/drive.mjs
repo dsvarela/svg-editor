@@ -817,6 +817,152 @@ const scenarios = {
   },
 
   /**
+   * The transform box: eight scale handles, four rotation zones.
+   *
+   * This one is browser-only in every part. The handles are DOM elements, the
+   * hit test is `e.target`, and the question that matters most cannot be asked
+   * of geometry at all: a shape's own nodes sit on its bounding box, so does
+   * clicking the corner of a rectangle still select the node, or does the
+   * handle drawn near it swallow the click.
+   */
+  async transform(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`transform: ${what}`);
+    };
+    const { drag, click } = await mk(page);
+
+    const bbox = () =>
+      page.$eval('.artwork path', (el) => {
+        const b = el.getBBox();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
+    /** Centre of a handle, in document units, read off the element itself. */
+    const at = (sel) =>
+      page.$eval(sel, (el) => [
+        +el.getAttribute('x') + +el.getAttribute('width') / 2,
+        +el.getAttribute('y') + +el.getAttribute('height') / 2,
+      ]);
+
+    await page.click('#shapelist li');
+    await page.waitForTimeout(150);
+
+    check((await page.locator('.thandle:visible').count()) === 8, 'want eight scale handles');
+    check((await page.locator('.rotor').count()) === 4, 'want four rotation zones');
+
+    /* The handles are drawn outside the true bounds on purpose. If the padding
+       ever goes, this is where it shows: the box would sit exactly on the
+       shape's extremes. */
+    const start = await bbox();
+    const se = await at('.thandle[data-part="se"]');
+    check(
+      se[0] > start.x + start.w && se[1] > start.y + start.h,
+      `the south-east handle is at [${se}], inside the bounds`,
+    );
+
+    // Scale: drag the south-east handle 24 units left. The north-west corner is
+    // the anchor, so it must not move, and the height must not either.
+    await drag(se, [se[0] - 24, se[1]]);
+    await page.waitForTimeout(150);
+    const scaled = await bbox();
+    check(Math.abs(scaled.x - start.x) < 0.01, `x moved from ${start.x} to ${scaled.x}`);
+    check(Math.abs(scaled.y - start.y) < 0.01, `y moved from ${start.y} to ${scaled.y}`);
+    check(Math.abs(scaled.h - start.h) < 0.01, `height changed to ${scaled.h}`);
+    check(Math.abs(scaled.w - (start.w - 24)) < 0.01, `width is ${scaled.w}, want ${start.w - 24}`);
+
+    // One entry, however many moves the drag was made of.
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+    const back = await bbox();
+    check(Math.abs(back.w - start.w) < 1e-6, `undo left the width at ${back.w}`);
+    check((await page.evaluate(() => document.querySelector('.artwork path').getAttribute('d'))).length > 0, 'the shape survived');
+
+    // Alt scales about the centre: both edges move, the middle does not.
+    const centreBefore = start.x + start.w / 2;
+    await drag(await at('.thandle[data-part="se"]'), [se[0] - 12, se[1]], 8, 'Alt');
+    await page.waitForTimeout(150);
+    const alt = await bbox();
+    check(
+      Math.abs(alt.x + alt.w / 2 - centreBefore) < 0.01,
+      `centre moved from ${centreBefore} to ${alt.x + alt.w / 2}`,
+    );
+    check(alt.w < start.w, `Alt-drag did not shrink it: ${alt.w}`);
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+
+    // Shift keeps the ratio. Dragging inwards is the case that used to do
+    // nothing at all, when the constrained factor was the larger of the two.
+    const ratio = start.w / start.h;
+    await drag(await at('.thandle[data-part="se"]'), [se[0] - 12, se[1]], 8, 'Shift');
+    await page.waitForTimeout(150);
+    const kept = await bbox();
+    check(Math.abs(kept.w / kept.h - ratio) < 0.01, `ratio went from ${ratio} to ${kept.w / kept.h}`);
+    check(kept.w < start.w, `Shift-drag inwards did nothing: ${kept.w}`);
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+
+    /* Rotate a quarter turn from the north-east corner's ring. Not from its
+       centre: the scale handle sits there and is in front, which is the whole
+       arrangement. Rotation is the ring around it, so the press goes near the
+       zone's outer corner. Shift snaps the turn to fifteen degrees, so ninety
+       is reachable exactly, and a quarter turn about the centre has to swap the
+       two extents. */
+    /* Zoom out first. Fitted to the window, this document fills the canvas top
+       to bottom, and a quarter turn swings the corner a few pixels past the
+       edge, where the harness rightly refuses to click. */
+    await page.click('#zoomout');
+    await page.waitForTimeout(150);
+
+    const cx = start.x + start.w / 2;
+    const cy = start.y + start.h / 2;
+    const ne = await page.$eval('.rotor[data-part="ne"]', (el) => [
+      +el.getAttribute('x') + +el.getAttribute('width') * 0.88,
+      +el.getAttribute('y') + +el.getAttribute('height') * 0.12,
+    ]);
+    const r = Math.hypot(ne[0] - cx, ne[1] - cy);
+    const a0 = Math.atan2(ne[1] - cy, ne[0] - cx);
+    // Anticlockwise, because the clockwise landing point is a few pixels below
+    // the canvas and the harness refuses to click what it cannot see.
+    const to = [cx + r * Math.cos(a0 - Math.PI / 2), cy + r * Math.sin(a0 - Math.PI / 2)];
+    await drag(ne, to, 10, 'Shift');
+    await page.waitForTimeout(150);
+    const turned = await bbox();
+    const status = await page.textContent('#status');
+    check(/Rotated -90°/.test(status), `status says "${status}"`);
+    check(Math.abs(turned.w - start.h) < 0.02, `width is ${turned.w}, want the old height ${start.h}`);
+    check(Math.abs(turned.h - start.w) < 0.02, `height is ${turned.h}, want the old width ${start.w}`);
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+
+    /* The question the padding exists to answer. A rectangle's corner node sits
+       exactly on the bounding box, so an unpadded handle would be on top of it
+       and would take every click aimed at the node. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', 'M20 20 L60 20 L60 50 L20 50 Z');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await page.click('#closeSrc');
+    await page.click('#shapelist li');
+    await page.waitForTimeout(150);
+
+    await click([20, 20]);
+    await page.waitForTimeout(150);
+    // `:visible`, because the anchor pool keeps retired elements around with
+    // whatever class they last had; counting those reports the node count of
+    // the shape before this one.
+    const selected = await page.locator('.anchor.selected:visible').count();
+    check(selected === 1, `clicking the corner node selected ${selected} nodes, want 1`);
+
+    // And the box goes away entirely for a tool that owns the canvas.
+    await page.keyboard.press('p');
+    await page.waitForTimeout(150);
+    const withPen = await page.locator('.thandle:visible').count();
+    check(withPen === 0, `${withPen} handles still showing under the pen`);
+
+    return { start, scaled, turned, status };
+  },
+
+  /**
    * Simplify, end to end: the tolerance field, the button, and the drawing.
    *
    * The fitting itself is covered by unit tests. What only a browser can show

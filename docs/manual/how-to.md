@@ -236,6 +236,26 @@ you did not mean and brings back an image you removed by accident. Opacity,
 **Show** and **Locked** stay as you left them, since undo is for taking back an
 edit rather than for restoring a checkbox. Nothing survives a page reload.
 
+## Resize or rotate something on the canvas
+
+Select a shape, or two or more of its nodes. A dashed box appears with eight
+square handles.
+
+- Drag an edge handle to stretch one direction, a corner to change both.
+- Hold `Shift` on a corner to keep the proportions.
+- Hold `Alt` to scale about the centre instead of the opposite corner.
+- Drag a handle past the far side to mirror.
+- Move just outside a corner until the cursor changes, then drag to rotate.
+  `Shift` snaps the turn to 15°.
+
+The status line reads the scale or the angle as you drag and states the new size
+when you let go. `Escape` abandons a drag you have thought better of, and the
+whole drag is one `Ctrl+Z`.
+
+Handles sit a little outside the shape on purpose, so a node on the edge of its
+own bounding box is still clickable. The panel's **Transform** buttons do the
+same work by number when you want an exact quarter turn or an exact factor.
+
 ## Thin out a path with too many nodes
 
 Imported and traced paths often carry a node every few units. Every handle is

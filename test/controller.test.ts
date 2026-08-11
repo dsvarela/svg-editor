@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
-import { emptyDoc, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
 import { serialisePath } from '../src/core/serialise';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
@@ -93,6 +93,8 @@ interface Harness {
   key(key: string, opts?: KeyboardEventInit): void;
   anchorEl(shape: string, sp: number, i: number): Element;
   outlineEl(shape: string): Element;
+  /** A transform handle, with the document point at its centre. */
+  gripEl(hit: 'scale' | 'rotate', part: string): { el: Element; at: [number, number] };
 }
 
 function harness(pathData?: string): Harness {
@@ -136,6 +138,15 @@ function harness(pathData?: string): Harness {
       const el = canvas.overlay.querySelector(`[data-hit="outline"][data-shape="${shape}"]`);
       if (!el) throw new Error(`no outline element for ${shape}`);
       return el;
+    },
+    gripEl: (hit, part) => {
+      controller.render();
+      const el = canvas.overlay.querySelector(`[data-hit="${hit}"][data-part="${part}"]`);
+      if (!el || el.getAttribute('display') === 'none') {
+        throw new Error(`no ${hit} handle for ${part}`);
+      }
+      const num = (name: string): number => Number(el.getAttribute(name));
+      return { el, at: [num('x') + num('width') / 2, num('y') + num('height') / 2] };
     },
     anchorEl: (shape, sp, i) => {
       controller.render();
@@ -1034,6 +1045,173 @@ describe('circularising', () => {
     h.controller.circulariseSelection();
     h.store.undo();
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
+  });
+});
+
+describe('the transform box', () => {
+  /** A 40x20 rectangle, selected whole. */
+  const rect = (): Harness => {
+    const h = harness('M10 5 L50 5 L50 25 L10 25 Z');
+    h.store.update((s) => {
+      s.selection.shapes.add(s.doc.shapes[0].id);
+      s.snapToGrid = false;
+    });
+    return h;
+  };
+  const bounds = (h: Harness): [number, number, number, number] => {
+    const xs = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[0]);
+    const ys = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+
+  it('appears for a selection and not for a bare node', () => {
+    const h = rect();
+    expect(() => h.gripEl('scale', 'se')).not.toThrow();
+
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection = emptySelection();
+      s.selection.nodes.add(`${id}/0/0`);
+    });
+    // One node has no extent, so there is nothing to scale it against.
+    expect(() => h.gripEl('scale', 'se')).toThrow();
+  });
+
+  it('does not move anything when the handle is grabbed and not dragged', () => {
+    /* The handles are drawn outside the true bounds, so the pointer starts
+       several pixels away from the corner it is dragging. Without recording
+       that difference at the press, the first move would snap the corner to
+       the pointer and the shape would jump before it moved. */
+    const h = rect();
+    const grip = h.gripEl('scale', 'se');
+    const before = bounds(h);
+
+    h.down(grip.at, grip.el);
+    h.move(grip.at);
+    h.up();
+
+    expect(bounds(h)).toEqual(before);
+  });
+
+  it('scales about the opposite corner', () => {
+    const h = rect();
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] - 20, grip.at[1]]);
+    h.up();
+
+    const [x0, y0, x1, y1] = bounds(h);
+    expect(x0).toBeCloseTo(10, 6);
+    expect(y0).toBeCloseTo(5, 6);
+    expect(x1).toBeCloseTo(30, 6);
+    // The east-west drag left the height alone, exactly.
+    expect(y1).toBe(25);
+  });
+
+  it('holds the centre with Alt', () => {
+    const h = rect();
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el, { altKey: true });
+    h.move([grip.at[0] - 10, grip.at[1]], { altKey: true });
+    h.up();
+
+    const [x0, , x1] = bounds(h);
+    expect((x0 + x1) / 2).toBeCloseTo(30, 6);
+  });
+
+  it('is one undo step, whatever the drag was made of', () => {
+    const h = rect();
+    const before = bounds(h);
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] - 5, grip.at[1]]);
+    h.move([grip.at[0] - 10, grip.at[1]]);
+    h.move([grip.at[0] - 15, grip.at[1]]);
+    h.up();
+    expect(bounds(h)).not.toEqual(before);
+
+    h.store.undo();
+    expect(bounds(h)).toEqual(before);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('recomputes from the original rather than stacking frame on frame', () => {
+    // Out and back again. Composing each frame onto the last would leave the
+    // shape a rounding error away from where it started; recomputing from a
+    // copy makes the end state depend only on where the pointer stopped.
+    const h = rect();
+    const before = bounds(h);
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    for (const dx of [-15, -30, -8, 12, 0]) h.move([grip.at[0] + dx, grip.at[1]]);
+    h.up();
+    expect(bounds(h)).toEqual(before);
+  });
+
+  it('abandons the drag on Escape', () => {
+    const h = rect();
+    const before = bounds(h);
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] - 20, grip.at[1]]);
+    h.key('Escape');
+
+    expect(bounds(h)).toEqual(before);
+    expect(h.store.canRedo).toBe(false);
+  });
+
+  it('snaps the corner to the grid, not the pointer', () => {
+    const h = rect();
+    h.store.update((s) => {
+      s.snapToGrid = true;
+      s.gridStep = 5;
+    });
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] - 17.4, grip.at[1] - 2.2]);
+    h.up();
+
+    const [, , x1, y1] = bounds(h);
+    expect(x1).toBeCloseTo(35, 6);
+    expect(y1).toBeCloseTo(25, 6);
+  });
+
+  it('rotates about the centre, taking the handles with it', () => {
+    const h = rect();
+    const grip = h.gripEl('rotate', 'ne');
+    const centre: [number, number] = [30, 15];
+    const r = Math.hypot(grip.at[0] - centre[0], grip.at[1] - centre[1]);
+    const a = Math.atan2(grip.at[1] - centre[1], grip.at[0] - centre[0]) + Math.PI / 2;
+
+    h.down(grip.at, grip.el);
+    h.move([centre[0] + r * Math.cos(a), centre[1] + r * Math.sin(a)]);
+    h.up();
+
+    // A quarter turn about the centre swaps the extents of a rectangle.
+    const [x0, y0, x1, y1] = bounds(h);
+    expect(x1 - x0).toBeCloseTo(20, 6);
+    expect(y1 - y0).toBeCloseTo(40, 6);
+    expect((x0 + x1) / 2).toBeCloseTo(centre[0], 6);
+  });
+
+  it('moves only the selected nodes when the selection is nodes', () => {
+    const h = rect();
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection = emptySelection();
+      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(`${id}/0/1`);
+    });
+    const grip = h.gripEl('scale', 'e');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] + 40, grip.at[1]]);
+    h.up();
+
+    const nodes = h.store.state.doc.shapes[0].subpaths[0].nodes;
+    expect(nodes[1].pt[0]).toBeGreaterThan(50);
+    // The two that were not selected stayed exactly where they were.
+    expect(nodes[2].pt).toEqual([50, 25]);
+    expect(nodes[3].pt).toEqual([10, 25]);
   });
 });
 

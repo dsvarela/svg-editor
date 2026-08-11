@@ -366,6 +366,40 @@ input[type='number']:disabled { opacity: 0.4; }
 .sel-box { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .marquee { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
 .sel-box { stroke: var(--measure); opacity: 0.8; }
+.marquee,
+.sel-box,
+.insert-dot,
+.pen-preview { pointer-events: none; }
+
+/* --- transform box ---------------------------------------------------- */
+
+.thandle {
+  /* The node fill, so a handle reads as something to grab, and the measure
+     colour so it is never mistaken for a node. */
+  fill: var(--node);
+  stroke: var(--measure);
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+}
+.thandle:hover { fill: var(--measure); }
+
+/* Invisible, and still has to receive events, which `fill: none` would not.
+   This is the ring of rotation around each corner: see `ROTOR_SIZE`. */
+.rotor {
+  fill: transparent;
+  stroke: none;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cg fill='none' stroke='%23fff' stroke-width='3.6' stroke-linecap='round'%3E%3Cpath d='M6 15a6.5 6.5 0 1 1 5 3'/%3E%3Cpath d='M8 11 6 15.6 10.6 17.6'/%3E%3C/g%3E%3Cg fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M6 15a6.5 6.5 0 1 1 5 3'/%3E%3Cpath d='M8 11 6 15.6 10.6 17.6'/%3E%3C/g%3E%3C/svg%3E") 12 12, crosshair;
+}
+
+.thandle[data-part='nw'],
+.thandle[data-part='se'] { cursor: nwse-resize; }
+.thandle[data-part='ne'],
+.thandle[data-part='sw'] { cursor: nesw-resize; }
+.thandle[data-part='n'],
+.thandle[data-part='s'] { cursor: ns-resize; }
+.thandle[data-part='e'],
+.thandle[data-part='w'] { cursor: ew-resize; }
+
 .insert-dot { fill: none; stroke: var(--measure); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .pen-preview { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 

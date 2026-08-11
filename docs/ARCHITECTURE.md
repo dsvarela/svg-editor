@@ -520,6 +520,53 @@ geometry someone drew for the geometry a fit guessed. And the selection is
 cleared afterwards, since node selections are keyed by index and index 7 is now a
 different point on the drawing.
 
+## 20. The transform box, and the space it has to leave
+
+Direct manipulation was the whole argument for this editor, and scaling was the
+last thing you could only do by typing a number into a panel. The box closes
+that, and almost all of its difficulty is one problem: **a shape's own nodes sit
+on its bounding box by definition.**
+
+A rectangle's corner anchor and its north-west scale handle want the same point.
+Handles are in `chrome`, the last overlay layer, so they are in front of the
+anchors and win every click that reaches both. Drawn naively, the box would make
+the corners of a rectangle permanently undraggable.
+
+Two decisions follow, and the second was got wrong first:
+
+- **`BOX_PAD`.** The box and its handles are drawn six screen pixels outside the
+  true bounds, which is enough to clear an anchor marker. The arithmetic still
+  uses the true box, so the drag records the offset between where the pointer
+  pressed and where the corner actually is. Without that correction the first
+  move would snap the corner to the pointer and the shape would jump before it
+  moved.
+- **`ROTOR_SIZE` sits outside the corner, not on it.** The first version centred
+  a 26 pixel rotation zone on each corner, which covers a corner anchor
+  completely: the shape could be rotated and its corner could never be selected
+  again. The browser scenario caught it by clicking the corner of a rectangle and
+  counting what got selected. The zone is now placed with its inner corner on the
+  box's corner, so all of it lies diagonally outside, which is also where every
+  other editor puts rotation.
+
+The maths lives in `model/transform.ts`, away from the DOM, because interaction
+is the hardest thing here to test and arithmetic is not. `scaleMatrix` decides
+which point stays still and what factor each axis takes; `rotateMatrix` turns a
+swept angle into a matrix. One subtlety is recorded there: constraining a corner
+drag with Shift takes the factor by **projecting the pointer onto the box's
+diagonal**, not by taking the larger of the two axis factors. The larger-of-two
+rule reads as obvious and fails in one direction, because dragging inwards leaves
+the untouched axis at exactly 1, which then wins the comparison and nothing moves
+at all.
+
+Every frame recomputes from `captureNodes`, a copy of the geometry taken at the
+press, rather than composing one frame's matrix onto the last. Compounding drifts:
+scaling out and back does not return the shape it started with, and the end state
+would depend on the path the pointer took rather than on where it stopped.
+
+Everything is baked, per §5. There is no `transform` attribute waiting to be
+applied at render time, which is why the source box always shows what is really
+there.
+
 ## 17. One place decides how thick a line is
 
 Overlay chrome has to stay a constant size on screen while the drawing scales,

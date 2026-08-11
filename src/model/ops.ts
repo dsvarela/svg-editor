@@ -14,6 +14,8 @@ import type { Mat } from '../core/affine';
 import { arcHandle, fitCircle } from '../core/primitives';
 import {
   cloneNode,
+  clonePt,
+  clonePtOrNull,
   continuityOf,
   endNodeIndex,
   makeNode,
@@ -717,6 +719,44 @@ export function transformSubpath(sp: Subpath, m: Mat): void {
  */
 export function transformShape(shape: Shape, m: Mat): void {
   for (const sp of shape.subpaths) transformSubpath(sp, m);
+}
+
+export interface NodeSnapshot {
+  ref: NodeRef;
+  pt: Pt;
+  hIn: Pt | null;
+  hOut: Pt | null;
+}
+
+/**
+ * Copy the geometry of `refs` so a live gesture can recompute from it.
+ *
+ * A transform drag has to answer "where would this be if the whole gesture so
+ * far were applied at once", and the tempting way is to apply each frame's
+ * change on top of the last. That accumulates: scaling to 50 % and back does
+ * not return the shape it started with, and a hundred frames of rotation drift
+ * visibly. Recomputing from a copy of the original makes every frame exact and
+ * makes the final result depend only on where the pointer ended up.
+ */
+export function captureNodes(doc: Doc, refs: NodeRef[]): NodeSnapshot[] {
+  const out: NodeSnapshot[] = [];
+  for (const ref of refs) {
+    const n = doc.shapes.find((s) => s.id === ref.shape)?.subpaths[ref.sp]?.nodes[ref.i];
+    if (!n) continue;
+    out.push({ ref, pt: clonePt(n.pt), hIn: clonePtOrNull(n.hIn), hOut: clonePtOrNull(n.hOut) });
+  }
+  return out;
+}
+
+/** Write `m` applied to captured geometry back into the document. */
+export function transformCaptured(doc: Doc, saved: NodeSnapshot[], m: Mat): void {
+  for (const s of saved) {
+    const n = doc.shapes.find((sh) => sh.id === s.ref.shape)?.subpaths[s.ref.sp]?.nodes[s.ref.i];
+    if (!n) continue;
+    n.pt = applyMat(m, s.pt);
+    n.hIn = s.hIn ? applyMat(m, s.hIn) : null;
+    n.hOut = s.hOut ? applyMat(m, s.hOut) : null;
+  }
 }
 
 export function transformNodes(doc: Doc, refs: NodeRef[], m: Mat): void {
