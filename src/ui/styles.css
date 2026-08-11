@@ -470,6 +470,62 @@ input[type='number']:disabled { opacity: 0.4; }
 .gval { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--measure); }
 .gval.warn { color: var(--warn); }
 
+/* --- inspector tabs ---------------------------------------------------- */
+
+/* Sticky, because the point of the tabs is that you stop scrolling to find
+   things, and a header that scrolls away takes that back. */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  /* The same 288 as `.group`, so the rail has one column and not two. */
+  width: 288px;
+  padding: 8px 13px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  height: 26px;
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+.tab:hover { color: var(--ink); background: var(--sunk); }
+.tab[aria-selected='true'] { color: var(--accent-ink); background: var(--accent); }
+/* Groups bring their own separators, so the panel adds no gap of its own. */
+.tabpanel { display: flex; flex-direction: column; }
+.tabpanel[hidden] { display: none; }
+
+/* --- style controls ---------------------------------------------------- */
+
+input[type='color'] {
+  flex: 1;
+  min-width: 0;
+  height: var(--h);
+  padding: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  cursor: pointer;
+}
+input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+input[type='color']::-webkit-color-swatch { border: 0; border-radius: 2px; }
+input[type='color']:disabled { opacity: 0.4; cursor: default; }
+.tick { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; color: var(--ink-2); }
+/* `.seg` is `flex: none` by default, which is right in the toolbar and wrong in
+   a 288 pixel row: the Even-odd button ran off the edge of the panel. */
+.row .seg { flex: 1; min-width: 0; }
+.row .seg button { min-width: 0; padding: 0 6px; }
+
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .row { display: flex; align-items: center; gap: 7px; }
 .row label { font-size: 12px; color: var(--ink-2); min-width: 50px; }

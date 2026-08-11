@@ -6,11 +6,11 @@ import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import type { BooleanOp } from './io/boolean';
-import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, shapeFromPath } from './model/doc';
+import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, selectedShapes, shapeFromPath } from './model/doc';
 import { isPathEnd, latentHandle, transformShape } from './model/ops';
 import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
-import type { Shape, ViewBox } from './core/types';
+import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { Store } from './model/store';
 import type { Backdrop, EditorState } from './model/store';
@@ -113,6 +113,45 @@ window.addEventListener('keydown', (e) => {
     setPanel('rail', !isOpen('rail'));
   }
 });
+
+/* ------------------------------------------------------------ rail tabs */
+
+/**
+ * Three tabs over eleven groups, because a single scrolling column had become
+ * a list to hunt through rather than a panel to read.
+ *
+ * The split is by what a control acts on: a whole shape, a node, or the
+ * document. Nothing switches tab on its own. An inspector that jumped to Node
+ * the moment you clicked a point would move the button you were reaching for,
+ * and the cost of a wrong guess is higher than the cost of one click.
+ *
+ * `hidden` rather than a class, so a control in a tab you cannot see is also out
+ * of the tab order and out of the accessibility tree, the same reasoning as
+ * `inert` on a closed panel.
+ */
+const tabs = [...document.querySelectorAll<HTMLButtonElement>('.tab')];
+
+function selectTab(id: string): void {
+  for (const tab of tabs) {
+    const on = tab.id === id;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    ($(`#${tab.getAttribute('aria-controls')}`) as HTMLElement).hidden = !on;
+  }
+}
+
+for (const [i, tab] of tabs.entries()) {
+  tab.addEventListener('click', () => selectTab(tab.id));
+  // The roving-tabindex pattern: one stop in the tab order, arrows move within.
+  tab.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = tabs[(i + step + tabs.length) % tabs.length];
+    selectTab(next.id);
+    next.focus();
+  });
+}
 
 /* ------------------------------------------------------------------ tools */
 
@@ -220,6 +259,35 @@ radiusInput.addEventListener('input', () =>
 on('#circularise', () => controller.circulariseSelection());
 
 /**
+ * Collapse a control's stream of `input` events into one undo entry.
+ *
+ * A typed number fires one per keystroke, a slider one per pixel, and a colour
+ * picker one per pixel of a two-dimensional drag. Each would be its own step,
+ * so choosing a shade of blue would cost twenty presses of Ctrl+Z to take back.
+ * A batch opens on the first event and closes when the control settles.
+ *
+ * It closes on `change` as well as `blur`, because a slider or a picker never
+ * gets a blur if you use it and then reach straight for the canvas.
+ */
+const streamed = (input: HTMLElement, fn: () => void): void => {
+  let open = false;
+  const close = (): void => {
+    if (!open) return;
+    open = false;
+    store.endBatch();
+  };
+  input.addEventListener('input', () => {
+    if (!open) {
+      open = true;
+      store.beginBatch();
+    }
+    fn();
+  });
+  input.addEventListener('change', close);
+  input.addEventListener('blur', close);
+};
+
+/**
  * Wire a numeric control to the state.
  *
  * A typed number fires `input` per keystroke and a dragged slider fires one per
@@ -259,6 +327,57 @@ const liveNum = (
   input.addEventListener('change', close);
   input.addEventListener('blur', close);
 };
+
+/* ----------------------------------------------------------------- style */
+
+/**
+ * Fill, stroke, width and fill rule.
+ *
+ * `<input type="color">` speaks only `#rrggbb`, and a document can hold any CSS
+ * colour, `currentColor`, or a gradient reference. So the picker is written to
+ * only when the stored value is a plain hex, and the document is written to only
+ * when someone actually moves the picker. Anything else is shown as it is in the
+ * group's header rather than silently rounded to black.
+ */
+const HEX = /^#[0-9a-f]{6}$/i;
+const fillColour = $('#fillColour') as HTMLInputElement;
+const strokeColour = $('#strokeColour') as HTMLInputElement;
+const fillNone = $('#fillNone') as HTMLInputElement;
+const strokeNone = $('#strokeNone') as HTMLInputElement;
+const strokeWidthInput = $('#strokeWidth') as HTMLInputElement;
+
+/** What the panel currently describes: the selection, or the next new shape. */
+const styleShown = (): Style => {
+  const s = store.state;
+  const sel = selectedShapes(s.doc, s.selection);
+  return sel.length ? sel[0].style : s.style;
+};
+
+// Dragging inside a colour picker fires `input` per pixel, so both of these go
+// through the same batching as every other continuous control.
+streamed(fillColour, () => controller.setStyle({ fill: fillColour.value }));
+streamed(strokeColour, () => controller.setStyle({ stroke: strokeColour.value }));
+
+/* Unticking `none` has to put a colour back, and the picker is the only place
+   one is on offer: the stored value is the string `none`, which carries no hue
+   to return to. */
+fillNone.addEventListener('change', () =>
+  controller.setStyle({ fill: fillNone.checked ? 'none' : fillColour.value }),
+);
+strokeNone.addEventListener('change', () =>
+  controller.setStyle({ stroke: strokeNone.checked ? 'none' : strokeColour.value }),
+);
+
+streamed(strokeWidthInput, () => {
+  const v = Number(strokeWidthInput.value);
+  if (!Number.isFinite(v) || v < 0) return;
+  controller.setStyle({ strokeWidth: v });
+});
+
+$('#fillRule').addEventListener('click', (e) => {
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-fr');
+  if (v === 'nonzero' || v === 'evenodd') controller.setStyle({ fillRule: v });
+});
 
 /* ---------------------------------------------------------------- canvas */
 
@@ -1047,6 +1166,38 @@ store.subscribe((s) => {
           : 'off, step kept';
   // Declared in the markup and never written to until now, so the Draw group
   // was the one panel whose header value was permanently blank.
+  /* The style panel shows the first selected shape, or what the next new shape
+     will get. The header says which, since "red" means two different things
+     depending on whether anything is selected. */
+  const styled = selectedShapes(s.doc, s.selection);
+  const shown = styleShown();
+  const odd = [shown.fill, shown.stroke].filter((c) => c !== 'none' && !HEX.test(c));
+  $('#styleinfo').textContent = !styled.length
+    ? 'for new shapes'
+    : odd.length
+      ? odd.join(' ')
+      : styled.length > 1
+        ? `${styled.length} shapes, first shown`
+        : '';
+
+  fillNone.checked = shown.fill === 'none';
+  strokeNone.checked = shown.stroke === 'none';
+  /* The pickers stay live while `none` is ticked. Disabling them was the first
+     version and it made giving an unfilled shape a fill a two-step dance:
+     untick, which commits some arbitrary colour, then pick the one you wanted.
+     Reaching for the colour is the whole gesture, so it clears `none` itself. */
+  // Only ever written with something the picker can hold. A named colour or a
+  // gradient reference would round to black, and reading that back on the next
+  // interaction would quietly change the drawing.
+  if (HEX.test(shown.fill)) fillColour.value = shown.fill;
+  if (HEX.test(shown.stroke)) strokeColour.value = shown.stroke;
+  if (document.activeElement !== strokeWidthInput) {
+    strokeWidthInput.value = String(shown.strokeWidth);
+  }
+  for (const b of $('#fillRule').querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-fr') === shown.fillRule));
+  }
+
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
 

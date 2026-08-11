@@ -9,7 +9,7 @@
 import { about, rotate as rotMat, translate } from '../core/affine';
 import type { Box } from '../core/bezier';
 import { continuityOf, makeNode, segmentCount } from '../core/types';
-import type { NodeContinuity, PathNode, Pt, Subpath } from '../core/types';
+import type { NodeContinuity, PathNode, Pt, Style, Subpath } from '../core/types';
 import {
   docBBox,
   emptySelection,
@@ -857,7 +857,7 @@ export class Controller {
       this.openBatch();
       this.store.checkpoint();
       this.store.update((st) => {
-        const shape = makeShape([build()], nextId(d.tool));
+        const shape = makeShape([build()], nextId(d.tool), st.style);
         st.doc.shapes.push(shape);
         st.selection = emptySelection();
         st.selection.shapes.add(shape.id);
@@ -1047,6 +1047,39 @@ export class Controller {
   }
 
   /**
+   * Set fill, stroke, width or fill rule.
+   *
+   * With something selected this restyles it, one undo step. With nothing
+   * selected it sets what the next shape you draw will look like, and records no
+   * history: that is a statement about the future, and `Ctrl+Z` should not walk
+   * back through the colours you considered.
+   *
+   * A node selection restyles the shape it belongs to. Style is a property of
+   * the whole path in SVG, so there is no smaller thing to change.
+   */
+  setStyle(patch: Partial<Style>): boolean {
+    const s = this.store.state;
+    const targets = selectedShapes(s.doc, s.selection);
+
+    if (!targets.length) {
+      this.store.update((st) => Object.assign(st.style, patch));
+      return true;
+    }
+
+    return this.store.tryEdit((st) => {
+      let changed = false;
+      for (const shape of selectedShapes(st.doc, st.selection)) {
+        for (const [k, v] of Object.entries(patch)) {
+          if (shape.style[k as keyof Style] === v) continue;
+          Object.assign(shape.style, { [k]: v });
+          changed = true;
+        }
+      }
+      return changed;
+    });
+  }
+
+  /**
    * Wrap the document's canvas around whatever has been drawn.
    *
    * The canvas never follows the drawing on its own, and should not: an icon is
@@ -1185,9 +1218,7 @@ export class Controller {
 
     if (!this.penTarget) {
       this.store.update((st) => {
-        const shape = makeShape([
-          { nodes: [makeNode(snapped)], closed: false },
-        ]);
+        const shape = makeShape([{ nodes: [makeNode(snapped)], closed: false }], undefined, st.style);
         st.doc.shapes.push(shape);
         this.penTarget = { shape: shape.id, sp: 0 };
       });

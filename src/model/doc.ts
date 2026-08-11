@@ -5,15 +5,16 @@
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import { defaultStyle, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Shape, Subpath, ViewBox } from '../core/types';
+import type { Doc, Pt, Shape, Style, Subpath, ViewBox } from '../core/types';
 import { parsePath } from '../core/parse';
 
 let idSeq = 0;
 export const nextId = (prefix = 'shape'): string => `${prefix}-${++idSeq}`;
 
-export function makeShape(subpaths: Subpath[], name?: string): Shape {
+/** `style` defaults to the built-in one; callers pass the editor's current one. */
+export function makeShape(subpaths: Subpath[], name?: string, style?: Style): Shape {
   const id = nextId();
-  return { id, name: name ?? id, subpaths, style: defaultStyle() };
+  return { id, name: name ?? id, subpaths, style: style ? { ...style } : defaultStyle() };
 }
 
 export function shapeFromPath(d: string, name?: string): Shape {

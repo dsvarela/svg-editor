@@ -81,6 +81,17 @@ Left to right.
 
 ## Inspector panels
 
+Three tabs, split by what a control acts on.
+
+| Tab | Holds |
+|---|---|
+| **Shape** | Shapes, Style, Combine, Draw, Transform |
+| **Node** | Node, Bend, Align, Delete |
+| **Document** | Canvas, Grid, Backdrop, Output |
+
+Nothing switches tab on its own. Arrow keys move between the tabs once one has
+focus.
+
 ### Shapes
 
 The list of shapes, newest last, with a colour swatch and a node count.
@@ -91,6 +102,26 @@ The list of shapes, newest last, with a colour swatch and a node count.
   `F2` or `Enter` starts a rename.
 - **Duplicate** copies the selected shapes, naming each copy after its original.
 - **Delete** removes them.
+
+### Style
+
+Fill, stroke, width and fill rule for the selected shapes. A node selection
+styles the shape it belongs to, since style is a property of the whole path.
+
+| Control | Does |
+|---|---|
+| **Fill** | The colour inside. Tick **none** for no fill |
+| **Stroke** | The colour of the line. Tick **none** for no stroke |
+| **Width** | Stroke width in document units |
+| **Rule** | **Nonzero** fills overlapping subpaths; **Even-odd** punches holes where they overlap |
+
+With nothing selected these set what the next shape you draw will look like. That
+is not an edit to the drawing, so it records no undo step, and the header says
+`for new shapes` when it applies.
+
+The colour pickers stay usable while **none** is ticked, and picking a colour
+clears it. A colour the picker cannot show, such as a named colour or a gradient
+from an imported file, is left alone and named in the header instead.
 
 ### Combine
 
@@ -201,7 +232,7 @@ there. Every change here is undoable.
 | **Snap to grid** | Round positions to a multiple of Step |
 | **Snap to points** | Weld to an existing node within 8 pixels. Beats the grid |
 | **Show handles** | Draw handles and their lines |
-| **Filled** | Render shapes filled rather than as outlines |
+| **Show fills** | Draw each shape's fill. Off draws everything as an outline |
 
 The readout in the group header says what is drawn against what is snapped, for
 example `1 · every 5 drawn`.

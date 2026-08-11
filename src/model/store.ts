@@ -9,8 +9,8 @@
  * problem to solve later rather than a guess to design around now.
  */
 
-import { cloneShape } from '../core/types';
-import type { Doc, ViewBox } from '../core/types';
+import { cloneShape, defaultStyle } from '../core/types';
+import type { Doc, Style, ViewBox } from '../core/types';
 import { emptySelection } from './doc';
 import type { Selection } from './doc';
 
@@ -94,7 +94,23 @@ export interface EditorState {
   snapToPoints: boolean;
   showGrid: boolean;
   showHandles: boolean;
-  /** Render fills as well as outlines. */
+  /**
+   * The style a newly drawn shape gets.
+   *
+   * Carried in the editor rather than fixed in `makeShape`, so choosing red once
+   * makes the next three shapes red. Editing it is not an edit to the document,
+   * so it stays out of the history: it describes what you are about to draw, and
+   * undoing your way past the moment you picked a colour would be a strange
+   * thing for `Ctrl+Z` to do.
+   */
+  style: Style;
+  /**
+   * Show each shape's fill. Off draws everything as an outline.
+   *
+   * A view switch, not a property of the drawing. It used to invent a colour for
+   * shapes whose fill is `none`, which made "is this shape filled?" unanswerable
+   * from the screen; now it only decides whether the fills that exist are drawn.
+   */
   filled: boolean;
   decimals: number;
   minify: boolean;
@@ -156,7 +172,8 @@ export class Store {
       snapToPoints: true,
       showGrid: true,
       showHandles: true,
-      filled: false,
+      style: defaultStyle(),
+      filled: true,
       decimals: 3,
       minify: false,
       sourceMode: 'd',

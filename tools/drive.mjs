@@ -33,6 +33,34 @@ async function openSource(page) {
   }
 }
 
+/**
+ * Show one of the inspector's tabs.
+ *
+ * The rail is three tabbed panels, and a control in a tab you cannot see is
+ * genuinely not there: `hidden` keeps it out of the tab order and out of the
+ * hit test, so Playwright waits for a visibility that never arrives. Scenarios
+ * say which tab they want, the same as a person would.
+ */
+async function tab(page, name) {
+  await page.click(`#tab-${name}`);
+  await page.waitForTimeout(80);
+}
+
+/**
+ * Press Ctrl+Z, meaning the editor's undo.
+ *
+ * The controller ignores single keystrokes while a text field has focus, so the
+ * browser's own text undo answers instead. That is not a hypothetical: filling a
+ * number field and pressing Ctrl+Z restores the field's text, which fires
+ * `input`, which sets the value back through the app -- a scenario asserting on
+ * the result passes without the editor's history being touched at all.
+ */
+async function undo(page) {
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(150);
+}
+
 /** Canvas-relative click helper: takes document coords, converts via the page. */
 async function mk(page) {
   const box = await page.locator('#canvas').boundingBox();
@@ -273,6 +301,7 @@ const scenarios = {
       d: await page.inputValue('#src'),
     };
 
+    await tab(page, 'node');
     await page.fill('#bendAngle', '45');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(150);
@@ -363,7 +392,9 @@ const scenarios = {
     await page.click('#apply');
     // Fills must actually render, or the style-inheritance check below reads
     // `none` for every result and proves nothing.
+    await tab(page, 'doc');
     await page.check('#filled');
+    await tab(page, 'shape');
     await page.waitForTimeout(200);
 
     const selectBoth = async () => {
@@ -505,6 +536,7 @@ const scenarios = {
     await load();
     await click([45, 12]);
     await page.waitForTimeout(120);
+    await tab(page, 'node');
     await page.click('#breakPath');
     await page.waitForTimeout(150);
 
@@ -714,6 +746,8 @@ const scenarios = {
       if (!ok) throw new Error(`backdrop: ${what}`);
     };
 
+    await tab(page, 'doc');
+
     // A 4x3 PNG, red, small enough to inline. Its aspect ratio is what the fit
     // has to preserve.
     const png =
@@ -817,6 +851,91 @@ const scenarios = {
   },
 
   /**
+   * Fill, stroke and width, and the tabs they live behind.
+   *
+   * Browser-only twice over: `<input type="color">` has no jsdom implementation
+   * worth testing against, and the tabs are the thing that decides whether a
+   * control exists at all as far as a pointer is concerned.
+   */
+  async style(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`style: ${what}`);
+    };
+    const { drag } = await mk(page);
+
+    // Shape is the tab you land on, and the style controls are in it.
+    check(await page.locator('#fillColour').isVisible(), 'the style controls are not on the first tab');
+    check(!(await page.locator('#bendFlat').isVisible()), 'a node control is showing on the shape tab');
+
+    /* Nothing selected: the panel describes the next shape rather than an
+       existing one, and says so. */
+    check(
+      (await page.textContent('#styleinfo')) === 'for new shapes',
+      `header says "${await page.textContent('#styleinfo')}"`,
+    );
+    await page.fill('#strokeWidth', '3');
+    await page.waitForTimeout(120);
+    const undoAfterDefault = await page.isDisabled('#undo');
+    check(undoAfterDefault, 'choosing a colour for later landed on the undo stack');
+
+    await page.click('#tool button[data-v="rect"]');
+    await drag([10, 10], [40, 34]);
+    await page.click('#tool button[data-v="select"]');
+    await page.waitForTimeout(150);
+    const drawnWidth = await page.evaluate(
+      () => document.querySelectorAll('.artwork path')[1]?.getAttribute('stroke-width'),
+    );
+    // Widths are multiplied by the zoom on screen, so compare the ratio.
+    const perUnit = await page.evaluate(
+      () => document.querySelectorAll('.artwork path')[0]?.getAttribute('stroke-width'),
+    );
+    check(Math.abs(+drawnWidth / +perUnit - 3) < 0.01, `new shape drew at ${drawnWidth} not 3x ${perUnit}`);
+
+    // Restyle a selection: the canvas, the swatch and the file all follow.
+    await page.click('#shapelist li:nth-child(1)');
+    await page.waitForTimeout(120);
+    await page.fill('#fillColour', '#ff0000');
+    await page.waitForTimeout(150);
+    const painted = await page.getAttribute('.artwork path', 'fill');
+    check(painted === '#ff0000', `the canvas painted ${painted}`);
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(200);
+    check(/fill="#ff0000"/.test(await page.inputValue('#src')), 'the export kept the old fill');
+    await page.click('#closeSrc');
+
+    // `none` is a value the picker cannot hold, so the tick box holds it.
+    await page.check('#fillNone');
+    await page.waitForTimeout(150);
+    check((await page.getAttribute('.artwork path', 'fill')) === 'none', 'ticking none left a fill');
+    /* The picker stays usable while none is ticked, and using it is what clears
+       it. Disabling it meant filling an unfilled shape took two steps, the first
+       of which committed a colour nobody chose. */
+    check(!(await page.isDisabled('#fillColour')), 'the picker went dead with none ticked');
+    await page.fill('#fillColour', '#00aa44');
+    await page.waitForTimeout(150);
+    check((await page.getAttribute('.artwork path', 'fill')) === '#00aa44', 'picking a colour did not clear none');
+    check(!(await page.isChecked('#fillNone')), 'the none tick survived a colour being picked');
+
+    await undo(page);
+    await undo(page);
+    check((await page.getAttribute('.artwork path', 'fill')) === '#ff0000', 'undo did not bring the fill back');
+
+    // And the tabs move.
+    await tab(page, 'node');
+    check(await page.locator('#bendFlat').isVisible(), 'the node tab did not open');
+    check(!(await page.locator('#fillColour').isVisible()), 'the shape tab is still showing');
+    check(
+      (await page.getAttribute('#tab-node', 'aria-selected')) === 'true' &&
+        (await page.getAttribute('#tab-shape', 'aria-selected')) === 'false',
+      'the tabs disagree with what is on screen',
+    );
+
+    return { drawnWidth: +drawnWidth / +perUnit, painted };
+  },
+
+  /**
    * The document's canvas: drawn on screen, editable, and what gets exported.
    *
    * The complaint that prompted it was that the `viewBox` "does not update at
@@ -828,6 +947,8 @@ const scenarios = {
     const check = (ok, what) => {
       if (!ok) throw new Error(`canvasFrame: ${what}`);
     };
+
+    await tab(page, 'doc');
 
     // Drawn, at the viewBox, with everything outside it dimmed.
     const edge = await page.$eval('.doc-edge', (el) => ({
@@ -854,8 +975,7 @@ const scenarios = {
     await page.dispatchEvent('#vbw', 'input');
     await page.waitForTimeout(150);
     check((await page.getAttribute('.doc-edge', 'width')) === '120', 'the frame ignored the field');
-    await page.keyboard.press('Control+z');
-    await page.waitForTimeout(150);
+    await undo(page);
     check((await page.getAttribute('.doc-edge', 'width')) === '88', 'undo did not restore the canvas');
 
     /* Fit. The starter shape spans 20..68 by 12..52, so with a grid step of one
@@ -1202,6 +1322,7 @@ const scenarios = {
    * must sit on a snap position.
    */
   async gridHonesty(page) {
+    await tab(page, 'doc');
     const check = async (step, zoomOuts) => {
       await page.fill('#gridStep', String(step));
       await page.dispatchEvent('#gridStep', 'input');

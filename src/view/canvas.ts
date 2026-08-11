@@ -201,7 +201,10 @@ export class Canvas {
       // Full precision on screen; `decimals` only governs exported text.
       setAttrs(path, {
         d: serialisePath(shape.subpaths, { decimals: 6 }),
-        fill: state.filled ? shape.style.fill === 'none' ? '#8899bb' : shape.style.fill : 'none',
+        // The shape's own fill, or none. This used to substitute a grey for
+        // shapes whose fill is `none`, which made an unfilled shape and a grey
+        // one indistinguishable and left no way to see what the file would say.
+        fill: state.filled ? shape.style.fill : 'none',
         'fill-rule': shape.style.fillRule,
         stroke: shape.style.stroke,
         'stroke-width': shape.style.strokeWidth * this.scale(state.camera),

@@ -609,6 +609,63 @@ after that point. The unit tests passed, the canvas still rendered because the
 controller subscribes from its own constructor, and the only visible symptom was
 an empty readout in the status strip.
 
+## 22. Style, and three tabs over eleven groups
+
+`Style` had been in the model since the beginning, was imported and exported
+faithfully, and `renderArtwork` honoured it per shape. Nothing could change it.
+Everything drawn got `defaultStyle()` for ever, so the editor could produce
+exactly one appearance of SVG.
+
+The panel is unremarkable; two decisions in it are not.
+
+**The default style is not in the history.** `EditorState.style` is what the next
+shape gets, and `setStyle` with nothing selected writes it through `update`
+rather than `edit`. Choosing a colour for something you have not drawn yet is a
+statement about the future, and `Ctrl+Z` walking back through the colours you
+considered would be a strange thing for it to do. With a selection it is an
+ordinary `tryEdit` on the document.
+
+**The colour picker stays live while `none` is ticked.** `<input type="color">`
+speaks only `#rrggbb`, so `none` needs a separate control, and the first version
+disabled the picker while it was set. That made filling an unfilled shape a
+two-step dance whose first step committed a colour nobody chose. Now reaching for
+the colour is the whole gesture and it clears `none` itself. The picker is also
+only ever *written* with a plain hex: a document can hold `currentColor`, a
+named colour or a gradient reference, and writing one of those into the control
+rounds it to black, which the next interaction would read back as a real edit.
+
+`filled` changed meaning here. It used to paint shapes whose fill is `none` a
+placeholder grey, which made "is this filled?" unanswerable from the screen. It
+now only decides whether the fills that exist are drawn.
+
+### The tabs
+
+Eleven groups in one scrolling column had become a list to hunt through. The
+split is by what a control acts on: **Shape**, **Node**, **Document**. Nothing
+switches tab on its own; an inspector that jumped to Node the moment you clicked
+a point would move the button you were reaching for. Panels use `hidden` rather
+than a class, so a control you cannot see is also out of the tab order and out of
+the accessibility tree.
+
+Two bugs came out of this, both found by the browser scenarios and neither
+visible to a unit test:
+
+- **A missing `</div>`** in the new Style group nested every later panel inside
+  the first one. Hiding the Shape panel therefore hid all three, and the
+  Document tab opened onto nothing. The panel had `display: flex` and a computed
+  height of zero, which is the signature of an ancestor that is `display: none`.
+- **Scenarios were pressing Ctrl+Z into a focused text field**, where the
+  controller correctly ignores it and the browser's own text undo answers
+  instead. Restoring a number field's text fires `input`, which sets the value
+  back through the app, so a scenario asserting on the result passed without the
+  editor's history being involved at all. `drive.mjs` now has an `undo` helper
+  that blurs first.
+
+One process note. A batch of scenarios run immediately after editing
+`index.html` reported a clean sweep that individual re-runs contradicted. Treat a
+green batch taken straight after a markup change as unproven, and re-run the
+scenarios that touch what changed.
+
 ## 17. One place decides how thick a line is
 
 Overlay chrome has to stay a constant size on screen while the drawing scales,

@@ -171,6 +171,13 @@
         <div class="canvas" id="canvas"></div>
 
         <aside class="rail" id="rail" aria-label="Inspector">
+          <div class="tabs" role="tablist" aria-label="Inspector sections">
+            <button class="tab" type="button" role="tab" id="tab-shape" aria-controls="panel-shape" aria-selected="true" tabindex="0">Shape</button>
+            <button class="tab" type="button" role="tab" id="tab-node" aria-controls="panel-node" aria-selected="false" tabindex="-1">Node</button>
+            <button class="tab" type="button" role="tab" id="tab-doc" aria-controls="panel-doc" aria-selected="false" tabindex="-1">Document</button>
+          </div>
+
+          <div class="tabpanel" id="panel-shape" role="tabpanel" aria-labelledby="tab-shape">
           <div class="group">
             <div class="glabel"><span>Shapes</span><span class="gval" id="shapecount"></span></div>
             <ul class="shapelist" id="shapelist" role="listbox" aria-label="Shapes" tabindex="0"></ul>
@@ -180,7 +187,36 @@
             </div>
             <p class="note">Double-click a name to rename it. The name is what the exported <code>id</code> carries.</p>
           </div>
-
+          <div class="group">
+            <div class="glabel"><span>Style</span><span class="gval" id="styleinfo"></span></div>
+            <div class="row">
+              <label for="fillColour">Fill</label>
+              <input type="color" id="fillColour" aria-label="Fill colour" />
+              <label class="tick"><input type="checkbox" id="fillNone" /> none</label>
+            </div>
+            <div class="row">
+              <label for="strokeColour">Stroke</label>
+              <input type="color" id="strokeColour" aria-label="Stroke colour" />
+              <label class="tick"><input type="checkbox" id="strokeNone" /> none</label>
+            </div>
+            <div class="row">
+              <label for="strokeWidth">Width</label>
+              <input type="number" id="strokeWidth" step="0.25" min="0" />
+            </div>
+            <div class="row">
+              <label for="fillRule">Rule</label>
+              <div class="seg spread" id="fillRule" role="group" aria-label="Fill rule">
+                <button type="button" data-fr="nonzero" aria-pressed="true">Nonzero</button>
+                <button type="button" data-fr="evenodd" aria-pressed="false">Even-odd</button>
+              </div>
+            </div>
+            <p class="note">
+              Fill, stroke and width for the selected shapes. With nothing selected these set what
+              the next shape you draw will look like, which records no undo step. <b>Rule</b> decides
+              how overlapping subpaths fill: <b>Nonzero</b> fills them all, <b>Even-odd</b> punches
+              holes where they overlap.
+            </p>
+          </div>
           <div class="group">
             <div class="glabel"><span>Combine</span><span class="gval" id="boolinfo">needs 2+</span></div>
             <div class="grid2">
@@ -194,7 +230,6 @@
               colour; <b>Subtract</b> takes the rest away from it.
             </p>
           </div>
-
           <div class="group">
             <div class="glabel"><span>Draw</span><span class="gval" id="drawinfo"></span></div>
             <div class="row">
@@ -219,7 +254,29 @@
               of where it was. Sharp corners are kept; gentle wobbles are not.
             </p>
           </div>
+          <div class="group">
+            <div class="glabel"><span>Transform</span><span class="gval" id="selinfo"></span></div>
+            <div class="grid2">
+              <button class="btn" data-tr="rot-90">Rotate &minus;90°</button>
+              <button class="btn" data-tr="rot90">Rotate +90°</button>
+              <button class="btn" data-tr="flipH">Flip horizontal</button>
+              <button class="btn" data-tr="flipV">Flip vertical</button>
+            </div>
+            <div class="row">
+              <label for="angle">Angle</label>
+              <input type="number" id="angle" value="15" step="1" />
+              <button class="btn" id="rotate">Rotate</button>
+            </div>
+            <div class="row">
+              <label for="scale">Scale</label>
+              <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
+              <button class="btn" id="scaleGo">Apply</button>
+            </div>
+            <p class="note">Applies to the selection, or to everything when nothing is selected.</p>
+          </div>
+          </div>
 
+          <div class="tabpanel" id="panel-node" role="tabpanel" aria-labelledby="tab-node" hidden>
           <div class="group" id="nodegroup">
             <div class="glabel"><span>Node</span><span class="gval" id="nodeinfo">none</span></div>
             <div class="coords">
@@ -309,28 +366,42 @@
               surviving segment at all. Neither is <b>Break here</b>, which keeps the node.
             </p>
           </div>
-
-          <div class="group">
-            <div class="glabel"><span>Transform</span><span class="gval" id="selinfo"></span></div>
-            <div class="grid2">
-              <button class="btn" data-tr="rot-90">Rotate &minus;90°</button>
-              <button class="btn" data-tr="rot90">Rotate +90°</button>
-              <button class="btn" data-tr="flipH">Flip horizontal</button>
-              <button class="btn" data-tr="flipV">Flip vertical</button>
-            </div>
-            <div class="row">
-              <label for="angle">Angle</label>
-              <input type="number" id="angle" value="15" step="1" />
-              <button class="btn" id="rotate">Rotate</button>
-            </div>
-            <div class="row">
-              <label for="scale">Scale</label>
-              <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
-              <button class="btn" id="scaleGo">Apply</button>
-            </div>
-            <p class="note">Applies to the selection, or to everything when nothing is selected.</p>
           </div>
 
+          <div class="tabpanel" id="panel-doc" role="tabpanel" aria-labelledby="tab-doc" hidden>
+          <div class="group">
+            <div class="glabel"><span>Canvas</span><span class="gval" id="canvasinfo"></span></div>
+            <div class="coords">
+              <label for="vbx">origin</label>
+              <input type="number" id="vbx" step="1" aria-label="Canvas X" />
+              <input type="number" id="vby" step="1" aria-label="Canvas Y" />
+              <label for="vbw">size</label>
+              <input type="number" id="vbw" step="1" min="0" aria-label="Canvas width" />
+              <input type="number" id="vbh" step="1" min="0" aria-label="Canvas height" />
+            </div>
+            <button class="btn wide" id="vbFit" type="button" title="Shrink or grow the canvas to wrap the drawing">
+              Fit canvas to drawing
+            </button>
+            <p class="note">
+              The page the drawing sits on, and the <code>viewBox</code> the export writes. It is
+              drawn on the canvas with everything outside it dimmed. It never changes on its own, so
+              drawing outside it is allowed and stays outside it until you say otherwise.
+            </p>
+          </div>
+          <div class="group">
+            <div class="glabel"><span>Grid</span><span class="gval" id="gridreadout"></span></div>
+            <div class="row">
+              <label for="gridStep">Step</label>
+              <input type="number" id="gridStep" value="1" step="0.1" min="0" />
+            </div>
+            <div class="checks">
+              <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
+              <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
+              <label><input type="checkbox" id="snapPoints" checked /> Snap to points</label>
+              <label><input type="checkbox" id="showHandles" checked /> Handles</label>
+              <label><input type="checkbox" id="filled" checked /> Show fills</label>
+            </div>
+          </div>
           <div class="group">
             <div class="glabel"><span>Backdrop</span><span class="gval" id="backinfo">none</span></div>
             <button class="btn wide" id="backPick" type="button" title="Choose an image to trace over">Load image</button>
@@ -362,42 +433,6 @@
               are not, because they say how you want to look at it.
             </p>
           </div>
-
-          <div class="group">
-            <div class="glabel"><span>Canvas</span><span class="gval" id="canvasinfo"></span></div>
-            <div class="coords">
-              <label for="vbx">origin</label>
-              <input type="number" id="vbx" step="1" aria-label="Canvas X" />
-              <input type="number" id="vby" step="1" aria-label="Canvas Y" />
-              <label for="vbw">size</label>
-              <input type="number" id="vbw" step="1" min="0" aria-label="Canvas width" />
-              <input type="number" id="vbh" step="1" min="0" aria-label="Canvas height" />
-            </div>
-            <button class="btn wide" id="vbFit" type="button" title="Shrink or grow the canvas to wrap the drawing">
-              Fit canvas to drawing
-            </button>
-            <p class="note">
-              The page the drawing sits on, and the <code>viewBox</code> the export writes. It is
-              drawn on the canvas with everything outside it dimmed. It never changes on its own, so
-              drawing outside it is allowed and stays outside it until you say otherwise.
-            </p>
-          </div>
-
-          <div class="group">
-            <div class="glabel"><span>Grid</span><span class="gval" id="gridreadout"></span></div>
-            <div class="row">
-              <label for="gridStep">Step</label>
-              <input type="number" id="gridStep" value="1" step="0.1" min="0" />
-            </div>
-            <div class="checks">
-              <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
-              <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
-              <label><input type="checkbox" id="snapPoints" checked /> Snap to points</label>
-              <label><input type="checkbox" id="showHandles" checked /> Handles</label>
-              <label><input type="checkbox" id="filled" /> Filled</label>
-            </div>
-          </div>
-
           <div class="group">
             <div class="glabel"><span>Output</span><span class="gval" id="outval"></span></div>
             <div class="row">
@@ -407,6 +442,7 @@
             <div class="checks">
               <label><input type="checkbox" id="minify" /> Minify</label>
             </div>
+          </div>
           </div>
         </aside>
       </main>

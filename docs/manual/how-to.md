@@ -19,6 +19,10 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Colour a shape](#colour-a-shape)
+- [Set the page the drawing exports to](#set-the-page-the-drawing-exports-to)
+- [Resize or rotate something on the canvas](#resize-or-rotate-something-on-the-canvas)
+- [Thin out a path with too many nodes](#thin-out-a-path-with-too-many-nodes)
 - [Trace over an image](#trace-over-an-image)
 - [Move around the canvas](#move-around-the-canvas)
 - [Paste in a path from somewhere else](#paste-in-a-path-from-somewhere-else)
@@ -235,6 +239,20 @@ never reaches the export. It is covered by undo, so `Ctrl+Z` takes back a nudge
 you did not mean and brings back an image you removed by accident. Opacity,
 **Show** and **Locked** stay as you left them, since undo is for taking back an
 edit rather than for restoring a checkbox. Nothing survives a page reload.
+
+## Colour a shape
+
+Select it, then set **Fill**, **Stroke** and **Width** in the **Style** panel on
+the **Shape** tab. Tick **none** beside a colour for no fill or no stroke; the
+picker stays usable while it is ticked, and choosing a colour clears it.
+
+With nothing selected, the same controls set what the next shape you draw will
+look like, so you can pick a colour once and draw three shapes in it. That is not
+an edit to the drawing and records no undo step.
+
+If a shape came from an imported file with a colour the picker cannot show, such
+as a named colour or a gradient, the panel leaves it alone and names it in the
+header rather than rounding it to black.
 
 ## Set the page the drawing exports to
 

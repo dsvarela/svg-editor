@@ -1048,6 +1048,69 @@ describe('circularising', () => {
   });
 });
 
+describe('style', () => {
+  it('restyles the selected shapes in one undo step', () => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.shapes.add(id));
+
+    h.controller.setStyle({ fill: '#ff0000' });
+    h.controller.setStyle({ strokeWidth: 3 });
+    expect(h.store.state.doc.shapes[0].style.fill).toBe('#ff0000');
+    expect(h.store.state.doc.shapes[0].style.strokeWidth).toBe(3);
+
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].style.strokeWidth).not.toBe(3);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].style.fill).not.toBe('#ff0000');
+  });
+
+  it('follows a node selection to the shape that owns it', () => {
+    // Style is a property of the whole path in SVG, so there is no smaller
+    // thing a node selection could change.
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+
+    h.controller.setStyle({ stroke: '#00ff00' });
+    expect(h.store.state.doc.shapes[0].style.stroke).toBe('#00ff00');
+  });
+
+  it('sets what the next shape will look like when nothing is selected', () => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    h.controller.setStyle({ fill: '#0000ff', strokeWidth: 2 });
+
+    // A statement about the future, so it is not an edit and records nothing.
+    expect(h.store.canUndo).toBe(false);
+    expect(h.store.state.doc.shapes[0].style.fill).not.toBe('#0000ff');
+    expect(h.store.state.style.fill).toBe('#0000ff');
+  });
+
+  it('gives a newly drawn shape the style that was chosen for it', () => {
+    const h = harness();
+    h.controller.setStyle({ fill: '#123456', strokeWidth: 4 });
+
+    h.store.update((s) => (s.tool = 'rect'));
+    h.down([10, 10]);
+    h.move([40, 30]);
+    h.up();
+
+    const style = h.store.state.doc.shapes[0].style;
+    expect(style.fill).toBe('#123456');
+    expect(style.strokeWidth).toBe(4);
+  });
+
+  it('records nothing when the selection already looks like that', () => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.shapes.add(id));
+    const was = h.store.state.doc.shapes[0].style.stroke;
+
+    expect(h.controller.setStyle({ stroke: was })).toBe(false);
+    expect(h.store.canUndo).toBe(false);
+  });
+});
+
 describe('fitting the canvas to the drawing', () => {
   it('wraps the drawing, rounded outwards to whole grid steps', () => {
     // The shape a user pasted to report this: a drawing in the corner of a
