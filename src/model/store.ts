@@ -34,6 +34,44 @@ export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect' | 'hand';
  */
 export type DeleteMode = 'fuse' | 'split';
 
+/**
+ * A raster image shown under the drawing, to trace over.
+ *
+ * **Deliberately not part of `Doc`.** Three reasons, in order of weight. It must
+ * never reach the export, and building the export from the model rather than
+ * from the screen means a backdrop the model does not know about cannot leak
+ * into a file. Undo snapshots the whole document, so a data URL living in `Doc`
+ * would be cloned into every one of the 200 history entries -- a 2 MB image
+ * becomes 400 MB of history. And Apply in the source box replaces the document
+ * wholesale, which would throw away the reference you are tracing from as a side
+ * effect of editing the path.
+ *
+ * So it sits with `camera`, `gridStep` and `showHandles`: a property of the
+ * workspace, not of the drawing. The cost is that moving it is not undoable,
+ * which is the same bargain the camera makes.
+ */
+export interface Backdrop {
+  /** Object URL for the loaded file. Revoked when replaced or removed. */
+  src: string;
+  name: string;
+  /** Placement in document coordinates. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Natural pixel size, kept so "fit" and scaling stay proportional. */
+  naturalW: number;
+  naturalH: number;
+  opacity: number;
+  visible: boolean;
+  /**
+   * While locked, a drag on empty canvas marquee-selects as usual. Unlocked, it
+   * moves the backdrop instead. Explicit rather than modifier-based, because
+   * lining a reference up is a mode you stay in for a while.
+   */
+  locked: boolean;
+}
+
 export interface EditorState {
   doc: Doc;
   /** What the canvas is currently showing. Not part of the document. */
@@ -57,6 +95,8 @@ export interface EditorState {
   sourceMode: 'd' | 'svg';
   /** Set when the source box holds text that will not parse. */
   sourceError: string | null;
+  /** Tracing reference under the artwork. See `Backdrop`. */
+  backdrop: Backdrop | null;
 }
 
 interface Snapshot {
@@ -105,6 +145,7 @@ export class Store {
       minify: false,
       sourceMode: 'd',
       sourceError: null,
+      backdrop: null,
     };
   }
 

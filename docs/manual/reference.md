@@ -147,6 +147,26 @@ How deleting a node treats the path around it.
 **Angle** field with **Rotate**, and a **Scale** factor with **Apply**. All work
 about the centre of the selection, and all are baked into the coordinates.
 
+### Backdrop
+
+A raster image shown under the drawing, to trace over. Load it with the button
+or by dropping a file onto the canvas.
+
+| Control | Does |
+|---|---|
+| **Load image** | Choose a file. Dropping one on the canvas does the same |
+| **Opacity** | 0 to 100. Starts at 50 |
+| **Show** | Hide it without unloading it |
+| **Locked** | While unlocked, dragging empty canvas moves the image instead of selecting |
+| **X**, **Y** | Position in document coordinates |
+| **Width** | Size. Height follows, so the aspect ratio is kept |
+| **Fit** | Scale it to fit the document and centre it |
+| **Remove** | Unload it |
+
+It is workspace state, not document content: no entry in the Shapes list,
+nothing in the export, no undo entry when you move it, and it does not survive a
+reload.
+
 ### Grid
 
 | Control | Does |
@@ -224,6 +244,7 @@ Named here rather than left for you to find.
   circularised path that had a node at its centre, can both end up with two
   anchors in the same place. **Merge** only works on free ends, so there is no
   way to fuse them yet.
+- **The backdrop does not survive a reload,** and moving it is not undoable.
 - **Anchors are a fixed size on screen,** so zooming out shrinks the drawing
   while they stay put and crowd it. Handles closer to their node than the node's
   own marker are dropped, which thins it out, but the anchors are always drawn.

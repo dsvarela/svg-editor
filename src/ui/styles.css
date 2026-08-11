@@ -319,6 +319,8 @@ input[type='number']:disabled { opacity: 0.4; }
 }
 .canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .canvas .artwork { pointer-events: none; }
+/* Crisp when magnified, because tracing means looking at pixel edges. */
+.backdrop { image-rendering: pixelated; }
 .canvas .overlay { touch-action: none; cursor: crosshair; }
 /* The hand tool says what it does before you press it, which is the whole
    reason it exists as a button rather than only as Space-drag. */

@@ -132,6 +132,28 @@ Adding a node is always lossless in the same way, using the standard subdivision
 that produces two curves tracing the original exactly. So you can add nodes
 freely, and you should know which kind of delete undoes that.
 
+## The backdrop is not in the document
+
+A tracing image is the first thing here that is not a path, so it had to go
+somewhere, and the obvious home was wrong.
+
+Putting it in the document would have meant three bad things. It could reach the
+export, and an SVG that carries the photograph you traced from is not what
+anyone asked for. Undo snapshots the whole document, so the image bytes would be
+copied into every one of the two hundred history entries: a 2 MB reference
+becomes 400 MB of history. And **Apply** in the source box replaces the document
+wholesale, so editing the path text would silently throw away the thing you were
+tracing.
+
+So it lives with the camera, the grid and the handle toggle: workspace state,
+not drawing content. The export is built from the model rather than from what is
+on screen, which means a backdrop the model does not know about cannot leak into
+a file by accident. That is a structural guarantee rather than a rule someone
+has to remember.
+
+The price is that moving it is not undoable, which is the same bargain the
+camera makes, and that it does not survive a reload.
+
 ## Booleans are the one thing not written here
 
 Union, subtraction, intersection and exclusion come from

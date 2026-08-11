@@ -31,7 +31,8 @@ doc.viewBox = { x: 0, y: 0, w: 88, h: 64 };
 doc.shapes.push(shapeFromPath(STARTER, 'starter'));
 
 const store = new Store(doc);
-const canvas = new Canvas($('#canvas'));
+const canvasRoot = $('#canvas');
+const canvas = new Canvas(canvasRoot);
 const controller = new Controller(store, canvas);
 
 /* ------------------------------------------------------------------ theme */
@@ -495,6 +496,133 @@ on('#download', () => {
   URL.revokeObjectURL(url);
 });
 
+/* -------------------------------------------------------------- backdrop */
+
+/**
+ * Load a raster to trace over.
+ *
+ * The image is held as an object URL rather than a data URL: it stays out of
+ * every string the editor serialises, and the browser frees the bytes when the
+ * URL is revoked. A backdrop is workspace state, so it survives Apply and undo
+ * but not a reload.
+ */
+const backFile = $('#backFile') as HTMLInputElement;
+const backLock = $('#backLock') as HTMLInputElement;
+
+function fitBackdrop(b: { naturalW: number; naturalH: number }): { x: number; y: number; w: number; h: number } {
+  const vb = store.state.doc.viewBox;
+  // Contain rather than cover: a reference you cannot see the edges of is hard
+  // to line up against.
+  const k = Math.min(vb.w / b.naturalW, vb.h / b.naturalH);
+  const w = b.naturalW * k;
+  const h = b.naturalH * k;
+  return { x: vb.x + (vb.w - w) / 2, y: vb.y + (vb.h - h) / 2, w, h };
+}
+
+function loadBackdrop(file: File): void {
+  const src = URL.createObjectURL(file);
+  const probe = new Image();
+  probe.onload = () => {
+    store.update((s) => {
+      if (s.backdrop) URL.revokeObjectURL(s.backdrop.src);
+      const natural = { naturalW: probe.naturalWidth, naturalH: probe.naturalHeight };
+      s.backdrop = {
+        src,
+        name: file.name,
+        ...natural,
+        ...fitBackdrop(natural),
+        opacity: 0.5,
+        visible: true,
+        locked: true,
+      };
+    });
+    status.textContent = `Tracing over ${file.name}. It is not part of the drawing.`;
+    status.className = 'st ok';
+  };
+  probe.onerror = () => {
+    URL.revokeObjectURL(src);
+    status.textContent = 'That file could not be read as an image.';
+    status.className = 'st err';
+  };
+  probe.src = src;
+}
+
+on('#backPick', () => backFile.click());
+backFile.addEventListener('change', () => {
+  const f = backFile.files?.[0];
+  if (f) loadBackdrop(f);
+  // Cleared so choosing the same file twice fires `change` again.
+  backFile.value = '';
+});
+
+// Dropping onto the canvas is the gesture people try first.
+canvasRoot.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+});
+canvasRoot.addEventListener('drop', (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (!f) return;
+  e.preventDefault();
+  if (f.type.startsWith('image/')) loadBackdrop(f);
+  else {
+    status.textContent = 'Only image files can be used as a backdrop.';
+    status.className = 'st err';
+  }
+});
+
+const backNum = (id: string, apply: (b: NonNullable<typeof store.state.backdrop>, v: number) => void): void => {
+  const input = $(id) as HTMLInputElement;
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    if (!Number.isFinite(v)) return;
+    store.update((s) => {
+      if (s.backdrop) apply(s.backdrop, v);
+    });
+  });
+};
+backNum('#backOpacity', (b, v) => (b.opacity = Math.min(1, Math.max(0, v / 100))));
+backNum('#backX', (b, v) => (b.x = v));
+backNum('#backY', (b, v) => (b.y = v));
+// Width drives height, so the image cannot be squashed by accident.
+backNum('#backScale', (b, v) => {
+  if (v <= 0) return;
+  b.h = (v * b.naturalH) / b.naturalW;
+  b.w = v;
+});
+
+backLock.addEventListener('change', (e) => {
+  const locked = (e.target as HTMLInputElement).checked;
+  store.update((s) => {
+    if (s.backdrop) s.backdrop.locked = locked;
+  });
+  status.textContent = locked
+    ? 'Backdrop locked. Dragging the canvas selects again.'
+    : 'Backdrop unlocked. Drag the canvas to move it.';
+  status.className = 'st ok';
+});
+
+$('#backShow').addEventListener('change', (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  store.update((s) => {
+    if (s.backdrop) s.backdrop.visible = on;
+  });
+});
+
+on('#backFit', () => {
+  store.update((s) => {
+    if (s.backdrop) Object.assign(s.backdrop, fitBackdrop(s.backdrop));
+  });
+});
+
+on('#backClear', () => {
+  store.update((s) => {
+    if (s.backdrop) URL.revokeObjectURL(s.backdrop.src);
+    s.backdrop = null;
+  });
+  status.textContent = 'Backdrop removed.';
+  status.className = 'st ok';
+});
+
 /* ------------------------------------------------------------ shape list */
 
 const shapeList = $('#shapelist');
@@ -745,6 +873,7 @@ const gridval = $('#gridval');
 const gridreadout = $('#gridreadout');
 const drawinfo = $('#drawinfo');
 const zoomnum = $('#zoomnum');
+const backinfo = $('#backinfo');
 const outval = $('#outval');
 const cursorEl = $('#cursor');
 const undoBtn = $('#undo') as HTMLButtonElement;
@@ -798,6 +927,25 @@ store.subscribe((s) => {
   // Declared in the markup and never written to until now, so the Draw group
   // was the one panel whose header value was permanently blank.
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
+
+  const b = s.backdrop;
+  backinfo.textContent = !b ? 'none' : b.visible ? (b.locked ? b.name : `${b.name} · unlocked`) : 'hidden';
+  for (const id of ['#backOpacity', '#backX', '#backY', '#backScale', '#backFit', '#backClear', '#backShow', '#backLock']) {
+    ($(id) as HTMLInputElement).disabled = !b;
+  }
+  if (b) {
+    // Never clobber a field the pointer is in the middle of editing.
+    const set = (id: string, v: number): void => {
+      const el = $(id) as HTMLInputElement;
+      if (document.activeElement !== el) el.value = String(Math.round(v * 100) / 100);
+    };
+    set('#backOpacity', b.opacity * 100);
+    set('#backX', b.x);
+    set('#backY', b.y);
+    set('#backScale', b.w);
+    (($('#backShow') as HTMLInputElement)).checked = b.visible;
+    backLock.checked = b.locked;
+  }
 
   /* The strip said where the pointer was and never how big the view is, so
      there was no way to tell 1:1 from 10:1. `scale` is document units per

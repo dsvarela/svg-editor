@@ -19,6 +19,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Trace over an image](#trace-over-an-image)
 - [Move around the canvas](#move-around-the-canvas)
 - [Paste in a path from somewhere else](#paste-in-a-path-from-somewhere-else)
 - [Get the smallest possible output](#get-the-smallest-possible-output)
@@ -213,6 +214,25 @@ offsets rather than being pulled onto the lattice.
 Every grid line you can see is a position you can snap to. When you zoom out the
 lattice thins rather than changing, and the readout says what you are looking at,
 for example `1 · every 5 drawn`.
+
+## Trace over an image
+
+Drop an image file onto the canvas, or press **Load image** in the **Backdrop**
+panel.
+
+It appears under the drawing, scaled to fit the document and at half opacity, so
+you can draw over it with the pen. **Opacity** dims it further; **Show** hides it
+without unloading it.
+
+To line it up, untick **Locked**. While unlocked, dragging on empty canvas moves
+the image instead of selecting, which is what unlocking means. Tick it again when
+you are done, or you will keep moving the reference instead of selecting nodes.
+**X**, **Y** and **Width** place it exactly, and **Fit** puts it back in the
+middle of the document. Width drives height, so it cannot be squashed.
+
+The backdrop is not part of the drawing. It never appears in the Shapes list,
+never reaches the export, and is not covered by undo. It also does not survive a
+page reload.
 
 ## Move around the canvas
 

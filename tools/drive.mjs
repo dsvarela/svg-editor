@@ -702,6 +702,93 @@ const scenarios = {
   },
 
   /**
+   * The backdrop: a raster to trace over that is not part of the drawing.
+   *
+   * Needs a real browser twice over. The file arrives through a file input and
+   * an object URL, neither of which exists in jsdom, and the thing worth
+   * proving is that it renders *under* the artwork and never reaches the
+   * export.
+   */
+  async backdrop(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`backdrop: ${what}`);
+    };
+
+    // A 4x3 PNG, red, small enough to inline. Its aspect ratio is what the fit
+    // has to preserve.
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAFElEQVR4nGP8z8Dwn4GKgImahg0dAwB5UgH9lUqlNwAAAABJRU5ErkJggg==';
+    await page.setInputFiles('#backFile', {
+      name: 'trace.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(png, 'base64'),
+    });
+    await page.waitForTimeout(250);
+
+    const placed = await page.$eval('.backdrop', (el) => ({
+      x: +el.getAttribute('x'),
+      y: +el.getAttribute('y'),
+      w: +el.getAttribute('width'),
+      h: +el.getAttribute('height'),
+      opacity: +el.getAttribute('opacity'),
+      hidden: el.getAttribute('display') === 'none',
+    }));
+    check(!placed.hidden, 'the backdrop did not appear');
+    check(Math.abs(placed.w / placed.h - 4 / 3) < 0.01, `aspect is ${placed.w}x${placed.h}, want 4:3`);
+    check(placed.opacity === 0.5, `opacity is ${placed.opacity}, want 0.5`);
+
+    // Under the artwork, which is the entire point of a tracing reference.
+    const first = await page.$eval('.artwork', (el) => el.firstElementChild.tagName.toLowerCase());
+    check(first === 'image', `the artwork's first child is <${first}>, so the backdrop is not behind`);
+
+    // It is workspace state, so the shape list and the export never see it.
+    const shapes = await page.locator('#shapelist li').count();
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(150);
+    const exported = await page.inputValue('#src');
+    check(!/<image|base64|blob:/.test(exported), 'the backdrop leaked into the export');
+    await page.click('#closeSrc');
+
+    // Opacity and visibility are live.
+    await page.fill('#backOpacity', '20');
+    await page.dispatchEvent('#backOpacity', 'input');
+    await page.waitForTimeout(120);
+    const dimmed = await page.getAttribute('.backdrop', 'opacity');
+    check(Math.abs(+dimmed - 0.2) < 1e-6, `opacity did not follow the field: ${dimmed}`);
+
+    await page.uncheck('#backShow');
+    await page.waitForTimeout(120);
+    check((await page.getAttribute('.backdrop', 'display')) === 'none', 'hiding it did nothing');
+    await page.check('#backShow');
+    await page.waitForTimeout(120);
+
+    // Unlocked, a canvas drag moves it instead of marquee-selecting.
+    const before = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
+    await page.uncheck('#backLock');
+    await page.waitForTimeout(120);
+    const { drag } = await mk(page);
+    // Left of the starter shape, which spans 20..68 x 12..52, and inside the view.
+    await drag([8, 45], [18, 45]);
+    await page.waitForTimeout(150);
+    const after = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
+    check(after > before, `unlocked drag left x at ${after}`);
+    check((await page.locator('.anchor.selected').count()) === 0, 'the unlocked drag also selected nodes');
+
+    await page.click('#backClear');
+    await page.waitForTimeout(150);
+    const gone = await page.getAttribute('.backdrop', 'display');
+    check(gone === 'none', 'Remove left the backdrop on screen');
+
+    return {
+      placed,
+      shapesWhileLoaded: shapes,
+      movedBy: +(after - before).toFixed(3),
+      exportedLength: exported.length,
+    };
+  },
+
+  /**
    * The chrome contract: the canvas gets everything the panels are not using,
    * and the page itself never scrolls.
    *

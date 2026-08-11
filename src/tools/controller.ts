@@ -60,6 +60,9 @@ type DragKind =
   | { kind: 'none' }
   | { kind: 'pan'; client: Pt; camera: Pt; k: number }
   | { kind: 'marquee'; from: Pt }
+  /* Sliding the tracing image into place. Not a document edit, so it opens no
+     batch and records no history -- the same bargain the camera makes. */
+  | { kind: 'backdrop'; from: Pt; origin: Pt }
   | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
   /* Moving a selection. The total translation is tracked from the press rather
@@ -373,6 +376,14 @@ export class Controller {
       return;
     }
 
+    // An unlocked backdrop takes the empty-canvas drag, which is the whole
+    // meaning of unlocking it.
+    const back = s.backdrop;
+    if (back && back.visible && !back.locked) {
+      this.drag = { kind: 'backdrop', from: p, origin: [back.x, back.y] };
+      return;
+    }
+
     if (!e.shiftKey) this.store.update((st) => (st.selection = emptySelection()));
     this.drag = { kind: 'marquee', from: p };
   };
@@ -456,6 +467,22 @@ export class Controller {
           // shorten the path under us, and `moveHandle` would dereference it.
           if (!sp?.nodes[d.ref.i]) return;
           moveHandle(sp, d.ref.i, d.which, this.snap(p, d.ref), d.breakPair);
+        });
+        return;
+      }
+
+      case 'backdrop': {
+        const d = this.drag;
+        const s2 = this.store.state;
+        const raw: Pt = [p[0] - d.from[0], p[1] - d.from[1]];
+        // Snapped as a displacement, like moving a shape: the reference keeps
+        // its proportions and lands a whole number of steps from where it was.
+        const want: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
+        this.store.update((st) => {
+          if (st.backdrop) {
+            st.backdrop.x = d.origin[0] + want[0];
+            st.backdrop.y = d.origin[1] + want[1];
+          }
         });
         return;
       }

@@ -432,6 +432,39 @@ silently and destructively.
 
 ---
 
+## 18. The backdrop is workspace state, not document content
+
+The tracing image is the first thing in this editor that is not a path, and
+`Doc` was the obvious place for it and the wrong one.
+
+Three arguments, any of which is sufficient:
+
+- **Export.** `exportSvg` is built from the model, so a backdrop the model does
+  not know about cannot reach a file. Putting it in `Doc` would replace that
+  structural guarantee with a rule someone has to remember every time the
+  exporter is touched.
+- **History.** Undo snapshots the whole document (§14), and `cloneDoc` runs on
+  every checkpoint. A 2 MB image in `Doc` is 400 MB across a 200-deep history.
+- **Apply.** The source box replaces `doc.shapes` wholesale. A backdrop living
+  there would vanish when you edited the path text, which is a surprising way to
+  lose the thing you were tracing from.
+
+So `Backdrop` sits in `EditorState` beside `camera`, `gridStep` and
+`showHandles`. It renders as an `<image>` that is the first child of the artwork
+SVG, so it shares the camera and paints behind every shape without a third
+stacked layer.
+
+The costs are real and are stated in the manual rather than hidden: moving it
+records no undo entry, and it does not survive a reload. The first is the same
+bargain the camera makes. The second wants persistence, which nothing else here
+has yet.
+
+One interaction decision worth recording. An unlocked backdrop takes the
+empty-canvas drag that would otherwise start a marquee, rather than claiming a
+modifier. Lining up a reference is a mode you stay in for a minute, not a thing
+you do once, and a mode with a visible checkbox is easier to reason about than a
+chord you have to remember while dragging.
+
 ## 17. One place decides how thick a line is
 
 Overlay chrome has to stay a constant size on screen while the drawing scales,

@@ -43,6 +43,8 @@ export class Canvas {
   readonly overlay: SVGSVGElement;
 
   private artLayer: SVGGElement;
+  /** Tracing image, under everything. Never part of the exported document. */
+  private backdropEl: SVGImageElement;
   private gridMinor: SVGPathElement;
   private gridMajor: SVGPathElement;
   private axes: SVGPathElement;
@@ -65,7 +67,11 @@ export class Canvas {
     this.artwork = svg('svg', { class: 'artwork' });
     this.overlay = svg('svg', { class: 'overlay' });
     this.artLayer = svg('g');
-    this.artwork.appendChild(this.artLayer);
+    // First child, so it paints behind every shape. The export is built from
+    // the model rather than from this DOM, so nothing here can reach a file.
+    this.backdropEl = svg('image', { class: 'backdrop' });
+    this.backdropEl.setAttribute('display', 'none');
+    this.artwork.append(this.backdropEl, this.artLayer);
 
     // Order is paint order: grid at the back, anchors in front of handles.
     this.gridMinor = svg('path', { class: 'grid-minor' });
@@ -122,6 +128,7 @@ export class Canvas {
   /* ------------------------------------------------------------- artwork */
 
   renderArtwork(doc: Doc, state: EditorState): void {
+    this.renderBackdrop(state);
     const seen = new Set<string>();
 
     for (const shape of doc.shapes) {
@@ -150,6 +157,26 @@ export class Canvas {
         this.shapeEls.delete(id);
       }
     }
+  }
+
+  private renderBackdrop(state: EditorState): void {
+    const b = state.backdrop;
+    if (!b || !b.visible) {
+      this.backdropEl.setAttribute('display', 'none');
+      return;
+    }
+    this.backdropEl.removeAttribute('display');
+    setAttrs(this.backdropEl, {
+      href: b.src,
+      x: b.x,
+      y: b.y,
+      width: b.w,
+      height: b.h,
+      opacity: b.opacity,
+      // Placement already carries the aspect ratio, so letterboxing here would
+      // fight the numbers in the panel.
+      preserveAspectRatio: 'none',
+    });
   }
 
   /* ------------------------------------------------------------- overlay */

@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (319 across 10 files) |
+| `npm test` | Unit and DOM tests (324 across 10 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **139.7 kB, 44.6 kB
+The production build is one file, no external requests: **144.8 kB, 45.9 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -112,7 +112,7 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 319 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 324 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
 and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
@@ -133,7 +133,8 @@ differs, and pass `--headed` to watch.
 
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
-`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`.
+`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
+`backdrop`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

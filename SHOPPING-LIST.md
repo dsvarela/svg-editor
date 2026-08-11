@@ -130,7 +130,7 @@ usually ask for together.
 
 | | Feature | Source | Size |
 |---|---|---|---|
-| `[ ]` | **Backdrop image** — drop a raster in, show it under the artwork at an adjustable opacity, and draw over it by hand. Does not export. This is the one that earns its keep first: it needs no library, and hand-tracing on a grid is what this editor is already for. | every editor | S |
+| `[x]` | **Backdrop image** — done. Drop a raster on the canvas or load it from the Backdrop panel. Opacity, show, lock, X/Y/width and fit. Workspace state rather than document content, so it never exports, never appears in the Shapes list and costs no history; the trade is no undo on moving it and no survival across a reload. See ARCHITECTURE and the manual's explanation page. | every editor | — |
 | `[ ]` | **Auto-trace** — convert a raster to paths in one step. Needs a library; see below. | Illustrator, Inkscape | L |
 
 ### The auto-trace decision, if it is ever taken

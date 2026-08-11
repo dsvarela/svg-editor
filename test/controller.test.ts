@@ -17,6 +17,7 @@ import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
 import { emptyDoc, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
 import { serialisePath } from '../src/core/serialise';
+import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 
@@ -1443,3 +1444,80 @@ describe('navigating the view', () => {
     expect(h.store.state.tool).toBe('select');
   });
 });
+
+describe('the backdrop', () => {
+  const withBackdrop = (h: Harness, over: Partial<NonNullable<typeof h.store.state.backdrop>> = {}): void => {
+    h.store.update((s) => {
+      s.backdrop = {
+        src: 'blob:test',
+        name: 'ref.png',
+        x: 0,
+        y: 0,
+        w: 40,
+        h: 30,
+        naturalW: 400,
+        naturalH: 300,
+        opacity: 0.5,
+        visible: true,
+        locked: true,
+        ...over,
+      };
+    });
+  };
+
+  it('leaves the marquee alone while locked', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h);
+    h.down([50, 50]);
+    h.move([55, 55]);
+    h.up();
+    expect(h.store.state.backdrop!.x).toBe(0);
+  });
+
+  it('moves on an empty-canvas drag once unlocked', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h, { locked: false });
+    h.store.update((s) => (s.snapToGrid = false));
+
+    h.down([50, 50]);
+    h.move([56, 53]);
+    h.up();
+
+    expect(h.store.state.backdrop!.x).toBeCloseTo(6, 9);
+    expect(h.store.state.backdrop!.y).toBeCloseTo(3, 9);
+  });
+
+  it('snaps the displacement, not the position', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    // Deliberately off the lattice: the offset has to survive.
+    withBackdrop(h, { locked: false, x: 0.3, y: 0.4 });
+    h.store.update((s) => {
+      s.snapToGrid = true;
+      s.gridStep = 5;
+    });
+
+    h.down([50, 50]);
+    h.move([56.2, 53.1]);
+    h.up();
+
+    expect(h.store.state.backdrop!.x).toBeCloseTo(5.3, 9);
+    expect(h.store.state.backdrop!.y).toBeCloseTo(5.4, 9);
+  });
+
+  it('records no history, because it is not part of the drawing', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h, { locked: false });
+    h.down([50, 50]);
+    h.move([60, 60]);
+    h.up();
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('is not in the document, so it cannot reach the export', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h);
+    // The export is built from `doc`, and `doc` has no idea a backdrop exists.
+    expect(Object.keys(h.store.state.doc)).not.toContain('backdrop');
+    expect(exportSvg(h.store.state.doc)).not.toContain('image');
+  });
+})
