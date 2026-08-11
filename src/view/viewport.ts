@@ -74,16 +74,71 @@ export function fitBox(box: Box, svgEl: SVGSVGElement, pad = 0.12): ViewBox {
 
 export const viewBoxAttr = (v: ViewBox): string => `${v.x} ${v.y} ${v.w} ${v.h}`;
 
+/** What to draw for the grid: a step in document units, and how often a line is major. */
+export interface GridDisplay {
+  /** Always a whole multiple of the snap step. */
+  step: number;
+  /** Every Nth drawn line is major, counted from the origin. */
+  majorEvery: number;
+  /** `step / snapStep`. 1 means every snap position is drawn. */
+  multiple: number;
+}
+
 /**
- * Choose a grid step that keeps lines at least `minPx` apart on screen.
+ * The next value at or above `x` on the 1-2-5 ladder (1, 2, 5, 10, 20, 50, …).
  *
- * Decade steps (…0.1, 1, 10…) rather than a fixed step, so the grid stays
- * meaningful at every zoom level. Adapted from svg-path-editor's `refreshGrid`
- * (Apache-2.0).
+ * Only whole multipliers, because the drawn grid must land on snap positions
+ * and a fractional multiple of the snap step would not.
  */
-export function gridStepFor(camera: ViewBox, widthPx: number, minPx = 9): number {
-  if (widthPx <= 0) return 1;
-  const raw = (minPx * camera.w) / widthPx;
-  const e = Math.ceil(Math.log10(Math.max(raw, 1e-10)));
-  return Math.pow(10, Math.max(e, -4));
+function ladderAtLeast(x: number): number {
+  if (!(x > 1)) return 1;
+  // The epsilon keeps log10(100) = 1.9999… from picking the decade below.
+  const decade = Math.pow(10, Math.floor(Math.log10(x) + 1e-12));
+  const m = x / decade;
+  const pick = m <= 1 + 1e-12 ? 1 : m <= 2 + 1e-12 ? 2 : m <= 5 + 1e-12 ? 5 : 10;
+  return pick * decade;
+}
+
+/** How many minor lines between major ones, chosen to land on the ladder too. */
+const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
+
+/**
+ * Choose what grid to draw, given the step the editor actually snaps to.
+ *
+ * **Every drawn line is a snap position.** That is the whole contract, and the
+ * reason this takes `snapStep` rather than deriving a step from the camera
+ * alone. The previous version drew an adaptive decade step while the tools
+ * snapped to the user's fixed step, so at most zoom levels you were aiming at
+ * a lattice that was not on screen — the one defect that undermined the premise
+ * of a grid editor.
+ *
+ * Zooming out therefore thins the grid to every 2nd, 5th, 10th … snap position
+ * rather than switching to a different lattice: some snap positions stop being
+ * drawn, but nothing drawn is ever un-snappable. Zooming in stops at multiple
+ * 1, because subdividing further would draw lines you cannot snap to, which is
+ * the same lie in the other direction.
+ *
+ * Returns `null` when there is nothing honest to draw — no snap step, or no
+ * measured width yet.
+ *
+ * The 1-2-5 ladder and the `minPx` idea come from svg-path-editor's
+ * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
+ */
+export function gridDisplayFor(
+  snapStep: number,
+  camera: ViewBox,
+  widthPx: number,
+  minPx = 9,
+): GridDisplay | null {
+  if (!(snapStep > 0) || widthPx <= 0 || !(camera.w > 0)) return null;
+
+  // Snap steps needed to clear `minPx` on screen.
+  const need = (minPx * camera.w) / widthPx / snapStep;
+  const multiple = ladderAtLeast(need);
+  const mantissa = multiple / Math.pow(10, Math.floor(Math.log10(multiple) + 1e-12));
+  return {
+    step: snapStep * multiple,
+    majorEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5,
+    multiple,
+  };
 }

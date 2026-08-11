@@ -12,6 +12,7 @@ import type { Bend } from '../core/bend';
 import { applyMat } from '../core/affine';
 import type { Mat } from '../core/affine';
 import {
+  cloneNode,
   continuityOf,
   endNodeIndex,
   makeNode,
@@ -182,11 +183,37 @@ export function splitSegment(sp: Subpath, segIdx: number, t: number): number {
  * cover, which keeps the end tangents and approximates the old path closely
  * without a full curve fit. The 3x clamp stops a very short segment adjacent to
  * a very long one from flinging its handle across the canvas.
+ *
+ * **There is no minimum size, and deletion never refuses.** A closed subpath
+ * goes down to two nodes quite happily: two segments between the same pair of
+ * points, which draws as a lens when they are curved and as a plain line when
+ * they are not. Below two nodes there is nothing left that draws or serialises,
+ * so the caller prunes it.
+ *
+ * It used to refuse below three nodes closed, two open, on the reasoning that a
+ * path being edited should not degenerate. Run in a loop over a selection that
+ * turned "delete these four" into "delete one" and left survivors that looked
+ * like a bug in the marquee. A three-node closed path could not be reduced at
+ * all. Refusing was the worse half of the trade: the degenerate cases are
+ * visible, reversible and rare, and the refusal was none of those.
  */
 export function deleteNode(sp: Subpath, i: number): boolean {
   const n = sp.nodes.length;
-  const min = sp.closed ? 3 : 2;
-  if (n <= min) return false;
+  if (i < 0 || i >= n) return false;
+
+  // Two nodes or fewer: no pair of segments to fuse, so the node just goes and
+  // what remains is the caller's to prune. A lone node is not a path -- it has
+  // no segments, draws nothing, and the parser drops a bare `M` on the way back
+  // in -- so it must not be left claiming to be one.
+  if (n <= 2) {
+    sp.nodes.splice(i, 1);
+    if (sp.nodes.length === 1) {
+      sp.nodes[0].hIn = null;
+      sp.nodes[0].hOut = null;
+      sp.closed = false;
+    }
+    return true;
+  }
 
   if (!sp.closed && (i === 0 || i === n - 1)) {
     // An endpoint has only one segment; drop it and let the path get shorter.
@@ -222,6 +249,109 @@ export function deleteNode(sp: Subpath, i: number): boolean {
 
   sp.nodes.splice(i, 1);
   return true;
+}
+
+/**
+ * Remove nodes and leave a gap where each one was, instead of fusing across it.
+ *
+ * The counterpart to calling `deleteNode` repeatedly. Where that keeps the path
+ * whole by rebuilding a segment — approximately, since two cubics do not
+ * generally reduce to one — this keeps every surviving segment **exactly** as it
+ * was and simply stops joining them up.
+ *
+ * The survivors fall into maximal runs of originally-adjacent nodes, and each
+ * run becomes an open subpath. Runs of one node are dropped: a lone node has no
+ * segments, draws nothing, and the parser discards a bare `M` on the way back
+ * in, so keeping it would leave an invisible thing in the document.
+ *
+ * A closed subpath always comes back open — removing any node from a ring
+ * breaks it — which is why the scan starts just after a deleted node, so the
+ * runs do not wrap.
+ */
+export function deleteNodesSplitting(sp: Subpath, remove: Set<number>): Subpath[] {
+  const n = sp.nodes.length;
+  if (!remove.size) return [sp];
+
+  let start = 0;
+  if (sp.closed) {
+    let first = -1;
+    for (let i = 0; i < n; i++) {
+      if (remove.has(i)) {
+        first = i;
+        break;
+      }
+    }
+    if (first < 0) return [sp];
+    start = (first + 1) % n;
+  }
+
+  const runs: number[][] = [];
+  let run: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = sp.closed ? (start + k) % n : k;
+    if (remove.has(i)) {
+      if (run.length) runs.push(run);
+      run = [];
+    } else {
+      run.push(i);
+    }
+  }
+  if (run.length) runs.push(run);
+
+  return runs
+    .filter((r) => r.length >= 2)
+    .map((r) => {
+      const nodes = r.map((i) => cloneNode(sp.nodes[i]));
+      // Each end now faces a gap, so the handle that governed the segment into
+      // that gap goes with it. Where a run reaches the original path's own end
+      // the handle was already null and this is a no-op.
+      nodes[0].hIn = null;
+      nodes[nodes.length - 1].hOut = null;
+      return { nodes, closed: false };
+    });
+}
+
+/**
+ * Split a subpath at node `i`, leaving two ends where there was one path.
+ *
+ * The node is **duplicated** rather than moved, so nothing about the drawing
+ * changes: both new ends sit exactly where the old node was, carrying the
+ * handle that faces the side they kept. That makes this the exact counterpart
+ * of deleting a node, which is lossy by nature — fusing two cubics into one
+ * cannot be exact across an inflection. Breaking is lossless because it removes
+ * a join rather than a point.
+ *
+ * A closed subpath is opened in place: it becomes one open path starting and
+ * ending at `i`. An open one becomes two. Returns the pieces to replace the
+ * subpath with, or `null` when there is nothing to break — an endpoint has no
+ * second side to split off.
+ */
+export function breakAt(sp: Subpath, i: number): Subpath[] | null {
+  const n = sp.nodes.length;
+  if (i < 0 || i >= n) return null;
+
+  if (sp.closed) {
+    if (n < 2) return null;
+    // Rotate so the break lands at both ends. The clone at the front keeps the
+    // outgoing handle, the one at the back keeps the incoming handle, which is
+    // precisely the pair of segments that used to meet here.
+    const rotated = [...sp.nodes.slice(i), ...sp.nodes.slice(0, i)].map(cloneNode);
+    const tail = cloneNode(sp.nodes[i]);
+    rotated[0].hIn = null;
+    tail.hOut = null;
+    return [{ nodes: [...rotated, tail], closed: false }];
+  }
+
+  if (i === 0 || i === n - 1) return null;
+
+  const head = sp.nodes.slice(0, i + 1).map(cloneNode);
+  const tail = sp.nodes.slice(i).map(cloneNode);
+  head[head.length - 1].hOut = null;
+  tail[0].hIn = null;
+  return [
+    { nodes: head, closed: false },
+    { nodes: tail, closed: false },
+  ];
 }
 
 /** Turn a segment between a line and a curve, seeding handles at the thirds. */

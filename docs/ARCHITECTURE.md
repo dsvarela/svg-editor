@@ -156,7 +156,42 @@ banks one grid step at a time. It took a 2 000-segment test to surface.
 An earlier "fix" that quantised whole subpaths broke `Q` recovery, because
 `cubicAsQuad` amplifies control-point rounding by 1.5×.
 
-## 9. Two stacked SVGs, one camera
+## 9. Every drawn gridline is a snap position
+
+`gridDisplayFor` in `view/viewport.ts` takes the step the tools actually snap to
+and decides what to draw from it. The contract is one-directional and exact:
+**every line on screen is a position the pointer can land on.**
+
+This replaced a real defect. The canvas used to draw an adaptive decade step
+derived from zoom while `controller.ts` snapped to the user's fixed `gridStep`,
+so at most zoom levels you were aiming at a lattice that was not on screen. For
+an editor whose entire premise is the grid, that is the wrong bug to carry.
+
+The two obvious fixes are both wrong on their own:
+
+- **Snap to the drawn step.** Then your coordinates depend on your zoom level,
+  which destroys the reason to have a grid in an icon editor.
+- **Draw the snap step.** A step of 1 across a 10 000-unit view is 10 000 lines,
+  which is a solid grey rectangle and a layout cost to match.
+
+So the drawn step is `gridStep × m`, with `m` a whole number off the 1-2-5
+ladder — the smallest that keeps lines at least 9 px apart. Zooming out thins
+the grid to every 2nd, 5th, 10th … snap position rather than switching lattices.
+The asymmetry that remains is the safe one: some snap positions stop being
+drawn, but nothing drawn is ever un-snappable. The readout says which
+(`1 · every 5 drawn`) so the thinning is visible rather than mysterious.
+
+Zooming in stops at `m = 1`. Subdividing further would draw lines you cannot
+snap to, which is the same lie in the other direction.
+
+Two smaller things fall out of it. Lines are indexed by whole multiples of the
+step rather than accumulated as floats, so major-line selection is exact integer
+arithmetic and index 0 is the origin — major lines cannot drift off the axes at
+awkward zooms. And a `gridStep` of 0 (snapping off) draws no lattice at all,
+because there is nothing honest to draw; the axes stay, since they are
+coordinates rather than a claim about snapping.
+
+## 10. Two stacked SVGs, one camera
 
 `view/canvas.ts` renders artwork and overlay into two separate `<svg>` elements
 sharing a viewBox and `preserveAspectRatio`. Grid, anchors, handles and marquee
@@ -171,7 +206,101 @@ Rendering is retained-mode with element pooling (`view/dom.ts`): elements are
 reused frame to frame rather than rebuilt. Overlay redraws are
 `requestAnimationFrame`-batched.
 
-## 10. Undo is whole-document snapshots
+## 11. The window is the canvas
+
+The shell is a fixed `100dvh` grid — command bar, work area, source drawer,
+readout strip — and `body` is `overflow: hidden`. The page never scrolls,
+because a scrolling page moves the canvas out from under coordinates that other
+things already computed. That was not theoretical: the browser harness once
+reported that clicking a node did nothing, when what had happened was that
+typing into the source box scrolled itself into view and pushed the canvas off
+the top.
+
+Panels take space from the canvas rather than floating over it. Floating is
+cheaper to build and looks tidier, but it means a document coordinate can be on
+screen and unclickable at the same time, which is the same class of lie. So the
+inspector is a real grid column and the source is a real grid row; when they
+close, the canvas gets the pixels back. The one exception is below 860 px, where
+the inspector floats after all — a 288 px column out of a 700 px window is worse
+than the occlusion it avoids.
+
+Which panels are open is view state, held as classes on `#app` and nothing
+else. It is deliberately not in the store: it is not part of the document, it
+should not be undoable, and putting it there would mean every drawer toggle
+pushed a history entry.
+
+The consequence is that the canvas box changes without the window changing, and
+a camera left at the old aspect draws the document stretched. `window.resize`
+does not fire for that, so the controller also watches the overlay with a
+`ResizeObserver`, guarded by a `typeof` check because jsdom — where the DOM
+tests run — does not implement one.
+
+The `chrome` browser scenario asserts both halves: the canvas widens when the
+inspector closes and tallens when the drawer does, the keyboard shortcuts land
+in the same state as the buttons, and `scrollHeight` never exceeds
+`clientHeight`.
+
+## 12. Delete never refuses; break is the other operation
+
+`deleteNode` used to keep a floor — three nodes for a closed subpath, two for
+an open one — on the reasoning that a path being edited should not degenerate
+into something that is not a path. It was the wrong trade, and it took a bug
+report to see why.
+
+Run in a loop over a selection, that floor turned "delete these eight" into
+"delete five", silently. The three survivors read as a bug in the marquee, not
+in delete. A closed path of three nodes could not be reduced at all, because it
+was already sitting on the floor. The failure mode of refusing is invisible and
+inexplicable; the failure mode it was guarding against — a two-node closed
+subpath — is visible, obviously wrong on screen, and one undo away.
+
+So there is no floor. A closed subpath goes down to two nodes quite happily:
+two segments between the same pair of points, which draws as a line when they
+are straight and a lens when they are curved. Below two nodes there are no
+segments at all, so `deleteSelection` prunes what is left — but only from the
+subpaths it touched, because a one-node subpath elsewhere is the pen mid-stroke
+and deleting in one shape must not sweep up another.
+
+What happens to the path *around* a deleted node is a setting, `state.deleteMode`,
+because the two readings suit different work and neither is wrong.
+
+**Fuse** joins the neighbours, so a pentagon becomes a quadrilateral. It is what
+Illustrator, Inkscape and Figma all do on Delete, and what simplifying wants. It
+is also approximate: `deleteNode` rescales the surviving handles to cover the
+new span, which preserves the end tangents and nothing else.
+
+**Split** leaves the path open at the gap. `deleteNodesSplitting` collects the
+survivors into maximal runs of originally-adjacent nodes and makes each run a
+subpath, so every segment that survives is *untouched* — bit-for-bit the one
+that was there. Runs of one node are dropped, because a lone node has no
+segments and the parser discards a bare `M` on the way back in.
+
+It is the default that was the mistake to argue about, not the choice: fuse is
+the safer default because it is the one every other editor trained people to
+expect, and split is one click away in the Delete panel.
+
+`breakAt`, on `Shift+B`, is a third thing and the one worth not confusing with
+split-delete: it **keeps** the node and duplicates it.
+
+|  | Delete · fuse | Delete · split | Break |
+|---|---|---|---|
+| Node count | −1 | −1 | **+1** |
+| Path | stays whole | two ends | two ends |
+| Geometry | approximated | **exact** | **exact** |
+| Undoes | the point | the point and the join | the join |
+
+Deleting-and-fusing is lossy by nature and the deviation is measured (see Known
+limitations). The other two are exact by construction, and a test asserts the
+contrast directly: on an S-curve, break drifts under 1e-9 where fuse drifts over
+1. Offering only the lossy one was the real gap.
+
+The mode is a preference rather than a modifier key, and it lives in its own
+rail group rather than in Node. `.group.disabled` sets `pointer-events: none`
+whenever nothing is selected, so a setting parked in the Node group would be
+unreachable at exactly the moment you want to change it — before selecting the
+thing you are about to delete.
+
+## 13. Undo is whole-document snapshots
 
 Not inverse operations. At icon and logo scale a snapshot is a few kilobytes,
 and cloning it is cheaper than maintaining an inverse for every operation and
@@ -182,7 +311,7 @@ being wrong about one of them — a wrong inverse corrupts the document silently
 If a snapshot ever becomes too slow, that is a measurable problem with a known
 fix. A wrong inverse is neither.
 
-## 11. Booleans are the one thing not written here
+## 14. Booleans are the one thing not written here
 
 `io/boolean.ts` is an adapter over [PathBool.js](https://github.com/r-flash/PathBool.js).
 
@@ -200,6 +329,27 @@ Vendoring the source was measured and rejected: 4 925 lines, more than this
 entire editor, and only 92 of them concern arcs, so trimming to the subset we
 feed it would save nothing while forfeiting upstream fixes.
 
+Wiring it up cost **+35.8 kB raw, +12.8 kB gzipped** — the whole reason the
+adapter sat unreferenced until the operations were actually wanted.
+
+Two things guard the boundary, because the author calls the library early-stage
+and asks for failure cases:
+
+- `booleanShapes` **throws** on non-finite output rather than returning it. A
+  NaN that reaches the document cannot be undone out of it — by then it is
+  already in a history snapshot — so the check has to happen before the commit,
+  and its failure has to be distinguishable from a legitimately empty result.
+- `Controller.booleanSelection` catches, reports, and leaves the document
+  untouched. Nothing is mutated until a finite result exists.
+
+Selection order is document order, which is paint order: the first shape
+survives with its id, name and style, and the rest are consumed. That makes
+`subtract` bottom-minus-the-rest, matching Inkscape's Difference and
+Illustrator's Minus Front, and it means the result inherits the appearance of
+the shape it visually replaced. It requires a whole-shape selection — inferring
+which shape was meant from a couple of selected nodes would be a guess made
+silently and destructively.
+
 ---
 
 ## Known limitations
@@ -213,10 +363,9 @@ direction change, no single cubic can replace two. Measured maximum deviation
 is **7.55 on an 80-unit span**. Two tests assert this is both non-zero and
 bounded, rather than one test asserting a flattering number.
 
-**The grid you see is not the grid you snap to.** `canvas.ts` draws an adaptive
-decade step derived from zoom; `controller.ts` snaps to the fixed `gridStep`.
-At most zoom levels you snap to a lattice that is not the one on screen. This
-undermines the premise of a grid editor and is first on the shopping list.
+**Not every snap position is drawn when zoomed out.** The converse — a drawn
+line you cannot snap to — is impossible by construction, and that is the half
+that matters. See §9.
 
 **Arc round-trip is one-way.** See §2.
 
@@ -249,4 +398,15 @@ in all three was the same — an assertion that looked strict but wasn't:
 
 The same reasoning drives the boolean tests: they assert enclosed **area**, not
 path strings. A boolean is obliged to produce a region, not a particular
-spelling of one.
+spelling of one. A fourth bad test was caught while wiring them up — it checked
+that a subtraction's `d` contained the substring `0 0`, which the serialiser
+never emits because it writes `H 0` instead. The direction of the subtraction is
+now checked by bounding box, which distinguishes the two ways round; the area
+does not, since both leave 300.
+
+`test/grid.test.ts` states the §9 contract as an invariant and sweeps it across
+six orders of magnitude of zoom and nine snap steps, rather than checking a few
+representative cases. The contract is exact — a line is either on the lattice or
+it isn't — so there is no tolerance to tune and no reason not to sweep. The same
+check runs against a real layout engine in the `gridHonesty` browser scenario,
+because the step depends on a measured element width that jsdom does not have.

@@ -18,7 +18,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[ ]` | **Intersection snap** — snap where two paths cross. Needs a cubic–cubic solver. | IPE | M |
 | `[ ]` | **Angular snap** — constrain to rays at multiples of N° from a settable origin and base direction (IPE: `F1` origin, `F2` direction, `F3` takes both from a nearby edge). | IPE | M |
 | `[ ]` | **Principled priority order** — IPE resolves vertex/intersection → boundary → grid, and treats angular (1-D) as mutually exclusive with the 0-D modes. Ours is grid-then-point-override, which happens to land in the same place but isn't a rule. | IPE | S |
-| `[ ]` | **Displayed grid ≠ snap grid (defect)** — `canvas.ts:172` draws `gridStepFor(camera, widthPx)` (adaptive decades), `controller.ts:122` snaps to `state.gridStep`. At most zoom levels you snap to a lattice you cannot see. Pick one: either drive snapping from the drawn step, or draw the snap step and let it disappear when too dense. | — | S |
+| `[x]` | **Displayed grid ≠ snap grid (defect)** — fixed. `gridDisplayFor` draws `gridStep × m` with `m` a whole number off the 1-2-5 ladder, so every line on screen is a snap position; zooming out thins the lattice instead of switching to a different one, and the readout says which (`1 · every 5 drawn`). See ARCHITECTURE §9. | — | — |
 | `[ ]` | **Pixel-fit** — snap so *strokes* land on the pixel grid, not just anchors (a 1-unit stroke on an integer coordinate straddles two pixels; it wants a half-unit offset). The whole crisp-icon workflow depends on this. | icon-design practice | M |
 | `[ ]` | **Rulers + draggable guides** — manual guides you place, distinct from the grid. | Boxy SVG, Method Draw | M |
 | `[ ]` | **Smart guides** — transient alignment lines when a drag lines up with another object's edge or centre. | Boxy SVG, Figma | M |
@@ -32,7 +32,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[ ]` | **Auto-smooth node** — handles re-derive themselves from the neighbours whenever anything nearby moves. Inkscape's fourth type, and the one that saves the most fiddling. Note this one genuinely does need stored state: "keep recomputing me" is not something a static pair of handles can express. | Inkscape | M |
 | `[ ]` | **Continuity shortcuts** — `Shift+C` corner, `Shift+S` smooth, `Shift+Y` symmetric. Double-click already cycles. | Inkscape | S |
 | `[ ]` | **Join nodes** (`Shift+J`) — weld two selected endpoints into one, placed at their midpoint. | Inkscape, TikZiT (`Ctrl+M`) | M |
-| `[ ]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends. | Inkscape | S |
+| `[x]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends; a closed path opens at that node instead. The node is duplicated, so nothing moves — this is the lossless counterpart to deleting a node, which cannot be. See ARCHITECTURE §11. | Inkscape | — |
 | `[ ]` | **Join with segment** — connect two endpoints with a new segment rather than merging them. | Inkscape | S |
 | `[ ]` | **Reverse direction** + optional direction arrows on the outline. Matters for fill-rule and for which end a marker lands on. | Boxy SVG, Inkscape | S |
 | `[ ]` | **Make path** — turn a selection into a single path. | TikZiT (`Ctrl+P`) | S |
@@ -42,7 +42,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 
 | | Feature | Source | Size |
 |---|---|---|---|
-| `[~]` | **Booleans** — unite / intersect / subtract / exclude. Adapter and tests done in `src/io/boolean.ts`; not yet reachable from the UI. Built on [`path-bool`](https://www.npmjs.com/package/path-bool) (MIT) — see below. | Boxy SVG, Inkscape, everything | S remaining |
+| `[x]` | **Booleans** — unite / intersect / subtract / exclude, in the Combine panel. Select two or more shapes; the first survives with its name and style, and `subtract` takes the rest away from it. Built on [`path-bool`](https://www.npmjs.com/package/path-bool) (MIT) — see below. | Boxy SVG, Inkscape, everything | — |
 | `[ ]` | **Simplify** — fewer nodes within a tolerance, by curve fitting rather than point decimation. | Boxy SVG, Inkscape | M |
 | `[ ]` | **Offset path** — parallel outline at a distance. Shares most of its machinery with stroke-to-path. | Illustrator, Inkscape | L |
 | `[ ]` | **Stroke to path** — convert a stroked outline into a filled shape. | Boxy SVG, Inkscape | L |
@@ -51,6 +51,8 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 
 | | Feature | Source | Size |
 |---|---|---|---|
+| `[x]` | **Application shell** — done. One fixed grid filling the window, canvas edge to edge, no page scroll; the toolbar is icons, the source is a drawer you open (`Ctrl+E`) and the inspector collapses (`Ctrl+B`). Panels take space from the canvas rather than floating over it, and a `ResizeObserver` re-fits the camera when they do. | Figma, Rive | M |
+| `[~]` | **Measurement readout** — the pointer's document coordinates are in the status strip. Live length and angle *while dragging* is the part still missing. | Illustrator, IPE | S |
 | `[ ]` | **On-canvas transform box** — drag handles to scale/rotate a selection, instead of only the rail buttons. | every editor | M |
 | `[ ]` | **Two-tier nudge** — coarse and fine arrow-key steps, both configurable. Currently `gridStep` and `10×`. | TikZiT | S |
 | `[ ]` | **Revert-failed-source** — if the typed `d`/SVG doesn't parse, restore the last good text rather than leaving the field broken. | TikZiT | S |
@@ -58,7 +60,6 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[ ]` | **Named styles palette** — reusable fill/stroke sets rather than per-shape colours. | TikZiT | M |
 | `[ ]` | **Wireframe view** — outlines only, no fills, for editing overlapping shapes. | Method Draw | S |
 | `[ ]` | **Keyboard completeness** — every operation reachable without the mouse. We're partway. | quiver | M |
-| `[ ]` | **Measurement readout** — live length/angle while dragging. | Illustrator, IPE | S |
 
 ### The boolean decision — settled
 
@@ -82,13 +83,14 @@ serialiser on both sides.
 
 | | raw | gzipped |
 |---|---|---|
-| Editor as it stands | 70.8 kB | 22.3 kB |
-| With booleans wired in | 104.0 kB | 34.4 kB |
-| **Delta** | **+33.2 kB** | **+12.1 kB** |
+| Before wiring | 70.8 kB | 22.3 kB |
+| After wiring, as shipped | 106.6 kB | 35.1 kB |
+| **Delta** | **+35.8 kB** | **+12.8 kB** |
 
-The npm tarball's 143 kB is unminified and includes the path-data parser we do
-not use; our build minifies and tree-shakes both away. The dependency also costs
-nothing until it is actually imported from `main.ts`.
+That is the pre-measured estimate of +33.2 kB / +12.1 kB plus about 2.5 kB of
+UI wiring and the grid rework in the same build. The npm tarball's 143 kB is
+unminified and includes the path-data parser we do not use; our build minifies
+and tree-shakes both away.
 
 Vendoring the source instead was considered and rejected: it is 4 925 lines of
 TypeScript, more than this entire editor, and only 92 of those lines concern
@@ -102,8 +104,10 @@ around a vertex to exactly that, then forced `Float64Array` with the reasoning
 written out in a comment. That is not the behaviour of an abandoned library.
 
 Caveat that stands: the author calls it early-stage and asks for failure cases.
-Treat returned geometry as untrusted — check it is non-empty and finite, and
-keep the operands on the undo stack.
+So the returned geometry is treated as untrusted — `booleanShapes` throws on
+non-finite output rather than returning it, and `booleanSelection` catches both
+that and a library throw, leaving the document untouched. Nothing is mutated
+until a finite result exists, and the operation is one undo step.
 
 ## Explicitly not doing
 

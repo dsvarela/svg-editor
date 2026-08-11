@@ -16,12 +16,26 @@ import type { Selection } from './doc';
 
 export type ToolName = 'select' | 'pen';
 
+/**
+ * What deleting a node does to the path around it.
+ *
+ * `fuse` joins the two neighbouring segments into one, so the path stays whole
+ * — a pentagon becomes a quadrilateral. It is what every other editor does on
+ * Delete, and it is approximate: two cubics cannot always be replaced by one.
+ *
+ * `split` leaves two ends instead. Exact for everything that survives, since no
+ * segment is rebuilt, and the natural reading when you are cutting a path apart
+ * rather than simplifying it.
+ */
+export type DeleteMode = 'fuse' | 'split';
+
 export interface EditorState {
   doc: Doc;
   /** What the canvas is currently showing. Not part of the document. */
   camera: ViewBox;
   selection: Selection;
   tool: ToolName;
+  deleteMode: DeleteMode;
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   snapToGrid: boolean;
@@ -72,6 +86,7 @@ export class Store {
       camera: { ...doc.viewBox },
       selection: emptySelection(),
       tool: 'select',
+      deleteMode: 'fuse',
       gridStep: 1,
       snapToGrid: true,
       snapToPoints: true,

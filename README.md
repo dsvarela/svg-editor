@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (171 across 7 files) |
+| `npm test` | Unit and DOM tests (221 across 8 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser — see [Testing](#testing) |
 
-The production build is one file, no external requests: **70.8 kB, 22.3 kB
+The production build is one file, no external requests: **119.5 kB, 38.4 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -69,9 +69,12 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | **Ctrl**+←/→ | Bend the active segment (**Shift** for a finer step) |
 | **Ctrl**+↑/↓ | Loosen or tighten it |
 | `Delete` / `Backspace` | Delete selected nodes, or selected shapes |
+| **Shift**+`B` | Break the path at the selected node |
 | `Escape` | Finish the current pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | **Ctrl**+`Z` / **Ctrl**+**Shift**+`Z` | Undo / redo |
+| **Ctrl**+`E` | Open or close the source drawer |
+| **Ctrl**+`B` | Open or close the inspector |
 
 A drag is one undo step, not one per frame.
 
@@ -90,9 +93,80 @@ Drag a handle and that relationship is preserved. **Alt**-drag to break it. The
 `Corner`/`Smooth`/`Symm` buttons are a readout of what the handles currently
 say, and clicking one moves the handles to make it so — `Corner` removes them.
 
-### The source box
+### Deleting and breaking
 
-The panel at the bottom shows the selected shape's `d` string, or the whole
+Delete always deletes. There is no minimum size and no case where it quietly
+does less than you asked: a closed path goes down to two nodes, which draws as a
+line when the segments are straight and a lens when they are curved, and below
+that there is nothing left to draw so the subpath goes.
+
+What happens to the path *around* the node is a setting, in the **Delete** panel,
+because both readings are useful:
+
+| Mode | Deleting the middle node of `M10 30 L25 15 L40 30 L55 15 L70 30` |
+|---|---|
+| **Fuse** (default) | `M10 30 L25 15 H55 L70 30` — still one path |
+| **Split** | `M10 30 L25 15 M55 15 L70 30` — two ends |
+
+**Fuse** is what every other editor does on Delete, and what you want when
+simplifying: a pentagon becomes a quadrilateral. It rebuilds one segment out of
+two, which is approximate — see the deviation note in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**Split** is what you want when cutting a path apart. It is exact, because no
+segment is rebuilt: every curve that survives is bit-for-bit the one that was
+there. Fragments left with a single node are dropped, since a lone node has no
+segments and serialises to nothing.
+
+**Break here**, or `Shift+B`, is neither — it *keeps* the node and duplicates
+it, leaving two ends exactly where the one node was, or opening a closed path at
+that node. Nothing moves at all.
+
+| | Nodes | Path | Geometry |
+|---|---|---|---|
+| Delete · fuse | −1 | stays whole | approximated |
+| Delete · split | −1 | two ends | exact |
+| Break here | +1 | two ends | exact |
+
+### Combining shapes
+
+Shift-click the shape list to select two or more, then **Unite**, **Subtract**,
+**Intersect** or **Exclude**. The first shape in the list survives, keeping its
+name, id and colour, and the rest are consumed — so **Subtract** is the first
+minus the rest, the same way round as Inkscape's Difference and Illustrator's
+Minus Front, and the result looks like the shape it replaced.
+
+It is one undo step. If the operation produces nothing, or produces geometry
+that fails a finite check, the document is left exactly as it was and the status
+line says so.
+
+### The grid
+
+The step you type is the step you snap to *and* the step you see. When you zoom
+out far enough that every line would not fit, the grid thins to every 2nd, 5th
+or 10th position rather than switching to a different lattice, and the readout
+says which — `1 · every 5 drawn`. Anything you can see, you can snap to.
+
+Set the step to 0 to turn snapping off; the lattice goes with it, since there
+would be nothing behind it. Arrow keys nudge by one step, Shift+arrows by ten.
+
+### The window
+
+The canvas is the application: it takes every pixel the panels are not using,
+and the page itself never scrolls. The inspector on the right and the source
+drawer at the bottom both *take* space from the canvas rather than floating over
+it, so nothing you can see is ever sitting underneath a panel. Close them —
+**Ctrl**+`B`, **Ctrl**+`E` — and the canvas takes the space straight back. Below
+about 860 px the inspector gives up and floats, because taking 288 px from a
+window that narrow leaves nothing to draw in.
+
+The strip along the bottom is the readout: what the document contains, what the
+grid is doing, the last thing that happened, and the pointer's position in
+document coordinates.
+
+### The source drawer
+
+Closed until you open it. It shows the selected shape's `d` string, or the whole
 document as SVG. Edit it and press Apply. It parses `M L H V C S Q T A Z` in
 any mixture of relative and absolute, and paste of a whole `<svg>` document
 works — `rect`, `circle`, `ellipse`, `line`, `polyline` and `polygon` are
@@ -125,18 +199,20 @@ src/
     boolean.ts     unite/subtract/intersect/exclude, via path-bool
   tools/
     controller.ts  every pointer and keyboard interaction
+  ui/
+    styles.css     the shell: one fixed grid, no page scroll
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-4 613 lines of TypeScript across 17 files, no runtime framework.
+5 153 lines of TypeScript across 17 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests** — `npm test`. 171 tests over parsing, serialising,
-geometry ops, rendering invariants, SVG import/export, bend, and booleans.
-The rendering tests run in jsdom against the real `Canvas`.
+**Unit and DOM tests** — `npm test`. 221 tests over parsing, serialising,
+geometry ops, rendering invariants, SVG import/export, bend, booleans and the
+grid. The rendering tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings — it measures. Curve equality is by projected deviation, boolean
@@ -144,21 +220,35 @@ results by enclosed area. A boolean is obliged to produce a region, not a
 particular spelling of one, and asserting on the `d` string would break every
 time a contour got reordered.
 
+The grid tests are the other shape: an exact invariant — every drawn line sits
+on a snap position — swept across six orders of magnitude of zoom and nine snap
+steps. There is no tolerance to tune, so there is no reason to sample.
+
 **Browser tests** — `npm run drive <scenario>`, which drives the real
 Chromium-based Edge at `/usr/bin/microsoft-edge` through `playwright-core`.
 No browser download; adjust the path at the top of `tools/drive.mjs` if yours
 differs, and pass `--headed` to watch.
 
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
-`continuity`, `bend`, `pasteIcon`, `applyTwoShapes`.
+`continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
+`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`.
+
+`gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
+step is derived from a measured element width, so the invariant can only be
+checked properly against a layout engine that has one. `chrome` is the other:
+it asserts that the canvas grows when a panel closes and that the page has no
+scroll to speak of, neither of which means anything without real layout.
 
 Every run also audits the overlay: how many anchors and handles are actually in
 the DOM, and whether any rendered `d` is malformed. That is what catches stray
 geometry surviving a delete or an undo.
 
-The driver refuses to click a document coordinate that maps outside the canvas.
-That guard exists because it silently pressed "Rotate +90°" on the rail during
-development and the resulting bug report was about the editor.
+The driver refuses to click a document coordinate that maps outside the canvas,
+or outside the viewport. Both guards exist because the harness lied to itself:
+the first once pressed "Rotate +90°" on the rail and the resulting bug report
+was about the editor; the second let clicks land at a negative `y` after typing
+into the source box scrolled the canvas off the top, so a scenario reported that
+selecting a node did nothing.
 
 ---
 

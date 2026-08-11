@@ -6,6 +6,7 @@ import { about, flipX, rotate, scale, translate } from '../src/core/affine';
 import { cloneNode, continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 import {
+  breakAt,
   deleteNode,
   moveAnchor,
   moveHandle,
@@ -278,10 +279,41 @@ describe('deleting', () => {
     ]);
   });
 
-  it('refuses to reduce a ring below three nodes', () => {
+  it('reduces a three-node ring to two, rather than refusing', () => {
+    // This used to return false. A ring of three was exactly at the old floor,
+    // so it could not be reduced at all -- and a floor that refuses is worse
+    // than the degenerate shapes it was protecting against, because a refusal
+    // is invisible and the shapes are not.
     const sp = parsePath('M0 0 L10 0 L5 10 Z')[0];
-    expect(deleteNode(sp, 0)).toBe(false);
-    expect(sp.nodes).toHaveLength(3);
+    expect(deleteNode(sp, 0)).toBe(true);
+    expect(sp.nodes.map((n) => n.pt)).toEqual([
+      [10, 0],
+      [5, 10],
+    ]);
+    // Still closed: two straight segments between the same pair of points,
+    // which is what draws as a plain line.
+    expect(sp.closed).toBe(true);
+  });
+
+  it('never refuses a valid index, however small the subpath gets', () => {
+    for (const d of ['M0 0 L10 0 L5 10 Z', 'M0 0 C2 8 8 8 10 0 Z', 'M0 0 L10 0']) {
+      const sp = parsePath(d)[0];
+      let guard = 0;
+      while (sp.nodes.length && guard++ < 10) expect(deleteNode(sp, 0)).toBe(true);
+      expect(sp.nodes).toHaveLength(0);
+    }
+  });
+
+  it('drops the closed flag once a subpath is down to one node', () => {
+    // A single node cannot be closed -- there is nothing to close onto -- and
+    // leaving the flag set would make `segmentCount` claim a segment that does
+    // not exist.
+    const sp = parsePath('M0 0 L10 0 L5 10 Z')[0];
+    deleteNode(sp, 0);
+    deleteNode(sp, 0);
+    expect(sp.nodes).toHaveLength(1);
+    expect(sp.closed).toBe(false);
+    expect(segmentCount(sp)).toBe(0);
   });
 
   it('shortens an open path when an endpoint goes', () => {
@@ -482,5 +514,90 @@ describe('history', () => {
     expect(store.canRedo).toBe(true);
     store.edit((s) => moveAnchor(s.doc.shapes[0].subpaths[0], 0, [1, 1]));
     expect(store.canRedo).toBe(false);
+  });
+});
+
+describe('breaking', () => {
+  /** Dense samples along every segment, in order, for "did the drawing move?". */
+  const trace = (sps: Subpath[], per = 16): Pt[] => {
+    const out: Pt[] = [];
+    for (const sp of sps) {
+      for (let i = 0; i < segmentCount(sp); i++) {
+        const c = segmentAsCubic(sp, i);
+        for (let k = 0; k <= per; k++) out.push(cubicAt(c, k / per));
+      }
+    }
+    return out;
+  };
+
+  const maxDrift = (a: Pt[], b: Pt[]): number => {
+    if (a.length !== b.length) return Infinity;
+    let worst = 0;
+    for (let i = 0; i < a.length; i++) {
+      worst = Math.max(worst, Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]));
+    }
+    return worst;
+  };
+
+  it('is lossless where deleting is not', () => {
+    // The contrast is the reason both operations exist. `deleteNode` fuses two
+    // cubics into one, which cannot be exact across an inflection; `breakAt`
+    // removes a join instead of a point, so nothing moves at all.
+    const d = 'M0 0 C10 -20 30 20 40 0 C50 -20 70 20 80 0';
+
+    const broken = parsePath(d);
+    const before = trace(broken);
+    const pieces = breakAt(broken[0], 1)!;
+    expect(maxDrift(trace(pieces), before)).toBeLessThan(1e-9);
+
+    const deleted = parsePath(d);
+    deleteNode(deleted[0], 1);
+    expect(maxDrift(trace(deleted), before)).toBeGreaterThan(1);
+  });
+
+  it('duplicates the node so both ends sit where it was', () => {
+    const sp = parsePath('M0 0 L10 0 L20 0 L30 0')[0];
+    const [head, tail] = breakAt(sp, 1)!;
+    expect(head.nodes[head.nodes.length - 1].pt).toEqual([10, 0]);
+    expect(tail.nodes[0].pt).toEqual([10, 0]);
+    // Total node count grows by exactly one.
+    expect(head.nodes.length + tail.nodes.length).toBe(sp.nodes.length + 1);
+  });
+
+  it('clears only the handle facing the side that was cut away', () => {
+    const sp = parsePath('M0 0 C5 -10 15 -10 20 0 C25 10 35 10 40 0')[0];
+    const [head, tail] = breakAt(sp, 1)!;
+    const cut = head.nodes[head.nodes.length - 1];
+    expect(cut.hOut).toBeNull();
+    expect(cut.hIn).not.toBeNull();
+    expect(tail.nodes[0].hIn).toBeNull();
+    expect(tail.nodes[0].hOut).not.toBeNull();
+  });
+
+  it('opens a closed subpath in place rather than splitting it', () => {
+    const sp = parsePath('M0 0 L20 0 L20 20 L0 20 Z')[0];
+    const pieces = breakAt(sp, 1)!;
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0].closed).toBe(false);
+    expect(pieces[0].nodes[0].pt).toEqual([20, 0]);
+    expect(pieces[0].nodes[pieces[0].nodes.length - 1].pt).toEqual([20, 0]);
+    // A closed ring of n has n segments; the opened path of n+1 nodes has n too.
+    expect(segmentCount(pieces[0])).toBe(segmentCount(sp));
+  });
+
+  it('does not alias the original nodes', () => {
+    // The pieces replace the subpath in the document, so sharing node objects
+    // with it would make a later edit write through to the undo snapshot.
+    const sp = parsePath('M0 0 L10 0 L20 0 L30 0')[0];
+    const [head] = breakAt(sp, 1)!;
+    head.nodes[0].pt[0] = 999;
+    expect(sp.nodes[0].pt[0]).toBe(0);
+  });
+
+  it('returns null at an endpoint, where there is no second side', () => {
+    const sp = parsePath('M0 0 L10 0 L20 0')[0];
+    expect(breakAt(sp, 0)).toBeNull();
+    expect(breakAt(sp, 2)).toBeNull();
+    expect(breakAt(sp, 7)).toBeNull();
   });
 });

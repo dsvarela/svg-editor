@@ -23,7 +23,7 @@ import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
-import { docPerPixel, gridStepFor, viewBoxAttr } from './viewport';
+import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
 
 /** Transient things the tools want drawn this frame. */
 export interface OverlayExtras {
@@ -161,6 +161,8 @@ export class Canvas {
   }
 
   private renderGrid(state: EditorState, k: number): void {
+    const cam = state.camera;
+
     if (!state.showGrid) {
       this.gridMinor.setAttribute('d', '');
       this.gridMajor.setAttribute('d', '');
@@ -168,9 +170,21 @@ export class Canvas {
       return;
     }
 
-    const cam = state.camera;
-    const step = gridStepFor(cam, this.widthPx);
-    const major = step * (step < 1 ? 10 : 5);
+    // The axes are real coordinates rather than a claim about snapping, so they
+    // stay even when there is no lattice to draw.
+    setAttrs(this.axes, {
+      d: `M${cam.x} 0H${cam.x + cam.w}M0 ${cam.y}V${cam.y + cam.h}`,
+      'stroke-width': k * 1.5,
+    });
+
+    // Driven by the step the tools snap to, so every line drawn here is a
+    // position the pointer can actually land on. See `gridDisplayFor`.
+    const g = gridDisplayFor(state.gridStep, cam, this.widthPx);
+    if (!g) {
+      this.gridMinor.setAttribute('d', '');
+      this.gridMajor.setAttribute('d', '');
+      return;
+    }
 
     // One `<path>` of many subpaths rather than one element per line. yqnn
     // emits a `<rect>` per gridline; at a few hundred lines that is a few
@@ -179,25 +193,24 @@ export class Canvas {
     const majorD: string[] = [];
     const round = (v: number): number => Math.round(v * 1e10) / 1e10;
 
-    const x0 = Math.floor(cam.x / step) * step;
-    for (let x = x0; x <= cam.x + cam.w; x += step) {
-      const rx = round(x);
-      const line = `M${rx} ${cam.y}V${cam.y + cam.h}`;
-      (round(rx / major) === Math.round(rx / major) ? majorD : minorD).push(line);
+    // Index lines by whole multiples of the step rather than accumulating a
+    // float. Major-line selection is then exact integer arithmetic, and index 0
+    // is the origin, so major lines cannot drift off the axes at odd zooms.
+    const ix0 = Math.ceil(cam.x / g.step);
+    const ix1 = Math.floor((cam.x + cam.w) / g.step);
+    for (let i = ix0; i <= ix1; i++) {
+      const line = `M${round(i * g.step)} ${cam.y}V${cam.y + cam.h}`;
+      (i % g.majorEvery === 0 ? majorD : minorD).push(line);
     }
-    const y0 = Math.floor(cam.y / step) * step;
-    for (let y = y0; y <= cam.y + cam.h; y += step) {
-      const ry = round(y);
-      const line = `M${cam.x} ${ry}H${cam.x + cam.w}`;
-      (round(ry / major) === Math.round(ry / major) ? majorD : minorD).push(line);
+    const iy0 = Math.ceil(cam.y / g.step);
+    const iy1 = Math.floor((cam.y + cam.h) / g.step);
+    for (let i = iy0; i <= iy1; i++) {
+      const line = `M${cam.x} ${round(i * g.step)}H${cam.x + cam.w}`;
+      (i % g.majorEvery === 0 ? majorD : minorD).push(line);
     }
 
     setAttrs(this.gridMinor, { d: minorD.join(''), 'stroke-width': k });
     setAttrs(this.gridMajor, { d: majorD.join(''), 'stroke-width': k });
-    setAttrs(this.axes, {
-      d: `M${cam.x} 0H${cam.x + cam.w}M0 ${cam.y}V${cam.y + cam.h}`,
-      'stroke-width': k * 1.5,
-    });
   }
 
   private renderNodes(state: EditorState, k: number): void {

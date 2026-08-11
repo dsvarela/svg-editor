@@ -21,8 +21,12 @@ The adapted portions are:
   src/core/serialise.ts   `formatNumber`, the shortest-exact-representation
                           number formatter.
 
-  src/view/viewport.ts    `gridStepFor`, the decade-stepped adaptive grid,
-                          from `refreshGrid`.
+  src/view/viewport.ts    `gridDisplayFor`, which keeps the idea of choosing a
+                          grid step so lines stay at least `minPx` apart, from
+                          `refreshGrid`. The step ladder and the anchoring of
+                          the drawn grid to the editor's snap step are not from
+                          svg-path-editor, which derives its step from the zoom
+                          level alone.
 
 Each adapted function carries its own attribution comment at the point of use.
 

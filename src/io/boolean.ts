@@ -42,6 +42,13 @@ const OPS: Record<BooleanOp, PathBooleanOperation> = {
   exclude: PathBooleanOperation.Exclusion,
 };
 
+export const BOOLEAN_LABEL: Record<BooleanOp, string> = {
+  unite: 'Unite',
+  subtract: 'Subtract',
+  intersect: 'Intersect',
+  exclude: 'Exclude',
+};
+
 /** Endpoints closer than this are the same point when rebuilding contours. */
 const WELD_EPS = 1e-9;
 
@@ -174,5 +181,21 @@ export function booleanShapes(shapes: Shape[], op: BooleanOp): Subpath[] | null 
   const result = new PathBoolean(inputs).get(OPS[op]);
 
   const subpaths = result.flatMap(pathToSubpaths).filter((sp) => sp.nodes.length >= 2);
+
+  // Checked, not trusted. The author calls the library early-stage and asks for
+  // failure cases, and a NaN that reaches the document cannot be undone out of
+  // it -- by then it is already in a history snapshot. Throwing keeps the
+  // failure loud and distinguishable from the legitimate empty result below.
+  for (const sp of subpaths) {
+    for (const n of sp.nodes) {
+      if (!finite(n.pt) || !finite(n.hIn) || !finite(n.hOut)) {
+        throw new Error('boolean produced non-finite geometry');
+      }
+    }
+  }
+
   return subpaths.length ? subpaths : null;
 }
+
+/** `null` handles are legitimate -- a straight segment has none. */
+const finite = (p: Pt | null): boolean => !p || (Number.isFinite(p[0]) && Number.isFinite(p[1]));

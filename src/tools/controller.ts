@@ -22,8 +22,10 @@ import {
 import type { HandlePart, NodeRef } from '../model/doc';
 import {
   alignNodes,
+  breakAt,
   closeSubpath,
   deleteNode,
+  deleteNodesSplitting,
   distributeNodes,
   moveAnchor,
   moveHandle,
@@ -37,6 +39,8 @@ import {
   transformShape,
 } from '../model/ops';
 import type { AlignMode } from '../model/ops';
+import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
+import type { BooleanOp } from '../io/boolean';
 import type { Store } from '../model/store';
 import type { Canvas, OverlayExtras } from '../view/canvas';
 import { latentHandle, shapeIsInBox } from '../view/canvas';
@@ -55,6 +59,15 @@ type DragKind =
   | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number };
 
 export class Controller {
+  /**
+   * Where user-facing notices go. Set by the wiring, left unset in tests.
+   *
+   * A callback rather than a return value because delete has two entry points,
+   * the button and the key, and a returned message would be reported by one of
+   * them and dropped by the other.
+   */
+  onMessage: ((message: string, ok: boolean) => void) | null = null;
+
   private drag: DragKind = { kind: 'none' };
   private extras: OverlayExtras = {};
   private frame = 0;
@@ -77,11 +90,19 @@ export class Controller {
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('resize', () => {
+    const refit = (): void => {
       this.store.update((s) => {
         s.camera = fitAspect(s.camera, this.canvas.overlay);
       });
-    });
+    };
+    window.addEventListener('resize', refit);
+    // The window is not the only thing that changes the canvas box: opening the
+    // source drawer or collapsing the inspector does too, and a camera left at
+    // the old aspect draws the document stretched. Guarded because jsdom, where
+    // the DOM tests run, has no ResizeObserver.
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(refit).observe(ov);
+    }
 
     store.subscribe(() => this.schedule());
   }
@@ -617,6 +638,14 @@ export class Controller {
         this.finishPen();
         return;
       }
+      // Shift+B, the same binding Inkscape uses. Matched on the capital so it
+      // cannot fire from a bare `b`.
+      case 'B': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.breakAtSelection();
+        return;
+      }
       case 'v': {
         this.store.update((st) => (st.tool = 'select'));
         this.finishPen();
@@ -674,31 +703,143 @@ export class Controller {
     });
   }
 
-  deleteSelection(): void {
+  /**
+   * Delete whatever is selected. It always deletes; there is no case where it
+   * quietly does less than it was asked.
+   *
+   * `state.deleteMode` decides what happens to the path around the node. In
+   * `fuse`, the default, the two segments either side become one, so a pentagon
+   * becomes a quadrilateral -- what every other editor does on Delete, and what
+   * you want when simplifying. In `split` the path is left open at the gap
+   * instead, which is what you want when cutting one apart, and which is exact
+   * because no segment is rebuilt.
+   *
+   * Neither is `breakAtSelection`, on `Shift+B`: that keeps the node and
+   * duplicates it, so the drawing does not change at all. Split delete removes
+   * the node; break does not.
+   *
+   * What is left over is pruned rather than protected: a subpath below two
+   * nodes has no segments, draws nothing and serialises to nothing, so leaving
+   * one behind would be leaving an invisible shape in the document. Only
+   * subpaths this deletion actually touched are pruned -- a one-node subpath
+   * elsewhere is the pen mid-stroke and must survive.
+   */
+  deleteSelection(): { deleted: number; blocked: number } {
     const s = this.store.state;
+
     if (s.selection.shapes.size > 0) {
+      const n = s.selection.shapes.size;
       this.store.edit((st) => {
         st.doc.shapes = st.doc.shapes.filter((sh) => !st.selection.shapes.has(sh.id));
         st.selection = emptySelection();
       });
-      return;
+      return { deleted: n, blocked: 0 };
     }
+
     const refs = [...s.selection.nodes].map(parseNodeKey);
-    if (!refs.length) return;
+    if (!refs.length) return { deleted: 0, blocked: 0 };
+
+    // Grouped by subpath, because "all of them" and "some of them" mean
+    // different things and only the group knows which this is.
+    const groups = new Map<string, { shape: string; sp: number; idx: number[] }>();
+    for (const r of refs) {
+      const key = `${r.shape}/${r.sp}`;
+      const g = groups.get(key) ?? { shape: r.shape, sp: r.sp, idx: [] };
+      g.idx.push(r.i);
+      groups.set(key, g);
+    }
+
+    let deleted = 0;
+    let blocked = 0;
+
     this.store.edit((st) => {
-      // Delete from the highest index down so earlier indices stay valid.
-      refs
-        .sort((a, b) => b.i - a.i)
-        .forEach((r) => {
-          const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
-          if (sp) deleteNode(sp, r.i);
-        });
-      st.doc.shapes.forEach((sh) => {
-        sh.subpaths = sh.subpaths.filter((sp) => sp.nodes.length >= 2);
-      });
+      // What each touched subpath becomes, applied only once the loop is done:
+      // splicing as we go would shift the indices the remaining groups hold.
+      const replace = new Map<string, Subpath[]>();
+
+      for (const g of groups.values()) {
+        const shape = findShape(st.doc, g.shape);
+        const sp = shape?.subpaths[g.sp];
+        if (!shape || !sp) continue;
+
+        const idx = [...new Set(g.idx)].filter((i) => i >= 0 && i < sp.nodes.length);
+        if (!idx.length) continue;
+        const key = `${g.shape}/${g.sp}`;
+
+        // Everything selected: the subpath goes, in either mode. Removing the
+        // nodes one at a time reaches the same place; this skips the work.
+        if (idx.length === sp.nodes.length) {
+          replace.set(key, []);
+          deleted += idx.length;
+          continue;
+        }
+
+        if (st.deleteMode === 'split') {
+          replace.set(key, deleteNodesSplitting(sp, new Set(idx)));
+          deleted += idx.length;
+          continue;
+        }
+
+        // Highest index first, so the lower ones stay valid as we go.
+        for (const i of idx.sort((a, b) => b - a)) {
+          if (deleteNode(sp, i)) deleted++;
+          else blocked++;
+        }
+        replace.set(key, sp.nodes.length >= 2 ? [sp] : []);
+      }
+
+      // Untouched subpaths pass through whatever their size, so a one-node
+      // stroke the pen is still drawing survives a deletion somewhere else.
+      for (const sh of st.doc.shapes) {
+        sh.subpaths = sh.subpaths.flatMap((sp, i) => replace.get(`${sh.id}/${i}`) ?? [sp]);
+      }
       st.doc.shapes = st.doc.shapes.filter((sh) => sh.subpaths.length > 0);
       st.selection = emptySelection();
     });
+
+    // `blocked` can now only mean a stale index -- a ref pointing past the end
+    // of a subpath something else already shortened. It is kept as a return
+    // value rather than a message because it is a bug signal, not user-facing.
+    return { deleted, blocked };
+  }
+
+  /**
+   * Break the path at the selected node, leaving two ends.
+   *
+   * The counterpart to deleting a node, and lossless where deleting is not:
+   * the node is duplicated, so both new ends sit exactly where it was and the
+   * drawing does not move. Deleting has to fuse two cubics into one, which
+   * cannot be exact across an inflection.
+   *
+   * A closed path opens at that node. An open one becomes two, in the same
+   * shape, so they keep one style and one entry in the shape list.
+   */
+  breakAtSelection(): boolean {
+    const sel = this.singleSelectedNode();
+    if (!sel) {
+      this.onMessage?.('Break needs exactly one node selected.', false);
+      return false;
+    }
+
+    const ref = sel.ref;
+    const pieces = breakAt(sel.subpath, ref.i);
+    if (!pieces) {
+      this.onMessage?.('That node is already an end of the path — nothing to break.', false);
+      return false;
+    }
+
+    this.store.edit((st) => {
+      const shape = findShape(st.doc, ref.shape);
+      if (!shape?.subpaths[ref.sp]) return;
+      shape.subpaths.splice(ref.sp, 1, ...pieces);
+      st.selection = emptySelection();
+    });
+
+    this.onMessage?.(
+      pieces.length === 1 ? 'Opened the path at that node.' : 'Broke the path into two.',
+      true,
+    );
+    return true;
   }
 
   /** Rotate, flip or scale the selection about its own centre. */
@@ -733,6 +874,62 @@ export class Controller {
     this.store.edit((st) => {
       for (const shape of st.doc.shapes) if (ids.has(shape.id)) transformShape(shape, m);
     });
+  }
+
+  /**
+   * Combine the selected shapes into one.
+   *
+   * Whole-shape selection only. A boolean operates on regions, and a region is
+   * a shape -- inferring one from a couple of selected nodes would be a guess
+   * about which shape the user meant, made silently and destructively.
+   *
+   * Order is document order, which is paint order: the first (bottom-most)
+   * shape survives, keeping its id, name and style, and the rest are consumed.
+   * That makes `subtract` bottom-minus-the-rest, which is what Inkscape's
+   * Difference and Illustrator's Minus Front both do, and it means the result
+   * keeps the appearance of the shape it visually replaced.
+   *
+   * Returns a message rather than touching the DOM, so the caller decides where
+   * to say it and this stays testable without a page.
+   */
+  booleanSelection(op: BooleanOp): { ok: boolean; message: string } {
+    const s = this.store.state;
+    const operands = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    const label = BOOLEAN_LABEL[op];
+    if (operands.length < 2) {
+      return { ok: false, message: `${label} needs two or more selected shapes.` };
+    }
+
+    let result: Subpath[] | null;
+    try {
+      result = booleanShapes(operands, op);
+    } catch (err) {
+      // Either the library threw, or it handed back geometry that failed the
+      // finite check. Both leave the document untouched.
+      return { ok: false, message: `${label} failed: ${(err as Error).message}` };
+    }
+    if (!result) {
+      return { ok: false, message: `${label} left nothing — the document is unchanged.` };
+    }
+
+    const subpaths = result;
+    const keep = operands[0].id;
+    const consumed = new Set(operands.slice(1).map((sh) => sh.id));
+
+    this.store.edit((st) => {
+      const target = findShape(st.doc, keep);
+      if (!target) return;
+      target.subpaths = subpaths;
+      st.doc.shapes = st.doc.shapes.filter((sh) => !consumed.has(sh.id));
+      st.selection = emptySelection();
+      st.selection.shapes.add(keep);
+    });
+
+    const n = subpaths.length;
+    return {
+      ok: true,
+      message: `${label}: ${operands.length} shapes → ${n} contour${n === 1 ? '' : 's'}.`,
+    };
   }
 
   /** How many anchors are selected, counting whole-shape selections. */

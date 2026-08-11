@@ -5,6 +5,7 @@
 import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { exportPathData, exportSvg, importSvg } from './io/svg';
+import type { BooleanOp } from './io/boolean';
 import { docBBox, emptyDoc, nextId, parseNodeKey, shapeFromPath } from './model/doc';
 import { transformShape } from './model/ops';
 import { translate } from './core/affine';
@@ -13,7 +14,7 @@ import type { Shape } from './core/types';
 import { serialisePath } from './core/serialise';
 import { Store } from './model/store';
 import { Canvas, latentHandle } from './view/canvas';
-import { fitAspect, fitBox, zoomAt } from './view/viewport';
+import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
 import type { AlignMode } from './model/ops';
 import { $ } from './view/dom';
@@ -42,6 +43,45 @@ themeBtn.addEventListener('click', () => {
   controller.schedule();
 });
 
+/* ----------------------------------------------------------------- panels */
+
+/* Which panels are open is view state, not document state: it does not belong
+   in the store, and undo has no business restoring a drawer. The canvas gives
+   up the space rather than the panel floating over it, so nothing on screen is
+   ever hidden underneath one -- the controller's ResizeObserver picks up the
+   new box and re-fits the camera aspect. */
+const app = $('#app');
+const toggleSrcBtn = $('#toggleSrc') as HTMLButtonElement;
+const toggleRailBtn = $('#toggleRail') as HTMLButtonElement;
+
+function setPanel(which: 'src' | 'rail', open: boolean): void {
+  if (which === 'src') {
+    app.classList.toggle('src-open', open);
+    toggleSrcBtn.setAttribute('aria-pressed', String(open));
+  } else {
+    app.classList.toggle('no-rail', !open);
+    toggleRailBtn.setAttribute('aria-pressed', String(open));
+  }
+}
+const isOpen = (which: 'src' | 'rail'): boolean =>
+  which === 'src' ? app.classList.contains('src-open') : !app.classList.contains('no-rail');
+
+toggleSrcBtn.addEventListener('click', () => setPanel('src', !isOpen('src')));
+toggleRailBtn.addEventListener('click', () => setPanel('rail', !isOpen('rail')));
+$('#closeSrc').addEventListener('click', () => setPanel('src', false));
+
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'e') {
+    e.preventDefault();
+    setPanel('src', !isOpen('src'));
+  } else if (k === 'b') {
+    e.preventDefault();
+    setPanel('rail', !isOpen('rail'));
+  }
+});
+
 /* ------------------------------------------------------------------ tools */
 
 const toolSeg = $('#tool');
@@ -54,11 +94,17 @@ toolSeg.addEventListener('click', (e) => {
 
 const on = (sel: string, fn: () => void): void => $(sel).addEventListener('click', fn);
 
+// Notices raised from inside the controller -- reached from both the button and
+// the keyboard, so they cannot be reported at the call site.
+controller.onMessage = (message, ok) => {
+  const el = $('#status');
+  el.textContent = message;
+  el.className = ok ? 'st ok' : 'st err';
+};
+
 on('#undo', () => store.undo());
 on('#redo', () => store.redo());
 on('#del', () => controller.deleteSelection());
-on('#corner', () => controller.setSelectedContinuity('corner'));
-on('#smooth', () => controller.setSelectedContinuity('smooth'));
 on('#curve', () => controller.setSelectedSegmentsCurved(true));
 on('#straight', () => controller.setSelectedSegmentsCurved(false));
 
@@ -154,6 +200,15 @@ ntypeSeg.addEventListener('click', (e) => {
   if (v === 'corner' || v === 'smooth' || v === 'symmetric') controller.setSelectedContinuity(v);
 });
 
+on('#breakPath', () => controller.breakAtSelection());
+on('#delNode', () => controller.deleteSelection());
+
+const delModeSeg = $('#delmode');
+delModeSeg.addEventListener('click', (e) => {
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-dm');
+  if (v === 'fuse' || v === 'split') store.update((s) => (s.deleteMode = v));
+});
+
 document.querySelectorAll<HTMLButtonElement>('[data-al]').forEach((b) =>
   b.addEventListener('click', () => controller.alignSelection(b.getAttribute('data-al') as AlignMode)),
 );
@@ -224,6 +279,12 @@ function refreshInspector(): void {
   }
   document.querySelectorAll<HTMLButtonElement>('[data-al]').forEach((b) => (b.disabled = count < 2));
   document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) => (b.disabled = count < 3));
+
+  // Break needs one node with a path on both sides of it. An endpoint has only
+  // one, so there is nothing to split off.
+  const atEnd = !!sel && !sel.subpath.closed && (sel.ref.i === 0 || sel.ref.i === sel.subpath.nodes.length - 1);
+  ($('#breakPath') as HTMLButtonElement).disabled = !sel || atEnd;
+  ($('#delNode') as HTMLButtonElement).disabled = count === 0;
 
   const dp = store.state.decimals;
   for (const f of coordFields) {
@@ -417,6 +478,25 @@ on('#dupShape', () => {
   });
 });
 
+/* --------------------------------------------------------------- combine */
+
+const boolInfo = $('#boolinfo');
+const boolBtns = [...document.querySelectorAll<HTMLButtonElement>('[data-bool]')];
+
+for (const b of boolBtns) {
+  b.addEventListener('click', () => {
+    const r = controller.booleanSelection(b.getAttribute('data-bool') as BooleanOp);
+    status.textContent = r.message;
+    status.className = r.ok ? 'st ok' : 'st err';
+  });
+}
+
+function refreshCombine(): void {
+  const n = store.state.selection.shapes.size;
+  for (const b of boolBtns) b.disabled = n < 2;
+  boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
+}
+
 function refreshShapeList(): void {
   const s = store.state;
   shapeCount.textContent = String(s.doc.shapes.length);
@@ -457,7 +537,9 @@ function refreshShapeList(): void {
 const stats = $('#stats');
 const selinfo = $('#selinfo');
 const gridval = $('#gridval');
+const gridreadout = $('#gridreadout');
 const outval = $('#outval');
+const cursorEl = $('#cursor');
 const undoBtn = $('#undo') as HTMLButtonElement;
 const redoBtn = $('#redo') as HTMLButtonElement;
 
@@ -465,6 +547,10 @@ store.subscribe((s) => {
   for (const b of toolSeg.querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === s.tool));
   }
+  for (const b of delModeSeg.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-dm') === s.deleteMode));
+  }
+  $('#delmodeinfo').textContent = s.deleteMode === 'split' ? 'leaves two ends' : 'keeps it whole';
   undoBtn.disabled = !store.canUndo;
   redoBtn.disabled = !store.canRedo;
 
@@ -482,10 +568,20 @@ store.subscribe((s) => {
   refreshInspector();
   refreshBend();
 
-  gridval.textContent = s.gridStep ? `${s.gridStep}` : 'off';
+  // Every line on screen is a snap position, but when zoomed out not every snap
+  // position gets a line. Saying which is drawn keeps that asymmetry visible
+  // rather than leaving the user to wonder why the grid coarsened.
+  const g = gridDisplayFor(s.gridStep, s.camera, canvas.widthPx);
+  gridval.textContent = !s.gridStep
+    ? 'off'
+    : g && g.multiple > 1
+      ? `${s.gridStep} · every ${g.multiple} drawn`
+      : `${s.gridStep}`;
+  gridreadout.textContent = !s.gridStep ? 'off' : s.snapToGrid ? 'snapping' : 'drawn only';
   outval.textContent = `${s.decimals} dp${s.minify ? ' · min' : ''}`;
 
   refreshShapeList();
+  refreshCombine();
   const scoped = s.sourceMode === 'd' ? scopedShape() : null;
   srcHint.textContent =
     s.sourceMode === 'svg'
@@ -506,6 +602,17 @@ store.subscribe((s) => {
     srcinfo.textContent = `${text.length} chars`;
   }
 });
+
+/* The pointer's position in document coordinates, which is the one number a
+   grid editor should never make you guess. Written straight to the strip rather
+   than through the store: it changes on every mouse move and has nothing to do
+   with the document. */
+canvas.overlay.addEventListener('pointermove', (e) => {
+  const p = screenToDoc(canvas.overlay, e.clientX, e.clientY);
+  const dp = Math.min(3, store.state.decimals);
+  cursorEl.textContent = `${p[0].toFixed(dp)}, ${p[1].toFixed(dp)}`;
+});
+canvas.overlay.addEventListener('pointerleave', () => (cursorEl.textContent = ''));
 
 /* -------------------------------------------------------------------- boot */
 

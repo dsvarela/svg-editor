@@ -19,6 +19,20 @@ const headed = args.includes('--headed');
 const outIdx = args.indexOf('--out');
 const out = outIdx >= 0 ? args[outIdx + 1] : `/tmp/drive-${scenarioName}.png`;
 
+/**
+ * Open the source drawer, which is closed on load.
+ *
+ * Reading `#src` works either way -- `inputValue` does not check visibility,
+ * and the box is kept current whether or not anyone can see it -- but filling
+ * it or pressing Apply needs the drawer actually open.
+ */
+async function openSource(page) {
+  if ((await page.getAttribute('#toggleSrc', 'aria-pressed')) !== 'true') {
+    await page.click('#toggleSrc');
+    await page.waitForTimeout(220); // the drawer animates, and the canvas re-fits
+  }
+}
+
 /** Canvas-relative click helper: takes document coords, converts via the page. */
 async function mk(page) {
   const box = await page.locator('#canvas').boundingBox();
@@ -49,6 +63,28 @@ async function mk(page) {
           `${b.width.toFixed(0)}x${b.height.toFixed(0)}]`,
       );
     }
+
+    /* The second way the harness can lie to itself: the point is inside the
+       canvas, but the canvas is scrolled out of the viewport. Typing into the
+       source box does exactly that -- it scrolls itself into view and pushes
+       the canvas off the top. `page.mouse` will happily move to a negative
+       coordinate the browser delivers to nothing at all, and the scenario then
+       reports that clicking a node did not select it, as if the editor were at
+       fault. It cost half an hour once; it costs an exception now. */
+    const vp = page.viewportSize();
+    if (cx < 0 || cy < 0 || cx > vp.width || cy > vp.height) {
+      throw new Error(
+        `doc point [${doc}] maps to client [${cx.toFixed(0)},${cy.toFixed(0)}], ` +
+          `outside the ${vp.width}x${vp.height} viewport — the canvas is scrolled ` +
+          `off screen, call showCanvas() first`,
+      );
+    }
+  };
+
+  /** Bring the canvas back into view after something scrolled the page. */
+  const showCanvas = async () => {
+    await page.evaluate(() => document.querySelector('#canvas').scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(60);
   };
 
   const click = async (doc) => {
@@ -78,7 +114,7 @@ async function mk(page) {
     if (modifier) await page.keyboard.up(modifier);
   };
 
-  return { box, toClient, click, drag };
+  return { box, toClient, click, drag, showCanvas };
 }
 
 const scenarios = {
@@ -176,7 +212,14 @@ const scenarios = {
   async continuity(page) {
     const { click, drag } = await mk(page);
     const badge = async () =>
-      page.locator('#ntype button[aria-pressed="true"]').first().textContent().catch(() => null);
+      page
+        .locator('#ntype button[aria-pressed="true"]')
+        .first()
+        .textContent()
+        // The button wraps a glyph as well as its label, so the text arrives
+        // padded with the markup's own newlines.
+        .then((t) => t?.trim() ?? null)
+        .catch(() => null);
 
     await page.click('#tool button[data-v="pen"]');
     await click([20, 40]);
@@ -242,6 +285,7 @@ const scenarios = {
 
   /** Paste a real multi-element icon and Apply it. */
   async pasteIcon(page) {
+    await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
     await page.fill('#src', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <rect x="2" y="4" width="20" height="16" rx="3" fill="none" stroke="#2563d8" stroke-width="1.5"/>
@@ -276,6 +320,7 @@ const scenarios = {
     ])
       await click(p);
     const before = await page.textContent('#stats');
+    await openSource(page);
     await page.click('#apply');
     await page.waitForTimeout(150);
     const afterUnscoped = await page.textContent('#stats');
@@ -292,6 +337,7 @@ const scenarios = {
     const scopedBefore = await page.textContent('#stats');
     const scopedHint = await page.textContent('#srchint');
     const shown = await page.inputValue('#src');
+    await openSource(page);
     await page.fill('#src', 'M 20 20 L 45 20 L 45 45 L 20 45 Z');
     await page.click('#apply');
     await page.waitForTimeout(150);
@@ -301,6 +347,272 @@ const scenarios = {
       scopedAfter: await page.textContent('#stats'),
       scopedStatus: await page.textContent('#status'),
     };
+  },
+
+  /** Combine two overlapping squares, one operation at a time, undoing between. */
+  async combine(page) {
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <rect x="0" y="0" width="20" height="20" fill="#2563d8"/>
+  <rect x="10" y="10" width="20" height="20" fill="#e8a54b"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    // Fills must actually render, or the style-inheritance check below reads
+    // `none` for every result and proves nothing.
+    await page.check('#filled');
+    await page.waitForTimeout(200);
+
+    const selectBoth = async () => {
+      await page.click('#shapelist li:nth-child(1)');
+      await page.click('#shapelist li:nth-child(2)', { modifiers: ['Shift'] });
+      await page.waitForTimeout(80);
+    };
+
+    // With nothing selected the buttons must be unreachable, not merely inert.
+    const disabledWhenIdle = await page.isDisabled('[data-bool="unite"]');
+    await selectBoth();
+    const enabledWithTwo = await page.isEnabled('[data-bool="unite"]');
+
+    const runs = {};
+    for (const op of ['unite', 'subtract', 'intersect', 'exclude']) {
+      await selectBoth();
+      await page.click(`[data-bool="${op}"]`);
+      await page.waitForTimeout(150);
+      runs[op] = {
+        status: await page.textContent('#status'),
+        stats: await page.textContent('#stats'),
+        // The survivor must keep the FIRST operand's fill (#2563d8), not the
+        // second's (#e8a54b) and not a default.
+        fill: await page.getAttribute('.artwork path', 'fill'),
+        shapes: await page.locator('#shapelist li').allTextContents(),
+        d: await page.getAttribute('.artwork path', 'd'),
+      };
+      await page.keyboard.press('Control+z');
+      await page.waitForTimeout(120);
+      runs[op].afterUndo = await page.textContent('#stats');
+    }
+
+    return { disabledWhenIdle, enabledWithTwo, runs };
+  },
+
+  /**
+   * The reported gesture: marquee everything, press Delete.
+   *
+   * Three nodes used to survive, because the per-node floor that stops a path
+   * degenerating under single-node edits also applied to "delete all of them".
+   */
+  async marqueeDelete(page) {
+    const { drag } = await mk(page);
+
+    // The starter shape lives inside 20..68 x 12..52; sweep well past it.
+    await drag([8, 9], [79, 55]);
+    await page.waitForTimeout(120);
+    const selected = await page.textContent('#selinfo');
+    const anchorsSelected = await page.locator('.anchor.selected').count();
+
+    await page.click('#del');
+    await page.waitForTimeout(150);
+    const afterButton = await page.textContent('#stats');
+
+    // And again through the key, which is a separate entry point.
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(120);
+    await drag([8, 9], [79, 55]);
+    await page.keyboard.press('Delete');
+    await page.waitForTimeout(150);
+
+    return {
+      selected,
+      anchorsSelected,
+      afterButton,
+      afterKey: await page.textContent('#stats'),
+      status: await page.textContent('#status'),
+    };
+  },
+
+  /**
+   * A three-node closed loop: the smallest case the old floor refused outright.
+   * Deleting a node must reduce it, and breaking must open it.
+   */
+  async smallClosedPath(page) {
+    const { click, showCanvas } = await mk(page);
+    const load = async () => {
+      await openSource(page);
+      await page.click('#srcmode button[data-v="svg"]');
+      await page.fill(
+        '#src',
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 60">
+  <path d="M20 45 C10 20 60 40 45 12 C40 5 25 50 55 30 Z" fill="none" stroke="#2563d8"/>
+</svg>`,
+      );
+      await page.click('#apply');
+      await page.waitForTimeout(200);
+      // Filling the source box scrolled it into view and the canvas off screen.
+      await showCanvas();
+    };
+
+    await load();
+    const start = await page.textContent('#stats');
+
+    // Delete one of the three, which the floor used to refuse.
+    await click([20, 45]);
+    await page.waitForTimeout(120);
+    await page.click('#del');
+    await page.waitForTimeout(150);
+    const afterDelete = {
+      stats: await page.textContent('#stats'),
+      d: await page.getAttribute('.artwork path', 'd'),
+    };
+
+    // Break the same loop open at a node instead of deleting one.
+    await load();
+    await click([45, 12]);
+    await page.waitForTimeout(120);
+    await page.click('#breakPath');
+    await page.waitForTimeout(150);
+
+    return {
+      start,
+      afterDelete,
+      afterBreak: await page.getAttribute('.artwork path', 'd'),
+      breakStatus: await page.textContent('#status'),
+    };
+  },
+
+  /** The same delete, both ways round, on the same path. */
+  async deleteModes(page) {
+    const { click, showCanvas } = await mk(page);
+
+    const load = async () => {
+      await openSource(page);
+      await page.click('#srcmode button[data-v="svg"]');
+      await page.fill(
+        '#src',
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 60">
+  <path d="M10 30 L25 15 L40 30 L55 15 L70 30" fill="none" stroke="#2563d8"/>
+</svg>`,
+      );
+      await page.click('#apply');
+      await page.waitForTimeout(200);
+      await showCanvas();
+    };
+
+    const run = async (mode) => {
+      await load();
+      await page.click(`#delmode button[data-dm="${mode}"]`);
+      await page.waitForTimeout(80);
+      await click([40, 30]);
+      await page.waitForTimeout(120);
+      const selected = await page.textContent('#nodeinfo');
+      await page.click('#del');
+      await page.waitForTimeout(150);
+      return {
+        pressed: await page.getAttribute(`#delmode button[data-dm="${mode}"]`, 'aria-pressed'),
+        selected,
+        stats: await page.textContent('#stats'),
+        d: await page.getAttribute('.artwork path', 'd'),
+      };
+    };
+
+    return { fuse: await run('fuse'), split: await run('split') };
+  },
+
+  /**
+   * The chrome contract: the canvas gets everything the panels are not using,
+   * and the page itself never scrolls.
+   *
+   * Worth a scenario because both are invisible until they break -- a stray
+   * margin or a min-height turns the window into a scrolling document again,
+   * and every click coordinate in every other scenario shifts with it.
+   */
+  async chrome(page) {
+    const canvasBox = async () => {
+      const b = await page.locator('#canvas').boundingBox();
+      return { w: Math.round(b.width), h: Math.round(b.height) };
+    };
+    const settle = () => page.waitForTimeout(260);
+
+    const opened = { rail: true, source: false };
+    const both = await canvasBox();
+
+    await page.click('#toggleSrc');
+    await settle();
+    const withSource = await canvasBox();
+
+    await page.click('#toggleRail');
+    await settle();
+    const noRail = await canvasBox();
+
+    await page.click('#toggleSrc');
+    await settle();
+    const bare = await canvasBox();
+
+    // Keyboard is the other way in, and must land in the same state.
+    await page.keyboard.press('Control+b');
+    await page.keyboard.press('Control+e');
+    await settle();
+    const viaKeys = await canvasBox();
+
+    const scroll = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      body: document.body.scrollHeight - document.body.clientHeight,
+    }));
+
+    // Leave it inverted, so the screenshot shows the other half of the palette.
+    await page.click('#theme');
+    await settle();
+
+    return {
+      opened,
+      both,
+      withSource,
+      noRail,
+      bare,
+      viaKeys,
+      widensWhenRailCloses: noRail.w > withSource.w,
+      tallensWhenSourceCloses: bare.h > noRail.h,
+      keysMatchButtons: viaKeys.w === both.w && viaKeys.h === withSource.h,
+      pageScroll: scroll,
+    };
+  },
+
+  /**
+   * The grid contract, checked against a real layout engine: every line drawn
+   * must sit on a snap position.
+   */
+  async gridHonesty(page) {
+    const check = async (step, zoomOuts) => {
+      await page.fill('#gridStep', String(step));
+      await page.dispatchEvent('#gridStep', 'input');
+      for (let i = 0; i < zoomOuts; i++) await page.click('#zoomout');
+      await page.waitForTimeout(120);
+
+      const r = await page.evaluate((s) => {
+        const xs = [];
+        for (const cls of ['grid-minor', 'grid-major']) {
+          const d = document.querySelector(`.${cls}`)?.getAttribute('d') ?? '';
+          for (const m of d.matchAll(/M(-?[\d.e-]+) [-\d.e]+V/g)) xs.push(Number(m[1]));
+        }
+        const offLattice = xs.filter((x) => Math.abs(x / s - Math.round(x / s)) > 1e-6);
+        return { lines: xs.length, offLattice: offLattice.slice(0, 5), readout: null };
+      }, step);
+      r.readout = await page.textContent('#gridval');
+      return r;
+    };
+
+    const out = {};
+    out.step1 = await check(1, 0);
+    out.step1_zoomedOut = await check(1, 6);
+    await page.click('#fit');
+    out.step0_3 = await check(0.3, 0);
+    out.step0_3_zoomedOut = await check(0.3, 5);
+    await page.click('#fit');
+    out.step2_5 = await check(2.5, 2);
+    return out;
   },
 };
 
@@ -315,7 +627,12 @@ const browser = await chromium.launch({
   headless: !headed,
   args: ['--no-sandbox', '--disable-gpu'],
 });
-const page = await browser.newPage({ viewport: { width: 1280, height: 950 } });
+/* The window shape decides how much of the document is on screen: the camera is
+   fitted to the canvas box, so a squarer canvas shows a narrower span of x and
+   the scenarios' coordinates start falling outside it. This is sized so the
+   canvas keeps an aspect near 1.65 with the inspector open, which is what the
+   hard-coded document coordinates below assume. */
+const page = await browser.newPage({ viewport: { width: 1600, height: 860 } });
 
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
