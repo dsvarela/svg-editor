@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
+import type { Backdrop } from '../src/model/store';
 import { emptyDoc, shapeFromPath } from '../src/model/doc';
 
 const store = (): Store => {
@@ -79,6 +80,112 @@ describe('tryEdit', () => {
     s.undo();
     expect(s.state.doc.shapes[0].name).not.toBe('b');
     expect(s.canUndo).toBe(false);
+  });
+});
+
+describe('the backdrop in history', () => {
+  const image = (over: Partial<Backdrop> = {}): Backdrop => ({
+    src: 'blob:a',
+    name: 'ref.png',
+    x: 0,
+    y: 0,
+    w: 40,
+    h: 30,
+    naturalW: 400,
+    naturalH: 300,
+    opacity: 0.5,
+    visible: true,
+    locked: true,
+    ...over,
+  });
+
+  it('brings a removed image back, rather than a broken link', () => {
+    const s = store();
+    s.edit((st) => (st.backdrop = image()));
+    s.edit((st) => (st.backdrop = null));
+
+    s.undo();
+    expect(s.state.backdrop?.src).toBe('blob:a');
+  });
+
+  it('keeps the view switches you set after the edit being undone', () => {
+    // Undo is for taking back an edit. Flipping a checkbox back because you
+    // happened to press it later is not that, and is why `showGrid` and the
+    // camera have never been in the history either.
+    const s = store();
+    s.edit((st) => (st.backdrop = image({ x: 0 })));
+    s.edit((st) => (st.backdrop!.x = 100));
+    s.update((st) => {
+      st.backdrop!.visible = false;
+      st.backdrop!.locked = false;
+      st.backdrop!.opacity = 0.9;
+    });
+
+    s.undo();
+    expect(s.state.backdrop!.x).toBe(0);
+    expect(s.state.backdrop!.visible).toBe(false);
+    expect(s.state.backdrop!.locked).toBe(false);
+    expect(s.state.backdrop!.opacity).toBe(0.9);
+  });
+
+  it('does not copy the image into the document', () => {
+    const s = store();
+    s.edit((st) => (st.backdrop = image()));
+    expect(Object.keys(s.state.doc)).not.toContain('backdrop');
+  });
+
+  it('holds the bytes for as long as any entry can reach them', () => {
+    const freed: string[] = [];
+    const s = store();
+    s.onOrphanImage = (src) => freed.push(src);
+
+    s.edit((st) => (st.backdrop = image()));
+    s.edit((st) => (st.backdrop = null));
+    // On the undo stack, so revoking it now would break the undo above.
+    expect(freed).toEqual([]);
+  });
+
+  it('frees them once a new edit has thrown the redo away', () => {
+    const freed: string[] = [];
+    const s = store();
+    s.onOrphanImage = (src) => freed.push(src);
+
+    s.edit((st) => (st.backdrop = image()));
+    s.undo();
+    expect(s.state.backdrop).toBeNull();
+    expect(freed).toEqual([]);
+
+    // The redo held the only reference left. Taking a different branch is the
+    // moment nothing can reach the image again.
+    s.edit((st) => (st.doc.shapes[0].name = 'elsewhere'));
+    expect(freed).toEqual(['blob:a']);
+  });
+
+  it('does not free an image a declined edit puts back', () => {
+    // `tryEdit` clears the redo stack before it knows whether there is anything
+    // to do, and restores it when there is not. Freeing on the way through
+    // would have left that restored entry pointing at nothing.
+    const freed: string[] = [];
+    const s = store();
+    s.onOrphanImage = (src) => freed.push(src);
+
+    s.edit((st) => (st.backdrop = image()));
+    s.undo();
+    s.tryEdit(() => false);
+
+    expect(freed).toEqual([]);
+    s.redo();
+    expect(s.state.backdrop?.src).toBe('blob:a');
+  });
+
+  it('frees the one an abandoned gesture was holding', () => {
+    const freed: string[] = [];
+    const s = store();
+    s.onOrphanImage = (src) => freed.push(src);
+
+    s.edit((st) => (st.backdrop = image()));
+    s.rollback();
+    expect(freed).toEqual(['blob:a']);
   });
 });
 

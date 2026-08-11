@@ -42,6 +42,18 @@ export function cubicDerivAt(b: Cubic, t: number): Pt {
 }
 
 /**
+ * Second derivative at `t`. Only the curve fitter needs it, to steer Newton's
+ * method towards the parameter of the closest point.
+ */
+export function cubicSecondDerivAt(b: Cubic, t: number): Pt {
+  const m = 1 - t;
+  return [
+    6 * (m * (b[2][0] - 2 * b[1][0] + b[0][0]) + t * (b[3][0] - 2 * b[2][0] + b[1][0])),
+    6 * (m * (b[2][1] - 2 * b[1][1] + b[0][1]) + t * (b[3][1] - 2 * b[2][1] + b[1][1])),
+  ];
+}
+
+/**
  * de Casteljau split at `t`. The two halves trace the original exactly, which
  * is what makes "add a point" a shape-preserving operation.
  */

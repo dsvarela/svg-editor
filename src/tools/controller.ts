@@ -46,6 +46,7 @@ import {
   transformShape,
 } from '../model/ops';
 import type { AlignMode } from '../model/ops';
+import { simplifySubpath } from '../model/simplify';
 import { ellipseSubpath, rectSubpath } from '../core/primitives';
 import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
@@ -380,6 +381,8 @@ export class Controller {
     // meaning of unlocking it.
     const back = s.backdrop;
     if (back && back.visible && !back.locked) {
+      this.openBatch();
+      this.store.checkpoint();
       this.drag = { kind: 'backdrop', from: p, origin: [back.x, back.y] };
       return;
     }
@@ -742,15 +745,14 @@ export class Controller {
   }
 
   /**
-   * Force the selected subpaths onto their own best-fit circles.
+   * Which subpaths a whole-subpath operation should act on.
    *
-   * Whole subpaths rather than loose nodes: circularising some of a path's
-   * nodes would leave the segments joining them to the rest built from a circle
-   * they are not on, which is a worse drawing than either choice on its own.
+   * Selecting one node of a contour selects that contour for these purposes.
+   * Anything else would need an answer to "what happens to the segments joining
+   * the part you changed to the part you did not", and there is no good one.
    */
-  circulariseSelection(): boolean {
+  private selectedSubpaths(): Map<string, Set<number>> {
     const s = this.store.state;
-
     const targets = new Map<string, Set<number>>();
     const add = (shape: string, sp: number): void => {
       const set = targets.get(shape) ?? new Set<number>();
@@ -764,6 +766,19 @@ export class Controller {
     for (const id of s.selection.shapes) {
       findShape(s.doc, id)?.subpaths.forEach((_, i) => add(id, i));
     }
+    return targets;
+  }
+
+  /**
+   * Force the selected subpaths onto their own best-fit circles.
+   *
+   * Whole subpaths rather than loose nodes: circularising some of a path's
+   * nodes would leave the segments joining them to the rest built from a circle
+   * they are not on, which is a worse drawing than either choice on its own.
+   */
+  circulariseSelection(): boolean {
+    const s = this.store.state;
+    const targets = this.selectedSubpaths();
 
     let eligible = 0;
     let tooFew = 0;
@@ -838,6 +853,65 @@ export class Controller {
         (wideDeg > 120
           ? ` Widest gap is ${wideDeg}°. One curve cannot hold that arc tightly; add a node in it.`
           : ''),
+      true,
+    );
+    return true;
+  }
+
+  /**
+   * Refit the selected subpaths with as few nodes as the tolerance allows.
+   *
+   * The selection is dropped afterwards. Node selections are keyed by index,
+   * and after a refit index 7 is a different point on the drawing than the one
+   * that was highlighted a moment ago; keeping them would leave the panel
+   * editing coordinates nobody chose.
+   */
+  simplifySelection(tol: number): boolean {
+    if (!(tol > 0)) {
+      this.onMessage?.('Simplify needs a tolerance above zero. It is how far a node may move.', false);
+      return false;
+    }
+
+    const targets = this.selectedSubpaths();
+    if (!targets.size) {
+      this.onMessage?.('Select a shape, or some of its nodes, first.', false);
+      return false;
+    }
+
+    let paths = 0;
+    let before = 0;
+    let after = 0;
+    let error = 0;
+    this.store.tryEdit((st) => {
+      for (const [id, sps] of targets) {
+        const shape = findShape(st.doc, id);
+        for (const i of sps) {
+          const sp = shape?.subpaths[i];
+          if (!sp) continue;
+          const r = simplifySubpath(sp, tol);
+          if (!r) continue;
+          paths++;
+          before += r.before;
+          after += r.after;
+          error = Math.max(error, r.error);
+        }
+      }
+      if (paths) st.selection = emptySelection();
+      return paths > 0;
+    });
+
+    if (!paths) {
+      this.onMessage?.(
+        'Nothing to simplify. Raise the tolerance to remove more nodes.',
+        false,
+      );
+      return false;
+    }
+
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    this.onMessage?.(
+      `Simplified ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
+        `Nothing moved further than ${dp(error)}.`,
       true,
     );
     return true;

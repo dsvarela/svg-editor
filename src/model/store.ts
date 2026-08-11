@@ -37,21 +37,28 @@ export type DeleteMode = 'fuse' | 'split';
 /**
  * A raster image shown under the drawing, to trace over.
  *
- * **Deliberately not part of `Doc`.** Three reasons, in order of weight. It must
- * never reach the export, and building the export from the model rather than
- * from the screen means a backdrop the model does not know about cannot leak
- * into a file. Undo snapshots the whole document, so a data URL living in `Doc`
- * would be cloned into every one of the 200 history entries -- a 2 MB image
- * becomes 400 MB of history. And Apply in the source box replaces the document
- * wholesale, which would throw away the reference you are tracing from as a side
- * effect of editing the path.
+ * **Not part of `Doc`, but it is part of the history.** Those are separate
+ * questions, and conflating them once cost this editor an undoable backdrop.
  *
- * So it sits with `camera`, `gridStep` and `showHandles`: a property of the
- * workspace, not of the drawing. The cost is that moving it is not undoable,
- * which is the same bargain the camera makes.
+ * Out of `Doc`, because the export is built from the model rather than from the
+ * screen: a backdrop the model does not know about *cannot* leak into a saved
+ * file, which is a structural guarantee rather than a rule someone has to
+ * remember. And because Apply in the source box replaces the document wholesale,
+ * so a backdrop living there would be thrown away as a side effect of editing
+ * the path text.
+ *
+ * In the history anyway, because the reason not to -- 200 snapshots each
+ * carrying a copy of a 2 MB image -- was never true here. `src` is an object
+ * URL, a sixty-character string pointing at bytes the browser holds exactly
+ * once. Cloning this record costs the same as cloning a node.
+ *
+ * `opacity`, `visible` and `locked` are the exception: they ride along in the
+ * snapshot but are overlaid with their current values on the way out. Undoing a
+ * node move should not flip a checkbox you set afterwards, any more than it
+ * should move the camera.
  */
 export interface Backdrop {
-  /** Object URL for the loaded file. Revoked when replaced or removed. */
+  /** Object URL for the loaded file. Revoked once no snapshot mentions it. */
   src: string;
   name: string;
   /** Placement in document coordinates. */
@@ -102,6 +109,7 @@ export interface EditorState {
 interface Snapshot {
   doc: Doc;
   selection: Selection;
+  backdrop: Backdrop | null;
 }
 
 const cloneDoc = (d: Doc): Doc => ({
@@ -126,6 +134,14 @@ export class Store {
   /** Depth counter so nested edits produce a single history entry. */
   private batch = 0;
   private batchTook = false;
+  /**
+   * Called with a backdrop's `src` once nothing can reach it again. Set by
+   * whoever created the URL, since freeing it is their business, not the
+   * model's.
+   */
+  onOrphanImage: ((src: string) => void) | null = null;
+  /** Images a `tryEdit` has provisionally orphaned. See `take`. */
+  private deferred: (Backdrop | null)[] = [];
 
   constructor(doc: Doc) {
     this.state = {
@@ -159,7 +175,66 @@ export class Store {
   }
 
   private snapshot(): Snapshot {
-    return { doc: cloneDoc(this.state.doc), selection: cloneSelection(this.state.selection) };
+    return {
+      doc: cloneDoc(this.state.doc),
+      selection: cloneSelection(this.state.selection),
+      backdrop: this.state.backdrop ? { ...this.state.backdrop } : null,
+    };
+  }
+
+  /**
+   * Put a snapshot's backdrop back, keeping the view switches as they are now.
+   *
+   * Which image is loaded and where it sits is part of the drawing session and
+   * belongs in the history. How hard you are looking at it does not: undo is for
+   * taking back an edit, not for restoring the state of a checkbox.
+   */
+  private restoreBackdrop(next: Backdrop | null): void {
+    const cur = this.state.backdrop;
+    this.state.backdrop =
+      next && cur
+        ? { ...next, opacity: cur.opacity, visible: cur.visible, locked: cur.locked }
+        : next;
+  }
+
+  /**
+   * Every object URL the state or the history can still reach.
+   *
+   * Cheap by construction: at most 401 records, each contributing one string.
+   */
+  private liveImages(): Set<string> {
+    const out = new Set<string>();
+    if (this.state.backdrop) out.add(this.state.backdrop.src);
+    for (const s of this.undoStack) if (s.backdrop) out.add(s.backdrop.src);
+    for (const s of this.redoStack) if (s.backdrop) out.add(s.backdrop.src);
+    return out;
+  }
+
+  /**
+   * Free the bytes behind backdrops that just fell out of reach.
+   *
+   * Holding an object URL alive is what makes undoing **Remove** possible, so
+   * the URL cannot be revoked when the image leaves the screen -- only when the
+   * last snapshot mentioning it is gone. That happens in exactly two places: a
+   * history longer than the limit drops its oldest entry, and a fresh edit
+   * clears the redo stack. Both call this with what they discarded.
+   *
+   * The store does not know what an object URL is; `onOrphanImage` is set by the
+   * layer that made one.
+   */
+  private reap(discarded: (Backdrop | null)[]): void {
+    const drop = this.onOrphanImage;
+    // The overwhelmingly common case is a drawing with no backdrop at all, and
+    // there is no reason for it to walk two history stacks on every edit.
+    if (!drop || !discarded.some(Boolean)) return;
+
+    const live = this.liveImages();
+    const done = new Set<string>();
+    for (const b of discarded) {
+      if (!b || live.has(b.src) || done.has(b.src)) continue;
+      done.add(b.src);
+      drop(b.src);
+    }
   }
 
   /**
@@ -169,11 +244,24 @@ export class Store {
    */
   /** Returns whether an entry was actually pushed, which `tryEdit` needs. */
   checkpoint(): boolean {
+    return this.take(false);
+  }
+
+  /**
+   * The body of `checkpoint`. `defer` parks the freeing of orphaned images in
+   * `deferred` instead of doing it now, because `tryEdit` may be about to put
+   * the redo stack back and must not have revoked what is on it.
+   */
+  private take(defer: boolean): boolean {
     if (this.batch > 0 && this.batchTook) return false;
     this.undoStack.push(this.snapshot());
-    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
-    this.redoStack.length = 0;
+    const dropped = this.undoStack.length > HISTORY_LIMIT ? this.undoStack.shift() : undefined;
+    const stale = this.redoStack.splice(0);
     if (this.batch > 0) this.batchTook = true;
+
+    const discarded = [dropped?.backdrop ?? null, ...stale.map((s) => s.backdrop)];
+    if (defer) this.deferred = discarded;
+    else this.reap(discarded);
     return true;
   }
 
@@ -210,10 +298,15 @@ export class Store {
   tryEdit(fn: (s: EditorState) => boolean): boolean {
     const redo = this.redoStack.slice();
     const took = this.batchTook;
-    const pushed = this.checkpoint();
+    this.deferred = [];
+    const pushed = this.take(true);
+    const orphans = this.deferred;
+    this.deferred = [];
 
     const changed = fn(this.state);
     if (changed) {
+      // After the mutation, so an image the edit itself replaced is seen.
+      this.reap(orphans);
       this.notify();
       return true;
     }
@@ -258,8 +351,12 @@ export class Store {
   rollback(): void {
     const prev = this.undoStack.pop();
     if (!prev) return;
+    const abandoned = this.state.backdrop;
     this.state.doc = prev.doc;
     this.state.selection = prev.selection;
+    this.restoreBackdrop(prev.backdrop);
+    // Nothing kept a copy of what the abandoned gesture was holding.
+    this.reap([abandoned]);
     this.notify();
   }
 
@@ -269,6 +366,7 @@ export class Store {
     this.redoStack.push(this.snapshot());
     this.state.doc = prev.doc;
     this.state.selection = prev.selection;
+    this.restoreBackdrop(prev.backdrop);
     this.notify();
   }
 
@@ -278,6 +376,7 @@ export class Store {
     this.undoStack.push(this.snapshot());
     this.state.doc = next.doc;
     this.state.selection = next.selection;
+    this.restoreBackdrop(next.backdrop);
     this.notify();
   }
 }

@@ -432,19 +432,15 @@ silently and destructively.
 
 ---
 
-## 18. The backdrop is workspace state, not document content
+## 18. The backdrop is workspace state, and is in the history anyway
 
 The tracing image is the first thing in this editor that is not a path, and
 `Doc` was the obvious place for it and the wrong one.
-
-Three arguments, any of which is sufficient:
 
 - **Export.** `exportSvg` is built from the model, so a backdrop the model does
   not know about cannot reach a file. Putting it in `Doc` would replace that
   structural guarantee with a rule someone has to remember every time the
   exporter is touched.
-- **History.** Undo snapshots the whole document (§14), and `cloneDoc` runs on
-  every checkpoint. A 2 MB image in `Doc` is 400 MB across a 200-deep history.
 - **Apply.** The source box replaces `doc.shapes` wholesale. A backdrop living
   there would vanish when you edited the path text, which is a surprising way to
   lose the thing you were tracing from.
@@ -454,16 +450,75 @@ So `Backdrop` sits in `EditorState` beside `camera`, `gridStep` and
 SVG, so it shares the camera and paints behind every shape without a third
 stacked layer.
 
-The costs are real and are stated in the manual rather than hidden: moving it
-records no undo entry, and it does not survive a reload. The first is the same
-bargain the camera makes. The second wants persistence, which nothing else here
-has yet.
+**The correction.** This section originally carried a third argument, that undo
+snapshots the whole document and a 2 MB image would be cloned into every one of
+200 history entries. That argument was wrong, and it cost the feature its undo
+for a day. `src` is an *object URL*: a sixty-character string pointing at bytes
+the browser holds exactly once. Cloning a `Backdrop` costs about what cloning a
+node costs.
+
+Worse, the conclusion drawn from it did not follow. "Not in `Doc`" and "not in
+the history" are separate questions, and only the first was ever argued for.
+`Snapshot` now carries `doc`, `selection` **and** `backdrop`, which leaves both
+structural guarantees above untouched while making load, move, resize and remove
+ordinary undoable edits.
+
+Two consequences worth recording:
+
+- **`opacity`, `visible` and `locked` are overlaid on restore.** They ride along
+  in the snapshot and are then replaced with their current values by
+  `restoreBackdrop`. Undoing a node move should not flip a checkbox you set
+  afterwards, any more than it should move the camera.
+- **Object URLs outlive the image on screen.** Revoking on Remove would restore
+  an `<image>` pointing at nothing, which looks exactly like a working undo until
+  you glance at the canvas. `Store.reap` revokes a URL only when no snapshot on
+  either stack still mentions it, which happens in two places: the oldest entry
+  falling off `HISTORY_LIMIT`, and a fresh edit clearing the redo stack. The
+  store does not know what an object URL is; `onOrphanImage` is set by the layer
+  that made one.
+
+`tryEdit` needed care here. It clears the redo stack before the mutation reports
+whether it did anything, and restores it if not, so freeing on the way through
+would have left restored entries pointing at revoked URLs. The reap is deferred
+until the edit is known to have happened.
 
 One interaction decision worth recording. An unlocked backdrop takes the
 empty-canvas drag that would otherwise start a marquee, rather than claiming a
 modifier. Lining up a reference is a mode you stay in for a minute, not a thing
 you do once, and a mode with a visible checkbox is easier to reason about than a
 chord you have to remember while dragging.
+
+## 19. Simplify decides where to fit; the fitter decides how
+
+`core/fit.ts` is Schneider's algorithm from Graphics Gems, and it knows nothing
+about paths: give it points and two tangents and it returns cubics.
+`model/simplify.ts` owns every judgement call, and there are four.
+
+- **Corners are found first and fitted around.** A node where the path turns by
+  more than 50 degrees ends one run and starts the next. Fitting through it would
+  round off the point of a star or the corner of a traced letter. The threshold
+  errs towards keeping detail: a corner wrongly kept is a node you can delete,
+  and a corner wrongly smoothed is a shape you have to redraw.
+- **Every surviving node keeps its tangents.** They are inputs to the fit, taken
+  from the original geometry, not something the fit chooses. A corner stays
+  exactly as sharp and a smooth join stays smooth.
+- **A closed path is cut at node 0** and fitted as a single run, with the
+  original tangents from both sides of that node passed in. This is why a
+  simplified circle has no kink at three o'clock, and it costs nothing: the fit
+  is being told what the path already did there.
+- **Sampling caps both flatness and spacing.** Flatness alone is not enough. A
+  straight input segment is perfectly flat, so it samples to its two ends, and
+  the fit is then free to bow out between them because the tolerance is only ever
+  checked where a sample sits. `SAMPLE_SPACING` puts a sample everywhere the
+  answer could go wrong. Adding it changed a 40-gon at tolerance 0.05 from "12
+  nodes, error 0.0495" into an honest refusal, and that number had been wrong by
+  a factor of three.
+
+Two smaller decisions. A result with the same node count is refused rather than
+applied, because rebuilding a path into the same number of nodes only trades the
+geometry someone drew for the geometry a fit guessed. And the selection is
+cleared afterwards, since node selections are keyed by index and index 7 is now a
+different point on the drawing.
 
 ## 17. One place decides how thick a line is
 

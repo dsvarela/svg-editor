@@ -230,9 +230,31 @@ you are done, or you will keep moving the reference instead of selecting nodes.
 **X**, **Y** and **Width** place it exactly, and **Fit** puts it back in the
 middle of the document. Width drives height, so it cannot be squashed.
 
-The backdrop is not part of the drawing. It never appears in the Shapes list,
-never reaches the export, and is not covered by undo. It also does not survive a
-page reload.
+The backdrop is not part of the drawing: it never appears in the Shapes list and
+never reaches the export. It is covered by undo, so `Ctrl+Z` takes back a nudge
+you did not mean and brings back an image you removed by accident. Opacity,
+**Show** and **Locked** stay as you left them, since undo is for taking back an
+edit rather than for restoring a checkbox. Nothing survives a page reload.
+
+## Thin out a path with too many nodes
+
+Imported and traced paths often carry a node every few units. Every handle is
+too short to grab and moving one node changes nothing you can see.
+
+1. Select the shape.
+2. Set **Within** in the **Draw** panel. It is how far the drawing may move, in
+   document units, and it starts at roughly one screen pixel for the document you
+   have open.
+3. Press **Simplify**.
+
+The status line reports what happened: `Simplified 1 path: 40 nodes to 6.
+Nothing moved further than 0.19.` If that is more change than you wanted, undo
+and try a smaller number.
+
+Sharp corners are kept exactly where they are, so the points of a star and the
+corners of a traced letter survive. Gentle wobbles do not. A path that already
+uses the fewest nodes the tolerance allows is left alone and says so, rather than
+being redrawn into the same node count from a guess.
 
 ## Move around the canvas
 

@@ -132,16 +132,14 @@ Adding a node is always lossless in the same way, using the standard subdivision
 that produces two curves tracing the original exactly. So you can add nodes
 freely, and you should know which kind of delete undoes that.
 
-## The backdrop is not in the document
+## The backdrop is not in the document, and is in the history anyway
 
 A tracing image is the first thing here that is not a path, so it had to go
 somewhere, and the obvious home was wrong.
 
-Putting it in the document would have meant three bad things. It could reach the
+Putting it in the document would have meant two bad things. It could reach the
 export, and an SVG that carries the photograph you traced from is not what
-anyone asked for. Undo snapshots the whole document, so the image bytes would be
-copied into every one of the two hundred history entries: a 2 MB reference
-becomes 400 MB of history. And **Apply** in the source box replaces the document
+anyone asked for. And **Apply** in the source box replaces the document
 wholesale, so editing the path text would silently throw away the thing you were
 tracing.
 
@@ -151,8 +149,63 @@ on screen, which means a backdrop the model does not know about cannot leak into
 a file by accident. That is a structural guarantee rather than a rule someone
 has to remember.
 
-The price is that moving it is not undoable, which is the same bargain the
-camera makes, and that it does not survive a reload.
+None of which says anything about undo, though it was read that way at first,
+and the feature shipped with no way to take back a nudge or a removal. Those are
+two questions, not one. Being outside the document is about what gets exported;
+being outside the history is about what you can take back, and there was never
+an argument for the second. There is now no reason for it either: the image is
+held by reference, so a history entry carrying one costs about what a node
+costs.
+
+The line that is drawn instead is between the image and your view of it. Which
+picture is loaded, where it sits and how big it is are edits, and undo takes them
+back. Opacity, **Show** and **Locked** are how you are looking at it, and undo
+leaves them exactly as you set them. Otherwise taking back a node move would flip
+a checkbox you pressed afterwards, which is the same surprise as undo moving the
+camera.
+
+One thing follows from this that is worth knowing. Removing a backdrop does not
+free the image, because undo has to be able to bring back the picture rather than
+a broken link. It is freed once no step in the history can reach it any more.
+
+The remaining price is that none of it survives a reload.
+
+## Simplify keeps the corners and moves the rest
+
+Fitting a curve through a run of points is a solved problem, and the solution is
+about thirty years old. What decides whether the result looks right is not the
+fitting. It is which runs get fitted.
+
+A traced or imported path is mostly gentle wobble with a few real features in it.
+Fit through everything and the features go: the points of a star round off, and
+the corner of a letter becomes a bend. So corners are found first, and a node
+where the path turns by more than fifty degrees ends one run and begins the next.
+It stays exactly where it is.
+
+Fifty degrees is a judgement, and there is no threshold that is right for every
+drawing. It errs towards keeping detail, because the two mistakes are not equally
+bad. A corner wrongly kept is one node you delete. A corner wrongly smoothed is a
+shape you redraw.
+
+Every node that survives keeps its direction as well as its position. The fit is
+told which way to leave and which way to arrive, taken from the path as it
+already was, rather than choosing for itself. That is what makes a corner stay
+exactly as sharp, and it is also how a closed path avoids growing a kink at the
+point where it had to be cut open to be fitted.
+
+The tolerance means what it says, within one honest limit. The path is measured
+by sampling it, and the promise is kept at the samples. Sampling is dense, and
+capped in two ways at once: no sample may sit further from the true curve than a
+tenth of the tolerance, and no two samples may be further apart than twice it.
+The second cap is the one that is easy to forget and expensive to omit. A
+straight stretch of the input is perfectly flat, so it samples to its two ends,
+and a fit is then free to bow out between them where nothing is checking.
+Without that cap, a forty-sided ring reported an error of 0.05 while sitting
+0.15 away from the shape it had replaced.
+
+A result with the same number of nodes is refused rather than applied. Redrawing
+a path into the node count it already had trades the geometry someone chose for
+the geometry a fit guessed, which is a loss with no gain to show for it.
 
 ## Booleans are the one thing not written here
 

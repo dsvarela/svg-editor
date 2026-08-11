@@ -780,12 +780,107 @@ const scenarios = {
     const gone = await page.getAttribute('.backdrop', 'display');
     check(gone === 'none', 'Remove left the backdrop on screen');
 
+    /* Removing is an edit, so it comes back. The interesting half is that the
+       object URL behind it has to still resolve: freeing the bytes when the
+       image left the screen would restore an <image> pointing at nothing, which
+       looks identical to a working undo until you look at the canvas. */
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+    const restored = await page.$eval('.backdrop', (el) => ({
+      display: el.getAttribute('display'),
+      href: el.getAttribute('href') ?? el.getAttribute('xlink:href'),
+    }));
+    check(restored.display !== 'none', 'undo did not bring the backdrop back');
+    const bytes = await page.evaluate(async (url) => {
+      try {
+        return (await (await fetch(url)).blob()).size;
+      } catch {
+        return -1;
+      }
+    }, restored.href);
+    check(bytes > 0, `the restored image URL no longer resolves (${bytes})`);
+
+    // One more takes back the drag, which was one entry however many moves it
+    // was made of.
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+    const rewound = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
+    check(Math.abs(rewound - before) < 1e-6, `undoing the drag left x at ${rewound}, want ${before}`);
+
     return {
       placed,
       shapesWhileLoaded: shapes,
       movedBy: +(after - before).toFixed(3),
+      restoredBytes: bytes,
       exportedLength: exported.length,
     };
+  },
+
+  /**
+   * Simplify, end to end: the tolerance field, the button, and the drawing.
+   *
+   * The fitting itself is covered by unit tests. What only a browser can show
+   * is that the tolerance follows the document it is opened on, and that the
+   * shape on screen after the refit is still the shape that was there.
+   */
+  async simplify(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`simplify: ${what}`);
+    };
+
+    // A forty-sided ring: what a trace or an imported polyline looks like.
+    const n = 40;
+    const r = 24;
+    const pts = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return `${(44 + r * Math.cos(a)).toFixed(3)} ${(32 + r * Math.sin(a)).toFixed(3)}`;
+    });
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', `M${pts[0]} ${pts.slice(1).map((p) => `L${p}`).join(' ')} Z`);
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await page.click('#closeSrc');
+
+    const nodesIn = await page.textContent('#stats');
+    check(/40 nodes/.test(nodesIn), `applying the dense ring gave "${nodesIn}"`);
+
+    // A tolerance baked in at build time is wrong for every document but one,
+    // so it is derived from this one's size.
+    const tol = +(await page.inputValue('#simplifyTol'));
+    check(tol > 0 && tol < 1, `tolerance defaulted to ${tol} on an 88x64 document`);
+
+    const box = async () =>
+      page.$eval('.artwork path', (el) => {
+        const b = el.getBBox();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
+    const before = await box();
+
+    await page.click('#shapelist li');
+    await page.waitForTimeout(120);
+    await page.click('#simplify');
+    await page.waitForTimeout(250);
+
+    const status = await page.textContent('#status');
+    const nodesOut = await page.textContent('#stats');
+    const kept = +/(\d+) nodes/.exec(nodesOut)[1];
+    check(kept < 40 && kept >= 4, `left ${kept} nodes`);
+
+    // The ring is still a ring of the same size. A refit that quietly collapsed
+    // it would also have passed the node count.
+    const after = await box();
+    const slack = tol * 2;
+    for (const k of ['x', 'y', 'w', 'h']) {
+      check(Math.abs(after[k] - before[k]) < slack, `${k} moved from ${before[k]} to ${after[k]}`);
+    }
+
+    // And it is one edit, not one per node.
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+    check(/40 nodes/.test(await page.textContent('#stats')), 'undo did not restore all forty nodes');
+
+    return { tol, kept, status, before, after };
   },
 
   /**

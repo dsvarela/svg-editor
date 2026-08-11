@@ -1037,6 +1037,78 @@ describe('circularising', () => {
   });
 });
 
+describe('simplify', () => {
+  /** A dense circle of straight segments, the shape an import or a trace gives. */
+  const dense = (n = 40, r = 50): string => {
+    const pts = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return `${r * Math.cos(a)} ${r * Math.sin(a)}`;
+    });
+    return `M${pts[0]} ${pts.slice(1).map((p) => `L${p}`).join(' ')} Z`;
+  };
+
+  it('refits a selected shape with fewer nodes', () => {
+    const h = harness(dense());
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.simplifySelection(1)).toBe(true);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.length).toBeLessThan(40);
+    expect(said.join(' ')).toMatch(/40 nodes to/);
+  });
+
+  it('is one undo step, and puts every node back', () => {
+    const h = harness(dense());
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+
+    h.controller.simplifySelection(1);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('clears the selection, because node 7 is now somewhere else', () => {
+    const h = harness(dense());
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/7`));
+
+    h.controller.simplifySelection(1);
+    expect(h.store.state.selection.nodes.size).toBe(0);
+    expect(h.store.state.selection.shapes.size).toBe(0);
+  });
+
+  it('records nothing when there is nothing to gain', () => {
+    const h = harness('M0 0 L10 0 L10 10 L0 10 Z');
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.simplifySelection(1)).toBe(false);
+    expect(h.store.canUndo).toBe(false);
+    expect(said.join(' ')).toMatch(/nothing to simplify/i);
+  });
+
+  it('refuses a tolerance of zero rather than reporting nothing to do', () => {
+    const h = harness(dense());
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.simplifySelection(0)).toBe(false);
+    expect(said.join(' ')).toMatch(/above zero/i);
+  });
+
+  it('refuses with nothing selected', () => {
+    const h = harness(dense());
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    expect(h.controller.simplifySelection(1)).toBe(false);
+    expect(said.join(' ')).toMatch(/select/i);
+  });
+});
+
 describe('dragging more than one shape', () => {
   /** Two separate squares, well apart. */
   function two(): Harness {
@@ -1504,13 +1576,49 @@ describe('the backdrop', () => {
     expect(h.store.state.backdrop!.y).toBeCloseTo(5.4, 9);
   });
 
-  it('records no history, because it is not part of the drawing', () => {
+  it('puts the whole drag on the undo stack as one entry', () => {
+    // It used to record nothing at all, on the theory that a backdrop is not
+    // part of the drawing. Which is true, and is a statement about the export
+    // rather than about whether nudging a reference off by 40 units should be
+    // recoverable.
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h, { locked: false });
+    h.store.update((s) => (s.snapToGrid = false));
+
+    h.down([50, 50]);
+    h.move([55, 55]);
+    h.move([60, 60]);
+    h.up();
+    expect(h.store.state.backdrop!.x).toBeCloseTo(10, 9);
+
+    h.store.undo();
+    expect(h.store.state.backdrop!.x).toBeCloseTo(0, 9);
+    // Every move fired an update, and all of them belong to one gesture.
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('leaves the drawing alone when the backdrop drag is undone', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h, { locked: false });
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt.slice();
+
+    h.down([50, 50]);
+    h.move([60, 60]);
+    h.up();
+    h.store.undo();
+
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual(before);
+  });
+
+  it('abandons the drag on Escape without offering a redo', () => {
     const h = harness('M0 0 L20 0 L20 20 Z');
     withBackdrop(h, { locked: false });
     h.down([50, 50]);
     h.move([60, 60]);
-    h.up();
-    expect(h.store.canUndo).toBe(false);
+    h.key('Escape');
+
+    expect(h.store.state.backdrop!.x).toBeCloseTo(0, 9);
+    expect(h.store.canRedo).toBe(false);
   });
 
   it('is not in the document, so it cannot reach the export', () => {

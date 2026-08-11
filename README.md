@@ -35,7 +35,7 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **144.8 kB, 45.9 kB
+The production build is one file, no external requests: **153.2 kB, 48.8 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -86,10 +86,12 @@ src/
     arc.ts         SVG arcs -> cubics
     affine.ts      2x3 matrices
     bend.ts        a curve described as angle + looseness
+    fit.ts         cubics through a run of points, by least squares
     primitives.ts  ellipse, rectangle, and fitting a circle to points
   model/      the document and every mutation it allows
     doc.ts         shapes, selection, bounding boxes
     ops.ts         all geometry edits
+    simplify.ts    refit a path with fewer nodes
     store.ts       state, undo, batching
   view/       rendering
     canvas.ts      two stacked SVGs: artwork and overlay
@@ -106,15 +108,15 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-6 196 lines of TypeScript across 19 files, no runtime framework.
+7 787 lines of TypeScript across 21 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 324 tests over parsing, serialising,
-geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
-and the primitives. The rendering tests run in jsdom against the real `Canvas`.
+**Unit and DOM tests**, with `npm test`. 349 tests over parsing, serialising,
+geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
+history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings. It measures instead: curve equality by projected deviation, boolean
@@ -134,7 +136,7 @@ differs, and pass `--headed` to watch.
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
-`backdrop`.
+`backdrop`, `simplify`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

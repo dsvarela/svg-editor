@@ -10,9 +10,10 @@ import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, shapeFromPath } fro
 import { isPathEnd, latentHandle, transformShape } from './model/ops';
 import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
-import type { Shape } from './core/types';
+import type { Shape, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { Store } from './model/store';
+import type { Backdrop } from './model/store';
 import { Canvas } from './view/canvas';
 import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
@@ -31,6 +32,9 @@ doc.viewBox = { x: 0, y: 0, w: 88, h: 64 };
 doc.shapes.push(shapeFromPath(STARTER, 'starter'));
 
 const store = new Store(doc);
+// The store keeps backdrops in the history so removing one can be undone, which
+// means it, not the loader, decides when the bytes are no longer wanted.
+store.onOrphanImage = (src) => URL.revokeObjectURL(src);
 const canvasRoot = $('#canvas');
 const canvas = new Canvas(canvasRoot);
 const controller = new Controller(store, canvas);
@@ -214,6 +218,21 @@ radiusInput.addEventListener('input', () =>
 );
 
 on('#circularise', () => controller.circulariseSelection());
+
+/**
+ * How far Simplify may move the drawing, in document units.
+ *
+ * A fixed default cannot work: 0.25 is a rounding error on a 1000 unit map and
+ * a visible dent on a 16 unit icon. So it starts as a quarter of a percent of
+ * the document's diagonal, which is roughly one screen pixel at fit-to-window,
+ * and follows the document until the moment someone types their own number.
+ * After that it is theirs.
+ */
+const simplifyTol = $('#simplifyTol') as HTMLInputElement;
+let tolChosen = false;
+const defaultTol = (vb: ViewBox): number => +(Math.hypot(vb.w, vb.h) * 0.0025).toPrecision(2);
+simplifyTol.addEventListener('input', () => (tolChosen = true));
+on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value)));
 
 const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
@@ -502,9 +521,10 @@ on('#download', () => {
  * Load a raster to trace over.
  *
  * The image is held as an object URL rather than a data URL: it stays out of
- * every string the editor serialises, and the browser frees the bytes when the
- * URL is revoked. A backdrop is workspace state, so it survives Apply and undo
- * but not a reload.
+ * every string the editor serialises, and the browser holds the bytes once
+ * however many history entries point at them. Nothing here revokes anything --
+ * the store does that, when the last snapshot mentioning an image is gone. A
+ * backdrop survives Apply, and does not survive a reload.
  */
 const backFile = $('#backFile') as HTMLInputElement;
 const backLock = $('#backLock') as HTMLInputElement;
@@ -523,17 +543,21 @@ function loadBackdrop(file: File): void {
   const src = URL.createObjectURL(file);
   const probe = new Image();
   probe.onload = () => {
-    store.update((s) => {
-      if (s.backdrop) URL.revokeObjectURL(s.backdrop.src);
+    // Loading is an edit, so Ctrl+Z takes the image back off and Ctrl+Shift+Z
+    // brings it back. Opacity and the two switches carry over from whatever was
+    // there before, since they say how you want to look at a reference rather
+    // than which one you loaded.
+    const was = store.state.backdrop;
+    store.edit((s) => {
       const natural = { naturalW: probe.naturalWidth, naturalH: probe.naturalHeight };
       s.backdrop = {
         src,
         name: file.name,
         ...natural,
         ...fitBackdrop(natural),
-        opacity: 0.5,
+        opacity: was?.opacity ?? 0.5,
         visible: true,
-        locked: true,
+        locked: was?.locked ?? true,
       };
     });
     status.textContent = `Tracing over ${file.name}. It is not part of the drawing.`;
@@ -570,24 +594,69 @@ canvasRoot.addEventListener('drop', (e) => {
   }
 });
 
-const backNum = (id: string, apply: (b: NonNullable<typeof store.state.backdrop>, v: number) => void): void => {
+/**
+ * Wire a numeric control to the backdrop.
+ *
+ * `history` draws the line between what the reference is and how you are
+ * looking at it. Where it sits and how big it is are edits, and belong on the
+ * undo stack next to everything else. Opacity is a view setting, like the grid.
+ *
+ * A typed number or a dragged slider fires `input` per keystroke or per pixel,
+ * which would be one undo entry each. A batch opens on the first of them and
+ * closes when the control settles, so the whole adjustment is one step. It
+ * closes on `change` as well as `blur` because a range input never gets a blur
+ * if you drag it and then reach for the canvas.
+ */
+const backNum = (id: string, apply: (b: Backdrop, v: number) => boolean, history = true): void => {
   const input = $(id) as HTMLInputElement;
+  let open = false;
+  const close = (): void => {
+    if (!open) return;
+    open = false;
+    store.endBatch();
+  };
   input.addEventListener('input', () => {
     const v = Number(input.value);
     if (!Number.isFinite(v)) return;
-    store.update((s) => {
-      if (s.backdrop) apply(s.backdrop, v);
-    });
+    if (!history) {
+      store.update((s) => {
+        if (s.backdrop) apply(s.backdrop, v);
+      });
+      return;
+    }
+    if (!open) {
+      open = true;
+      store.beginBatch();
+    }
+    store.tryEdit((s) => (s.backdrop ? apply(s.backdrop, v) : false));
   });
+  input.addEventListener('change', close);
+  input.addEventListener('blur', close);
 };
-backNum('#backOpacity', (b, v) => (b.opacity = Math.min(1, Math.max(0, v / 100))));
-backNum('#backX', (b, v) => (b.x = v));
-backNum('#backY', (b, v) => (b.y = v));
+backNum(
+  '#backOpacity',
+  (b, v) => {
+    b.opacity = Math.min(1, Math.max(0, v / 100));
+    return true;
+  },
+  false,
+);
+backNum('#backX', (b, v) => {
+  if (b.x === v) return false;
+  b.x = v;
+  return true;
+});
+backNum('#backY', (b, v) => {
+  if (b.y === v) return false;
+  b.y = v;
+  return true;
+});
 // Width drives height, so the image cannot be squashed by accident.
 backNum('#backScale', (b, v) => {
-  if (v <= 0) return;
+  if (v <= 0 || b.w === v) return false;
   b.h = (v * b.naturalH) / b.naturalW;
   b.w = v;
+  return true;
 });
 
 backLock.addEventListener('change', (e) => {
@@ -609,17 +678,27 @@ $('#backShow').addEventListener('change', (e) => {
 });
 
 on('#backFit', () => {
-  store.update((s) => {
-    if (s.backdrop) Object.assign(s.backdrop, fitBackdrop(s.backdrop));
+  store.tryEdit((s) => {
+    if (!s.backdrop) return false;
+    const box = fitBackdrop(s.backdrop);
+    const b = s.backdrop;
+    if (b.x === box.x && b.y === box.y && b.w === box.w && b.h === box.h) return false;
+    Object.assign(b, box);
+    return true;
   });
 });
 
 on('#backClear', () => {
-  store.update((s) => {
-    if (s.backdrop) URL.revokeObjectURL(s.backdrop.src);
+  // The image is not revoked here. It is still on the undo stack, and taking
+  // this back has to bring the picture with it rather than a broken link.
+  const had = store.state.backdrop !== null;
+  store.tryEdit((s) => {
+    if (!s.backdrop) return false;
     s.backdrop = null;
+    return true;
   });
-  status.textContent = 'Backdrop removed.';
+  if (!had) return;
+  status.textContent = 'Backdrop removed. Undo brings it back.';
   status.className = 'st ok';
 });
 
@@ -927,6 +1006,7 @@ store.subscribe((s) => {
   // Declared in the markup and never written to until now, so the Draw group
   // was the one panel whose header value was permanently blank.
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
+  if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
 
   const b = s.backdrop;
   backinfo.textContent = !b ? 'none' : b.visible ? (b.locked ? b.name : `${b.name} · unlocked`) : 'hidden';

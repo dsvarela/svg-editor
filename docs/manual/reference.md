@@ -102,6 +102,12 @@ the rest from it.
   shorter side of whatever you draw.
 - **Circularise** fits a circle through the selected path's nodes and moves each
   onto it.
+- **Within** is how far Simplify may move the drawing, in document units. It
+  starts at about one screen pixel for the document you have open and stops
+  following it once you type your own number.
+- **Simplify** refits the selected paths with as few nodes as **Within** allows.
+  Corners are kept. The status line reports the node count before and after, and
+  the furthest anything actually moved.
 
 ### Node
 
@@ -163,9 +169,11 @@ or by dropping a file onto the canvas.
 | **Fit** | Scale it to fit the document and centre it |
 | **Remove** | Unload it |
 
-It is workspace state, not document content: no entry in the Shapes list,
-nothing in the export, no undo entry when you move it, and it does not survive a
-reload.
+It is workspace state, not document content: no entry in the Shapes list and
+nothing in the export. It is still on the undo stack, so loading, moving,
+resizing and removing an image are all ordinary edits that `Ctrl+Z` takes back.
+Opacity, **Show** and **Locked** are not: they say how you want to look at the
+reference, and undo leaves them alone. Nothing survives a reload.
 
 ### Grid
 
@@ -244,7 +252,12 @@ Named here rather than left for you to find.
   circularised path that had a node at its centre, can both end up with two
   anchors in the same place. **Merge** only works on free ends, so there is no
   way to fuse them yet.
-- **The backdrop does not survive a reload,** and moving it is not undoable.
+- **The backdrop does not survive a reload.** Everything else about it is
+  undoable; this is not, because nothing here is saved between sessions.
+- **Simplify checks the tolerance where it samples.** Sampling is dense, and
+  denser than the tolerance, so the gap is small. It is not zero, and a path with
+  extreme curvature between samples can move a little further than the number you
+  typed.
 - **Anchors are a fixed size on screen,** so zooming out shrinks the drawing
   while they stay put and crowd it. Handles closer to their node than the node's
   own marker are dropped, which thins it out, but the anchors are always drawn.
