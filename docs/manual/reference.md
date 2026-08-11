@@ -149,6 +149,8 @@ to set it exactly.
 
 - **Corner**, **Smooth**, **Symm** show what the handles currently say, and set
   it when pressed.
+- **Round** with **Apply** replaces the selected corners with an arc of that
+  radius. Both sides of the node have to be straight.
 - **Break here** duplicates the node to cut the path there.
 - **Connect** draws the missing segment between two free ends. Nothing moves.
 - **Merge** welds two free ends into one node at their midpoint, the inverse of Break.

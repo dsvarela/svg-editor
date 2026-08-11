@@ -312,6 +312,11 @@
                 Symm
               </button>
             </div>
+            <div class="row">
+              <label for="roundR">Round</label>
+              <input type="number" id="roundR" step="0.5" min="0" value="4" aria-label="Corner radius" />
+              <button class="btn" id="roundCorner" title="Replace the selected corners with an arc of this radius">Apply</button>
+            </div>
             <div class="grid2">
               <button class="btn" id="breakPath" title="Break the path at this node, keeping it (Shift+B)">Break here</button>
               <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>

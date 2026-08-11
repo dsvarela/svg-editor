@@ -700,6 +700,102 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
   return { centre: fit.centre, radius: r, moved, widestSpan };
 }
 
+/**
+ * Why a corner could not be rounded, or `null` when it was.
+ *
+ * Named reasons rather than a bare `false`, because every one of them is
+ * something the person pressing the button can act on, and "it did not work" is
+ * the least useful thing to tell them.
+ */
+export type RoundRefusal = 'end' | 'curved' | 'straight' | 'tiny';
+
+export interface RoundResult {
+  /** The radius actually used, which may be smaller than the one asked for. */
+  radius: number;
+  /** True when the sides were too short for the radius requested. */
+  clamped: boolean;
+}
+
+/**
+ * Replace a corner with a circular arc tangent to both of its sides.
+ *
+ * The operation the rectangle tool performs while drawing, available afterwards
+ * on any corner. The node is replaced by two, one at each tangent point, and the
+ * arc between them is a cubic, the same approximation used everywhere else here.
+ *
+ * **Both sides have to be straight.** A fillet is defined by being tangent to
+ * two lines, and there is no honest version of it against a curve: you can put
+ * an arc somewhere near, but it will not meet the curve smoothly, and a corner
+ * operation that leaves a kink has not done its job. Refused rather than
+ * approximated.
+ *
+ * The radius is clamped to what the shorter side can hold. Rounding the corners
+ * of a rectangle one at a time works because each one sees the sides the
+ * previous ones left behind.
+ */
+export function roundCorner(
+  sp: Subpath,
+  i: number,
+  radius: number,
+): RoundResult | RoundRefusal {
+  const n = sp.nodes.length;
+  if (!sp.closed && (i === 0 || i === n - 1)) return 'end';
+  if (n < 3 || !(radius > 0)) return 'tiny';
+
+  const prevI = (i - 1 + n) % n;
+  const nextI = (i + 1) % n;
+  const here = sp.nodes[i];
+  const prev = sp.nodes[prevI];
+  const next = sp.nodes[nextI];
+
+  // The segment arriving at `i` is straight when neither governing handle
+  // exists, and likewise the one leaving it.
+  if (prev.hOut !== null || here.hIn !== null || here.hOut !== null || next.hIn !== null) {
+    return 'curved';
+  }
+
+  const a: Pt = [prev.pt[0] - here.pt[0], prev.pt[1] - here.pt[1]];
+  const b: Pt = [next.pt[0] - here.pt[0], next.pt[1] - here.pt[1]];
+  const la = Math.hypot(a[0], a[1]);
+  const lb = Math.hypot(b[0], b[1]);
+  if (la < 1e-9 || lb < 1e-9) return 'tiny';
+
+  const u: Pt = [a[0] / la, a[1] / la];
+  const v: Pt = [b[0] / lb, b[1] / lb];
+  // Interior angle at the corner, between the two rays leaving it.
+  const cos = Math.min(1, Math.max(-1, u[0] * v[0] + u[1] * v[1]));
+  const alpha = Math.acos(cos);
+  // Nothing to round when the path runs straight through, and nothing sensible
+  // to do when it folds back on itself.
+  if (alpha > Math.PI - 1e-6 || alpha < 1e-6) return 'straight';
+
+  const half = alpha / 2;
+  // Distance from the corner to each tangent point, for the radius asked for.
+  let cut = radius / Math.tan(half);
+  const clamped = cut > Math.min(la, lb);
+  if (clamped) cut = Math.min(la, lb);
+  const r = cut * Math.tan(half);
+  if (!(r > 1e-9)) return 'tiny';
+
+  const t1: Pt = [here.pt[0] + u[0] * cut, here.pt[1] + u[1] * cut];
+  const t2: Pt = [here.pt[0] + v[0] * cut, here.pt[1] + v[1] * cut];
+  // The arc turns through the exterior angle, not the interior one.
+  const h = arcHandle(r, Math.PI - alpha);
+
+  sp.nodes.splice(i, 1, {
+    // Travel runs prev -> t1 -> arc -> t2 -> next, so the tangent leaving `t1`
+    // points away from `prev`, and the one arriving at `t2` points at `next`.
+    pt: t1,
+    hIn: null,
+    hOut: [t1[0] - u[0] * h, t1[1] - u[1] * h],
+  }, {
+    pt: t2,
+    hIn: [t2[0] - v[0] * h, t2[1] - v[1] * h],
+    hOut: null,
+  });
+  return { radius: r, clamped };
+}
+
 /* ------------------------------------------------------------- transforms */
 
 export function transformSubpath(sp: Subpath, m: Mat): void {

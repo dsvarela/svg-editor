@@ -13,6 +13,7 @@ import {
   moveAnchor,
   moveHandle,
   reverseSubpath,
+  roundCorner,
   setContinuity,
   setSegmentCurved,
   snap,
@@ -20,6 +21,7 @@ import {
   transformShape,
 } from '../src/model/ops';
 import { emptyDoc, shapeFromPath, shapeBBox } from '../src/model/doc';
+import { rectSubpath } from '../src/core/primitives';
 import { Store } from '../src/model/store';
 
 function sample(sp: Subpath, per = 24): Pt[] {
@@ -822,5 +824,116 @@ describe('connectEnds', () => {
     const other = parsePath('M20 0 L30 0')[0];
     expect(connectEnds({ sp, i: 1 }, { sp: other, i: 0 })).toBeNull();
     expect(connectEnds({ sp, i: 0 }, { sp, i: 0 })).toBeNull();
+  });
+});
+
+describe('roundCorner', () => {
+  /** A 40 by 20 rectangle. Node 1 is the corner at (40, 0). */
+  const rect = (): Subpath => parsePath('M0 0 L40 0 L40 20 L0 20 Z')[0];
+
+  it('replaces the corner with two nodes at the tangent points', () => {
+    const sp = rect();
+    const r = roundCorner(sp, 1, 6) as { radius: number; clamped: boolean };
+    expect(r.radius).toBeCloseTo(6, 9);
+    expect(r.clamped).toBe(false);
+    expect(sp.nodes.length).toBe(5);
+
+    // A right angle, so the tangent points sit exactly `r` back along each side.
+    expect(sp.nodes[1].pt[0]).toBeCloseTo(34, 9);
+    expect(sp.nodes[1].pt[1]).toBeCloseTo(0, 9);
+    expect(sp.nodes[2].pt[0]).toBeCloseTo(40, 9);
+    expect(sp.nodes[2].pt[1]).toBeCloseTo(6, 9);
+  });
+
+  it('leaves the sides straight and meets them without a kink', () => {
+    // The whole point of a fillet. The model calls a node with one handle a
+    // corner, so tangency has to be measured rather than read off continuity.
+    const sp = rect();
+    roundCorner(sp, 1, 6);
+
+    expect(sp.nodes[0].hOut).toBeNull();
+    expect(sp.nodes[1].hIn).toBeNull();
+    expect(sp.nodes[2].hOut).toBeNull();
+
+    const along = (from: Pt, to: Pt): Pt => {
+      const d = Math.hypot(to[0] - from[0], to[1] - from[1]);
+      return [(to[0] - from[0]) / d, (to[1] - from[1]) / d];
+    };
+    const incoming = along(sp.nodes[0].pt, sp.nodes[1].pt);
+    const leaving = along(sp.nodes[1].pt, sp.nodes[1].hOut!);
+    expect(leaving[0]).toBeCloseTo(incoming[0], 9);
+    expect(leaving[1]).toBeCloseTo(incoming[1], 9);
+  });
+
+  it('draws an arc of the radius it reports', () => {
+    const sp = rect();
+    const r = roundCorner(sp, 1, 6) as { radius: number };
+    // For a right angle the centre is one radius in from each side.
+    const centre: Pt = [34, 6];
+    /* Not exact, and cannot be: a cubic is not a circular arc. The bound is the
+       one this editor states everywhere else, about 0.027 % of the radius for
+       a quarter turn. Measured here at 0.0272 %, which is what "about" was
+       covering; the point of the test is that the fillet is inside the bound
+       rather than merely close to the circle. */
+    for (const p of sample({ nodes: [sp.nodes[1], sp.nodes[2]], closed: false }, 32)) {
+      const off = Math.abs(Math.hypot(p[0] - centre[0], p[1] - centre[1]) - r.radius);
+      expect(off / r.radius).toBeLessThan(2.8e-4);
+    }
+  });
+
+  it('clamps a radius the sides cannot hold, and says so', () => {
+    const sp = rect();
+    const r = roundCorner(sp, 2, 999) as { radius: number; clamped: boolean };
+    expect(r.clamped).toBe(true);
+    // The short side is 20, so the cut is 20 and the radius follows from it.
+    expect(r.radius).toBeCloseTo(20, 9);
+    expect(sp.nodes[2].pt).toEqual([40, 0]);
+  });
+
+  it('rounds every corner of a rectangle when applied to each', () => {
+    const sp = rect();
+    // Descending, because rounding a corner shifts every index after it.
+    for (const i of [3, 2, 1, 0]) roundCorner(sp, i, 5);
+    expect(sp.nodes.length).toBe(8);
+    expect(sp.closed).toBe(true);
+
+    const xs = sp.nodes.map((n) => n.pt[0]);
+    const ys = sp.nodes.map((n) => n.pt[1]);
+    expect(Math.min(...xs)).toBeCloseTo(0, 9);
+    expect(Math.max(...xs)).toBeCloseTo(40, 9);
+    expect(Math.min(...ys)).toBeCloseTo(0, 9);
+    expect(Math.max(...ys)).toBeCloseTo(20, 9);
+  });
+
+  it('refuses what it cannot do, and says which', () => {
+    const open = parsePath('M0 0 L40 0 L40 20')[0];
+    expect(roundCorner(open, 0, 5)).toBe('end');
+    expect(roundCorner(open, 2, 5)).toBe('end');
+
+    // A curve on one side has no line for an arc to be tangent to.
+    const curved = parsePath('M0 0 C10 0 20 10 20 20 L40 20 L40 0 Z')[0];
+    expect(roundCorner(curved, 1, 5)).toBe('curved');
+
+    const flat = parsePath('M0 0 L20 0 L40 0 L40 20 Z')[0];
+    expect(roundCorner(flat, 1, 5)).toBe('straight');
+
+    expect(roundCorner(rect(), 1, 0)).toBe('tiny');
+    expect(roundCorner(rect(), 1, -3)).toBe('tiny');
+  });
+
+  it('is exactly what the rectangle tool draws', () => {
+    // Two routes to a rounded rectangle should not disagree: the tool rounds
+    // while drawing, this rounds afterwards, and both are the same arc.
+    const drawn = rectSubpath(0, 0, 40, 20, 5);
+    const sp = rect();
+    for (const i of [3, 2, 1, 0]) roundCorner(sp, i, 5);
+
+    expect(sp.nodes.length).toBe(drawn.nodes.length);
+    for (const p of sample(sp, 24)) {
+      const near = sample(drawn, 96).some(
+        (q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.02,
+      );
+      expect(near).toBe(true);
+    }
   });
 });

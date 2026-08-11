@@ -39,6 +39,7 @@ import {
   moveHandle,
   nearestOnPath,
   reverseSubpath,
+  roundCorner,
   setContinuity,
   setSegmentBend,
   segmentBend,
@@ -48,7 +49,7 @@ import {
   transformCaptured,
   transformShape,
 } from '../model/ops';
-import type { AlignMode, NodeSnapshot } from '../model/ops';
+import type { AlignMode, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
 import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/transform';
 import type { TransformPart } from '../model/transform';
@@ -1041,6 +1042,85 @@ export class Controller {
     this.onMessage?.(
       `Simplified ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
         `Nothing moved further than ${dp(error)}.`,
+      true,
+    );
+    return true;
+  }
+
+  /**
+   * Round the selected corners with an arc of `radius`.
+   *
+   * Each rounded corner becomes two nodes, so the indices after it all shift.
+   * Working from the highest index down means the ones still to do keep the
+   * positions they were found at, which is the whole reason this is not a loop
+   * over the selection in the order the selection happens to iterate.
+   *
+   * The selection is dropped afterwards, for the same reason Simplify drops it:
+   * the node that was index 3 is a different point now.
+   */
+  roundSelection(radius: number): boolean {
+    if (!(radius > 0)) {
+      this.onMessage?.('Round needs a radius above zero.', false);
+      return false;
+    }
+
+    const s = this.store.state;
+    const byPath = new Map<string, number[]>();
+    for (const key of s.selection.nodes) {
+      const r = parseNodeKey(key);
+      const k = `${r.shape}/${r.sp}`;
+      byPath.set(k, [...(byPath.get(k) ?? []), r.i]);
+    }
+    if (!byPath.size) {
+      this.onMessage?.('Select one or more nodes to round.', false);
+      return false;
+    }
+
+    let done = 0;
+    let clamped = 0;
+    let smallest = Infinity;
+    const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
+
+    this.store.tryEdit((st) => {
+      for (const [key, indices] of byPath) {
+        const [shapeId, spIdx] = key.split('/');
+        const sp = findShape(st.doc, shapeId)?.subpaths[Number(spIdx)];
+        if (!sp) continue;
+        for (const i of [...indices].sort((a, b) => b - a)) {
+          const r = roundCorner(sp, i, radius);
+          if (typeof r === 'string') {
+            refused[r]++;
+            continue;
+          }
+          done++;
+          if (r.clamped) clamped++;
+          smallest = Math.min(smallest, r.radius);
+        }
+      }
+      if (done) st.selection = emptySelection();
+      return done > 0;
+    });
+
+    if (!done) {
+      // One reason, chosen by what actually happened, rather than a list of
+      // everything that could have gone wrong.
+      const why = refused.curved
+        ? 'Round needs a straight segment on both sides of the node.'
+        : refused.end
+          ? 'That node ends the path, so it has only one side.'
+          : refused.straight
+            ? 'The path runs straight through that node. There is no corner to round.'
+            : 'Those nodes cannot be rounded.';
+      this.onMessage?.(why, false);
+      return false;
+    }
+
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    const skipped = Object.values(refused).reduce((a, b) => a + b, 0);
+    this.onMessage?.(
+      `Rounded ${done} corner${done === 1 ? '' : 's'}.` +
+        (clamped ? ` ${clamped} clamped to r ${dp(smallest)} by the shorter side.` : '') +
+        (skipped ? ` Skipped ${skipped}.` : ''),
       true,
     );
     return true;

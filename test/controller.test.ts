@@ -1048,6 +1048,82 @@ describe('circularising', () => {
   });
 });
 
+describe('rounding corners', () => {
+  const square = (): Harness => harness('M0 0 L40 0 L40 40 L0 40 Z');
+  const ids = (h: Harness): string => h.store.state.doc.shapes[0].id;
+
+  it('rounds several corners at once, working from the last index back', () => {
+    /* Each rounded corner turns one node into two, so every index after it
+       shifts. Ascending order rounds the wrong points from the second one on,
+       and the failure is quiet: you still get eight nodes. */
+    const h = square();
+    const id = ids(h);
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(`${id}/0/1`);
+      s.selection.nodes.add(`${id}/0/2`);
+      s.selection.nodes.add(`${id}/0/3`);
+    });
+
+    expect(h.controller.roundSelection(8)).toBe(true);
+    const nodes = h.store.state.doc.shapes[0].subpaths[0].nodes;
+    expect(nodes.length).toBe(8);
+    // Every node sits 8 units in from a corner along one side, never on one.
+    for (const n of nodes) {
+      const onCorner = [0, 40].includes(n.pt[0]) && [0, 40].includes(n.pt[1]);
+      expect(onCorner).toBe(false);
+    }
+  });
+
+  it('is one undo step and drops the selection', () => {
+    const h = square();
+    const id = ids(h);
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+
+    h.controller.roundSelection(6);
+    expect(h.store.state.selection.nodes.size).toBe(0);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.length).toBe(4);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('explains a refusal instead of doing nothing quietly', () => {
+    const h = harness('M0 0 L40 0 C50 10 50 30 40 40 L0 40 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.roundSelection(5)).toBe(false);
+    expect(said.join(' ')).toMatch(/straight segment on both sides/i);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('refuses a radius of zero and an empty selection', () => {
+    const h = square();
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.roundSelection(0)).toBe(false);
+    expect(said.join(' ')).toMatch(/above zero/i);
+
+    said.length = 0;
+    expect(h.controller.roundSelection(5)).toBe(false);
+    expect(said.join(' ')).toMatch(/select/i);
+  });
+
+  it('says when the radius was cut down to fit', () => {
+    const h = harness('M0 0 L40 0 L40 6 L0 6 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+
+    expect(h.controller.roundSelection(30)).toBe(true);
+    expect(said.join(' ')).toMatch(/clamped/i);
+  });
+});
+
 describe('style', () => {
   it('restyles the selected shapes in one undo step', () => {
     const h = harness('M0 0 L10 0 L10 10 Z');

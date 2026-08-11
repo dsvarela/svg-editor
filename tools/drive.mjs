@@ -34,6 +34,20 @@ async function openSource(page) {
 }
 
 /**
+ * Close the source drawer, and wait for the canvas to settle.
+ *
+ * Closing it gives the space back to the canvas, which re-fits the camera, so a
+ * document coordinate converted to client pixels before the animation finishes
+ * points somewhere else by the time the mouse gets there. A click issued
+ * immediately after this lands on the wrong thing, and the scenario reports that
+ * selecting a node did nothing.
+ */
+async function closeSource(page) {
+  await page.click('#closeSrc');
+  await page.waitForTimeout(240);
+}
+
+/**
  * Show one of the inspector's tabs.
  *
  * The rail is three tabbed panels, and a control in a tab you cannot see is
@@ -115,12 +129,14 @@ async function mk(page) {
     await page.waitForTimeout(60);
   };
 
-  const click = async (doc) => {
+  const click = async (doc, modifier = null) => {
     const c = await toClient(doc);
     await assertInside(c, doc);
     await page.mouse.move(c[0], c[1]);
+    if (modifier) await page.keyboard.down(modifier);
     await page.mouse.down();
     await page.mouse.up();
+    if (modifier) await page.keyboard.up(modifier);
   };
 
   const drag = async (from, to, steps = 8, modifier = null) => {
@@ -782,7 +798,7 @@ const scenarios = {
     await page.waitForTimeout(150);
     const exported = await page.inputValue('#src');
     check(!/<image|base64|blob:/.test(exported), 'the backdrop leaked into the export');
-    await page.click('#closeSrc');
+    await closeSource(page);
 
     // Opacity and visibility are live.
     await page.fill('#backOpacity', '20');
@@ -851,6 +867,58 @@ const scenarios = {
   },
 
   /**
+   * Rounding a corner that already exists, from the Node tab.
+   *
+   * The rectangle tool has had a corner radius since the primitives landed, and
+   * it only ever applied while drawing. This is the same arc, afterwards, on
+   * anything with two straight sides.
+   */
+  async roundCorners(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`roundCorners: ${what}`);
+    };
+    const { click } = await mk(page);
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', 'M20 16 L64 16 L64 48 L20 48 Z');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+
+    // Nothing selected, so no transform box stands between the pointer and the
+    // corner nodes.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+
+    // Two adjacent corners, selected on the canvas.
+    await click([64, 16]);
+    await click([64, 48], 'Shift');
+    await page.waitForTimeout(120);
+
+    await tab(page, 'node');
+    await page.fill('#roundR', '6');
+    await page.click('#roundCorner');
+    await page.waitForTimeout(200);
+
+    const stats = await page.textContent('#stats');
+    check(/6 nodes/.test(stats), `after rounding two corners: "${stats}"`);
+    const status = await page.textContent('#status');
+    check(/Rounded 2 corners/.test(status), `status says "${status}"`);
+
+    /* The corners are gone from the outline and the sides are still straight,
+       which is what a fillet has to leave behind. */
+    const d = await page.getAttribute('.artwork path', 'd');
+    check(!/64 16/.test(d), `the sharp corner survived: ${d}`);
+    check(/C /.test(d), `no arc was drawn: ${d}`);
+
+    await undo(page);
+    check(/4 nodes/.test(await page.textContent('#stats')), 'undo did not restore the square');
+
+    return { stats, status, d };
+  },
+
+  /**
    * Fill, stroke and width, and the tabs they live behind.
    *
    * Browser-only twice over: `<input type="color">` has no jsdom implementation
@@ -903,7 +971,7 @@ const scenarios = {
     await page.click('#srcmode button[data-v="svg"]');
     await page.waitForTimeout(200);
     check(/fill="#ff0000"/.test(await page.inputValue('#src')), 'the export kept the old fill');
-    await page.click('#closeSrc');
+    await closeSource(page);
 
     // `none` is a value the picker cannot hold, so the tick box holds it.
     await page.check('#fillNone');
@@ -994,7 +1062,7 @@ const scenarios = {
     await page.waitForTimeout(200);
     const svgText = await page.inputValue('#src');
     check(/viewBox="20 12 48 40"/.test(svgText), `export says ${svgText.slice(0, 90)}`);
-    await page.click('#closeSrc');
+    await closeSource(page);
 
     // Drawing outside the page is allowed, and says so where the fix lives.
     check((await page.textContent('#canvasinfo')) === '', 'it claims to spill before anything does');
@@ -1132,7 +1200,7 @@ const scenarios = {
     await page.fill('#src', 'M20 20 L60 20 L60 50 L20 50 Z');
     await page.click('#apply');
     await page.waitForTimeout(200);
-    await page.click('#closeSrc');
+    await closeSource(page);
     await page.click('#shapelist li');
     await page.waitForTimeout(150);
 
@@ -1177,7 +1245,7 @@ const scenarios = {
     await page.fill('#src', `M${pts[0]} ${pts.slice(1).map((p) => `L${p}`).join(' ')} Z`);
     await page.click('#apply');
     await page.waitForTimeout(200);
-    await page.click('#closeSrc');
+    await closeSource(page);
 
     const nodesIn = await page.textContent('#stats');
     check(/40 nodes/.test(nodesIn), `applying the dense ring gave "${nodesIn}"`);

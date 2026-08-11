@@ -258,6 +258,11 @@ radiusInput.addEventListener('input', () =>
 
 on('#circularise', () => controller.circulariseSelection());
 
+/* Rounding an existing corner, which is what the rectangle tool's radius does
+   while drawing and nothing could do afterwards. */
+const roundR = $('#roundR') as HTMLInputElement;
+on('#roundCorner', () => controller.roundSelection(Number(roundR.value)));
+
 /**
  * Collapse a control's stream of `input` events into one undo entry.
  *

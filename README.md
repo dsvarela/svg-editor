@@ -35,7 +35,7 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **166.8 kB, 52.5 kB
+The production build is one file, no external requests: **169.3 kB, 53.2 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -109,13 +109,13 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-8 562 lines of TypeScript across 22 files, no runtime framework.
+8 743 lines of TypeScript across 22 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 383 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 395 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
 transforms, history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
@@ -137,7 +137,7 @@ differs, and pass `--headed` to watch.
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
-`backdrop`, `simplify`, `transform`, `canvasFrame`, `style`.
+`backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

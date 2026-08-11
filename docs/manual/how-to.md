@@ -19,6 +19,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Round off a corner](#round-off-a-corner)
 - [Colour a shape](#colour-a-shape)
 - [Set the page the drawing exports to](#set-the-page-the-drawing-exports-to)
 - [Resize or rotate something on the canvas](#resize-or-rotate-something-on-the-canvas)
@@ -239,6 +240,22 @@ never reaches the export. It is covered by undo, so `Ctrl+Z` takes back a nudge
 you did not mean and brings back an image you removed by accident. Opacity,
 **Show** and **Locked** stay as you left them, since undo is for taking back an
 edit rather than for restoring a checkbox. Nothing survives a page reload.
+
+## Round off a corner
+
+Select the corner node, set **Round** in the **Node** panel to the radius you
+want, and press **Apply**.
+
+The node is replaced by two, one where the arc meets each side, and the sides
+stay exactly straight. Select several corners and they are all rounded at once.
+
+Both sides of the node have to be straight. A fillet is defined by touching two
+lines, and there is no honest version of it against a curve, so it refuses and
+says why rather than leaving a kink where the arc nearly meets the curve.
+
+If the radius is larger than a side can hold it is cut down to fit, and the
+status line says so. To round every corner of a rectangle evenly, select all four
+and apply once.
 
 ## Colour a shape
 

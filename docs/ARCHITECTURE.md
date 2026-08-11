@@ -666,6 +666,39 @@ One process note. A batch of scenarios run immediately after editing
 green batch taken straight after a markup change as unproven, and re-run the
 scenarios that touch what changed.
 
+## 23. Rounding a corner refuses rather than approximates
+
+`roundCorner` replaces a corner node with two, one at each tangent point, and an
+arc between them. It is the operation the rectangle tool performs while drawing,
+available afterwards on anything.
+
+**Both sides have to be straight, and a curved side is refused.** A fillet is
+defined by being tangent to two lines. Against a curve you can put an arc
+somewhere near the corner, but it will not meet the curve smoothly, and a corner
+operation that leaves a kink has not done its job. This is the opposite call from
+§13, where **Fuse** approximates rather than refusing, and the difference is
+what the user can tell: a fused segment that differs is visible and undoable
+straight away, while a fillet that is a fraction of a degree off tangent looks
+right and is wrong.
+
+The radius is clamped to what the shorter side can hold, and the clamp is
+reported. Rounding the four corners of a rectangle one at a time works because
+each one sees the sides the previous ones left behind.
+
+Two things the caller has to get right, and `roundSelection` does:
+
+- **Descending index order.** Each rounded corner turns one node into two, so
+  every index after it shifts. Ascending order rounds the wrong points from the
+  second corner on, and the failure is quiet: you still get eight nodes out of a
+  rectangle, they are just not where you asked.
+- **The refusals are named.** `end`, `curved`, `straight` and `tiny` are all
+  things the person pressing the button can act on, and "it did not work" is the
+  least useful thing to tell them.
+
+The arc is the same cubic approximation used everywhere else. Measured on a
+quarter turn it sits 0.0272 % of the radius off a true circle, which is what
+"about 0.027 %" in §12 was covering.
+
 ## 17. One place decides how thick a line is
 
 Overlay chrome has to stay a constant size on screen while the drawing scales,
