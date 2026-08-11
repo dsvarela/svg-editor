@@ -19,6 +19,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Move around the canvas](#move-around-the-canvas)
 - [Paste in a path from somewhere else](#paste-in-a-path-from-somewhere-else)
 - [Get the smallest possible output](#get-the-smallest-possible-output)
 - [Rename a shape and control its exported id](#rename-a-shape-and-control-its-exported-id)
@@ -212,6 +213,20 @@ offsets rather than being pulled onto the lattice.
 Every grid line you can see is a position you can snap to. When you zoom out the
 lattice thins rather than changing, and the readout says what you are looking at,
 for example `1 · every 5 drawn`.
+
+## Move around the canvas
+
+| To | Do |
+|---|---|
+| Zoom | Wheel, at the pointer |
+| Pan sideways | `Shift`+wheel |
+| Pan up and down | `Alt`+wheel |
+| Pan freely | `Space`-drag, middle-drag, or the hand tool (`H`) |
+| Get back to 100 % | Click the zoom readout at the bottom of the window |
+| Fit everything on screen | The **Fit** button in the toolbar |
+
+100 % means one document unit per pixel, which is the scale to check icon work
+at. The hand tool exists because not every pointer has a middle button.
 
 ## Paste in a path from somewhere else
 

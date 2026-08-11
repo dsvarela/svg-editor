@@ -320,6 +320,21 @@ input[type='number']:disabled { opacity: 0.4; }
 .canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .canvas .artwork { pointer-events: none; }
 .canvas .overlay { touch-action: none; cursor: crosshair; }
+/* The hand tool says what it does before you press it, which is the whole
+   reason it exists as a button rather than only as Space-drag. */
+.app.tool-hand .canvas .overlay { cursor: grab; }
+.app.tool-hand .canvas .overlay:active { cursor: grabbing; }
+.zoomrd {
+  /* A readout you can press, so it has to look pressable without becoming a
+     button in a strip of labels. */
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.zoomrd:hover span { color: var(--ink); }
 
 .grid-minor { stroke: var(--grid); fill: none; }
 .grid-major { stroke: var(--grid-major); fill: none; }

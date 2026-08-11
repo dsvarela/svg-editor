@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (315 across 10 files) |
+| `npm test` | Unit and DOM tests (319 across 10 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **138.1 kB, 44.1 kB
+The production build is one file, no external requests: **139.7 kB, 44.6 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -112,7 +112,7 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 315 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 319 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
 and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 

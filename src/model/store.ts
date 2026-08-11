@@ -19,7 +19,7 @@ import type { Selection } from './doc';
  * are tools rather than buttons because the size comes from the drag, and
  * because holding the tool lets you place several without going back to a menu.
  */
-export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect';
+export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect' | 'hand';
 
 /**
  * What deleting a node does to the path around it.

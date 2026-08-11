@@ -271,7 +271,7 @@ export class Controller {
     // Middle button or space always pans, whatever the tool. Panning is
     // tracked in SCREEN coordinates: document coordinates under the cursor are
     // exactly what panning changes, so using them would feed back on itself.
-    if (e.button === 1 || this.spaceDown) {
+    if (e.button === 1 || this.spaceDown || s.tool === 'hand') {
       this.drag = {
         kind: 'pan',
         client: [e.clientX, e.clientY],
@@ -609,8 +609,33 @@ export class Controller {
     }
   };
 
+  /**
+   * Wheel, with the modifiers doing three different things.
+   *
+   * All four combinations used to zoom, because none of them was bound: holding
+   * Shift, Ctrl or Alt changed nothing, which reads as the modifiers being
+   * broken rather than unassigned. Plain and Ctrl both zoom, since Ctrl+wheel is
+   * the page-zoom gesture everywhere and doing anything else with it would
+   * surprise; Shift and Alt pan along one axis each.
+   */
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    const s = this.store.state;
+
+    if (e.shiftKey || e.altKey) {
+      // A trackpad reports sideways scrolling as deltaX, so take whichever axis
+      // actually moved rather than assuming the wheel.
+      const amount = (Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * this.canvas.scale(s.camera);
+      this.store.update((st) => {
+        st.camera = {
+          ...st.camera,
+          x: st.camera.x + (e.shiftKey ? amount : 0),
+          y: st.camera.y + (e.shiftKey ? 0 : amount),
+        };
+      });
+      return;
+    }
+
     const p = this.pt(e);
     const factor = Math.pow(1.0015, e.deltaY);
     this.store.update((st) => {
@@ -1034,6 +1059,11 @@ export class Controller {
       }
       case 'p': {
         this.store.update((st) => (st.tool = 'pen'));
+        return;
+      }
+      case 'h': {
+        this.store.update((st) => (st.tool = 'hand'));
+        this.finishPen();
         return;
       }
       case 'e': {

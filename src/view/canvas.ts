@@ -253,6 +253,16 @@ export class Canvas {
               const h = real ?? latentHandle(sp, i, which);
               if (!h) continue;
 
+              /* A handle you cannot separate from its own node is not a control,
+                 it is clutter. Markers are drawn at a fixed size on screen, so
+                 zooming out shrinks the drawing while they stay put: a shape
+                 that fits in 150 px ends up buried under its own anchors and
+                 handles, which is what "the overlay goes funny at low zoom"
+                 turned out to be. Below the anchor's own width there is nothing
+                 left to aim at, so the handle is not worth drawing. */
+              const reach = Math.hypot(h[0] - n.pt[0], h[1] - n.pt[1]);
+              if (reach < anchorSize) continue;
+
               this.handleLines.next({
                 x1: n.pt[0],
                 y1: n.pt[1],

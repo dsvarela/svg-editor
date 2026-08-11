@@ -1383,3 +1383,63 @@ describe('joining and resuming a path', () => {
   });
 });
 
+
+describe('navigating the view', () => {
+  const wheel = (h: Harness, opts: WheelEventInit): void => {
+    h.canvas.overlay.dispatchEvent(
+      new WheelEvent('wheel', { clientX: 400, clientY: 300, bubbles: true, cancelable: true, ...opts }),
+    );
+  };
+
+  it('zooms on a plain wheel', () => {
+    const h = harness('M0 0 L20 0');
+    const before = h.store.state.camera.w;
+    wheel(h, { deltaY: 200 });
+    expect(h.store.state.camera.w).toBeGreaterThan(before);
+  });
+
+  it('pans sideways on Shift and vertically on Alt, without zooming', () => {
+    /* All three modifiers used to zoom, because none was bound. Doing nothing
+       different reads as broken rather than unassigned. */
+    const h = harness('M0 0 L20 0');
+    const start = { ...h.store.state.camera };
+
+    wheel(h, { deltaY: 200, shiftKey: true });
+    let cam = h.store.state.camera;
+    expect(cam.w).toBe(start.w);
+    expect(cam.x).not.toBe(start.x);
+    expect(cam.y).toBe(start.y);
+
+    const afterShift = { ...cam };
+    wheel(h, { deltaY: 200, altKey: true });
+    cam = h.store.state.camera;
+    expect(cam.w).toBe(start.w);
+    expect(cam.x).toBe(afterShift.x);
+    expect(cam.y).not.toBe(afterShift.y);
+  });
+
+  it('pans with the hand tool, from a press anywhere', () => {
+    const h = harness('M0 0 L20 0');
+    h.store.update((s) => (s.tool = 'hand'));
+    const before = { ...h.store.state.camera };
+
+    h.down([10, 10]);
+    h.move([4, 10]);
+    h.up();
+
+    const after = h.store.state.camera;
+    expect(after.x).toBeGreaterThan(before.x);
+    expect(after.w).toBe(before.w);
+    // Panning is a view change, so it leaves no history entry.
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('reaches the hand tool from the keyboard, but not with a modifier', () => {
+    const h = harness();
+    h.key('h');
+    expect(h.store.state.tool).toBe('hand');
+    h.store.update((s) => (s.tool = 'select'));
+    h.key('h', { ctrlKey: true });
+    expect(h.store.state.tool).toBe('select');
+  });
+});

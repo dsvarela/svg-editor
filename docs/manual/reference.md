@@ -10,6 +10,7 @@ Every control, and what it does. Dry and complete.
 | Pen | `P` | Click to place nodes. Click the first node to close the path, or either end of an existing open path to carry on drawing it |
 | Ellipse | `E` | Drag out an ellipse |
 | Rectangle | `R` | Drag out a rectangle |
+| Hand | `H` | Drag to pan. `Space`-drag does the same from any tool |
 
 `Shift` while drawing constrains an ellipse to a circle and a rectangle to a
 square, by taking the shorter span of the drag. `Alt` reads the point you pressed
@@ -30,13 +31,15 @@ as the centre rather than a corner.
 | `Shift`-click | Add to or remove from the selection |
 | Drag the bend dot | Bow a segment. Appears when both its end nodes are selected |
 | Wheel | Zoom at the pointer |
-| `Space`-drag, or middle-drag | Pan |
+| `Shift`+wheel | Pan sideways |
+| `Alt`+wheel | Pan up and down |
+| `Space`-drag, or middle-drag | Pan, from any tool |
 
 ## Keyboard
 
 | Key | Effect |
 |---|---|
-| `V` `P` `E` `R` | Select, pen, ellipse, rectangle |
+| `V` `P` `E` `R` `H` | Select, pen, ellipse, rectangle, hand |
 | Arrows | Nudge by one grid step |
 | `Shift`+arrows | Nudge by ten steps |
 | `Ctrl`+`←` `→` | Bend the active segment. `Shift` for a finer step |
@@ -184,7 +187,10 @@ Two modes.
 ## Status strip
 
 Along the bottom, left to right: the shape, node and segment counts; the grid
-readout; the status line; the pointer's document coordinates.
+readout; the zoom; the status line; the pointer's document coordinates.
+
+**Zoom** is the magnification, so 100 % means one document unit per pixel. Click
+it to go back to 100 % about the centre of the view.
 
 ## What is read on import and what is written on export
 
@@ -218,8 +224,10 @@ Named here rather than left for you to find.
   circularised path that had a node at its centre, can both end up with two
   anchors in the same place. **Merge** only works on free ends, so there is no
   way to fuse them yet.
-- **The selection outline is drawn in document units,** so its dashes look coarse
-  when you zoom far out.
+- **Overlay markers are a fixed size on screen,** so zooming out shrinks the
+  drawing while the anchors stay put and crowd it. Handles closer to their node
+  than the node's own marker are dropped, which thins it out, but the anchors
+  themselves are always drawn.
 
 Full detail on all of these is in
 [`docs/REVIEW-2026-08-11.md`](../REVIEW-2026-08-11.md).

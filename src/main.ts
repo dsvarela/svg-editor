@@ -111,7 +111,7 @@ window.addEventListener('keydown', (e) => {
 
 /* ------------------------------------------------------------------ tools */
 
-const TOOLS = ['select', 'pen', 'ellipse', 'rect'] as const;
+const TOOLS = ['select', 'pen', 'ellipse', 'rect', 'hand'] as const;
 type Tool = (typeof TOOLS)[number];
 const isTool = (v: string | null | undefined): v is Tool => TOOLS.includes(v as Tool);
 
@@ -154,6 +154,19 @@ const fit = (): void =>
     if (b) s.camera = fitBox(b, canvas.overlay);
   });
 on('#fit', fit);
+
+/* Click the zoom readout to return to 1:1, keeping the centre of the view where
+   it is. One doc unit per pixel is the scale icon work is checked at, and
+   getting back to it by wheel alone is guesswork. */
+on('#zoomval', () => {
+  store.update((s) => {
+    const box = canvas.overlay.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const cx = s.camera.x + s.camera.w / 2;
+    const cy = s.camera.y + s.camera.h / 2;
+    s.camera = { x: cx - box.width / 2, y: cy - box.height / 2, w: box.width, h: box.height };
+  });
+});
 
 /* ------------------------------------------------------------- transforms */
 
@@ -731,6 +744,7 @@ const selinfo = $('#selinfo');
 const gridval = $('#gridval');
 const gridreadout = $('#gridreadout');
 const drawinfo = $('#drawinfo');
+const zoomnum = $('#zoomnum');
 const outval = $('#outval');
 const cursorEl = $('#cursor');
 const undoBtn = $('#undo') as HTMLButtonElement;
@@ -784,6 +798,14 @@ store.subscribe((s) => {
   // Declared in the markup and never written to until now, so the Draw group
   // was the one panel whose header value was permanently blank.
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
+
+  /* The strip said where the pointer was and never how big the view is, so
+     there was no way to tell 1:1 from 10:1. `scale` is document units per
+     pixel, so its reciprocal is the magnification. */
+  const k = canvas.scale(s.camera);
+  const pct = 100 / k;
+  zoomnum.textContent = pct >= 1000 ? `${Math.round(pct / 100) * 100}%` : pct >= 100 ? `${Math.round(pct)}%` : `${pct.toFixed(pct < 10 ? 1 : 0)}%`;
+  app.classList.toggle('tool-hand', s.tool === 'hand');
   outval.textContent = `${s.decimals} dp${s.minify ? ' · min' : ''}`;
 
   refreshShapeList();
