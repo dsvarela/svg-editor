@@ -405,8 +405,8 @@ function applySource(): void {
     });
     const n = r.shapes.length;
     status.textContent =
-      `Imported ${n} shape${n === 1 ? '' : 's'}` +
-      (r.warnings.length ? ` — ${r.warnings.join('; ')}` : '.');
+      `Imported ${n} shape${n === 1 ? '' : 's'}.` +
+      (r.warnings.length ? `. ${r.warnings.join('; ')}` : '.');
     status.className = r.warnings.length ? 'st err' : 'st ok';
     fit();
   } catch (err) {
@@ -555,7 +555,7 @@ function startRename(id: string): void {
       // so say when the export will not read back exactly as typed.
       const safe = xmlId(name);
       status.textContent =
-        safe === name ? `Renamed to ${name}.` : `Renamed to ${name}; exports as id="${safe}".`;
+        safe === name ? `Renamed to ${name}.` : `Renamed to ${name}. Exports as id="${safe}".`;
       status.className = 'st ok';
     } else {
       listSig = null; // the row was replaced by an input; force it back
@@ -698,7 +698,7 @@ store.subscribe((s) => {
       : scoped
         ? `Apply updates ${scoped.name} only.`
         : s.doc.shapes.length > 1
-          ? `Apply would merge all ${s.doc.shapes.length} shapes — select one first, or switch to SVG.`
+          ? `Apply would merge all ${s.doc.shapes.length} shapes. Select one first, or switch to SVG.`
           : 'Apply replaces the document.';
   for (const b of srcModeSeg.querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === s.sourceMode));

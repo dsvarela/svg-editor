@@ -6,7 +6,7 @@ editing a table of commands.
 The reference point is [yqnn's svg-path-editor](https://yqnn.github.io/svg-path-editor/),
 which is excellent at what it does: precise numeric control over a path's
 command list. The trade is that its model *is* a command list, so the interface
-has to be one too — you pick `C` or `Q` or `A`, you think about relative versus
+has to be one too. You pick `C` or `Q` or `A`, you think about relative versus
 absolute, and you keep track of which numbers are control points.
 
 Here the model is nodes and handles. Commands exist only when reading a file in
@@ -33,209 +33,44 @@ npm run dev        # http://localhost:5173
 | `npm run check` | Typecheck only |
 | `npm test` | Unit and DOM tests (294 across 10 files) |
 | `npm run test:watch` | The same, watching |
-| `npm run drive <scenario>` | Drive the real browser — see [Testing](#testing) |
+| `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
 The production build is one file, no external requests: **133.0 kB, 42.7 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
 
+## Documentation
+
+| Where | What |
+|---|---|
+| [`docs/manual/`](docs/manual/README.md) | The manual: tutorial, how-to guides, reference, explanation |
+| [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does |
+| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The last review: ten defect classes, six fixed |
+| [`SHOPPING-LIST.md`](SHOPPING-LIST.md) | What is deliberately not built yet, and why |
+
+---
+
 ## Using it
 
-### Mouse
+The full account is in the [manual](docs/manual/README.md). The short version:
 
-| Action | Effect |
+Shapes are made of **nodes**, each with up to two **handles** that decide how
+the line curves through it. You drag them directly. There is no command table to
+edit and no node type to choose before you draw, because continuity is worked
+out from where the handles are rather than stored as a flag.
+
+Everything is a path. The ellipse and rectangle tools produce nodes and handles
+like anything else, so nothing needs converting before you can edit it or
+subtract it from something.
+
+| I want to | Go to |
 |---|---|
-| Click a node | Select it; its handles appear, including hollow ones you can pull out |
-| Drag a node | Move it, handles and all |
-| Drag a handle | Move it, preserving whatever relationship the pair already had |
-| **Alt**-drag a handle | Move it alone, breaking the pair |
-| Drag the outline | Move the whole shape, and everything else selected with it. A marquee selects *nodes*, so grabbing an outline it covered entirely moves the whole selection |
-| Double-click the outline | Insert a node exactly there, without changing the curve |
-| Double-click a node | Cycle corner → smooth → symmetric |
-| Drag on empty canvas | Marquee-select |
-| Drag with the ellipse or rect tool | Draw one. **Shift** for a circle or square, **Alt** from the centre |
-| **Shift**-click | Add to or remove from the selection |
-| Drag the bend dot | Bow a segment; appears when both its endpoints are selected |
-| Wheel | Zoom at the pointer |
-| **Space**-drag, or middle-drag | Pan |
-
-### Keyboard
-
-| Key | Effect |
-|---|---|
-| `V` / `P` / `E` / `R` | Select, pen, ellipse, rectangle |
-| Arrows | Nudge by one grid step |
-| **Shift**+arrows | Nudge by ten |
-| **Ctrl**+←/→ | Bend the active segment (**Shift** for a finer step) |
-| **Ctrl**+↑/↓ | Loosen or tighten it |
-| `Delete` / `Backspace` | Delete selected nodes, or selected shapes |
-| **Shift**+`B` | Break the path at the selected node |
-| `Escape` | Finish the current pen path and clear the selection |
-| `Enter` | Finish the current pen path |
-| **Ctrl**+`Z` / **Ctrl**+**Shift**+`Z` | Undo / redo |
-| **Ctrl**+`E` | Open or close the source drawer |
-| **Ctrl**+`B` | Open or close the inspector |
-
-A drag is one undo step, not one per frame.
-
-### Points don't have types
-
-There is no node type to choose before you draw. Every point is a point; what
-its handles do follows from where they already are:
-
-| Handles | Behaves as |
-|---|---|
-| Missing, or at different angles | Independent |
-| In line, different lengths | Direction shared |
-| In line, equal lengths | Fully mirrored |
-
-Drag a handle and that relationship is preserved. **Alt**-drag to break it, and
-it stays broken: the drag leaves the pair out of line, so the next one reads
-them as independent too.
-
-The `Corner`/`Smooth`/`Symm` buttons are a readout of what the handles currently
-say, and clicking one moves the handles to make it so. `Corner` removes them;
-`Smooth` and `Symm` on a corner grow them where the hollow ghosts sit, a third
-along each neighbouring segment, then align them — which does move the drawing,
-by about 1.5 units on a right-angle corner with 10-unit sides.
-
-Note also that on a corner whose two sides are the same length — a square, any
-regular polygon — `Smooth` lands on `Symm`, because each grown handle is a third
-of an equal chord. That makes the double-click cycle a two-state toggle there.
-
-A click that has nothing to align against leaves the path exactly as it was and
-says why: the end of an open path has no second handle, a symmetric node is
-*already* smooth since collinear-and-equal is a special case of collinear, and
-asking for what a node already is has nothing to move. None of them record an
-undo step, because nothing happened.
-
-### Circles, rectangles and circularising
-
-`E` and `R` draw an ellipse and a rectangle. Drag out a box; **Shift** constrains
-it to a circle or a square by taking the shorter span, which keeps the result on
-the grid whenever the drag already was, and **Alt** reads the press as the
-centre rather than a corner. **Corner** in the Draw panel is the radius the
-rectangle tool rounds with, clamped to half the shorter side.
-
-They are nodes and handles from the moment they exist — there is no rect or
-ellipse in the model, so there is nothing to "convert to path" before you can
-drag one of the corners. A circle is four cubics with handles of `4/3·(√2−1)`
-times the radius, which is round to about 0.027 % of it. A rounded rectangle is
-four quarter arcs and four straight sides, and the sides stay straight because
-their nodes have no handles at all.
-
-**Circularise** goes the other way: it takes a hand-drawn or imported
-near-circle and makes it exact. Every node keeps its angle about the best-fit
-centre and moves to the fitted radius, then the handles are rebuilt from the
-angle each segment now spans, at `r · 4/3 · tan(θ/4)`. Nodes stay where they
-were around the ring and none are added.
-
-Unevenly spaced nodes come out *less* round than evenly spaced ones, because a
-cubic's error grows with the arc it has to cover — so when one gap is wide, the
-status line says how wide and suggests adding a node there. A closed contour is
-treated as a ring: its spans are forced to one direction and have to add up to a
-full turn, which is what stops a wide gap being drawn the short way round and
-retracing the rest of the shape. Nodes that do not go round in order — a star —
-are refused rather than mangled.
-
-The status line says which radius it found and how far the furthest node had to
-travel. With a genuine near-circle that number is small, and when it isn't, that
-is the honest measure of how much of a circle this was to start with.
-
-### Deleting and breaking
-
-Delete always deletes. There is no minimum size and no case where it quietly
-does less than you asked: a closed path goes down to two nodes, which draws as a
-line when the segments are straight and a lens when they are curved, and below
-that there is nothing left to draw so the subpath goes.
-
-What happens to the path *around* the node is a setting, in the **Delete** panel,
-because both readings are useful:
-
-| Mode | Deleting the middle node of `M10 30 L25 15 L40 30 L55 15 L70 30` |
-|---|---|
-| **Fuse** (default) | `M10 30 L25 15 H55 L70 30` — still one path |
-| **Split** | `M10 30 L25 15 M55 15 L70 30` — two ends |
-
-**Fuse** is what every other editor does on Delete, and what you want when
-simplifying: a pentagon becomes a quadrilateral. It rebuilds one segment out of
-two, which is approximate — see the deviation note in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-**Split** is what you want when cutting a path apart. It is exact, because no
-segment is rebuilt: every curve that survives is bit-for-bit the one that was
-there. Fragments left with a single node are dropped, since a lone node has no
-segments and serialises to nothing.
-
-**Break here**, or `Shift+B`, is neither — it *keeps* the node and duplicates
-it, leaving two ends exactly where the one node was, or opening a closed path at
-that node. Nothing moves at all.
-
-| | Nodes | Path | Geometry |
-|---|---|---|---|
-| Delete · fuse | −1 | stays whole | approximated |
-| Delete · split | −1 | two ends | exact |
-| Break here | +1 | two ends | exact |
-
-### Naming shapes
-
-Double-click a name in the Shapes list to rename it. The name is what the
-exported `id` carries, and an `id` is an XML Name — no spaces, no quotes, not
-starting with a digit — so anything that will not fit is hyphenated on the way
-out, a leading digit gains an `n`, a name that sanitises to nothing becomes
-`shape`, and the status line says what the export will read. The name in the
-editor is left exactly as typed.
-
-Two shapes may share a name — duplicating one is the usual way it happens — but
-two elements may not share an `id`, so export adds a numeric suffix to the
-second. Style values are escaped there too: a `fill` carrying a quote, which an
-imported document can supply, would otherwise close the attribute early and
-produce a file that will not re-open.
-
-### Combining shapes
-
-Shift-click the shape list to select two or more, then **Unite**, **Subtract**,
-**Intersect** or **Exclude**. The first shape in the list survives, keeping its
-name, id and colour, and the rest are consumed — so **Subtract** is the first
-minus the rest, the same way round as Inkscape's Difference and Illustrator's
-Minus Front, and the result looks like the shape it replaced.
-
-It is one undo step. If the operation produces nothing, or produces geometry
-that fails a finite check, the document is left exactly as it was and the status
-line says so.
-
-### The grid
-
-The step you type is the step you snap to *and* the step you see. When you zoom
-out far enough that every line would not fit, the grid thins to every 2nd, 5th
-or 10th position rather than switching to a different lattice, and the readout
-says which — `1 · every 5 drawn`. Anything you can see, you can snap to.
-
-Set the step to 0 to turn snapping off; the lattice goes with it, since there
-would be nothing behind it. Arrow keys nudge by one step, Shift+arrows by ten.
-
-### The window
-
-The canvas is the application: it takes every pixel the panels are not using,
-and the page itself never scrolls. The inspector on the right and the source
-drawer at the bottom both *take* space from the canvas rather than floating over
-it, so nothing you can see is ever sitting underneath a panel. Close them —
-**Ctrl**+`B`, **Ctrl**+`E` — and the canvas takes the space straight back. Below
-about 860 px the inspector gives up and floats, because taking 288 px from a
-window that narrow leaves nothing to draw in.
-
-The strip along the bottom is the readout: what the document contains, what the
-grid is doing, the last thing that happened, and the pointer's position in
-document coordinates.
-
-### The source drawer
-
-Closed until you open it. It shows the selected shape's `d` string, or the whole
-document as SVG. Edit it and press Apply. It parses `M L H V C S Q T A Z` in
-any mixture of relative and absolute, and paste of a whole `<svg>` document
-works — `rect`, `circle`, `ellipse`, `line`, `polyline` and `polygon` are
-converted to paths, and `transform` attributes are baked in.
+| Learn it by drawing something | [Tutorial](docs/manual/tutorial.md) |
+| Finish one specific task | [How-to guides](docs/manual/how-to.md) |
+| Look up a key, button or panel | [Reference](docs/manual/reference.md) |
+| Understand why it behaves like that | [Explanation](docs/manual/explanation.md) |
 
 ---
 
@@ -277,21 +112,21 @@ src/
 
 ## Testing
 
-**Unit and DOM tests** — `npm test`. 294 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 294 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
 and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
-path strings — it measures. Curve equality is by projected deviation, boolean
+path strings. It measures instead: curve equality by projected deviation, boolean
 results by enclosed area. A boolean is obliged to produce a region, not a
 particular spelling of one, and asserting on the `d` string would break every
 time a contour got reordered.
 
-The grid tests are the other shape: an exact invariant — every drawn line sits
-on a snap position — swept across six orders of magnitude of zoom and nine snap
+The grid tests are the other shape: an exact invariant, that every drawn line
+sits on a snap position, swept across six orders of magnitude of zoom and nine snap
 steps. There is no tolerance to tune, so there is no reason to sample.
 
-**Browser tests** — `npm run drive <scenario>`, which drives the real
+**Browser tests**, with `npm run drive <scenario>`, which drives the real
 Chromium-based Edge at `/usr/bin/microsoft-edge` through `playwright-core`.
 No browser download; adjust the path at the top of `tools/drive.mjs` if yours
 differs, and pass `--headed` to watch.

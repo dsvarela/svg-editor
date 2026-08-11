@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Path — a grid SVG editor</title>
+    <title>Path, a grid SVG editor</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230b0e14'/%3E%3Cpath d='M3 11 C3 5 13 11 13 5' stroke='%235f97ff' fill='none' stroke-width='1.6'/%3E%3Crect x='1.6' y='9.6' width='2.8' height='2.8' fill='%23fff'/%3E%3Crect x='11.6' y='3.6' width='2.8' height='2.8' fill='%23fff'/%3E%3C/svg%3E"
@@ -100,10 +100,10 @@
           <!-- The shortcut goes last: the tooltip pulls a TRAILING parenthesis
                out as a key cap, so a mid-sentence one renders as prose and these
                two were the only tools whose key was not shown. -->
-          <button type="button" data-v="ellipse" title="Ellipse — Shift for a circle, Alt from the centre (E)" aria-label="Ellipse">
+          <button type="button" data-v="ellipse" title="Ellipse. Shift for a circle, Alt from the centre (E)" aria-label="Ellipse">
             <svg class="ico"><use href="#i-ellipse" /></svg>
           </button>
-          <button type="button" data-v="rect" title="Rectangle — Shift for a square, Alt from the centre (R)" aria-label="Rectangle">
+          <button type="button" data-v="rect" title="Rectangle. Shift for a square, Alt from the centre (R)" aria-label="Rectangle">
             <svg class="ico"><use href="#i-rect" /></svg>
           </button>
         </div>
@@ -281,7 +281,7 @@
               <button type="button" data-dm="split" title="Leave the path open where the node was">Split</button>
             </div>
             <p class="note">
-              <b>Fuse</b> keeps the path whole — a pentagon becomes a quadrilateral — but rebuilds one
+              <b>Fuse</b> keeps the path whole, so a pentagon becomes a quadrilateral. It rebuilds one
               segment out of two, so it approximates. <b>Split</b> leaves two ends and touches no
               surviving segment at all. Neither is <b>Break here</b>, which keeps the node.
             </p>

@@ -724,7 +724,7 @@ export class Controller {
     if (!eligible) {
       this.onMessage?.(
         targets.size
-          ? 'Circularise needs a contour of three or more nodes.'
+          ? 'Circularise needs a path of three or more nodes.'
           : 'Select a shape, or some of its nodes, first.',
         false,
       );
@@ -758,8 +758,8 @@ export class Controller {
 
     if (!done) {
       this.onMessage?.(
-        'No circle is determined by those nodes — they are collinear, or they do not go ' +
-          'round the ring in order.',
+        'Those nodes do not determine a circle. They are collinear, or they do not go ' +
+          'round in order.',
         false,
       );
       return false;
@@ -775,12 +775,12 @@ export class Controller {
     // than wonder why one side looks flat.
     const wideDeg = Math.round((widest * 180) / Math.PI);
     this.onMessage?.(
-      `Circularised ${done} contour${done === 1 ? '' : 's'} onto r ${dp(radius)}${
+      `Circularised ${done} path${done === 1 ? '' : 's'} onto r ${dp(radius)}${
         done > 1 ? ' (the last one)' : ''
-      }; furthest node moved ${dp(moved)}.` +
+      }. Furthest node moved ${dp(moved)}.` +
         (extra.length ? ` Skipped ${extra.join(', ')}.` : '') +
         (wideDeg > 120
-          ? ` Widest gap is ${wideDeg}° — one cubic cannot hold that arc tightly; add a node to close it up.`
+          ? ` Widest gap is ${wideDeg}°. One curve cannot hold that arc tightly; add a node in it.`
           : ''),
       true,
     );
@@ -1142,7 +1142,7 @@ export class Controller {
     const ref = sel.ref;
     const pieces = breakAt(sel.subpath, ref.i);
     if (!pieces) {
-      this.onMessage?.('That node is already an end of the path — nothing to break.', false);
+      this.onMessage?.('That node already ends the path.', false);
       return false;
     }
 
@@ -1227,7 +1227,7 @@ export class Controller {
       return { ok: false, message: `${label} failed: ${(err as Error).message}` };
     }
     if (!result) {
-      return { ok: false, message: `${label} left nothing — the document is unchanged.` };
+      return { ok: false, message: `${label} left nothing. The document is unchanged.` };
     }
 
     const subpaths = result;
@@ -1415,19 +1415,18 @@ export class Controller {
     if (changed) return;
     if (alreadySymmetric) {
       this.onMessage?.(
-        'Already smooth: symmetric means collinear handles of equal length, which is smooth. ' +
-          'Drag one handle to give them different lengths.',
+        'Already smooth. Symmetric is smooth with equal handle lengths; drag one to differ.',
         true,
       );
     } else if (atEnd) {
       this.onMessage?.(
-        'That node is an end of the path — there is no second handle to line up with.',
+        'That node ends the path. There is no second handle to line up with.',
         false,
       );
     } else if (alreadySo) {
       const word = kind === 'corner' ? 'a corner' : kind === 'smooth' ? 'smooth' : 'symmetric';
       this.onMessage?.(
-        `Already ${word} — the handles are where that setting puts them, so there is nothing to move.`,
+        `Already ${word}.`,
         true,
       );
     }

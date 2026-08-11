@@ -620,7 +620,7 @@ const scenarios = {
     // These two were captured a few lines apart and never compared, so a
     // circularise that did nothing at all read as a pass.
     check(dented !== fixed.d, 'circularise left the dented path exactly as it was');
-    check(/Circularised 1 contour/.test(fixed.status), `unexpected status: ${fixed.status}`);
+    check(/Circularised 1 path/.test(fixed.status), `unexpected status: ${fixed.status}`);
     const [fw, fh] = await extent('.artwork path');
     check(Math.abs(fw - fh) < 0.6, `circularised shape is not round: ${fw} x ${fh}`);
 
