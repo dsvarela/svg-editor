@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Path — a grid SVG editor</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230e1118'/%3E%3Cpath d='M3 11 C3 5 13 11 13 5' stroke='%235f97ff' fill='none' stroke-width='1.6'/%3E%3Crect x='1.6' y='9.6' width='2.8' height='2.8' fill='%23fff'/%3E%3Crect x='11.6' y='3.6' width='2.8' height='2.8' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <header class="mast">
+      <div>
+        <p class="eyebrow">Direct manipulation · no command table</p>
+        <h1>Path</h1>
+      </div>
+      <div class="mast-actions">
+        <button class="tbtn" id="theme" type="button">Invert</button>
+      </div>
+    </header>
+
+    <div class="bench">
+      <section class="stage">
+        <div class="tools">
+          <div class="seg" id="tool" role="group" aria-label="Tool">
+            <button type="button" data-v="select" title="Select (V)">Select</button>
+            <button type="button" data-v="pen" title="Pen (P)">Pen</button>
+          </div>
+          <span class="sep"></span>
+          <button class="tbtn" id="undo" type="button" title="Ctrl+Z">Undo</button>
+          <button class="tbtn" id="redo" type="button" title="Ctrl+Shift+Z">Redo</button>
+          <span class="sep"></span>
+          <button class="tbtn" id="del" type="button" title="Delete">Delete</button>
+          <button class="tbtn" id="corner" type="button">Corner</button>
+          <button class="tbtn" id="smooth" type="button">Smooth</button>
+          <button class="tbtn" id="curve" type="button">Curve</button>
+          <button class="tbtn" id="straight" type="button">Straighten</button>
+          <span class="sep"></span>
+          <button class="tbtn" id="zoomout" type="button" aria-label="Zoom out">&minus;</button>
+          <button class="tbtn" id="zoomin" type="button" aria-label="Zoom in">+</button>
+          <button class="tbtn" id="fit" type="button">Fit</button>
+          <span class="hint" id="hint">Drag a node or handle. Double-click the outline to insert.</span>
+        </div>
+        <div class="canvas" id="canvas"></div>
+        <div class="statusbar">
+          <span id="stats"></span>
+          <span id="cursor" class="mono"></span>
+        </div>
+      </section>
+
+      <aside class="rail">
+        <div class="group" id="shapegroup">
+          <div class="glabel"><span>Shapes</span><span class="gval" id="shapecount"></span></div>
+          <ul class="shapelist" id="shapelist"></ul>
+          <div class="grid2" style="margin-top: 8px">
+            <button class="btn" id="dupShape">Duplicate</button>
+            <button class="btn" id="delShape">Delete</button>
+          </div>
+        </div>
+
+        <div class="group" id="nodegroup">
+          <div class="glabel"><span>Node</span><span class="gval" id="nodeinfo">none</span></div>
+          <div class="coords">
+            <label for="nx">pos</label>
+            <input type="number" id="nx" step="0.5" aria-label="Node X" />
+            <input type="number" id="ny" step="0.5" aria-label="Node Y" />
+            <label for="hix">in</label>
+            <input type="number" id="hix" step="0.5" aria-label="Incoming handle X" />
+            <input type="number" id="hiy" step="0.5" aria-label="Incoming handle Y" />
+            <label for="hox">out</label>
+            <input type="number" id="hox" step="0.5" aria-label="Outgoing handle X" />
+            <input type="number" id="hoy" step="0.5" aria-label="Outgoing handle Y" />
+          </div>
+          <div
+            class="seg"
+            id="ntype"
+            role="group"
+            aria-label="Handle continuity"
+            title="What the handles currently do. Click to make it so. Alt-drag a handle to break the pair."
+            style="margin-top: 9px"
+          >
+            <button type="button" data-v="corner" title="Remove both handles">Corner</button>
+            <button type="button" data-v="smooth" title="Align the handles, keeping their lengths">Smooth</button>
+            <button type="button" data-v="symmetric" title="Align the handles and equalise their lengths">Symm</button>
+          </div>
+          <div class="glabel" style="margin: 13px 0 0"><span>Bend</span><span class="gval" id="bendinfo">no segment</span></div>
+          <div class="coords" id="bendrow">
+            <label for="bendAngle">angle</label>
+            <input type="number" id="bendAngle" step="5" aria-label="Bend angle" />
+            <button class="btn" id="bendFlat" title="Straighten this segment">Flat</button>
+            <label for="bendLoose">loose</label>
+            <input type="number" id="bendLoose" step="0.1" min="0.05" aria-label="Looseness" />
+            <button class="btn" id="bendFree" title="Release into free handles">Free</button>
+          </div>
+          <p class="note">Select two neighbouring nodes to bend the segment between them. <kbd>Ctrl</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> bends, <kbd>Ctrl</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd> loosens.</p>
+
+          <div class="glabel" style="margin: 13px 0 0"><span>Align</span><span class="gval" id="aligninfo"></span></div>
+          <div class="aligns">
+            <button type="button" data-al="left" title="Align left">&#8676;</button>
+            <button type="button" data-al="hcenter" title="Align horizontal centres">&#8677;&#8676;</button>
+            <button type="button" data-al="right" title="Align right">&#8677;</button>
+            <button type="button" data-al="top" title="Align top">&#8673;</button>
+            <button type="button" data-al="vcenter" title="Align vertical centres">&#8661;</button>
+            <button type="button" data-al="bottom" title="Align bottom">&#8675;</button>
+          </div>
+          <div class="aligns" style="grid-template-columns: 1fr 1fr">
+            <button type="button" data-di="h" title="Distribute horizontally">Space H</button>
+            <button type="button" data-di="v" title="Distribute vertically">Space V</button>
+          </div>
+          <p class="note" id="nodenote">Click a node to edit it. Hollow handles can be pulled out to curve a straight segment.</p>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>Transform</span><span class="gval" id="selinfo"></span></div>
+          <div class="grid2">
+            <button class="btn" data-tr="rot-90">Rotate &minus;90°</button>
+            <button class="btn" data-tr="rot90">Rotate +90°</button>
+            <button class="btn" data-tr="flipH">Flip horizontal</button>
+            <button class="btn" data-tr="flipV">Flip vertical</button>
+          </div>
+          <div class="row">
+            <label for="angle">Angle</label>
+            <input type="number" id="angle" value="15" step="1" />
+            <button class="btn" id="rotate">Rotate</button>
+          </div>
+          <div class="row">
+            <label for="scale">Scale</label>
+            <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
+            <button class="btn" id="scaleGo">Apply</button>
+          </div>
+          <p class="note">Applies to the selection, or to everything when nothing is selected.</p>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>Grid</span><span class="gval" id="gridval"></span></div>
+          <div class="row">
+            <label for="gridStep">Step</label>
+            <input type="number" id="gridStep" value="1" step="0.1" min="0" />
+          </div>
+          <div class="checks">
+            <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
+            <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
+            <label><input type="checkbox" id="snapPoints" checked /> Snap to points</label>
+            <label><input type="checkbox" id="showHandles" checked /> Handles</label>
+            <label><input type="checkbox" id="filled" /> Filled</label>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>Output</span><span class="gval" id="outval"></span></div>
+          <div class="row">
+            <label for="decimals">Decimals</label>
+            <input type="number" id="decimals" value="3" min="0" max="9" step="1" />
+          </div>
+          <div class="checks">
+            <label><input type="checkbox" id="minify" /> Minify</label>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="source">
+      <div class="srchead">
+        <div class="seg" id="srcmode" role="group" aria-label="Source format">
+          <button type="button" data-v="d">Path data</button>
+          <button type="button" data-v="svg">SVG</button>
+        </div>
+        <div class="btns">
+          <button class="btn" id="apply" type="button">Apply</button>
+          <button class="btn" id="copy" type="button">Copy</button>
+          <button class="btn primary" id="download" type="button">Download SVG</button>
+        </div>
+      </div>
+      <textarea id="src" spellcheck="false" aria-label="Path data"></textarea>
+      <div class="srcfoot">
+        <span id="status" class="st ok">Ready.</span>
+        <span id="srchint" class="st"></span>
+        <span id="srcinfo" class="st mono"></span>
+      </div>
+    </section>
+
+    <p class="foot">
+      Nodes and handles are the model here; <code>M/L/C/Q/A</code> only exist when data is read or
+      written. That is why rotating an arc is not a special case — there are no arcs by the time
+      anything moves. <kbd>V</kbd> select, <kbd>P</kbd> pen, <kbd>Space</kbd>+drag pans, wheel zooms,
+      double-click an anchor to cycle corner/smooth/symmetric.
+    </p>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build output — reproducible with `npm run build`
+dist/
+
+# Editor and OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*

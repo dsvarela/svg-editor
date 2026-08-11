@@ -1,0 +1,275 @@
+/** @vitest-environment jsdom */
+
+import { describe, expect, it } from 'vitest';
+import { exportSvg, importSvg, parseTransform, primitiveToPath } from '../src/io/svg';
+import { parsePath } from '../src/core/parse';
+import { segmentAsCubic, segmentCount } from '../src/core/types';
+import { cubicAt } from '../src/core/bezier';
+import { emptyDoc } from '../src/model/doc';
+import type { Pt, Shape } from '../src/core/types';
+
+const samplePts = (shape: Shape, per = 12): Pt[] => {
+  const out: Pt[] = [];
+  for (const sp of shape.subpaths) {
+    for (let i = 0; i < segmentCount(sp); i++) {
+      const c = segmentAsCubic(sp, i);
+      for (let k = 0; k <= per; k++) out.push(cubicAt(c, k / per));
+    }
+  }
+  return out;
+};
+
+const bbox = (shape: Shape) => {
+  const pts = samplePts(shape, 32);
+  return {
+    x0: Math.min(...pts.map((p) => p[0])),
+    y0: Math.min(...pts.map((p) => p[1])),
+    x1: Math.max(...pts.map((p) => p[0])),
+    y1: Math.max(...pts.map((p) => p[1])),
+  };
+};
+
+describe('transform parsing', () => {
+  it('reads translate', () => {
+    expect(parseTransform('translate(10 20)')).toEqual([1, 0, 0, 1, 10, 20]);
+    expect(parseTransform('translate(10)')).toEqual([1, 0, 0, 1, 10, 0]);
+  });
+
+  it('reads scale with one or two arguments', () => {
+    expect(parseTransform('scale(2)')).toEqual([2, 0, 0, 2, 0, 0]);
+    expect(parseTransform('scale(2,3)')).toEqual([2, 0, 0, 3, 0, 0]);
+  });
+
+  it('reads matrix', () => {
+    expect(parseTransform('matrix(1,2,3,4,5,6)')).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('rotates about a point when given three arguments', () => {
+    // Rotating 180 degrees about (5,5) maps (5,0) to (5,10).
+    const m = parseTransform('rotate(180 5 5)');
+    const x = m[0] * 5 + m[2] * 0 + m[4];
+    const y = m[1] * 5 + m[3] * 0 + m[5];
+    expect(x).toBeCloseTo(5, 9);
+    expect(y).toBeCloseTo(10, 9);
+  });
+
+  it('composes a list left to right', () => {
+    // translate then scale: the scale applies in the translated frame.
+    const m = parseTransform('translate(10 0) scale(2)');
+    expect(m).toEqual([2, 0, 0, 2, 10, 0]);
+  });
+
+  it('ignores junk', () => {
+    expect(parseTransform('')).toEqual([1, 0, 0, 1, 0, 0]);
+    expect(parseTransform('nonsense(1 2)')).toEqual([1, 0, 0, 1, 0, 0]);
+  });
+});
+
+describe('primitive conversion', () => {
+  const el = (markup: string): Element =>
+    new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`, 'image/svg+xml')
+      .documentElement.children[0];
+
+  it('converts a plain rect', () => {
+    expect(primitiveToPath(el('<rect x="1" y="2" width="10" height="5"/>'))).toBe('M1 2H11V7H1Z');
+  });
+
+  it('converts a rounded rect with arcs', () => {
+    const d = primitiveToPath(el('<rect width="10" height="10" rx="2"/>'))!;
+    const sp = parsePath(d);
+    const b = bbox({ subpaths: sp } as Shape);
+    expect(b.x0).toBeCloseTo(0, 6);
+    expect(b.x1).toBeCloseTo(10, 6);
+    expect(b.y1).toBeCloseTo(10, 6);
+  });
+
+  it('takes rx from ry when only ry is given', () => {
+    const a = primitiveToPath(el('<rect width="10" height="10" ry="3"/>'));
+    const b = primitiveToPath(el('<rect width="10" height="10" rx="3" ry="3"/>'));
+    expect(a).toBe(b);
+  });
+
+  it('clamps radii to half the side', () => {
+    const a = primitiveToPath(el('<rect width="10" height="10" rx="99"/>'));
+    const b = primitiveToPath(el('<rect width="10" height="10" rx="5"/>'));
+    expect(a).toBe(b);
+  });
+
+  it('converts a circle to something actually round', () => {
+    const d = primitiveToPath(el('<circle cx="5" cy="5" r="4"/>'))!;
+    const shape = { subpaths: parsePath(d) } as Shape;
+    for (const p of samplePts(shape, 40)) {
+      expect(Math.abs(Math.hypot(p[0] - 5, p[1] - 5) - 4)).toBeLessThan(2e-3);
+    }
+  });
+
+  it('converts an ellipse', () => {
+    const d = primitiveToPath(el('<ellipse cx="0" cy="0" rx="10" ry="4"/>'))!;
+    const b = bbox({ subpaths: parsePath(d) } as Shape);
+    expect(b.x1 - b.x0).toBeCloseTo(20, 2);
+    expect(b.y1 - b.y0).toBeCloseTo(8, 2);
+  });
+
+  it('converts line, polyline and polygon', () => {
+    expect(primitiveToPath(el('<line x1="0" y1="0" x2="5" y2="6"/>'))).toBe('M0 0L5 6');
+    expect(primitiveToPath(el('<polyline points="0,0 5,5 10,0"/>'))).toBe('M0 0L5 5L10 0');
+    expect(primitiveToPath(el('<polygon points="0,0 5,5 10,0"/>'))).toBe('M0 0L5 5L10 0Z');
+  });
+
+  it('returns null for things that are not shapes', () => {
+    expect(primitiveToPath(el('<text>hi</text>'))).toBeNull();
+  });
+
+  it('yields nothing for a zero-sized rect', () => {
+    expect(primitiveToPath(el('<rect width="0" height="10"/>'))).toBe('');
+  });
+});
+
+describe('svg import', () => {
+  it('makes one shape per path, which Apply used to collapse into one', () => {
+    const r = importSvg(`<svg viewBox="0 0 20 20">
+      <path d="M0 0 L10 0 L10 10 Z"/>
+      <path d="M12 12 L18 12 L18 18 Z"/>
+    </svg>`);
+    expect(r.shapes).toHaveLength(2);
+    expect(r.viewBox).toEqual({ x: 0, y: 0, w: 20, h: 20 });
+  });
+
+  it('reads mixed primitives', () => {
+    const r = importSvg(`<svg viewBox="0 0 100 100">
+      <rect width="10" height="10"/>
+      <circle cx="50" cy="50" r="5"/>
+      <polygon points="0,0 5,5 10,0"/>
+      <path d="M0 0 L1 1"/>
+    </svg>`);
+    expect(r.shapes).toHaveLength(4);
+  });
+
+  it('bakes a transform into the coordinates', () => {
+    const r = importSvg(`<svg><path transform="translate(10 20)" d="M0 0 L5 0"/></svg>`);
+    expect(r.shapes[0].subpaths[0].nodes[0].pt).toEqual([10, 20]);
+    expect(r.shapes[0].subpaths[0].nodes[1].pt).toEqual([15, 20]);
+  });
+
+  it('composes transforms down through groups', () => {
+    const r = importSvg(
+      `<svg><g transform="translate(10 0)"><g transform="scale(2)">` +
+        `<path d="M1 1 L2 1"/></g></g></svg>`,
+    );
+    // scale first (inner), then translate: (1,1)*2 = (2,2), +10 x -> (12,2)
+    expect(r.shapes[0].subpaths[0].nodes[0].pt).toEqual([12, 2]);
+  });
+
+  it('rotates a transformed primitive correctly', () => {
+    const r = importSvg(`<svg><rect transform="rotate(90)" x="0" y="0" width="10" height="4"/></svg>`);
+    const b = bbox(r.shapes[0]);
+    // A 10x4 rect rotated 90 degrees about the origin becomes 4 wide, 10 tall.
+    expect(b.x1 - b.x0).toBeCloseTo(4, 6);
+    expect(b.y1 - b.y0).toBeCloseTo(10, 6);
+  });
+
+  it('inherits style from groups and reads inline style', () => {
+    const r = importSvg(
+      `<svg><g fill="#ff0000" stroke="#00ff00">` +
+        `<path d="M0 0 L1 1"/>` +
+        `<path d="M0 0 L1 1" style="fill:#0000ff;stroke-width:3"/>` +
+        `</g></svg>`,
+    );
+    expect(r.shapes[0].style.fill).toBe('#ff0000');
+    expect(r.shapes[0].style.stroke).toBe('#00ff00');
+    expect(r.shapes[1].style.fill).toBe('#0000ff');
+    expect(r.shapes[1].style.stroke).toBe('#00ff00');
+    expect(r.shapes[1].style.strokeWidth).toBe(3);
+  });
+
+  it('skips hidden elements and defs', () => {
+    const r = importSvg(`<svg>
+      <defs><path d="M0 0 L1 1"/></defs>
+      <path d="M0 0 L1 1" display="none"/>
+      <path d="M0 0 L2 2"/>
+    </svg>`);
+    expect(r.shapes).toHaveLength(1);
+  });
+
+  it('warns about unsupported elements instead of failing', () => {
+    const r = importSvg(`<svg><text x="0" y="0">hi</text><path d="M0 0 L1 1"/></svg>`);
+    expect(r.shapes).toHaveLength(1);
+    expect(r.warnings.join(' ')).toContain('text');
+  });
+
+  it('accepts bare path data too', () => {
+    const r = importSvg('M0 0 L10 0 L10 10 Z');
+    expect(r.shapes).toHaveLength(1);
+    expect(r.viewBox).toBeNull();
+  });
+
+  it('uses the id as the shape name', () => {
+    const r = importSvg(`<svg><path id="handle" d="M0 0 L1 1"/></svg>`);
+    expect(r.shapes[0].name).toBe('handle');
+  });
+
+  it('throws on malformed markup', () => {
+    expect(() => importSvg('<svg><path d="M0 0"</svg>')).toThrow();
+  });
+});
+
+describe('svg export', () => {
+  it('writes one path per shape', () => {
+    const doc = emptyDoc();
+    doc.viewBox = { x: 0, y: 0, w: 20, h: 20 };
+    const r = importSvg(`<svg viewBox="0 0 20 20">
+      <path d="M0 0 L10 0 L10 10 Z"/>
+      <path d="M12 12 L18 12 L18 18 Z"/>
+    </svg>`);
+    doc.shapes = r.shapes;
+
+    const out = exportSvg(doc);
+    expect(out.match(/<path /g)).toHaveLength(2);
+    expect(out).toContain('viewBox="0 0 20 20"');
+  });
+
+  it('round-trips shape count and geometry', () => {
+    const src = `<svg viewBox="0 0 100 100">
+      <rect x="5" y="5" width="20" height="10" rx="3"/>
+      <circle cx="60" cy="60" r="12"/>
+      <path d="M0 90 C10 70 30 70 40 90 Z"/>
+    </svg>`;
+    const first = importSvg(src);
+    const doc = emptyDoc();
+    doc.viewBox = first.viewBox!;
+    doc.shapes = first.shapes;
+
+    const again = importSvg(exportSvg(doc, { decimals: 6 }));
+    expect(again.shapes).toHaveLength(first.shapes.length);
+
+    for (let i = 0; i < first.shapes.length; i++) {
+      const a = bbox(first.shapes[i]);
+      const b = bbox(again.shapes[i]);
+      expect(b.x0).toBeCloseTo(a.x0, 4);
+      expect(b.y0).toBeCloseTo(a.y0, 4);
+      expect(b.x1).toBeCloseTo(a.x1, 4);
+      expect(b.y1).toBeCloseTo(a.y1, 4);
+    }
+  });
+
+  it('omits shapes too small to draw', () => {
+    const doc = emptyDoc();
+    const r = importSvg('<svg><path d="M0 0 L1 1"/></svg>');
+    doc.shapes = r.shapes;
+    doc.shapes[0].subpaths[0].nodes.pop();
+    expect(exportSvg(doc).match(/<path /g)).toBeNull();
+  });
+
+  it('preserves fill-rule and stroke settings', () => {
+    const r = importSvg(
+      `<svg><path d="M0 0 L1 1" fill="#abc" fill-rule="evenodd" stroke="#123" stroke-width="2.5"/></svg>`,
+    );
+    const doc = emptyDoc();
+    doc.shapes = r.shapes;
+    const out = exportSvg(doc);
+    expect(out).toContain('fill="#abc"');
+    expect(out).toContain('fill-rule="evenodd"');
+    expect(out).toContain('stroke="#123"');
+    expect(out).toContain('stroke-width="2.5"');
+  });
+});

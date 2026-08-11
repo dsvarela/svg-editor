@@ -1,0 +1,40 @@
+svg-editor
+==========
+
+This project contains code adapted from svg-path-editor by Yann Armelin,
+used under the Apache License, Version 2.0.
+
+    svg-path-editor
+    Copyright Yann Armelin
+    https://github.com/Yqnn/svg-path-editor
+    Licensed under the Apache License, Version 2.0
+    http://www.apache.org/licenses/LICENSE-2.0
+
+The adapted portions are:
+
+  src/core/parse.ts       The command grammar table and tokenizer, from
+                          `src/lib/path-parser.ts`. Rewritten to use sticky
+                          regexes and to emit nodes rather than command
+                          objects; the grammar table itself is a faithful
+                          reading of the SVG 1.1 BNF and is kept as-is.
+
+  src/core/serialise.ts   `formatNumber`, the shortest-exact-representation
+                          number formatter.
+
+  src/view/viewport.ts    `gridStepFor`, the decade-stepped adaptive grid,
+                          from `refreshGrid`.
+
+Each adapted function carries its own attribution comment at the point of use.
+
+--
+
+Boolean path operations are provided by PathBool.js, a runtime dependency,
+used under the MIT License.
+
+    PathBool.js
+    Copyright (c) 2024 Adam Platkevič
+    https://github.com/r-flash/PathBool.js
+    Licensed under the MIT License
+
+No PathBool.js source is vendored into this repository; it is consumed as the
+npm package `path-bool`, and its licence text ships with that package.
