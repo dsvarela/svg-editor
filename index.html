@@ -97,10 +97,13 @@
           <button type="button" data-v="pen" title="Pen (P)" aria-label="Pen">
             <svg class="ico"><use href="#i-pen" /></svg>
           </button>
-          <button type="button" data-v="ellipse" title="Ellipse (E) — Shift for a circle, Alt from the centre" aria-label="Ellipse">
+          <!-- The shortcut goes last: the tooltip pulls a TRAILING parenthesis
+               out as a key cap, so a mid-sentence one renders as prose and these
+               two were the only tools whose key was not shown. -->
+          <button type="button" data-v="ellipse" title="Ellipse — Shift for a circle, Alt from the centre (E)" aria-label="Ellipse">
             <svg class="ico"><use href="#i-ellipse" /></svg>
           </button>
-          <button type="button" data-v="rect" title="Rectangle (R) — Shift for a square, Alt from the centre" aria-label="Rectangle">
+          <button type="button" data-v="rect" title="Rectangle — Shift for a square, Alt from the centre (R)" aria-label="Rectangle">
             <svg class="ico"><use href="#i-rect" /></svg>
           </button>
         </div>

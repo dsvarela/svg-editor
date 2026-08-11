@@ -273,4 +273,86 @@ describe('circulariseSubpath', () => {
     expect(circulariseSubpath(parsePath('M0 0 L10 0')[0])).toBeNull();
     expect(circulariseSubpath(parsePath('M0 0 L5 5 L10 10 L15 15')[0])).toBeNull();
   });
+
+  /* The wrap-around defect, and why a radial measurement could not see it.
+     Spans were taken the shorter way round, so a closed contour with a gap
+     wider than half a turn had that gap drawn BACKWARDS -- the path retraced
+     the other segments instead of closing. Every node still sat exactly on the
+     circle and the reported travel was zero, so it looked like a success. */
+  describe('a closed contour is a ring', () => {
+    const ringAt = (degrees: number[], r = 10): Subpath => ({
+      nodes: degrees.map((d) => ({
+        pt: [r * Math.cos((d * Math.PI) / 180), r * Math.sin((d * Math.PI) / 180)] as Pt,
+        hIn: null,
+        hOut: null,
+      })),
+      closed: true,
+    });
+
+    /** Total turning of the drawn path about a centre, in radians. */
+    const turning = (sp: Subpath, c: Pt): number => {
+      const pts = samples(sp, 32);
+      let total = 0;
+      for (let i = 1; i < pts.length; i++) {
+        let d =
+          Math.atan2(pts[i][1] - c[1], pts[i][0] - c[0]) -
+          Math.atan2(pts[i - 1][1] - c[1], pts[i - 1][0] - c[0]);
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        total += d;
+      }
+      return total;
+    };
+
+    it('goes round exactly once when one gap is wider than half a turn', () => {
+      const sp = ringAt([0, 20, 40, 60]);
+      const r = circulariseSubpath(sp)!;
+      // The old code returned a path that came back to the start without ever
+      // going round: turning was ~0. This is the assertion that goes red.
+      expect(Math.abs(turning(sp, r.centre))).toBeCloseTo(2 * Math.PI, 6);
+      // And the widest gap is reported, because one cubic cannot hold 300 well.
+      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(300, 4);
+    });
+
+    it('still goes round once for an ordinary ring', () => {
+      const sp = ringAt([0, 90, 180, 270]);
+      const r = circulariseSubpath(sp)!;
+      expect(Math.abs(turning(sp, r.centre))).toBeCloseTo(2 * Math.PI, 6);
+      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(90, 6);
+    });
+
+    it('goes the same way round whichever way the nodes were written', () => {
+      const ccw = ringAt([0, 90, 180, 270]);
+      const cw = ringAt([0, 270, 180, 90]);
+      const a = circulariseSubpath(ccw)!;
+      const b = circulariseSubpath(cw)!;
+      expect(turning(ccw, a.centre)).toBeCloseTo(-turning(cw, b.centre), 6);
+    });
+
+    it('refuses a contour whose nodes do not go round in order', () => {
+      // A five-pointed star visits the circle twice; no circle through these
+      // nodes in this order is a ring, so nothing is mutated.
+      const star = ringAt([0, 144, 288, 72, 216]);
+      const before = star.nodes.map((n) => [...n.pt]);
+      expect(circulariseSubpath(star)).toBeNull();
+      expect(star.nodes.map((n) => [...n.pt])).toEqual(before);
+    });
+
+    it('refuses a contour with a node on the fitted centre', () => {
+      // atan2(0, 0) is 0, which used to teleport that node to the eastern point
+      // of the circle, on top of whatever was already there.
+      const sp = ringAt([0, 90, 180, 270]);
+      sp.nodes.push({ pt: [0, 0], hIn: null, hOut: null });
+      expect(circulariseSubpath(sp)).toBeNull();
+    });
+
+    it('leaves an open arc taking the shorter way round', () => {
+      // An open path has no ring constraint and its anchors cannot say which
+      // way the arc went, so this behaviour is deliberate rather than missed.
+      const sp = parsePath('M10 0 L7.0710678118654755 7.0710678118654755 L0 10')[0];
+      const r = circulariseSubpath(sp)!;
+      expect(r.moved).toBeLessThan(1e-9);
+      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(45, 6);
+    });
+  });
 });

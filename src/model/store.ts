@@ -126,12 +126,14 @@ export class Store {
    * first call in a batch takes a snapshot, so a drag that mutates on every
    * pointermove still collapses to a single undo step.
    */
-  checkpoint(): void {
-    if (this.batch > 0 && this.batchTook) return;
+  /** Returns whether an entry was actually pushed, which `tryEdit` needs. */
+  checkpoint(): boolean {
+    if (this.batch > 0 && this.batchTook) return false;
     this.undoStack.push(this.snapshot());
     if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
     this.redoStack.length = 0;
     if (this.batch > 0) this.batchTook = true;
+    return true;
   }
 
   /** Mutate state and notify, without touching history. */
@@ -145,6 +147,42 @@ export class Store {
     this.checkpoint();
     fn(this.state);
     this.notify();
+  }
+
+  /**
+   * `edit`, for operations that may turn out to have nothing to do.
+   *
+   * `edit` checkpoints first and asks questions later, which is right for a
+   * drag — you cannot know where it will end — and wrong for a button, because
+   * an operation that declines still lands an empty entry on the undo stack and
+   * throws the redo stack away. Pressing a dead button five times then costs
+   * five presses of Ctrl+Z, none of which visibly do anything.
+   *
+   * So the mutation reports whether it changed the document, and a `false`
+   * takes the checkpoint back. The redo stack is restored with it: it was only
+   * cleared on the assumption that an edit was about to happen.
+   *
+   * At exactly `HISTORY_LIMIT` entries the push that this cancels has already
+   * shifted the oldest one off, which is not recoverable. Losing the far end of
+   * a 200-deep history is a fair price for not corrupting the near end.
+   */
+  tryEdit(fn: (s: EditorState) => boolean): boolean {
+    const redo = this.redoStack.slice();
+    const took = this.batchTook;
+    const pushed = this.checkpoint();
+
+    const changed = fn(this.state);
+    if (changed) {
+      this.notify();
+      return true;
+    }
+
+    if (pushed) {
+      this.undoStack.pop();
+      this.redoStack = redo;
+      this.batchTook = took;
+    }
+    return false;
   }
 
   /**
@@ -166,6 +204,22 @@ export class Store {
 
   get canRedo(): boolean {
     return this.redoStack.length > 0;
+  }
+
+  /**
+   * Abandon the last checkpoint, restoring it without offering a redo.
+   *
+   * `undo` is for a user who may change their mind, so it keeps what it undid.
+   * Cancelling a gesture is not that: the half-drawn thing was never wanted,
+   * and leaving it one Ctrl+Shift+Z away means an abandoned shape can come back
+   * from a keystroke aimed at something else. Escape used to call `undo`.
+   */
+  rollback(): void {
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.state.doc = prev.doc;
+    this.state.selection = prev.selection;
+    this.notify();
   }
 
   undo(): void {

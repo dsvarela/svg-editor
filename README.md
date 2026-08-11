@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (266 across 9 files) |
+| `npm test` | Unit and DOM tests (294 across 10 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser — see [Testing](#testing) |
 
-The production build is one file, no external requests: **130.6 kB, 41.8 kB
+The production build is one file, no external requests: **133.0 kB, 42.7 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -50,7 +50,7 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | Drag a node | Move it, handles and all |
 | Drag a handle | Move it, preserving whatever relationship the pair already had |
 | **Alt**-drag a handle | Move it alone, breaking the pair |
-| Drag the outline | Move the whole shape — but if any of its nodes are selected, only those move. That is a defect, not a design: [review](docs/REVIEW-2026-08-11.md), Class 8 |
+| Drag the outline | Move the whole shape, and everything else selected with it. A marquee selects *nodes*, so grabbing an outline it covered entirely moves the whole selection |
 | Double-click the outline | Insert a node exactly there, without changing the curve |
 | Double-click a node | Cycle corner → smooth → symmetric |
 | Drag on empty canvas | Marquee-select |
@@ -100,12 +100,15 @@ say, and clicking one moves the handles to make it so. `Corner` removes them;
 along each neighbouring segment, then align them — which does move the drawing,
 by about 1.5 units on a right-angle corner with 10-unit sides.
 
-Two clicks have nothing to align against: the end of an open path has no second
-handle, and a symmetric node is *already* smooth, since collinear-and-equal is a
-special case of collinear. Both say so in the status line. Three more are silent
-and should not be — `Corner` on a corner, `Symm` on a symmetric node, `Smooth` on
-an already-smooth one — and the open-path case currently changes the path before
-declining. See [the review](docs/REVIEW-2026-08-11.md), Class 1.
+Note also that on a corner whose two sides are the same length — a square, any
+regular polygon — `Smooth` lands on `Symm`, because each grown handle is a third
+of an equal chord. That makes the double-click cycle a two-state toggle there.
+
+A click that has nothing to align against leaves the path exactly as it was and
+says why: the end of an open path has no second handle, a symmetric node is
+*already* smooth since collinear-and-equal is a special case of collinear, and
+asking for what a node already is has nothing to move. None of them record an
+undo step, because nothing happened.
 
 ### Circles, rectangles and circularising
 
@@ -126,14 +129,19 @@ their nodes have no handles at all.
 near-circle and makes it exact. Every node keeps its angle about the best-fit
 centre and moves to the fitted radius, then the handles are rebuilt from the
 angle each segment now spans, at `r · 4/3 · tan(θ/4)`. Nodes stay where they
-were around the ring and none are added. Unevenly spaced nodes are *less* round
-than evenly spaced ones, not equally round — the error grows with the widest
-span, and a closed contour with a gap wider than 180° is currently destroyed
-rather than circularised. See [the review](docs/REVIEW-2026-08-11.md), Class 2.
-The status line says which radius it found and how
-far the furthest node had to travel — with a genuine near-circle that number is
-small, and when it isn't, that is the honest measure of how much of a circle
-this was to start with.
+were around the ring and none are added.
+
+Unevenly spaced nodes come out *less* round than evenly spaced ones, because a
+cubic's error grows with the arc it has to cover — so when one gap is wide, the
+status line says how wide and suggests adding a node there. A closed contour is
+treated as a ring: its spans are forced to one direction and have to add up to a
+full turn, which is what stops a wide gap being drawn the short way round and
+retracing the rest of the shape. Nodes that do not go round in order — a star —
+are refused rather than mangled.
+
+The status line says which radius it found and how far the furthest node had to
+travel. With a genuine near-circle that number is small, and when it isn't, that
+is the honest measure of how much of a circle this was to start with.
 
 ### Deleting and breaking
 
@@ -179,9 +187,11 @@ out, a leading digit gains an `n`, a name that sanitises to nothing becomes
 `shape`, and the status line says what the export will read. The name in the
 editor is left exactly as typed.
 
-Nothing enforces uniqueness, so two shapes with the same name — or two whose
-names differ only in punctuation — export the same `id` and the file is invalid.
-[Review](docs/REVIEW-2026-08-11.md), Class 7.
+Two shapes may share a name — duplicating one is the usual way it happens — but
+two elements may not share an `id`, so export adds a numeric suffix to the
+second. Style values are escaped there too: a `fill` carrying a quote, which an
+imported document can supply, would otherwise close the attribute early and
+produce a file that will not re-open.
 
 ### Combining shapes
 
@@ -261,13 +271,13 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-5 891 lines of TypeScript across 19 files, no runtime framework.
+6 196 lines of TypeScript across 19 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests** — `npm test`. 266 tests over parsing, serialising,
+**Unit and DOM tests** — `npm test`. 294 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
 and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 

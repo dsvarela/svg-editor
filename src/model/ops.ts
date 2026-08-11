@@ -128,26 +128,42 @@ export function moveHandle(
  *
  * The one case that still declines is an end of an open subpath: there is no
  * segment on the outside, so there is no handle to invent and nothing to align
- * against. Such a node stays a corner because it genuinely is one.
+ * against. Such a node stays a corner because it genuinely is one, and it is
+ * left exactly as it was — see the candidate handles below.
+ *
+ * Note that materialising handles does move the drawing. Both are placed on
+ * their chords and then rotated to the averaged direction, which pulls them
+ * off: a right-angle corner with 10-unit sides shifts by about 1.5 units. An
+ * earlier version of this comment claimed it did not, having reasoned about the
+ * placement and stopped before the line that rotates them.
+ *
+ * Returns whether the node's handles actually changed, so a caller can decline
+ * to record an undo entry for a click that did nothing.
  */
-export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): void {
+export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): boolean {
   const n = sp.nodes[i];
 
   if (kind === 'corner') {
+    if (!n.hIn && !n.hOut) return false;
     n.hIn = null;
     n.hOut = null;
-    return;
+    return true;
   }
 
-  n.hIn ??= latentHandle(sp, i, 'in');
-  n.hOut ??= latentHandle(sp, i, 'out');
-  if (!n.hIn || !n.hOut) return;
+  /* Work on candidates, not on the node. Assigning the materialised handles
+     first and *then* discovering there is no second one to align against left
+     a straight segment carrying a handle -- which breaks the rule that a null
+     handle is what makes a segment a line -- while the caller announced that
+     nothing had happened. Decide first; commit only a complete answer. */
+  const hIn = n.hIn ?? latentHandle(sp, i, 'in');
+  const hOut = n.hOut ?? latentHandle(sp, i, 'out');
+  if (!hIn || !hOut) return false;
 
   // Average the two directions rather than adopting one of them, so the result
   // does not depend on which handle happens to be called "out".
-  const din = norm(sub(n.pt, n.hIn));
-  const dout = norm(sub(n.hOut, n.pt));
-  if (!din || !dout) return;
+  const din = norm(sub(n.pt, hIn));
+  const dout = norm(sub(hOut, n.pt));
+  if (!din || !dout) return false;
 
   let dx = din[0] + dout[0];
   let dy = din[1] + dout[1];
@@ -160,12 +176,23 @@ export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): voi
   const ux = dx / m;
   const uy = dy / m;
 
-  const lIn = len(sub(n.hIn, n.pt));
-  const lOut = len(sub(n.hOut, n.pt));
+  const lIn = len(sub(hIn, n.pt));
+  const lOut = len(sub(hOut, n.pt));
   const [a, b] = kind === 'symmetric' ? [(lIn + lOut) / 2, (lIn + lOut) / 2] : [lIn, lOut];
 
-  n.hIn = [n.pt[0] - ux * a, n.pt[1] - uy * a];
-  n.hOut = [n.pt[0] + ux * b, n.pt[1] + uy * b];
+  const nextIn: Pt = [n.pt[0] - ux * a, n.pt[1] - uy * a];
+  const nextOut: Pt = [n.pt[0] + ux * b, n.pt[1] + uy * b];
+  if (samePt(n.hIn, nextIn) && samePt(n.hOut, nextOut)) return false;
+
+  n.hIn = nextIn;
+  n.hOut = nextOut;
+  return true;
+}
+
+/** Handle comparison, where a missing handle differs from every real one. */
+function samePt(a: Pt | null, b: Pt | null): boolean {
+  if (!a || !b) return a === b;
+  return Math.abs(a[0] - b[0]) < 1e-12 && Math.abs(a[1] - b[1]) < 1e-12;
 }
 
 /** Unit vector, or `null` if there is no direction to speak of. */
@@ -426,6 +453,12 @@ export interface CirculariseResult {
   radius: number;
   /** How far the furthest node had to travel to reach the circle. */
   moved: number;
+  /**
+   * The widest arc any one segment now spans, in radians. A cubic's radial
+   * error climbs steeply with it, so this is the ceiling on how round the
+   * result can be — 2.7e-4 of the radius at a quarter turn, 1.8e-2 at a half.
+   */
+  widestSpan: number;
 }
 
 /**
@@ -433,19 +466,32 @@ export interface CirculariseResult {
  *
  * Each node keeps its angle about the fitted centre and is pushed out or pulled
  * in to the fitted radius; the handles are then rebuilt from the angle each
- * segment now spans, at `r · 4/3 · tan(θ/4)`. That is the exact handle length
- * for a circular arc, so evenly spaced nodes reproduce `KAPPA` and unevenly
- * spaced ones are just as round — the result does not depend on how many nodes
- * the near-circle happened to have.
+ * segment now spans, at `r · 4/3 · tan(θ/4)`. That is the midpoint-matching
+ * approximation rather than an exact arc — a cubic cannot be one — and its
+ * error grows steeply with the span: 2.7e-4 of the radius at a quarter turn,
+ * 1.8e-2 at a half. So node spacing does matter, and `widestSpan` is returned
+ * so the caller can say how round the result can possibly be.
  *
- * Angles are taken from the nodes' existing positions and consecutive spans use
- * the shorter way round, so a path whose nodes are already in angular order —
- * every real near-circle — comes out clean. A path whose nodes are not (a star,
- * say) will not, which is why the caller is handed `moved`: it is the honest
- * measure of how much of a circle this was to begin with.
+ * **A closed contour is a ring, and its spans must sum to a full turn.** Taking
+ * each span the shorter way round — which this did until 2026-08-11 — is right
+ * for spans under half a turn and silently destructive above it: four nodes at
+ * 0°, 20°, 40° and 60° leave a 300° gap, the shorter way reads that as −60°,
+ * and the closing segment retraces the other three instead of completing the
+ * circle. Every node still lands exactly on the circle, so a radial measurement
+ * cannot see it, and the reported travel is zero. It looked like a success.
  *
- * Returns `null` for fewer than three nodes or a collinear arrangement, where
- * no circle is determined.
+ * So a closed contour picks one winding from the sign of the polygon's area and
+ * forces every span to follow it. The spans then sum to exactly one turn when
+ * the nodes are in angular order, and to a multiple of one when they are not —
+ * a star, a figure of eight — which is the test for whether this was a ring at
+ * all. When it was not, nothing is mutated and `null` comes back.
+ *
+ * An open subpath has no such constraint, and its anchors alone cannot say
+ * which way an arc went, so it keeps the shorter way round.
+ *
+ * Returns `null` for fewer than three nodes, a collinear arrangement, a node
+ * sitting on the fitted centre (its angle is undefined), or a closed contour
+ * whose nodes are not in angular order.
  */
 export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
   const n = sp.nodes.length;
@@ -456,7 +502,48 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
   const [cx, cy] = fit.centre;
   const r = fit.radius;
 
+  // A node on the centre has no angle to keep. atan2(0, 0) is 0, which would
+  // teleport it to the eastern point of the circle on top of whatever is there.
+  if (sp.nodes.some((nd) => Math.hypot(nd.pt[0] - cx, nd.pt[1] - cy) < 1e-9)) return null;
+
   const ang = sp.nodes.map((nd) => Math.atan2(nd.pt[1] - cy, nd.pt[0] - cx));
+  const segs = sp.closed ? n : n - 1;
+
+  /* Decide every span before moving anything, so a contour that turns out not
+     to be a ring leaves the document untouched. */
+  const spans: number[] = [];
+  if (sp.closed) {
+    let area = 0;
+    for (let i = 0; i < n; i++) {
+      const a = sp.nodes[i].pt;
+      const b = sp.nodes[(i + 1) % n].pt;
+      area += a[0] * b[1] - b[0] * a[1];
+    }
+    const dir = area >= 0 ? 1 : -1;
+
+    let total = 0;
+    for (let i = 0; i < segs; i++) {
+      let d = ang[(i + 1) % n] - ang[i];
+      // Into (0, 2π) going one way, (−2π, 0) the other. A span of zero stays
+      // zero rather than becoming a full turn.
+      d -= Math.floor(d / (2 * Math.PI)) * 2 * Math.PI; // [0, 2π)
+      if (dir < 0 && d > 0) d -= 2 * Math.PI;
+      if (Math.abs(d) < 1e-9 || Math.abs(Math.abs(d) - 2 * Math.PI) < 1e-9) d = 0;
+      spans.push(d);
+      total += d;
+    }
+    // One turn means the nodes go round once, in order. Anything else is a
+    // star or a doubled loop, which no circle through these nodes can be.
+    if (Math.abs(Math.abs(total) - 2 * Math.PI) > 1e-6) return null;
+  } else {
+    for (let i = 0; i < segs; i++) {
+      let d = ang[i + 1] - ang[i];
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      spans.push(Math.abs(d) < 1e-9 ? 0 : d);
+    }
+  }
+
   let moved = 0;
   sp.nodes.forEach((nd, i) => {
     const to: Pt = [cx + r * Math.cos(ang[i]), cy + r * Math.sin(ang[i])];
@@ -466,16 +553,15 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
     nd.hOut = null;
   });
 
-  const segs = sp.closed ? n : n - 1;
+  let widestSpan = 0;
   for (let i = 0; i < segs; i++) {
-    const j = (i + 1) % n;
-    let d = ang[j] - ang[i];
-    while (d > Math.PI) d -= 2 * Math.PI;
-    while (d < -Math.PI) d += 2 * Math.PI;
+    const d = spans[i];
+    widestSpan = Math.max(widestSpan, Math.abs(d));
     // Coincident angles span no arc: leave the segment straight rather than
     // emitting a zero-length handle that reads as a cusp.
-    if (Math.abs(d) < 1e-9) continue;
+    if (d === 0) continue;
 
+    const j = (i + 1) % n;
     const L = arcHandle(r, d);
     const a = sp.nodes[i];
     const b = sp.nodes[j];
@@ -484,7 +570,7 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
     b.hIn = [b.pt[0] + Math.sin(ang[j]) * L, b.pt[1] - Math.cos(ang[j]) * L];
   }
 
-  return { centre: fit.centre, radius: r, moved };
+  return { centre: fit.centre, radius: r, moved, widestSpan };
 }
 
 /* ------------------------------------------------------------- transforms */

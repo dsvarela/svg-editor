@@ -212,13 +212,61 @@ describe('forcing a continuity', () => {
     expect(hIn[0]).toBeLessThan(10);
   });
 
-  it('declines at the end of an open path, where there is no second handle', () => {
-    const sp = parsePath('M0 0 C5 0 10 5 10 10')[0];
-    setContinuity(sp, 0, 'smooth');
-    // Nothing arrives at the first node of an open path, so there is nothing to
-    // line the outgoing handle up against.
+  it('declines at the end of an open path without touching it', () => {
+    /* The fixture matters. This used to start `M0 0 C5 0 10 5 10 10`, which
+       gives node 0 an outgoing handle already -- so the branch that
+       materialises one was never entered and the test could not fail on the
+       defect it named. With two straight segments the branch is reached, and
+       the assertion that hOut stays null is what goes red: the old code
+       assigned it and *then* declined, leaving a straight segment carrying a
+       handle and reporting that nothing had happened. */
+    const sp = parsePath('M0 0 L10 10 L20 0')[0];
+    const before = serialisePath([sp]);
+
+    expect(setContinuity(sp, 0, 'smooth')).toBe(false);
     expect(sp.nodes[0].hIn).toBeNull();
+    expect(sp.nodes[0].hOut).toBeNull();
     expect(continuityOf(sp.nodes[0])).toBe('corner');
+    // Nothing about the path changed, not even its spelling.
+    expect(serialisePath([sp])).toBe(before);
+  });
+
+  it('reports whether it changed anything, so a dead click costs no history', () => {
+    const sp = parsePath('M0 0 L10 0 L10 10')[0];
+    expect(setContinuity(sp, 1, 'smooth')).toBe(true);
+    // Asking for the same thing twice is a no-op the second time.
+    expect(setContinuity(sp, 1, 'smooth')).toBe(false);
+    // A corner that is already a corner has nothing to remove.
+    expect(setContinuity(sp, 0, 'corner')).toBe(false);
+  });
+
+  it('moves the drawing when it materialises handles, and says so', () => {
+    /* The invariant record used to claim this did not move the drawing, on the
+       reasoning that a latent handle sits on its own chord. It does -- and is
+       then rotated to the averaged direction, which pulls it off. Pinning the
+       real figure means the claim cannot drift back. */
+    const sp = parsePath('M0 0 L10 0 L10 10')[0];
+    const before = segmentAsCubic(sp, 0);
+    setContinuity(sp, 1, 'smooth');
+    const after = segmentAsCubic(sp, 0);
+
+    let worst = 0;
+    for (let k = 0; k <= 32; k++) {
+      const a = cubicAt(before, k / 32);
+      const b = cubicAt(after, k / 32);
+      worst = Math.max(worst, Math.hypot(a[0] - b[0], a[1] - b[1]));
+    }
+    expect(worst).toBeGreaterThan(1);
+    expect(worst).toBeLessThan(2);
+  });
+
+  it('lands on symmetric, not smooth, when the two chords are equal', () => {
+    // Which makes the documented corner -> smooth -> symmetric cycle a
+    // two-state toggle on a square. Recorded rather than fixed: the handles are
+    // where `smooth` puts them, and equal chords make them equal lengths.
+    const sp = parsePath('M0 0 L10 0 L10 10')[0];
+    setContinuity(sp, 1, 'smooth');
+    expect(continuityOf(sp.nodes[1])).toBe('symmetric');
   });
 
   it('is idempotent', () => {

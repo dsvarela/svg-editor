@@ -1077,4 +1077,158 @@ describe('dragging more than one shape', () => {
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([0, 20]);
     expect(h.store.state.doc.shapes[1].subpaths[0].nodes[0].pt).toEqual([30, 20]);
   });
+
+  it('moves the whole shape when only some of its nodes are selected', () => {
+    /* The fix above read "any of this shape's nodes are selected" as "the user
+       means the nodes", which is true of a marquee and false of one clicked
+       vertex -- so grabbing the outline tore that corner off and left the shape
+       where it was. The test above cannot see it, because a marquee selects
+       every node and the two readings agree there. */
+    const h = two();
+    const a = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${a}/0/0`));
+
+    h.down([5, 0], h.outlineEl(a));
+    h.move([5, 20]);
+    h.up();
+
+    const pts = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt);
+    expect(pts).toEqual([
+      [0, 20],
+      [10, 20],
+      [10, 30],
+      [0, 30],
+    ]);
+  });
+
+  it('snaps the translation, not each node, so proportions survive', () => {
+    // Nodes deliberately off the lattice. Snapping their positions would pull
+    // them onto it and deform the shape; snapping the displacement keeps every
+    // relative offset and still lands a whole number of grid steps.
+    const h = harness('M0.3 0.4 L10.3 0.4 L10.3 10.4 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.snapToGrid = true;
+      s.gridStep = 5;
+      s.selection.shapes.add(id);
+    });
+
+    h.down([5, 0], h.outlineEl(id));
+    h.move([11.2, 6.1]);
+    h.up();
+
+    // The press was at x = 5, so the displacement is 6.2 across and 6.1 down,
+    // which rounds to 5 and 5 at a step of 5. The fractional offsets survive.
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt)).toEqual([
+      [5.3, 5.4],
+      [15.3, 5.4],
+      [15.3, 15.4],
+    ]);
+  });
+});
+
+describe('a gesture always ends', () => {
+  it('does not start a second drag while one is live', () => {
+    /* The batch was closed by inspecting whichever drag `onUp` found. A second
+       pointerdown replaced it, so the first one's batch was never closed --
+       after which `checkpoint()` returns early forever and no undo point is
+       ever recorded again, silently. Two fingers were enough. */
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => (s.snapToGrid = false));
+
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    h.down([10, 0], h.anchorEl(id, 0, 1));
+    h.move([5, 5]);
+    h.up();
+
+    // History still works: this later edit is undoable.
+    h.store.edit((s) => (s.doc.shapes[0].name = 'later'));
+    expect(h.store.canUndo).toBe(true);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].name).not.toBe('later');
+  });
+
+  it('abandons the drag on Escape rather than leaving it running', () => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => (s.snapToGrid = false));
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt;
+
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    h.move([5, 5]);
+    h.key('Escape');
+
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual(before);
+    // And the gesture is over: further movement does nothing.
+    h.move([9, 9]);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual(before);
+    // An abandoned drag is not one Ctrl+Shift+Z from coming back.
+    expect(h.store.canRedo).toBe(false);
+  });
+
+  it('discards a cancelled primitive instead of committing it', () => {
+    const h = harness();
+    h.store.update((s) => (s.tool = 'rect'));
+    h.down([0, 0]);
+    h.move([20, 20]);
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+
+    const e = new MouseEvent('pointercancel', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'pointerId', { value: 1 });
+    h.canvas.overlay.dispatchEvent(e);
+
+    // A cancel is the browser taking the gesture away. Routing it to `onUp`
+    // committed whatever was half-drawn, which is what Escape refuses to do.
+    expect(h.store.state.doc.shapes).toHaveLength(0);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('does not commit a primitive that was dragged back to nothing', () => {
+    const h = harness();
+    h.store.update((s) => (s.tool = 'rect'));
+    h.down([0, 0]);
+    h.move([20, 20]);
+    h.move([20, 0]); // zero height
+    h.up();
+
+    const [shape] = h.store.state.doc.shapes;
+    expect(shape).toBeDefined();
+    const ys = shape.subpaths[0].nodes.map((n) => n.pt[1]);
+    expect(Math.max(...ys)).toBeGreaterThan(Math.min(...ys));
+  });
+});
+
+describe('keyboard', () => {
+  it('leaves the tool alone when a modifier is held', () => {
+    // Ctrl+E belongs to the source drawer and Ctrl+R to the browser. Both used
+    // to switch the tool as a silent side effect.
+    const h = harness();
+    for (const key of ['e', 'r', 'v', 'p']) {
+      h.store.update((s) => (s.tool = 'select'));
+      h.key(key, { ctrlKey: true });
+      expect(h.store.state.tool).toBe('select');
+      h.key(key, { metaKey: true });
+      expect(h.store.state.tool).toBe('select');
+    }
+    // Bare, they still work.
+    h.key('e');
+    expect(h.store.state.tool).toBe('ellipse');
+  });
+
+  it('refuses to undo mid-drag, which would pull the checkpoint out', () => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => (s.snapToGrid = false));
+    h.store.edit((s) => (s.doc.shapes[0].name = 'earlier'));
+
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    h.move([5, 5]);
+    h.key('z', { ctrlKey: true });
+    h.key('Escape');
+
+    // The earlier edit is untouched: Escape rolled back its own checkpoint,
+    // not somebody else's.
+    expect(h.store.state.doc.shapes[0].name).toBe('earlier');
+  });
 });

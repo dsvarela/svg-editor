@@ -531,6 +531,27 @@ const scenarios = {
   async primitives(page) {
     const { drag } = await mk(page);
 
+    /* This scenario used to read every value off the page and return it, with
+       nothing compared against anything. That is not a check: break
+       Shift-constrain, the corner radius, the `e` shortcut or circularise, and
+       it still exited 0 while printing a plausible-looking blob. A scenario
+       that cannot fail reports green while measuring nothing, which is worse
+       than not having it. */
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`primitives: ${what}`);
+    };
+    /* The drawn size of a path, asked of the browser rather than parsed out of
+       the `d`. Splitting the numbers into x/y pairs looks obvious and is wrong
+       the moment an `H` or a `V` appears, which is exactly what a rounded
+       rectangle emits -- the first version of this check reported a 24x25 rect
+       as 65x65 and failed on its own arithmetic. `getBBox` is also the measure
+       that matters: it is the shape as drawn, curves included. */
+    const extent = (selector) =>
+      page.$eval(selector, (el) => {
+        const b = el.getBBox();
+        return [b.width, b.height];
+      });
+
     // Clear the starter so the shape list is easy to talk about.
     await page.click('#shapelist li:nth-child(1)');
     await page.click('#delShape');
@@ -544,6 +565,11 @@ const scenarios = {
       stats: await page.textContent('#stats'),
       d: await page.getAttribute('.artwork path', 'd'),
     };
+    // Shift took the smaller span of a 30x40 drag, so both sides are 30.
+    const [cw, ch] = await extent('.artwork path');
+    check(Math.abs(cw - ch) < 0.01, `Shift did not constrain: ${cw} x ${ch}`);
+    check(Math.abs(cw - 30) < 0.5, `expected a 30-unit circle, got ${cw}`);
+    check(/^M[^A-Z]*C/.test(circle.d), 'an ellipse should be cubics, not lines');
 
     // A rounded rectangle, radius set in the rail.
     await page.fill('#cornerRadius', '3');
@@ -555,11 +581,28 @@ const scenarios = {
       shapes: await page.locator('#shapelist li').allTextContents(),
       d: await page.getAttribute('.artwork path:nth-child(2)', 'd'),
     };
+    check(rounded.shapes.length === 2, `expected 2 shapes, got ${rounded.shapes.length}`);
+    // A rounded rectangle is arcs at the corners and straight sides between,
+    // so it must contain both -- all-C means the sides bowed, no C means the
+    // radius was dropped on the floor.
+    check(/C/.test(rounded.d), 'no curves: the corner radius was ignored');
+    check(/[HVL]/.test(rounded.d), 'no straight sides: the rectangle is all curve');
+    const [rw, rh] = await extent('.artwork path:nth-child(2)');
+    check(Math.abs(rw - 24) < 0.5 && Math.abs(rh - 25) < 0.5, `rect is ${rw} x ${rh}, want 24 x 25`);
 
     // The keyboard reaches the tools too.
     await page.keyboard.press('e');
     const toolAfterKey = await page.getAttribute('#tool button[data-v="ellipse"]', 'aria-pressed');
+    check(toolAfterKey === 'true', 'pressing e did not select the ellipse tool');
+    // ...but Ctrl+E belongs to the source drawer, and used to switch the tool
+    // as a silent side effect of opening it.
     await page.click('#tool button[data-v="select"]');
+    await page.keyboard.press('Control+e');
+    await page.waitForTimeout(120);
+    const toolAfterCtrlE = await page.getAttribute('#tool button[data-v="select"]', 'aria-pressed');
+    check(toolAfterCtrlE === 'true', 'Ctrl+E switched the tool as well as opening the drawer');
+    await page.keyboard.press('Control+e');
+    await page.waitForTimeout(120);
 
     // Circularise: pull one node of the circle well off, then put it back.
     await page.click('#shapelist li:nth-child(1)');
@@ -574,6 +617,12 @@ const scenarios = {
       status: await page.textContent('#status'),
       d: await page.getAttribute('.artwork path', 'd'),
     };
+    // These two were captured a few lines apart and never compared, so a
+    // circularise that did nothing at all read as a pass.
+    check(dented !== fixed.d, 'circularise left the dented path exactly as it was');
+    check(/Circularised 1 contour/.test(fixed.status), `unexpected status: ${fixed.status}`);
+    const [fw, fh] = await extent('.artwork path');
+    check(Math.abs(fw - fh) < 0.6, `circularised shape is not round: ${fw} x ${fh}`);
 
     // Rename, which is what the exported id carries.
     await page.dblclick('#shapelist li:nth-child(1) .nm');
@@ -589,6 +638,9 @@ const scenarios = {
       exported: (await page.inputValue('#src')).includes('id="outer-ring"'),
     };
 
+    check(renamed.exported, 'the renamed shape did not reach the exported id');
+    check(/outer ring/.test(renamed.listed), `the list still reads ${renamed.listed}`);
+
     // Tooltips: the toolbar is icons, so the labels have to come from hovering.
     await page.hover('#fit');
     await page.waitForTimeout(320);
@@ -598,8 +650,22 @@ const scenarios = {
       // The native tooltip must be gone, or both appear at once.
       titleLeft: await page.getAttribute('#fit', 'title'),
     };
+    check(tip.shown === 1, 'no tooltip appeared on hover');
+    check(tip.titleLeft === null, 'the native title survived, so both tooltips show');
 
-    return { circle, rounded, toolAfterKey, dented, fixed, renamed, tip };
+    /* The key cap is the one part of the tooltip the commit singled out, and
+       hovering `#fit` -- whose title has no parenthesis -- never exercised it.
+       Hover something that has one. */
+    await page.hover('#tool button[data-v="ellipse"]');
+    await page.waitForTimeout(320);
+    const cap = {
+      kbd: await page.locator('.tip kbd').count(),
+      key: await page.textContent('.tip kbd').catch(() => null),
+    };
+    check(cap.kbd === 1, 'the shortcut did not render as a key cap');
+    check(cap.key === 'E', `key cap reads ${cap.key}, want E`);
+
+    return { circle, rounded, toolAfterKey, toolAfterCtrlE, dented, fixed, renamed, tip, cap };
   },
 
   /**

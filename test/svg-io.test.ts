@@ -213,6 +213,62 @@ describe('svg import', () => {
   });
 });
 
+/* An exported document that will not re-open is the only failure here that
+   survives a reload, so these assert on parsing the output rather than on its
+   spelling. Both defects below shipped: `xmlId` sanitised the one attribute it
+   was written for and left its neighbours interpolating raw, and nothing
+   anywhere checked that two shapes had not been given the same id. */
+describe('svg export cannot produce a document that will not re-open', () => {
+  const twoShapes = (nameA: string, nameB: string): ReturnType<typeof emptyDoc> => {
+    const doc = emptyDoc();
+    doc.viewBox = { x: 0, y: 0, w: 20, h: 20 };
+    const r = importSvg(`<svg viewBox="0 0 20 20">
+      <path d="M0 0 L10 0 L10 10 Z"/>
+      <path d="M12 12 L18 12 L18 18 Z"/>
+    </svg>`);
+    doc.shapes = r.shapes;
+    doc.shapes[0].name = nameA;
+    doc.shapes[1].name = nameB;
+    return doc;
+  };
+
+  const ids = (svg: string): string[] => [...svg.matchAll(/\bid="([^"]*)"/g)].map((m) => m[1]);
+
+  it('gives two shapes of the same name different ids', () => {
+    const out = exportSvg(twoShapes('ring', 'ring'));
+    const found = ids(out);
+    expect(found).toHaveLength(2);
+    expect(new Set(found).size).toBe(2);
+    expect(found[0]).toBe('ring');
+  });
+
+  it('separates names that sanitise to the same id', () => {
+    // `xmlId` is not injective: these three all hyphenate to `a-b`.
+    const out = exportSvg(twoShapes('a b', 'a/b'));
+    expect(new Set(ids(out)).size).toBe(2);
+  });
+
+  it('escapes a style value holding a quote, which import can supply', () => {
+    const doc = twoShapes('one', 'two');
+    // Legal XML on the way in: <path d="…" fill='a"b'/>
+    doc.shapes[0].style.fill = 'a"b';
+    const out = exportSvg(doc);
+
+    expect(out).toContain('fill="a&quot;b"');
+    // The real assertion: it parses, and the value survives intact.
+    const back = importSvg(out);
+    expect(back.shapes).toHaveLength(2);
+    expect(back.shapes[0].style.fill).toBe('a"b');
+  });
+
+  it('escapes an ampersand and angle brackets too', () => {
+    const doc = twoShapes('one', 'two');
+    doc.shapes[0].style.stroke = 'a&b<c>';
+    const out = exportSvg(doc);
+    expect(importSvg(out).shapes[0].style.stroke).toBe('a&b<c>');
+  });
+});
+
 describe('svg export', () => {
   it('writes one path per shape', () => {
     const doc = emptyDoc();

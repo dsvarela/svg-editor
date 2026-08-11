@@ -268,17 +268,22 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
   const nl = pretty ? '\n' : '';
   const pad = pretty ? '  ' : '';
 
+  // Ids have to be unique within one document, and `xmlId` is not injective --
+  // `a b`, `a-b` and `a/b` all sanitise to the same thing. Export is the only
+  // place an id is written, so it is the only place that can guarantee it.
+  const used = new Set<string>();
+
   const body = doc.shapes
     .filter((s) => s.subpaths.some((sp) => sp.nodes.length >= 2))
     .map((s) => {
       const d = serialisePath(s.subpaths, ser);
       const attrs = [
         `d="${d}"`,
-        `fill="${s.style.fill}"`,
+        `fill="${xmlAttr(s.style.fill)}"`,
         s.style.fillRule === 'evenodd' ? 'fill-rule="evenodd"' : '',
-        s.style.stroke === 'none' ? '' : `stroke="${s.style.stroke}"`,
-        s.style.stroke === 'none' ? '' : `stroke-width="${s.style.strokeWidth}"`,
-        s.name && s.name !== s.id ? `id="${xmlId(s.name)}"` : '',
+        s.style.stroke === 'none' ? '' : `stroke="${xmlAttr(s.style.stroke)}"`,
+        s.style.stroke === 'none' ? '' : `stroke-width="${xmlAttr(String(s.style.strokeWidth))}"`,
+        s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
       ].filter(Boolean);
       return `${pad}<path ${attrs.join(' ')}/>`;
     })
@@ -307,6 +312,39 @@ export function xmlId(name: string): string {
     .replace(/^-+|-+$/g, '');
   if (!cleaned) return 'shape';
   return /^[A-Za-z_]/.test(cleaned) ? cleaned : `n${cleaned}`;
+}
+
+/**
+ * An attribute value made safe to write between double quotes.
+ *
+ * `d` and the numbers we generate ourselves cannot contain anything dangerous,
+ * but `fill` and `stroke` are whatever an imported document carried, and a
+ * value holding a quote closes the attribute early and produces a file that
+ * will not re-open. `xmlId` was written for exactly this failure on the `id`
+ * and left its two neighbours interpolating raw.
+ */
+export function xmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * `xmlId`, then made unique against the ids already written to this document.
+ *
+ * Two shapes may legitimately carry the same name -- duplicating one is the
+ * usual way it happens -- but two elements may not carry the same `id`, and a
+ * document that does is invalid rather than merely untidy. A collision gets a
+ * numeric suffix, which is the same shape `nextId` uses for names.
+ */
+export function uniqueXmlId(name: string, used: Set<string>): string {
+  const base = xmlId(name);
+  let id = base;
+  for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+  used.add(id);
+  return id;
 }
 
 /** Just the path data, for when only the `d` is wanted. */

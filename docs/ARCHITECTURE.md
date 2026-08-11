@@ -134,10 +134,14 @@ two neighbouring chords are equal — a square, any regular polygon — each
 materialised handle is a third of an equal length, so `smooth` lands on
 `symmetric` and the documented three-state cycle is a two-state toggle.
 
-Two cases have nothing to align against. Neither is handled correctly yet:
-the open-end case **mutates and then declines** (see
-[the review](REVIEW-2026-08-11.md), Class 1), which leaves a straight segment
-carrying a handle and so breaks §3.
+Two cases have nothing to align against, and the function now works on
+candidate handles rather than on the node — deciding first, and committing only
+a complete answer. It used to assign the materialised handles and *then*
+discover there was no second one, which left a straight segment carrying a
+handle in breach of §3 while the caller announced that nothing had happened.
+
+It returns whether it changed anything, which is what lets a caller decline to
+record an undo entry for a click that did nothing. See §16.
 
 | | Why |
 |---|---|
@@ -303,9 +307,16 @@ five nodes at 0°, 10°, 20°, 140°, 260° — measures 1.54e-3 against 2.73e-4
 four even ones, 5.7× less round. `test/primitives.test.ts:244` already asserted
 the looser bound while the prose above it claimed parity; the test was right.
 
-Worse, a closed contour with any gap wider than 180° is not circularised at all
-but destroyed, and the operation reports success. See
-[the review](REVIEW-2026-08-11.md), Class 2. Fitting is a compromise by nature — it
+**A closed contour is a ring, and its spans must sum to a full turn.** Taking
+each span the shorter way round is right below half a turn and silently
+destructive above it: four nodes at 0°, 20°, 40° and 60° leave a 300° gap, the
+shorter way reads that as −60°, and the closing segment retraces the other three
+instead of completing the circle. Every node still lands exactly on the circle,
+so a radial measurement cannot see it, and the reported travel is zero — it
+looked like a success. So a closed contour now picks one winding from the sign
+of the polygon's area, forces every span to follow it, and checks the total is
+one turn; a node order that is not a ring, such as a star, is refused with
+nothing mutated. Fitting is a compromise by nature — it
 cannot know which node was the mistake — so the operation reports the radius it
 found and how far the furthest node had to travel, and lets the reader judge.
 
@@ -420,6 +431,40 @@ which shape was meant from a couple of selected nodes would be a guess made
 silently and destructively.
 
 ---
+
+## 16. A gesture ends exactly once, and a decline costs nothing
+
+Two rules that the 2026-08-11 review found broken in four places each, both
+fixed structurally rather than at the call sites.
+
+**One drag at a time, and it always ends.** `onDown` returns early while a drag
+is live, and whether the gesture opened a history batch is *recorded* in
+`batchOpen` rather than reconstructed at `onUp` by inspecting whichever drag is
+there. It used to be reconstructed, so a second pointerdown — two fingers on a
+touchscreen — replaced the drag, the first batch was never closed, and
+`checkpoint()` then returned early **forever**: no undo point was recorded again
+for the rest of the session, with nothing on screen to say so. Cancelling now
+routes to `abortDrag`, which rolls back rather than committing; `pointercancel`
+used to be wired to `onUp`, so the browser taking a gesture away *committed* the
+half-drawn shape, the opposite of what Escape does with the same intent.
+
+`Store.rollback` exists for that: it restores the last checkpoint without
+offering a redo. Escape used to call `undo`, which kept the abandoned shape on
+the redo stack — one Ctrl+Shift+Z from resurrecting something explicitly thrown
+away. Undo is also refused mid-drag, since popping the checkpoint the drag is
+standing on makes it roll back somebody else's edit when it ends.
+
+**An operation that declines leaves no trace.** `store.edit` checkpoints first
+and asks questions later, which is right for a drag — you cannot know where it
+will end — and wrong for a button. `store.tryEdit` takes a mutation that returns
+whether it changed anything and takes the checkpoint back when it did not,
+restoring the redo stack with it. Without that, a dead button pushed an empty
+undo entry *and* silently destroyed a pending redo, so pressing it five times
+cost five presses of Ctrl+Z, none of which visibly did anything.
+
+The point is that the decision lives in one place. `setContinuity` returning a
+boolean, and `circulariseSubpath` returning `null` before touching anything, are
+the same idea one level down: work out the answer, then commit it.
 
 ## Known limitations
 

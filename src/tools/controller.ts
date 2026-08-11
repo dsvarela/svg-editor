@@ -58,7 +58,10 @@ type DragKind =
   | { kind: 'marquee'; from: Pt }
   | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
-  | { kind: 'body'; shapes: string[]; refs: NodeRef[]; last: Pt }
+  /* Moving a selection. The total translation is tracked from the press rather
+     than accumulated per move, because it is the TOTAL that gets snapped: see
+     `bodyDrag`. */
+  | { kind: 'body'; shapes: string[]; refs: NodeRef[]; from: Pt; applied: Pt }
   | { kind: 'pen'; ref: NodeRef }
   /* Drawing a primitive. `id` is null until the drag is big enough to be worth
      a shape, so a stray click on the canvas leaves no empty one behind and no
@@ -77,6 +80,16 @@ export class Controller {
   onMessage: ((message: string, ok: boolean) => void) | null = null;
 
   private drag: DragKind = { kind: 'none' };
+  /**
+   * Whether this gesture opened a history batch.
+   *
+   * `onUp` used to work this out by inspecting the drag it found, which is a
+   * different question and gave a different answer whenever the drag had been
+   * replaced or had changed shape mid-gesture. An unclosed batch disables
+   * checkpointing permanently and says nothing, so the fact is recorded when it
+   * happens rather than reconstructed afterwards.
+   */
+  private batchOpen = false;
   private extras: OverlayExtras = {};
   private frame = 0;
   /** Subpath the pen tool is currently extending. */
@@ -91,7 +104,11 @@ export class Controller {
     ov.addEventListener('pointerdown', this.onDown);
     ov.addEventListener('pointermove', this.onMove);
     ov.addEventListener('pointerup', this.onUp);
-    ov.addEventListener('pointercancel', this.onUp);
+    // A cancelled pointer is the browser taking the gesture away -- a scroll
+    // takeover, palm rejection. Routing it to `onUp` *committed* whatever was
+    // half-drawn, which is the opposite of what a cancel means and the opposite
+    // of what Escape does.
+    ov.addEventListener('pointercancel', this.onCancel);
     ov.addEventListener('dblclick', this.onDoubleClick);
     ov.addEventListener('wheel', this.onWheel, { passive: false });
     ov.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -145,7 +162,7 @@ export class Controller {
    * the grid, because welding to something the user can see matters more than
    * landing on an invisible lattice.
    */
-  private snap(p: Pt, exclude?: NodeRef): Pt {
+  private snap(p: Pt, exclude?: NodeRef, excludeShape?: string): Pt {
     const s = this.store.state;
     let out = p;
     if (s.snapToGrid && s.gridStep > 0) out = snapTo(p, s.gridStep);
@@ -156,6 +173,7 @@ export class Controller {
       let best = threshold;
       let hit: Pt | null = null;
       for (const shape of s.doc.shapes) {
+        if (shape.id === excludeShape) continue;
         shape.subpaths.forEach((sp, spI) => {
           sp.nodes.forEach((n, i) => {
             if (exclude && exclude.shape === shape.id && exclude.sp === spI && exclude.i === i) return;
@@ -192,6 +210,20 @@ export class Controller {
     };
   }
 
+  /** Open the gesture's history batch, remembering that we did. */
+  private openBatch(): void {
+    if (this.batchOpen) return;
+    this.store.beginBatch();
+    this.batchOpen = true;
+  }
+
+  /** Close it, at most once, whatever route the gesture took out. */
+  private closeBatch(): void {
+    if (!this.batchOpen) return;
+    this.store.endBatch();
+    this.batchOpen = false;
+  }
+
   private selectedNodeRefs(): NodeRef[] {
     const s = this.store.state;
     const refs = [...s.selection.nodes].map(parseNodeKey);
@@ -215,9 +247,22 @@ export class Controller {
 
   private onDown = (e: PointerEvent): void => {
     if (e.button === 2) return;
+    // A second press while a drag is live used to overwrite `this.drag`, and
+    // since the matching `onUp` decided whether to close the batch by looking
+    // at whatever drag it found, the first one's batch was never closed --
+    // after which `checkpoint()` returns early forever and no undo point is
+    // ever recorded again, with nothing on screen to say so. Two fingers on a
+    // touchscreen were enough. One drag at a time.
+    if (this.drag.kind !== 'none') return;
     const s = this.store.state;
     const p = this.pt(e);
-    this.canvas.overlay.setPointerCapture(e.pointerId);
+    try {
+      this.canvas.overlay.setPointerCapture(e.pointerId);
+    } catch {
+      // A pointer that is no longer active cannot be captured. Losing capture
+      // costs us the drag if it leaves the canvas; aborting here would cost us
+      // the drag outright.
+    }
 
     // Middle button or space always pans, whatever the tool. Panning is
     // tracked in SCREEN coordinates: document coordinates under the cursor are
@@ -257,7 +302,7 @@ export class Controller {
       });
       const node = findShape(s.doc, hit.ref.shape)?.subpaths[hit.ref.sp]?.nodes[hit.ref.i];
       if (!node) return;
-      this.store.beginBatch();
+      this.openBatch();
       this.store.checkpoint();
       this.drag = {
         kind: 'anchor',
@@ -271,7 +316,7 @@ export class Controller {
     if (hit?.kind === 'bend' && hit.ref && hit.seg !== null) {
       const sp = findShape(s.doc, hit.ref.shape)?.subpaths[hit.ref.sp];
       const cur = sp ? segmentBend(sp, hit.seg) : null;
-      this.store.beginBatch();
+      this.openBatch();
       this.store.checkpoint();
       this.drag = {
         kind: 'bend',
@@ -284,7 +329,7 @@ export class Controller {
     }
 
     if ((hit?.kind === 'in' || hit?.kind === 'out') && hit.ref) {
-      this.store.beginBatch();
+      this.openBatch();
       this.store.checkpoint();
       // Alt held at the moment of grabbing breaks the pair for the whole drag.
       // Sampling it once, rather than per move, means letting go of Alt midway
@@ -299,18 +344,28 @@ export class Controller {
       // the whole selection. Clearing it and selecting this one shape instead
       // means a marquee over three shapes followed by a drag moves one of them,
       // which reads as the marquee having been forgotten.
-      const inNodeSel = [...s.selection.nodes].some((k) => parseNodeKey(k).shape === id);
+      /* "Some of this shape's nodes are selected" was the wrong test. It is
+         true of a marquee across several shapes, where dragging should move
+         them all -- and equally true of one clicked vertex, where it turned an
+         outline drag into a deformation: the corner tore off and the shape
+         stayed put. What distinguishes the marquee is that it caught the WHOLE
+         shape, so that is what to ask. */
+      const shapeNodes = findShape(s.doc, id)?.subpaths.reduce((a, sp) => a + sp.nodes.length, 0) ?? 0;
+      const selectedHere = [...s.selection.nodes].filter((k) => parseNodeKey(k).shape === id).length;
+      const wholeShapeSelected = shapeNodes > 0 && selectedHere === shapeNodes;
       this.store.update((st) => {
-        if (!e.shiftKey && !st.selection.shapes.has(id) && !inNodeSel) st.selection = emptySelection();
-        if (!inNodeSel || e.shiftKey) st.selection.shapes.add(id);
+        if (!e.shiftKey && !st.selection.shapes.has(id) && !wholeShapeSelected) {
+          st.selection = emptySelection();
+        }
+        st.selection.shapes.add(id);
       });
-      this.store.beginBatch();
+      this.openBatch();
       this.store.checkpoint();
       const shapes = [...this.store.state.selection.shapes];
       // Nodes belonging to a shape that is moving wholesale would be moved
       // twice, once by each rule.
       const refs = this.selectedNodeRefs().filter((r) => !shapes.includes(r.shape));
-      this.drag = { kind: 'body', shapes, refs, last: p };
+      this.drag = { kind: 'body', shapes, refs, from: p, applied: [0, 0] };
       return;
     }
 
@@ -403,8 +458,21 @@ export class Controller {
 
       case 'body': {
         const d = this.drag;
-        const delta: Pt = [p[0] - d.last[0], p[1] - d.last[1]];
-        d.last = p;
+        /* Snap the TRANSLATION, not the positions.
+           Snapping each node's own position would drag every off-lattice node
+           onto the grid and destroy the shape's proportions -- which is why
+           moving a shape ignored the grid entirely until now. Rounding the
+           total displacement instead keeps every relative offset exactly, and
+           has the property worth having: a shape whose nodes start on the grid
+           ends on it, and one that starts off it stays off it by the same
+           amount. Tracked from the press rather than accumulated per move, so
+           the rounding cannot drift over a long drag. */
+        const s2 = this.store.state;
+        const raw: Pt = [p[0] - d.from[0], p[1] - d.from[1]];
+        const want: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
+        const delta: Pt = [want[0] - d.applied[0], want[1] - d.applied[1]];
+        if (delta[0] === 0 && delta[1] === 0) return;
+        d.applied = want;
         this.store.update((st) => {
           for (const id of d.shapes) {
             const shape = findShape(st.doc, id);
@@ -477,18 +545,32 @@ export class Controller {
     }
 
     // A create drag that never grew past nothing opened no batch, so there is
-    // none to close -- and the document is untouched, as it should be.
-    const opened =
-      this.drag.kind === 'create'
-        ? this.drag.id !== null
-        : this.drag.kind !== 'none' && this.drag.kind !== 'pan' && this.drag.kind !== 'marquee';
-    if (opened) this.store.endBatch();
+    // none to close -- and the document is untouched, as it should be. That is
+    // now recorded rather than inferred: see `batchOpen`.
+    this.closeBatch();
 
     this.drag = { kind: 'none' };
     if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
       this.canvas.overlay.releasePointerCapture(e.pointerId);
     }
     this.schedule();
+  };
+
+  /** Abandon the gesture, leaving the document as it was before the press. */
+  private abortDrag(): void {
+    const had = this.batchOpen;
+    this.closeBatch();
+    if (had) this.store.rollback();
+    this.drag = { kind: 'none' };
+    this.extras.marquee = null;
+    this.schedule();
+  }
+
+  private onCancel = (e: PointerEvent): void => {
+    this.abortDrag();
+    if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
+      this.canvas.overlay.releasePointerCapture(e.pointerId);
+    }
   };
 
   private onDoubleClick = (e: MouseEvent): void => {
@@ -500,12 +582,12 @@ export class Controller {
     // to the handles, so the cycle is visible rather than a hidden mode change.
     if (hit?.kind === 'anchor' && hit.ref) {
       const ref = hit.ref;
-      this.store.edit((st) => {
+      this.store.tryEdit((st) => {
         const sp = findShape(st.doc, ref.shape)?.subpaths[ref.sp];
-        if (!sp?.nodes[ref.i]) return;
+        if (!sp?.nodes[ref.i]) return false;
         const order = ['corner', 'smooth', 'symmetric'] as const;
         const cur = continuityOf(sp.nodes[ref.i]);
-        setContinuity(sp, ref.i, order[(order.indexOf(cur) + 1) % order.length]);
+        return setContinuity(sp, ref.i, order[(order.indexOf(cur) + 1) % order.length]);
       });
       return;
     }
@@ -547,21 +629,35 @@ export class Controller {
   private createDrag(p: Pt, shift: boolean, alt: boolean): void {
     if (this.drag.kind !== 'create') return;
     const d = this.drag;
-    const cur = this.snap(p);
+    /* Point-snapping has to ignore the shape being drawn. Every other drag
+       passes an `exclude`; this one did not, so the corner it had just placed
+       sat within the snap threshold of the pointer and captured it -- the
+       rectangle stopped following the cursor and resized in 8-pixel jumps. */
+    const cur = this.snap(p, undefined, d.id ?? undefined);
 
     let dx = cur[0] - d.from[0];
     let dy = cur[1] - d.from[1];
     if (shift) {
+      // Take the shorter span, but never collapse a shape that already exists:
+      // dragging exactly along one axis for a moment would otherwise squash it
+      // to a point, and with grid snapping on that is a common moment.
       const m = Math.min(Math.abs(dx), Math.abs(dy));
-      dx = m * (dx < 0 ? -1 : 1);
-      dy = m * (dy < 0 ? -1 : 1);
+      if (m > 0 || !d.id) {
+        dx = m * (dx < 0 ? -1 : 1);
+        dy = m * (dy < 0 ? -1 : 1);
+      }
     }
     const x = alt ? d.from[0] - dx : d.from[0];
     const y = alt ? d.from[1] - dy : d.from[1];
     const w = alt ? dx * 2 : dx;
     const h = alt ? dy * 2 : dy;
 
-    if (!d.id && (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9)) return;
+    /* No area, nothing to draw -- and that holds after the shape exists too.
+       The guard used to be `!d.id &&`, so a drag that came back to zero width
+       rebuilt the shape flat and `onUp` committed an invisible degenerate path.
+       Skipping the rebuild leaves the last good size on screen; the pointer can
+       always grow it again. */
+    if (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9) return;
 
     const radius = this.store.state.cornerRadius;
     const build = (): Subpath =>
@@ -570,7 +666,7 @@ export class Controller {
         : rectSubpath(x, y, w, h, radius);
 
     if (!d.id) {
-      this.store.beginBatch();
+      this.openBatch();
       this.store.checkpoint();
       this.store.update((st) => {
         const shape = makeShape([build()], nextId(d.tool));
@@ -639,7 +735,8 @@ export class Controller {
     let flat = 0;
     let moved = 0;
     let radius = 0;
-    this.store.edit((st) => {
+    let widest = 0;
+    this.store.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
         for (const i of sps) {
@@ -653,24 +750,38 @@ export class Controller {
           done++;
           moved = Math.max(moved, r.moved);
           radius = r.radius;
+          widest = Math.max(widest, r.widestSpan);
         }
       }
+      return done > 0;
     });
 
     if (!done) {
-      this.onMessage?.('Those nodes are collinear, so no circle is determined.', false);
+      this.onMessage?.(
+        'No circle is determined by those nodes — they are collinear, or they do not go ' +
+          'round the ring in order.',
+        false,
+      );
       return false;
     }
 
     const dp = (v: number): string => (+v.toFixed(3)).toString();
     const extra = [
       tooFew ? `${tooFew} too small` : '',
-      flat ? `${flat} collinear` : '',
+      flat ? `${flat} not a ring` : '',
     ].filter(Boolean);
+    // A cubic's radial error climbs steeply with the arc it covers, so a wide
+    // gap is the ceiling on the result and the user should hear about it rather
+    // than wonder why one side looks flat.
+    const wideDeg = Math.round((widest * 180) / Math.PI);
     this.onMessage?.(
-      `Circularised ${done} contour${done === 1 ? '' : 's'} onto r ${dp(radius)}; ` +
-        `furthest node moved ${dp(moved)}.` +
-        (extra.length ? ` Skipped ${extra.join(', ')}.` : ''),
+      `Circularised ${done} contour${done === 1 ? '' : 's'} onto r ${dp(radius)}${
+        done > 1 ? ' (the last one)' : ''
+      }; furthest node moved ${dp(moved)}.` +
+        (extra.length ? ` Skipped ${extra.join(', ')}.` : '') +
+        (wideDeg > 120
+          ? ` Widest gap is ${wideDeg}° — one cubic cannot hold that arc tightly; add a node to close it up.`
+          : ''),
       true,
     );
     return true;
@@ -709,7 +820,7 @@ export class Controller {
       }
     }
 
-    this.store.beginBatch();
+    this.openBatch();
     this.store.checkpoint();
 
     if (!this.penTarget) {
@@ -797,10 +908,18 @@ export class Controller {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
+      // Undoing mid-drag pops the checkpoint the drag is standing on, and the
+      // gesture then rolls back somebody else's edit when it ends.
+      if (this.drag.kind !== 'none') return;
       if (e.shiftKey) this.store.redo();
       else this.store.undo();
       return;
     }
+
+    // Everything below is a bare key. Ctrl+E belongs to the source drawer and
+    // Ctrl+R to the browser; letting them through here switched the tool as a
+    // silent side effect of both.
+    if (mod) return;
 
     switch (e.key) {
       case 'Delete':
@@ -810,12 +929,13 @@ export class Controller {
         return;
       }
       case 'Escape': {
-        // Abandoning a primitive mid-drag rolls back to the checkpoint taken
-        // when it was created, which is what leaves no trace of it in history.
-        if (this.drag.kind === 'create' && this.drag.id) {
-          this.store.endBatch();
-          this.store.undo();
-          this.drag = { kind: 'none' };
+        // Abandoning a drag rolls back to the checkpoint it opened, which is
+        // what genuinely leaves no trace of it in history. This used to call
+        // `undo`, which kept the abandoned shape on the redo stack, and it only
+        // covered `create` -- so Escape during any other drag cleared the
+        // selection and left the drag running.
+        if (this.drag.kind !== 'none') {
+          this.abortDrag();
           return;
         }
         this.finishPen();
@@ -1265,8 +1385,9 @@ export class Controller {
     let changed = 0;
     let alreadySymmetric = 0;
     let atEnd = 0;
+    let alreadySo = 0;
 
-    this.store.edit((st) => {
+    this.store.tryEdit((st) => {
       for (const r of refs) {
         const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
         const node = sp?.nodes[r.i];
@@ -1281,16 +1402,16 @@ export class Controller {
           (r.i === 0 || r.i === sp.nodes.length - 1) &&
           (!node.hIn || !node.hOut);
 
-        setContinuity(sp, r.i, kind);
-
-        if (continuityOf(node) !== before) changed++;
+        if (setContinuity(sp, r.i, kind)) changed++;
         else if (oneSided) atEnd++;
         else if (kind === 'smooth' && before === 'symmetric') alreadySymmetric++;
+        else alreadySo++;
       }
+      return changed > 0;
     });
 
-    // A button that does nothing and says nothing reads as broken. These are
-    // the two cases where the geometry genuinely leaves nothing to do.
+    // A button that does nothing and says nothing reads as broken, and there
+    // are more of those cases than the two this used to cover.
     if (changed) return;
     if (alreadySymmetric) {
       this.onMessage?.(
@@ -1302,6 +1423,12 @@ export class Controller {
       this.onMessage?.(
         'That node is an end of the path — there is no second handle to line up with.',
         false,
+      );
+    } else if (alreadySo) {
+      const word = kind === 'corner' ? 'a corner' : kind === 'smooth' ? 'smooth' : 'symmetric';
+      this.onMessage?.(
+        `Already ${word} — the handles are where that setting puts them, so there is nothing to move.`,
+        true,
       );
     }
   }
