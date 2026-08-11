@@ -246,6 +246,12 @@ input[type='number'],
 }
 .ico .sq { fill: currentColor; stroke: none; }
 .ico.glyph { width: 26px; height: 13px; stroke-width: 1.3; }
+/* The canvas draws a real handle filled and a ghost one hollow, and these
+   glyphs were drawing both handles hollow -- which under that vocabulary reads
+   as "two handles that do not exist yet", i.e. a corner, on the buttons for
+   smooth and symmetric. The sheet's own comment claims the toolbar and the
+   artwork share one vocabulary, so they should. */
+.ico.glyph circle { fill: currentColor; }
 
 .seg {
   display: flex;

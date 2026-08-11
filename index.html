@@ -161,7 +161,7 @@
         <aside class="rail" id="rail" aria-label="Inspector">
           <div class="group">
             <div class="glabel"><span>Shapes</span><span class="gval" id="shapecount"></span></div>
-            <ul class="shapelist" id="shapelist"></ul>
+            <ul class="shapelist" id="shapelist" role="listbox" aria-label="Shapes" tabindex="0"></ul>
             <div class="grid2">
               <button class="btn" id="dupShape">Duplicate</button>
               <button class="btn" id="delShape">Delete</button>
@@ -236,7 +236,8 @@
             </div>
             <div class="grid2">
               <button class="btn" id="breakPath" title="Break the path at this node, keeping it (Shift+B)">Break here</button>
-              <button class="btn" id="joinPath" title="Weld two selected free ends into one node (Shift+J)">Join ends</button>
+              <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>
+              <button class="btn" id="mergePath" title="Weld two selected free ends into one node at their midpoint (Shift+M)">Merge</button>
               <button class="btn" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
             </div>
 

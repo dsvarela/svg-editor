@@ -29,8 +29,9 @@ import {
   deleteNode,
   deleteNodesSplitting,
   distributeNodes,
+  connectEnds,
   isPathEnd,
-  joinEnds,
+  mergeEnds,
   latentHandle,
   moveAnchor,
   moveHandle,
@@ -1011,11 +1012,19 @@ export class Controller {
         this.breakAtSelection();
         return;
       }
-      // Shift+J, the same binding Inkscape uses, and the inverse of Shift+B.
+      // Shift+J spans the gap; Shift+M welds. Inkscape uses Shift+J for the
+      // weld, but "join" reads as "draw the missing line" to anyone who has not
+      // memorised Inkscape, and that is the non-destructive one.
       case 'J': {
         if (!e.shiftKey) return;
         e.preventDefault();
-        this.joinSelection();
+        this.joinSelection('connect');
+        return;
+      }
+      case 'M': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.joinSelection('merge');
         return;
       }
       case 'v': {
@@ -1231,11 +1240,12 @@ export class Controller {
    * and now I want one path". Ends that already sit on top of each other do not
    * move; ends apart meet in the middle.
    */
-  joinSelection(): boolean {
+  joinSelection(mode: 'connect' | 'merge' = 'connect'): boolean {
     const s = this.store.state;
     const refs = [...s.selection.nodes].map(parseNodeKey);
+    const verb = mode === 'merge' ? 'Merge' : 'Connect';
     if (refs.length !== 2) {
-      this.onMessage?.('Join needs exactly two nodes selected.', false);
+      this.onMessage?.(`${verb} needs exactly two nodes selected.`, false);
       return false;
     }
 
@@ -1248,13 +1258,13 @@ export class Controller {
 
     if (!isPathEnd(spa, ra.i) || !isPathEnd(spb, rb.i)) {
       this.onMessage?.(
-        'Join needs two free ends. Both nodes have to start or finish an open path.',
+        `${verb} needs two free ends. Both nodes have to start or finish an open path.`,
         false,
       );
       return false;
     }
     const sameSubpath = ra.shape === rb.shape && ra.sp === rb.sp;
-    if (sameSubpath && spa.nodes.length < 3) {
+    if (sameSubpath && spa.nodes.length < (mode === 'merge' ? 3 : 2)) {
       this.onMessage?.('That path is too short to close.', false);
       return false;
     }
@@ -1267,7 +1277,8 @@ export class Controller {
       const b = shapeB?.subpaths[rb.sp];
       if (!shapeA || !shapeB || !a || !b) return false;
 
-      const joined = joinEnds({ sp: a, i: ra.i }, { sp: b, i: rb.i });
+      const join = mode === 'merge' ? mergeEnds : connectEnds;
+      const joined = join({ sp: a, i: ra.i }, { sp: b, i: rb.i });
       if (!joined) return false;
 
       if (sameSubpath) {
@@ -1286,10 +1297,17 @@ export class Controller {
     });
 
     if (!ok) {
-      this.onMessage?.('Those two ends cannot be joined.', false);
+      this.onMessage?.(`Those two ends cannot be ${mode === 'merge' ? 'merged' : 'connected'}.`, false);
       return false;
     }
-    this.onMessage?.(closed ? 'Closed the path.' : 'Joined the two ends.', true);
+    this.onMessage?.(
+      closed
+        ? 'Closed the path.'
+        : mode === 'merge'
+          ? 'Merged the two ends into one node.'
+          : 'Connected the two ends with a segment.',
+      true,
+    );
     return true;
   }
 

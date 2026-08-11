@@ -16,12 +16,17 @@
 
 const DELAY = 110;
 const GAP = 8;
+const TIP_ID = 'tip-layer';
 
 let tip: HTMLDivElement | null = null;
 let timer = 0;
 let current: HTMLElement | null = null;
+/* Five of the six listeners below are named functions, which the DOM dedupes on
+   a repeat call; the keydown one was an arrow and leaked one per call. Guarding
+   the whole thing is simpler than remembering which is which. */
+let installed = false;
 
-/** Elements whose `title` we have already taken over. */
+/** The adopted text, which is where every reader gets it from once adopted. */
 const text = (el: HTMLElement): string => el.getAttribute('data-tip') ?? '';
 
 function adopt(el: HTMLElement): string {
@@ -37,7 +42,12 @@ function host(): HTMLDivElement {
   if (!tip) {
     tip = document.createElement('div');
     tip.className = 'tip';
+    tip.id = TIP_ID;
     tip.setAttribute('role', 'tooltip');
+    // Hidden from the accessibility tree until it describes something. A
+    // permanently exposed `role="tooltip"` node holding the last thing anyone
+    // hovered is worse than no tooltip: it is read out attached to nothing.
+    tip.setAttribute('aria-hidden', 'true');
     document.body.append(tip);
   }
   return tip;
@@ -45,8 +55,16 @@ function host(): HTMLDivElement {
 
 function hide(): void {
   clearTimeout(timer);
+  // Removing `title` took away each control's accessible description and put
+  // nothing back, so a screen reader lost the modifier hints entirely. The
+  // description is restored by pointing the control at the live tip while it is
+  // shown, and released again here.
+  current?.removeAttribute('aria-describedby');
   current = null;
-  if (tip) tip.classList.remove('on');
+  if (tip) {
+    tip.classList.remove('on');
+    tip.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function show(el: HTMLElement): void {
@@ -68,6 +86,8 @@ function show(el: HTMLElement): void {
 
   // Measured after the content is in, so the clamp uses the real width.
   t.classList.add('on');
+  t.setAttribute('aria-hidden', 'false');
+  el.setAttribute('aria-describedby', TIP_ID);
   const r = el.getBoundingClientRect();
   const box = t.getBoundingClientRect();
   const below = r.top < window.innerHeight / 2;
@@ -76,7 +96,12 @@ function show(el: HTMLElement): void {
     GAP,
     Math.min(r.left + r.width / 2 - box.width / 2, window.innerWidth - box.width - GAP),
   );
-  const y = below ? r.bottom + GAP : r.top - box.height - GAP;
+  // Clamped on both axes. Only x was, so a tall tip above a control near the
+  // top of a short window went off the top of the screen.
+  const y = Math.max(
+    GAP,
+    Math.min(below ? r.bottom + GAP : r.top - box.height - GAP, window.innerHeight - box.height - GAP),
+  );
 
   t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 }
@@ -93,13 +118,20 @@ function over(e: Event): void {
 }
 
 function out(e: Event): void {
+  // Only the element being described can dismiss its own tooltip. This fired on
+  // any pointerout anywhere, so moving the mouse across the canvas closed a
+  // tooltip that the keyboard had opened on the far side of the window.
+  const from = e.target as Node | null;
+  if (!current || !from || !current.contains(from)) return;
   const to = (e as PointerEvent).relatedTarget as Node | null;
-  if (current && to && current.contains(to)) return;
+  if (to && current.contains(to)) return;
   hide();
 }
 
-/** Start listening. Idempotent enough to call once from the wiring. */
+/** Start listening. Safe to call more than once. */
 export function installTooltips(): void {
+  if (installed) return;
+  installed = true;
   document.addEventListener('pointerover', over);
   document.addEventListener('pointerout', out);
   document.addEventListener('focusin', over);

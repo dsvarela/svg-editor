@@ -97,17 +97,25 @@ that the surviving curves are unchanged.
 
 ## Join two ends back together
 
-Select the two end nodes, then press `Shift+J` or **Join ends** in the **Node**
-panel.
+Two operations, because there are two things you might mean. Both need exactly
+two free ends selected, meaning the first or last node of an open path.
 
-They weld into one node at their midpoint, so ends already sitting on top of each
-other do not move at all. That makes this the exact inverse of **Break here**.
+**Connect** (`Shift+J`, or the button in the **Node** panel) draws the segment
+that is missing. Both nodes stay, nothing moves, and the new segment is straight.
+This is the one you usually want.
 
-Both nodes have to be free ends, meaning the first or last node of an open path.
-Two ends of the *same* path close it into a ring. Two ends of *different* paths
-concatenate into one, and either is reversed as needed so the drawing directions
-agree. If the two paths were separate shapes, the second shape disappears once
-its last path has moved across.
+**Merge** (`Shift+M`) welds the two nodes into one at their midpoint. It costs a
+node, and ends already sitting on top of each other do not move at all, which
+makes it the exact inverse of **Break here**.
+
+Two ends of the *same* path close it into a ring, either way. Two ends of
+*different* paths concatenate into one, and either path is reversed as needed so
+the drawing directions agree. If the two paths were separate shapes, the second
+shape disappears once its last path has moved across.
+
+Inkscape ships both under names so similar they are easy to confuse (`Shift+J`
+merges nodes there, `Shift+Ctrl+J` joins with a segment). Here the word "join"
+means the non-destructive one.
 
 ## Carry on drawing a path you already finished
 
@@ -236,7 +244,8 @@ on   M10 30 25 15 40 30C50 20 60 20 70 30
 
 ## Rename a shape and control its exported id
 
-Double-click the name in the **Shapes** list, type, and press `Enter`.
+Double-click the name in the **Shapes** list, type, and press `Enter`. From the
+keyboard, Tab to the list, pick the shape with the arrows, and press `F2`.
 
 The name becomes the `id` on the exported `<path>`. An `id` is an XML Name, so
 it cannot hold spaces or quotes and cannot start with a digit. Anything that will

@@ -43,7 +43,8 @@ as the centre rather than a corner.
 | `Ctrl`+`↑` `↓` | Loosen or tighten the bend |
 | `Delete` `Backspace` | Delete selected nodes, or selected shapes |
 | `Shift`+`B` | Break the path at the selected node |
-| `Shift`+`J` | Join two selected free ends into one node |
+| `Shift`+`J` | Connect two selected free ends with a segment |
+| `Shift`+`M` | Merge two selected free ends into one node |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -81,6 +82,8 @@ The list of shapes, newest last, with a colour swatch and a node count.
 
 - Click a name to select it. `Shift`-click to add.
 - Double-click a name to rename it.
+- With the list focused, arrows move the selection (`Shift` extends it), and
+  `F2` or `Enter` starts a rename.
 - **Duplicate** copies the selected shapes, naming each copy after its original.
 - **Delete** removes them.
 
@@ -105,7 +108,8 @@ to set it exactly.
 - **Corner**, **Smooth**, **Symm** show what the handles currently say, and set
   it when pressed.
 - **Break here** duplicates the node to cut the path there.
-- **Join ends** welds two selected free ends into one, the inverse of Break.
+- **Connect** draws the missing segment between two free ends. Nothing moves.
+- **Merge** welds two free ends into one node at their midpoint, the inverse of Break.
 - **Delete node** removes it, following the **Delete** panel's mode.
 
 ### Bend
@@ -210,10 +214,10 @@ Named here rather than left for you to find.
   than restoring the original radius. The reported travel is how it tells you.
 - **A wide gap circularises loosely.** One curve cannot hold an arc much wider
   than a quarter turn tightly. The status line says when this applies.
-- **Clicking inside the rename field changes the selection.** Rename works; the
-  side effect on the selection is a known defect.
-- **No keyboard route to the shape list.** Renaming and selecting a shape from
-  the list both need a pointer.
+- **Coincident nodes.** A rectangle drawn at the maximum corner radius, and a
+  circularised path that had a node at its centre, can both end up with two
+  anchors in the same place. **Merge** only works on free ends, so there is no
+  way to fuse them yet.
 - **The selection outline is drawn in document units,** so its dashes look coarse
   when you zoom far out.
 

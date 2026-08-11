@@ -55,17 +55,43 @@ const app = $('#app');
 const toggleSrcBtn = $('#toggleSrc') as HTMLButtonElement;
 const toggleRailBtn = $('#toggleRail') as HTMLButtonElement;
 
+const sourcePanel = $('#sourcepanel') as HTMLElement;
+const rail = $('#rail') as HTMLElement;
+
 function setPanel(which: 'src' | 'rail', open: boolean): void {
   if (which === 'src') {
     app.classList.toggle('src-open', open);
     toggleSrcBtn.setAttribute('aria-pressed', String(open));
+    toggleSrcBtn.setAttribute('aria-expanded', String(open));
+    /* A collapsed panel is `height: 0; overflow: hidden`, which hides it from
+       sight and from nobody else: its textarea and its Apply, Copy and Download
+       buttons stayed in the tab order, so Tab landed on controls that were not
+       on screen and the tooltip layer popped a tip for a button nobody could
+       see. `inert` is the one thing that removes an element from focus, from
+       hit-testing and from the accessibility tree at once. */
+    sourcePanel.inert = !open;
+    // The textarea keeps focus when the drawer closes under it, and the
+    // subscriber skips refreshing a focused box, so reopening showed stale text.
+    if (!open && sourcePanel.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement).blur();
+    }
   } else {
     app.classList.toggle('no-rail', !open);
     toggleRailBtn.setAttribute('aria-pressed', String(open));
+    toggleRailBtn.setAttribute('aria-expanded', String(open));
+    rail.inert = !open;
+    if (!open && rail.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement).blur();
+    }
   }
 }
 const isOpen = (which: 'src' | 'rail'): boolean =>
   which === 'src' ? app.classList.contains('src-open') : !app.classList.contains('no-rail');
+
+// Apply the initial state through the same path, so `inert` and the ARIA
+// attributes start out agreeing with the CSS rather than a frame behind it.
+setPanel('src', isOpen('src'));
+setPanel('rail', isOpen('rail'));
 
 toggleSrcBtn.addEventListener('click', () => setPanel('src', !isOpen('src')));
 toggleRailBtn.addEventListener('click', () => setPanel('rail', !isOpen('rail')));
@@ -216,7 +242,8 @@ ntypeSeg.addEventListener('click', (e) => {
 });
 
 on('#breakPath', () => controller.breakAtSelection());
-on('#joinPath', () => controller.joinSelection());
+on('#joinPath', () => controller.joinSelection('connect'));
+on('#mergePath', () => controller.joinSelection('merge'));
 on('#delNode', () => controller.deleteSelection());
 
 const delModeSeg = $('#delmode');
@@ -307,7 +334,9 @@ function refreshInspector(): void {
     const sp = findShape(store.state.doc, r.shape)?.subpaths[r.sp];
     return !!sp && isPathEnd(sp, r.i);
   });
-  ($('#joinPath') as HTMLButtonElement).disabled = count !== 2 || ends.length !== 2;
+  const twoEnds = count === 2 && ends.length === 2;
+  ($('#joinPath') as HTMLButtonElement).disabled = !twoEnds;
+  ($('#mergePath') as HTMLButtonElement).disabled = !twoEnds;
 
   const dp = store.state.decimals;
   for (const f of coordFields) {
@@ -459,13 +488,24 @@ const shapeList = $('#shapelist');
 const shapeCount = $('#shapecount');
 
 shapeList.addEventListener('click', (e) => {
-  const li = (e.target as HTMLElement).closest('li');
+  const target = e.target as HTMLElement;
+  // The rename input lives inside the row, so `closest('li')` matched it and
+  // clicking to move the caret changed the selection underneath the edit.
+  if (target.closest('.rename')) return;
+
+  const li = target.closest('li');
   const id = li?.getAttribute('data-id');
   if (!id) return;
   store.update((s) => {
     if (!(e as MouseEvent).shiftKey) {
+      /* A plain click selects; only Shift toggles. Toggling on a plain click
+         meant the second click of a double-click deselected the shape, so you
+         finished renaming with nothing selected and the Combine, Transform and
+         Delete panels had quietly gone back to empty. */
       s.selection.shapes.clear();
       s.selection.nodes.clear();
+      s.selection.shapes.add(id);
+      return;
     }
     if (s.selection.shapes.has(id)) s.selection.shapes.delete(id);
     else s.selection.shapes.add(id);
@@ -584,6 +624,36 @@ shapeList.addEventListener('dblclick', (e) => {
   if (id && !renaming) startRename(id);
 });
 
+/* A keyboard route into the list, which had none at all: rows are not focusable
+   and double-click was the only way to rename. Arrows move the selection, F2 and
+   Enter rename the way they do in every file manager. */
+shapeList.addEventListener('keydown', (e) => {
+  if (renaming) return;
+  const shapes = store.state.doc.shapes;
+  if (!shapes.length) return;
+
+  const selected = [...store.state.selection.shapes];
+  const at = shapes.findIndex((sh) => sh.id === selected[selected.length - 1]);
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    const next = Math.max(0, Math.min(shapes.length - 1, (at < 0 ? (step > 0 ? -1 : 0) : at) + step));
+    store.update((st) => {
+      if (!e.shiftKey) {
+        st.selection.shapes.clear();
+        st.selection.nodes.clear();
+      }
+      st.selection.shapes.add(shapes[next].id);
+    });
+    return;
+  }
+  if ((e.key === 'F2' || e.key === 'Enter') && at >= 0) {
+    e.preventDefault();
+    startRename(shapes[at].id);
+  }
+});
+
 /**
  * What the list would draw, ignoring which rows are selected.
  *
@@ -622,6 +692,7 @@ function refreshShapeList(): void {
   if (s.doc.shapes.length === 0) {
     const li = document.createElement('li');
     li.className = 'empty';
+    li.setAttribute('role', 'presentation');
     li.textContent = 'no shapes';
     shapeList.append(li);
     return;
@@ -630,6 +701,10 @@ function refreshShapeList(): void {
   for (const sh of s.doc.shapes) {
     const li = document.createElement('li');
     li.setAttribute('data-id', sh.id);
+    /* `aria-selected` is ignored on a plain list item, so the visual state and
+       the announced state disagreed. A listbox of options is the role that
+       actually carries it. */
+    li.setAttribute('role', 'option');
     li.setAttribute('aria-selected', String(s.selection.shapes.has(sh.id)));
 
     const sw = document.createElement('span');
@@ -655,6 +730,7 @@ const stats = $('#stats');
 const selinfo = $('#selinfo');
 const gridval = $('#gridval');
 const gridreadout = $('#gridreadout');
+const drawinfo = $('#drawinfo');
 const outval = $('#outval');
 const cursorEl = $('#cursor');
 const undoBtn = $('#undo') as HTMLButtonElement;
@@ -694,7 +770,20 @@ store.subscribe((s) => {
     : g && g.multiple > 1
       ? `${s.gridStep} · every ${g.multiple} drawn`
       : `${s.gridStep}`;
-  gridreadout.textContent = !s.gridStep ? 'off' : s.snapToGrid ? 'snapping' : 'drawn only';
+  /* `drawn only` claimed the grid was on screen when Show grid was off, which
+     was one readout describing two settings and getting both wrong. */
+  gridreadout.textContent = !s.gridStep
+    ? 'off'
+    : s.snapToGrid && s.showGrid
+      ? 'snapping'
+      : s.snapToGrid
+        ? 'snapping, hidden'
+        : s.showGrid
+          ? 'drawn only'
+          : 'off, step kept';
+  // Declared in the markup and never written to until now, so the Draw group
+  // was the one panel whose header value was permanently blank.
+  drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
   outval.textContent = `${s.decimals} dp${s.minify ? ' · min' : ''}`;
 
   refreshShapeList();

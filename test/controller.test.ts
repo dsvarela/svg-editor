@@ -1234,7 +1234,7 @@ describe('keyboard', () => {
 });
 
 describe('joining and resuming a path', () => {
-  it('welds two ends of separate shapes into one path', () => {
+  it('merges two ends of separate shapes into one node', () => {
     const h = harness('M0 0 L10 0');
     h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
     const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
@@ -1243,7 +1243,7 @@ describe('joining and resuming a path', () => {
       s.selection.nodes.add(`${b}/0/0`);
     });
 
-    expect(h.controller.joinSelection()).toBe(true);
+    expect(h.controller.joinSelection('merge')).toBe(true);
     // One shape left, one path, and the ends met in the middle.
     expect(h.store.state.doc.shapes).toHaveLength(1);
     expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(1);
@@ -1262,7 +1262,7 @@ describe('joining and resuming a path', () => {
       s.selection.nodes.add(`${id}/0/2`);
     });
 
-    expect(h.controller.joinSelection()).toBe(true);
+    expect(h.controller.joinSelection('merge')).toBe(true);
     expect(h.store.state.doc.shapes[0].subpaths[0].closed).toBe(true);
   });
 
@@ -1274,7 +1274,7 @@ describe('joining and resuming a path', () => {
       s.selection.nodes.add(`${id}/0/3`);
     });
 
-    expect(h.controller.joinSelection()).toBe(false);
+    expect(h.controller.joinSelection('merge')).toBe(false);
     expect(h.store.canUndo).toBe(false);
     expect(h.store.state.doc.shapes[0].subpaths[0].closed).toBe(false);
   });
@@ -1288,10 +1288,44 @@ describe('joining and resuming a path', () => {
       s.selection.nodes.add(`${b}/0/0`);
     });
 
-    h.controller.joinSelection();
+    h.controller.joinSelection('merge');
     h.store.undo();
     expect(h.store.state.doc.shapes).toHaveLength(2);
     expect(h.store.canUndo).toBe(false);
+  });
+
+  it('connects two shapes with a segment, keeping both end nodes', () => {
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
+    const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
+    h.store.update((s) => {
+      s.selection.nodes.add(`${a}/0/1`);
+      s.selection.nodes.add(`${b}/0/0`);
+    });
+
+    expect(h.controller.joinSelection('connect')).toBe(true);
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    // Four nodes, not three: nothing was welded and nothing moved.
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [10, 0],
+      [20, 0],
+      [30, 0],
+    ]);
+  });
+
+  it('defaults to connect, the reading that does not destroy a node', () => {
+    const h = harness('M0 0 L10 0 L10 10');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(`${id}/0/2`);
+    });
+
+    h.controller.joinSelection();
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    expect(sp.closed).toBe(true);
+    expect(sp.nodes).toHaveLength(3);
   });
 
   it('resumes an existing path instead of starting a new shape', () => {
@@ -1348,3 +1382,4 @@ describe('joining and resuming a path', () => {
     expect(h.store.state.doc.shapes).toHaveLength(2);
   });
 });
+

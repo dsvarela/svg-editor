@@ -453,26 +453,66 @@ function shiftNodeTo(n: PathNode, to: Pt): void {
 }
 
 /**
- * Weld two free ends into a single node, the inverse of `breakAt`.
+ * Span the gap between two free ends with a segment. Nothing moves.
  *
- * `breakAt` removes a join and leaves two ends sitting on top of each other.
- * This puts one back. The two nodes merge at their midpoint, so ends that were
- * already coincident do not move at all and the operation is exactly lossless
- * in the case that matters most: undoing a break.
+ * There are two operations here and they are worth keeping apart, because a
+ * single name covering both was wrong in the way names usually are: it did the
+ * destructive one. **Connect** is the literal reading of "join these two ends" —
+ * draw the line that is missing, keep both nodes, and leave every coordinate
+ * where it was. `mergeEnds` below is the other one, and it costs a node.
+ *
+ * Inkscape ships both and names them almost identically, which is where the
+ * confusion started: `Shift+J` merges nodes, `Shift+Ctrl+J` joins them with a
+ * segment. Here `Shift+J` is Connect, because that is what the word means to a
+ * reader who has not memorised Inkscape.
+ *
+ * Two ends of the SAME path close it, since the closing edge of a ring is
+ * exactly the segment that was missing. Two ends of different paths concatenate
+ * with a new segment between them. The result is one subpath; the caller
+ * removes whichever subpath it replaced.
+ */
+export function connectEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
+  if (!isPathEnd(a.sp, a.i) || !isPathEnd(b.sp, b.i)) return null;
+
+  if (a.sp === b.sp) {
+    // Closing a path IS adding the missing segment: the ring's last edge runs
+    // from the final node back to the first, and both nodes stay.
+    if (a.i === b.i || a.sp.nodes.length < 2) return null;
+    a.sp.closed = true;
+    return a.sp;
+  }
+
+  if (a.i === 0) reverseSubpath(a.sp);
+  if (b.i !== 0) reverseSubpath(b.sp);
+
+  /* Nothing is welded and nothing moves. Both ends keep their positions, and
+     the segment between them is straight for free: the last node of an open
+     path has no outgoing handle and the first has no incoming one, which is
+     exactly what a straight segment is made of. */
+  return { nodes: [...a.sp.nodes, ...b.sp.nodes], closed: false };
+}
+
+/**
+ * Weld two free ends into a single node.
+ *
+ * The other half of the pair, and the one that loses a node. Where
+ * `connectEnds` spans the gap, this closes it: the two nodes merge at their
+ * midpoint, so ends already sitting on top of each other do not move and the
+ * operation exactly undoes a `breakAt`.
  *
  * Each end keeps the handle facing away from the joint, which is the one that
  * shapes a segment that still exists. The handles facing the joint governed
  * nothing, because an end of an open path has no segment on its outside.
  *
- * Two ends of the SAME path close it into a ring. Two ends of different paths
- * concatenate, reversing either as needed so the drawing directions agree. The
- * result is one subpath; the caller is responsible for removing whichever
- * subpath it replaced.
+ * Two ends of the SAME path close it into a ring, one node shorter. Two ends of
+ * different paths concatenate, reversing either as needed so the drawing
+ * directions agree. The result is one subpath; the caller is responsible for
+ * removing whichever subpath it replaced.
  *
  * Returns `null` when either node is not a free end, when both are the same
  * node, or when closing would leave fewer than two nodes to draw with.
  */
-export function joinEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
+export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
   if (!isPathEnd(a.sp, a.i) || !isPathEnd(b.sp, b.i)) return null;
 
   const mid = (p: Pt, q: Pt): Pt => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];

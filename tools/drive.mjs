@@ -682,17 +682,39 @@ const scenarios = {
       return { w: Math.round(b.width), h: Math.round(b.height) };
     };
     const settle = () => page.waitForTimeout(260);
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`chrome: ${what}`);
+    };
+    /** Whether a collapsed panel can still be reached by Tab. */
+    const reachable = (sel) =>
+      page.$eval(sel, (el) => {
+        const focusable = el.querySelectorAll('button, textarea, input, select, a[href]');
+        // `inert` is inherited, so asking the container answers for all of them.
+        return !el.inert && focusable.length > 0;
+      });
 
-    const opened = { rail: true, source: false };
+    // Measured, not asserted from a literal. This used to be a hard-coded
+    // `{rail: true, source: false}` returned as though it were an observation,
+    // which no production change could ever contradict.
+    const opened = {
+      rail: (await page.getAttribute('#toggleRail', 'aria-pressed')) === 'true',
+      source: (await page.getAttribute('#toggleSrc', 'aria-pressed')) === 'true',
+    };
+    check(opened.rail === true, 'the inspector should start open');
+    check(opened.source === false, 'the source drawer should start closed');
+    check(!(await reachable('#sourcepanel')), 'the closed drawer is still in the tab order');
+
     const both = await canvasBox();
 
     await page.click('#toggleSrc');
     await settle();
     const withSource = await canvasBox();
+    check(await reachable('#sourcepanel'), 'the open drawer is not reachable by Tab');
 
     await page.click('#toggleRail');
     await settle();
     const noRail = await canvasBox();
+    check(!(await reachable('#rail')), 'the collapsed inspector is still in the tab order');
 
     await page.click('#toggleSrc');
     await settle();
@@ -708,6 +730,21 @@ const scenarios = {
       page: document.documentElement.scrollHeight - document.documentElement.clientHeight,
       body: document.body.scrollHeight - document.body.clientHeight,
     }));
+    /* Both README and ARCHITECTURE claimed this scenario asserted the page never
+       scrolls. It printed two numbers and compared neither. */
+    check(scroll.page <= 0, `the page scrolls by ${scroll.page}px`);
+    check(scroll.body <= 0, `the body scrolls by ${scroll.body}px`);
+
+    // A tooltip has to describe the control it belongs to, or a screen reader
+    // gets nothing: `adopt()` removes the title and this is what replaces it.
+    await page.hover('#fit');
+    await page.waitForTimeout(320);
+    const described = await page.getAttribute('#fit', 'aria-describedby');
+    check(!!described, 'a shown tooltip does not describe its control');
+    check(
+      (await page.getAttribute(`#${described}`, 'aria-hidden')) === 'false',
+      'the tooltip is hidden from the accessibility tree while shown',
+    );
 
     // Leave it inverted, so the screenshot shows the other half of the palette.
     await page.click('#theme');
@@ -720,6 +757,7 @@ const scenarios = {
       noRail,
       bare,
       viaKeys,
+      described,
       widensWhenRailCloses: noRail.w > withSource.w,
       tallensWhenSourceCloses: bare.h > noRail.h,
       keysMatchButtons: viaKeys.w === both.w && viaKeys.h === withSource.h,

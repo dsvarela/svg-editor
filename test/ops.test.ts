@@ -7,7 +7,8 @@ import { cloneNode, continuityOf, segmentAsCubic, segmentCount } from '../src/co
 import type { Pt, Subpath } from '../src/core/types';
 import {
   breakAt,
-  joinEnds,
+  connectEnds,
+  mergeEnds,
   deleteNode,
   moveAnchor,
   moveHandle,
@@ -680,7 +681,7 @@ describe('breaking', () => {
   });
 });
 
-describe('joinEnds', () => {
+describe('mergeEnds', () => {
   /* The inverse of breakAt. The case that has to be exactly lossless is undoing
      a break, where the two ends are already coincident and nothing should move
      at all. */
@@ -691,7 +692,7 @@ describe('joinEnds', () => {
     // Node 1 is the middle one; 2 ends the path and has nothing to split off.
     const pieces = breakAt(sp, 1)!;
     expect(pieces).toHaveLength(2);
-    const rejoined = joinEnds({ sp: pieces[0], i: pieces[0].nodes.length - 1 }, { sp: pieces[1], i: 0 })!;
+    const rejoined = mergeEnds({ sp: pieces[0], i: pieces[0].nodes.length - 1 }, { sp: pieces[1], i: 0 })!;
 
     expect(rejoined.nodes).toHaveLength(sp.nodes.length);
     sample(rejoined, 32).forEach((p, i) => {
@@ -703,7 +704,7 @@ describe('joinEnds', () => {
   it('meets in the middle when the ends are apart', () => {
     const a = parsePath('M0 0 L10 0')[0];
     const b = parsePath('M20 0 L30 0')[0];
-    const j = joinEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    const j = mergeEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
     expect(j.nodes.map((n) => n.pt)).toEqual([
       [0, 0],
       [15, 0],
@@ -715,7 +716,7 @@ describe('joinEnds', () => {
     // Both selected ends are the paths' first nodes, so `a` has to be flipped.
     const a = parsePath('M10 0 L0 0')[0];
     const b = parsePath('M20 0 L30 0')[0];
-    const j = joinEnds({ sp: a, i: 0 }, { sp: b, i: 0 })!;
+    const j = mergeEnds({ sp: a, i: 0 }, { sp: b, i: 0 })!;
     expect(j.nodes.map((n) => n.pt)).toEqual([
       [0, 0],
       [15, 0],
@@ -726,7 +727,7 @@ describe('joinEnds', () => {
   it('keeps the handle facing away from the joint', () => {
     const a = parsePath('M0 0 C5 -8 10 -8 10 0')[0];
     const b = parsePath('M10 0 C10 8 15 8 20 0')[0];
-    const j = joinEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    const j = mergeEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
     const weld = j.nodes[1];
     // The incoming handle came from `a`, the outgoing one from `b`.
     expect(weld.hIn).toEqual([10, -8]);
@@ -735,7 +736,7 @@ describe('joinEnds', () => {
 
   it('closes a path when both ends belong to it', () => {
     const sp = parsePath('M0 0 L10 0 L10 10 L0.4 0.4')[0];
-    const j = joinEnds({ sp, i: 0 }, { sp, i: 3 })!;
+    const j = mergeEnds({ sp, i: 0 }, { sp, i: 3 })!;
     expect(j.closed).toBe(true);
     expect(j.nodes).toHaveLength(3);
     // The two ends met in the middle rather than one winning.
@@ -746,16 +747,80 @@ describe('joinEnds', () => {
     const sp = parsePath('M0 0 L10 0 L10 10')[0];
     const other = parsePath('M20 0 L30 0')[0];
     // Middle node.
-    expect(joinEnds({ sp, i: 1 }, { sp: other, i: 0 })).toBeNull();
+    expect(mergeEnds({ sp, i: 1 }, { sp: other, i: 0 })).toBeNull();
     // Same node twice.
-    expect(joinEnds({ sp, i: 0 }, { sp, i: 0 })).toBeNull();
+    expect(mergeEnds({ sp, i: 0 }, { sp, i: 0 })).toBeNull();
     // A closed path has no free ends at all.
     const ring = parsePath('M0 0 L10 0 L10 10 Z')[0];
-    expect(joinEnds({ sp: ring, i: 0 }, { sp: other, i: 0 })).toBeNull();
+    expect(mergeEnds({ sp: ring, i: 0 }, { sp: other, i: 0 })).toBeNull();
   });
 
   it('refuses to close a two-node path, which would leave one node', () => {
     const sp = parsePath('M0 0 L10 0')[0];
-    expect(joinEnds({ sp, i: 0 }, { sp, i: 1 })).toBeNull();
+    expect(mergeEnds({ sp, i: 0 }, { sp, i: 1 })).toBeNull();
+  });
+});
+
+describe('connectEnds', () => {
+  /* The other half of the pair, and the one the word "join" actually suggests:
+     draw the line that is missing and move nothing. A single operation covering
+     both was wrong in the way names usually are -- it did the destructive one. */
+  it('spans the gap without moving either end', () => {
+    const a = parsePath('M0 0 L10 0')[0];
+    const b = parsePath('M20 0 L30 0')[0];
+    const j = connectEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    expect(j.nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [10, 0],
+      [20, 0],
+      [30, 0],
+    ]);
+    expect(j.closed).toBe(false);
+  });
+
+  it('leaves the new segment straight', () => {
+    // Free for the same reason a rectangle's sides are straight: the last node
+    // of an open path has no outgoing handle and the first has no incoming one.
+    const a = parsePath('M0 0 C5 -8 10 -8 10 0')[0];
+    const b = parsePath('M20 0 C20 8 25 8 30 0')[0];
+    const j = connectEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    expect(j.nodes[1].hOut).toBeNull();
+    expect(j.nodes[2].hIn).toBeNull();
+    // And the curves either side are untouched.
+    expect(j.nodes[1].hIn).toEqual([10, -8]);
+    expect(j.nodes[2].hOut).toEqual([20, 8]);
+  });
+
+  it('closes a path without losing a node, unlike merge', () => {
+    const forConnect = parsePath('M0 0 L10 0 L10 10')[0];
+    const forMerge = parsePath('M0 0 L10 0 L10 10')[0];
+
+    const c = connectEnds({ sp: forConnect, i: 0 }, { sp: forConnect, i: 2 })!;
+    expect(c.closed).toBe(true);
+    expect(c.nodes).toHaveLength(3);
+    expect(c.nodes[0].pt).toEqual([0, 0]);
+
+    const m = mergeEnds({ sp: forMerge, i: 0 }, { sp: forMerge, i: 2 })!;
+    expect(m.closed).toBe(true);
+    expect(m.nodes).toHaveLength(2);
+  });
+
+  it('reverses whichever path faces the wrong way', () => {
+    const a = parsePath('M10 0 L0 0')[0];
+    const b = parsePath('M20 0 L30 0')[0];
+    const j = connectEnds({ sp: a, i: 0 }, { sp: b, i: 0 })!;
+    expect(j.nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [10, 0],
+      [20, 0],
+      [30, 0],
+    ]);
+  });
+
+  it('refuses anything that is not two free ends', () => {
+    const sp = parsePath('M0 0 L10 0 L10 10')[0];
+    const other = parsePath('M20 0 L30 0')[0];
+    expect(connectEnds({ sp, i: 1 }, { sp: other, i: 0 })).toBeNull();
+    expect(connectEnds({ sp, i: 0 }, { sp, i: 0 })).toBeNull();
   });
 });
