@@ -21,6 +21,7 @@ import type { Doc, Pt, Shape, Subpath, ViewBox } from '../core/types';
 import { serialisePath } from '../core/serialise';
 import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
+import { latentHandle } from '../model/ops';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
 import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
@@ -374,24 +375,6 @@ export class Canvas {
       this.penLine.setAttribute('display', 'none');
     }
   }
-}
-
-/**
- * Where a missing handle would sit: one third along the segment it governs.
- *
- * Returns `null` when there is no segment on that side (the ends of an open
- * subpath), because there is nothing there to curve.
- */
-export function latentHandle(sp: Subpath, i: number, which: 'in' | 'out'): Pt | null {
-  const n = sp.nodes.length;
-  if (n < 2) return null;
-  const hasSegment = which === 'out' ? sp.closed || i < n - 1 : sp.closed || i > 0;
-  if (!hasSegment) return null;
-
-  const other = which === 'out' ? (i + 1) % n : (i - 1 + n) % n;
-  const a = sp.nodes[i].pt;
-  const b = sp.nodes[other].pt;
-  return [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
 }
 
 /** Sample a subpath's outline, used by marquee selection. */

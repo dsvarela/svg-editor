@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, expect, it } from 'vitest';
-import { exportSvg, importSvg, parseTransform, primitiveToPath } from '../src/io/svg';
+import { exportSvg, importSvg, parseTransform, primitiveToPath, xmlId } from '../src/io/svg';
 import { parsePath } from '../src/core/parse';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
@@ -271,5 +271,45 @@ describe('svg export', () => {
     expect(out).toContain('fill-rule="evenodd"');
     expect(out).toContain('stroke="#123"');
     expect(out).toContain('stroke-width="2.5"');
+  });
+});
+
+describe('shape names as ids', () => {
+  it('passes a name that is already a valid id straight through', () => {
+    expect(xmlId('outer-ring')).toBe('outer-ring');
+    expect(xmlId('Layer_2.copy')).toBe('Layer_2.copy');
+  });
+
+  it('replaces what an XML Name cannot hold', () => {
+    // Renaming is free text; an id is not. A name with a quote in it would
+    // otherwise close the attribute and produce a document that will not parse.
+    expect(xmlId('my shape')).toBe('my-shape');
+    expect(xmlId('say "hi"')).toBe('say-hi');
+    expect(xmlId('a/b\\c')).toBe('a-b-c');
+  });
+
+  it('fixes a leading digit rather than emitting an invalid id', () => {
+    expect(xmlId('2nd ring')).toBe('n2nd-ring');
+  });
+
+  it('falls back rather than emitting an empty id', () => {
+    expect(xmlId('   ')).toBe('shape');
+    expect(xmlId('!!!')).toBe('shape');
+  });
+
+  it('exports a renamed shape with a usable id, and it parses back', () => {
+    const doc = emptyDoc();
+    const shape: Shape = {
+      id: 'shape-1',
+      name: 'outer ring',
+      subpaths: parsePath('M0 0 L10 0 L10 10 Z'),
+      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' },
+    };
+    doc.shapes.push(shape);
+
+    const svg = exportSvg(doc);
+    expect(svg).toContain('id="outer-ring"');
+    // And it survives a round trip rather than throwing the parser.
+    expect(importSvg(svg).shapes).toHaveLength(1);
   });
 });

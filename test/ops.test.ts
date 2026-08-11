@@ -184,12 +184,41 @@ describe('forcing a continuity', () => {
     expect(continuityOf(sp.nodes[1])).toBe('corner');
   });
 
-  it('leaves a node with a straight side alone', () => {
-    const sp = parsePath('M0 0 L10 0 C15 0 20 5 20 10')[0];
-    const before = { ...sp.nodes[1] };
+  it('gives a corner handles rather than declining', () => {
+    // The old behaviour was to leave a handle-less node alone, which read as a
+    // dead button: the node stayed a corner and nothing on screen moved.
+    const sp = parsePath('M0 0 L10 0 L20 10 L30 10')[0];
+    expect(continuityOf(sp.nodes[1])).toBe('corner');
+
     setContinuity(sp, 1, 'smooth');
-    expect(sp.nodes[1].hIn).toBe(before.hIn);
-    expect(sp.nodes[1].hOut).toEqual(before.hOut);
+
+    expect(sp.nodes[1].hIn).not.toBeNull();
+    expect(sp.nodes[1].hOut).not.toBeNull();
+    expect(continuityOf(sp.nodes[1])).toBe('smooth');
+  });
+
+  it('does not move the drawing when the sides are already in line', () => {
+    // A straight segment whose far handle sits on the chord is still that exact
+    // straight line, so materialising one changes the spelling and nothing else.
+    const sp = parsePath('M0 0 L10 0 C15 0 20 5 20 10')[0];
+    setContinuity(sp, 1, 'smooth');
+
+    expect(continuityOf(sp.nodes[1])).toBe('smooth');
+    expect(sp.nodes[1].hOut).toEqual([15, 0]);
+    // On the chord from node 0 to node 1, so segment 0 is still the same line.
+    const hIn = sp.nodes[1].hIn!;
+    expect(hIn[1]).toBeCloseTo(0, 12);
+    expect(hIn[0]).toBeGreaterThan(0);
+    expect(hIn[0]).toBeLessThan(10);
+  });
+
+  it('declines at the end of an open path, where there is no second handle', () => {
+    const sp = parsePath('M0 0 C5 0 10 5 10 10')[0];
+    setContinuity(sp, 0, 'smooth');
+    // Nothing arrives at the first node of an open path, so there is nothing to
+    // line the outgoing handle up against.
+    expect(sp.nodes[0].hIn).toBeNull();
+    expect(continuityOf(sp.nodes[0])).toBe('corner');
   });
 
   it('is idempotent', () => {

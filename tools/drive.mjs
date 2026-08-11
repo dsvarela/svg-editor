@@ -522,6 +522,87 @@ const scenarios = {
   },
 
   /**
+   * The two draw tools, circularise, renaming, and the tooltips.
+   *
+   * Drawing is the one thing here that cannot be checked without a browser:
+   * the shape's size comes from a pointer drag through a real hit-tested
+   * overlay, and the modifier keys are read off the live event.
+   */
+  async primitives(page) {
+    const { drag } = await mk(page);
+
+    // Clear the starter so the shape list is easy to talk about.
+    await page.click('#shapelist li:nth-child(1)');
+    await page.click('#delShape');
+    await page.waitForTimeout(80);
+
+    // A circle: Shift takes the smaller span of the drag.
+    await page.click('#tool button[data-v="ellipse"]');
+    await drag([20, 15], [50, 55], 10, 'Shift');
+    await page.waitForTimeout(120);
+    const circle = {
+      stats: await page.textContent('#stats'),
+      d: await page.getAttribute('.artwork path', 'd'),
+    };
+
+    // A rounded rectangle, radius set in the rail.
+    await page.fill('#cornerRadius', '3');
+    await page.dispatchEvent('#cornerRadius', 'input');
+    await page.click('#tool button[data-v="rect"]');
+    await drag([56, 15], [80, 40]);
+    await page.waitForTimeout(120);
+    const rounded = {
+      shapes: await page.locator('#shapelist li').allTextContents(),
+      d: await page.getAttribute('.artwork path:nth-child(2)', 'd'),
+    };
+
+    // The keyboard reaches the tools too.
+    await page.keyboard.press('e');
+    const toolAfterKey = await page.getAttribute('#tool button[data-v="ellipse"]', 'aria-pressed');
+    await page.click('#tool button[data-v="select"]');
+
+    // Circularise: pull one node of the circle well off, then put it back.
+    await page.click('#shapelist li:nth-child(1)');
+    await page.waitForTimeout(80);
+    await drag([50, 30], [57, 30]);
+    await page.waitForTimeout(120);
+    const dented = await page.getAttribute('.artwork path', 'd');
+    await page.click('#shapelist li:nth-child(1)');
+    await page.click('#circularise');
+    await page.waitForTimeout(150);
+    const fixed = {
+      status: await page.textContent('#status'),
+      d: await page.getAttribute('.artwork path', 'd'),
+    };
+
+    // Rename, which is what the exported id carries.
+    await page.dblclick('#shapelist li:nth-child(1) .nm');
+    await page.fill('#shapelist .rename', 'outer ring');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(120);
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(120);
+    const renamed = {
+      status: await page.textContent('#status'),
+      listed: await page.textContent('#shapelist li:nth-child(1)'),
+      exported: (await page.inputValue('#src')).includes('id="outer-ring"'),
+    };
+
+    // Tooltips: the toolbar is icons, so the labels have to come from hovering.
+    await page.hover('#fit');
+    await page.waitForTimeout(320);
+    const tip = {
+      text: await page.textContent('.tip'),
+      shown: await page.locator('.tip.on').count(),
+      // The native tooltip must be gone, or both appear at once.
+      titleLeft: await page.getAttribute('#fit', 'title'),
+    };
+
+    return { circle, rounded, toolAfterKey, dented, fixed, renamed, tip };
+  },
+
+  /**
    * The chrome contract: the canvas gets everything the panels are not using,
    * and the page itself never scrolls.
    *

@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (221 across 8 files) |
+| `npm test` | Unit and DOM tests (266 across 9 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser — see [Testing](#testing) |
 
-The production build is one file, no external requests: **119.5 kB, 38.4 kB
+The production build is one file, no external requests: **130.6 kB, 41.8 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -54,6 +54,7 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | Double-click the outline | Insert a node exactly there, without changing the curve |
 | Double-click a node | Cycle corner → smooth → symmetric |
 | Drag on empty canvas | Marquee-select |
+| Drag with the ellipse or rect tool | Draw one. **Shift** for a circle or square, **Alt** from the centre |
 | **Shift**-click | Add to or remove from the selection |
 | Drag the bend dot | Bow a segment; appears when both its endpoints are selected |
 | Wheel | Zoom at the pointer |
@@ -63,7 +64,7 @@ gzipped**. Open `dist/index.html` from disk and it works.
 
 | Key | Effect |
 |---|---|
-| `V` / `P` | Select tool / pen tool |
+| `V` / `P` / `E` / `R` | Select, pen, ellipse, rectangle |
 | Arrows | Nudge by one grid step |
 | **Shift**+arrows | Nudge by ten |
 | **Ctrl**+←/→ | Bend the active segment (**Shift** for a finer step) |
@@ -89,9 +90,42 @@ its handles do follows from where they already are:
 | In line, different lengths | Direction shared |
 | In line, equal lengths | Fully mirrored |
 
-Drag a handle and that relationship is preserved. **Alt**-drag to break it. The
-`Corner`/`Smooth`/`Symm` buttons are a readout of what the handles currently
-say, and clicking one moves the handles to make it so — `Corner` removes them.
+Drag a handle and that relationship is preserved. **Alt**-drag to break it, and
+it stays broken: the drag leaves the pair out of line, so the next one reads
+them as independent too.
+
+The `Corner`/`Smooth`/`Symm` buttons are a readout of what the handles currently
+say, and clicking one moves the handles to make it so. `Corner` removes them;
+`Smooth` and `Symm` on a corner grow them where the hollow ghosts sit, a third
+along each neighbouring segment. Two clicks genuinely have nothing to do — the
+end of an open path has no second handle to line up with, and a symmetric node
+is *already* smooth, since collinear-and-equal is a special case of collinear.
+Both say so in the status line rather than looking broken.
+
+### Circles, rectangles and circularising
+
+`E` and `R` draw an ellipse and a rectangle. Drag out a box; **Shift** constrains
+it to a circle or a square by taking the shorter span, which keeps the result on
+the grid whenever the drag already was, and **Alt** reads the press as the
+centre rather than a corner. **Corner** in the Draw panel is the radius the
+rectangle tool rounds with, clamped to half the shorter side.
+
+They are nodes and handles from the moment they exist — there is no rect or
+ellipse in the model, so there is nothing to "convert to path" before you can
+drag one of the corners. A circle is four cubics with handles of `4/3·(√2−1)`
+times the radius, which is round to about 0.027 % of it. A rounded rectangle is
+four quarter arcs and four straight sides, and the sides stay straight because
+their nodes have no handles at all.
+
+**Circularise** goes the other way: it takes a hand-drawn or imported
+near-circle and makes it exact. Every node keeps its angle about the best-fit
+centre and moves to the fitted radius, then the handles are rebuilt from the
+angle each segment now spans, at `r · 4/3 · tan(θ/4)`. Nodes stay where they
+were around the ring and none are added, so unevenly spaced ones come out as
+round as evenly spaced ones. The status line says which radius it found and how
+far the furthest node had to travel — with a genuine near-circle that number is
+small, and when it isn't, that is the honest measure of how much of a circle
+this was to start with.
 
 ### Deleting and breaking
 
@@ -127,6 +161,14 @@ that node. Nothing moves at all.
 | Delete · fuse | −1 | stays whole | approximated |
 | Delete · split | −1 | two ends | exact |
 | Break here | +1 | two ends | exact |
+
+### Naming shapes
+
+Double-click a name in the Shapes list to rename it. The name is what the
+exported `id` carries, and an `id` is an XML Name — no spaces, no quotes, not
+starting with a digit — so anything that will not fit is hyphenated on the way
+out and the status line says what the export will read. The name in the editor
+is left exactly as typed.
 
 ### Combining shapes
 
@@ -186,6 +228,7 @@ src/
     arc.ts         SVG arcs -> cubics
     affine.ts      2x3 matrices
     bend.ts        a curve described as angle + looseness
+    primitives.ts  ellipse, rectangle, and fitting a circle to points
   model/      the document and every mutation it allows
     doc.ts         shapes, selection, bounding boxes
     ops.ts         all geometry edits
@@ -201,18 +244,19 @@ src/
     controller.ts  every pointer and keyboard interaction
   ui/
     styles.css     the shell: one fixed grid, no page scroll
+    tooltip.ts     one tooltip layer, fed by the markup's own titles
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-5 153 lines of TypeScript across 17 files, no runtime framework.
+5 891 lines of TypeScript across 19 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests** — `npm test`. 221 tests over parsing, serialising,
-geometry ops, rendering invariants, SVG import/export, bend, booleans and the
-grid. The rendering tests run in jsdom against the real `Canvas`.
+**Unit and DOM tests** — `npm test`. 266 tests over parsing, serialising,
+geometry ops, rendering invariants, SVG import/export, bend, booleans, the grid
+and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings — it measures. Curve equality is by projected deviation, boolean
@@ -231,7 +275,7 @@ differs, and pass `--headed` to watch.
 
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
-`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`.
+`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

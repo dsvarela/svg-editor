@@ -23,6 +23,19 @@
           <path d="M11.4 2.4 13.6 4.6 6.7 11.5 3.6 12.4 4.5 9.3Z" />
           <path d="M4.5 9.3 6.7 11.5" />
         </symbol>
+        <symbol id="i-ellipse" viewBox="0 0 16 16">
+          <ellipse cx="8" cy="8" rx="6" ry="4.6" />
+        </symbol>
+        <symbol id="i-rect" viewBox="0 0 16 16">
+          <rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.4" />
+        </symbol>
+        <symbol id="i-circularise" viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="5.4" stroke-dasharray="2.2 1.8" />
+          <rect class="sq" x="6.8" y="1.3" width="2.4" height="2.4" />
+          <rect class="sq" x="12.3" y="6.8" width="2.4" height="2.4" />
+          <rect class="sq" x="6.8" y="12.3" width="2.4" height="2.4" />
+          <rect class="sq" x="1.3" y="6.8" width="2.4" height="2.4" />
+        </symbol>
         <symbol id="i-undo" viewBox="0 0 16 16">
           <path d="M3.2 6.6H9.7A3.4 3.4 0 1 1 9.7 13.4H6.6" />
           <path d="M6 3.6 3 6.6 6 9.6" />
@@ -84,6 +97,12 @@
           <button type="button" data-v="pen" title="Pen (P)" aria-label="Pen">
             <svg class="ico"><use href="#i-pen" /></svg>
           </button>
+          <button type="button" data-v="ellipse" title="Ellipse (E) — Shift for a circle, Alt from the centre" aria-label="Ellipse">
+            <svg class="ico"><use href="#i-ellipse" /></svg>
+          </button>
+          <button type="button" data-v="rect" title="Rectangle (R) — Shift for a square, Alt from the centre" aria-label="Rectangle">
+            <svg class="ico"><use href="#i-rect" /></svg>
+          </button>
         </div>
 
         <span class="sep"></span>
@@ -144,6 +163,7 @@
               <button class="btn" id="dupShape">Duplicate</button>
               <button class="btn" id="delShape">Delete</button>
             </div>
+            <p class="note">Double-click a name to rename it. The name is what the exported <code>id</code> carries.</p>
           </div>
 
           <div class="group">
@@ -157,6 +177,22 @@
             <p class="note">
               Shift-click the list to select two or more. The first survives, keeping its name and
               colour; <b>Subtract</b> takes the rest away from it.
+            </p>
+          </div>
+
+          <div class="group">
+            <div class="glabel"><span>Draw</span><span class="gval" id="drawinfo"></span></div>
+            <div class="row">
+              <label for="cornerRadius">Corner</label>
+              <input type="number" id="cornerRadius" value="0" step="0.5" min="0" />
+            </div>
+            <button class="btn wide" id="circularise" title="Move every node of the selected contour onto its own best-fit circle">
+              <svg class="ico"><use href="#i-circularise" /></svg>Circularise
+            </button>
+            <p class="note">
+              <b>Corner</b> is the radius the rectangle tool draws with, clamped to half the shorter
+              side. <b>Circularise</b> takes a hand-drawn or imported near-circle and makes it exact,
+              keeping every node and rebuilding its handles from the arc each one now spans.
             </p>
           </div>
 

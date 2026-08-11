@@ -11,6 +11,7 @@ import { bendOf, bendToHandles } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { applyMat } from '../core/affine';
 import type { Mat } from '../core/affine';
+import { arcHandle, fitCircle } from '../core/primitives';
 import {
   cloneNode,
   continuityOf,
@@ -26,6 +27,24 @@ import type { HandlePart, NodeRef } from './doc';
 const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 const len = (a: Pt): number => Math.hypot(a[0], a[1]);
+
+/**
+ * Where a missing handle would sit: one third along the segment it governs.
+ *
+ * Returns `null` when there is no segment on that side (the ends of an open
+ * subpath), because there is nothing there to curve.
+ */
+export function latentHandle(sp: Subpath, i: number, which: 'in' | 'out'): Pt | null {
+  const n = sp.nodes.length;
+  if (n < 2) return null;
+  const hasSegment = which === 'out' ? sp.closed || i < n - 1 : sp.closed || i > 0;
+  if (!hasSegment) return null;
+
+  const other = which === 'out' ? (i + 1) % n : (i - 1 + n) % n;
+  const a = sp.nodes[i].pt;
+  const b = sp.nodes[other].pt;
+  return [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+}
 
 /** Round to the grid. `step` of 0 disables snapping. */
 export function snap(p: Pt, step: number): Pt {
@@ -102,8 +121,14 @@ export function moveHandle(
  * type-switch pretended to do -- setting the flag to `corner` used to change
  * nothing visible at all, then silently altered how the next drag behaved.
  *
- * A node with a missing handle has a straight segment on that side; aligning
- * against nothing is meaningless, so smooth/symmetric leave it alone.
+ * A corner has no handles to align, so smooth and symmetric first materialise
+ * them where the hollow ghosts are drawn — a third along each neighbouring
+ * segment. Asking a corner to be smooth used to do nothing at all, which read
+ * as a dead button rather than as the model being strict.
+ *
+ * The one case that still declines is an end of an open subpath: there is no
+ * segment on the outside, so there is no handle to invent and nothing to align
+ * against. Such a node stays a corner because it genuinely is one.
  */
 export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): void {
   const n = sp.nodes[i];
@@ -113,6 +138,9 @@ export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): voi
     n.hOut = null;
     return;
   }
+
+  n.hIn ??= latentHandle(sp, i, 'in');
+  n.hOut ??= latentHandle(sp, i, 'out');
   if (!n.hIn || !n.hOut) return;
 
   // Average the two directions rather than adopting one of them, so the result
@@ -389,6 +417,74 @@ export function reverseSubpath(sp: Subpath): void {
     // Reversing a ring moves the start; rotate it back so node 0 is unchanged.
     sp.nodes.unshift(sp.nodes.pop()!);
   }
+}
+
+/* --------------------------------------------------------- circularising */
+
+export interface CirculariseResult {
+  centre: Pt;
+  radius: number;
+  /** How far the furthest node had to travel to reach the circle. */
+  moved: number;
+}
+
+/**
+ * Force every node of a subpath onto its own best-fit circle.
+ *
+ * Each node keeps its angle about the fitted centre and is pushed out or pulled
+ * in to the fitted radius; the handles are then rebuilt from the angle each
+ * segment now spans, at `r · 4/3 · tan(θ/4)`. That is the exact handle length
+ * for a circular arc, so evenly spaced nodes reproduce `KAPPA` and unevenly
+ * spaced ones are just as round — the result does not depend on how many nodes
+ * the near-circle happened to have.
+ *
+ * Angles are taken from the nodes' existing positions and consecutive spans use
+ * the shorter way round, so a path whose nodes are already in angular order —
+ * every real near-circle — comes out clean. A path whose nodes are not (a star,
+ * say) will not, which is why the caller is handed `moved`: it is the honest
+ * measure of how much of a circle this was to begin with.
+ *
+ * Returns `null` for fewer than three nodes or a collinear arrangement, where
+ * no circle is determined.
+ */
+export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
+  const n = sp.nodes.length;
+  if (n < 3) return null;
+
+  const fit = fitCircle(sp.nodes.map((nd) => nd.pt));
+  if (!fit) return null;
+  const [cx, cy] = fit.centre;
+  const r = fit.radius;
+
+  const ang = sp.nodes.map((nd) => Math.atan2(nd.pt[1] - cy, nd.pt[0] - cx));
+  let moved = 0;
+  sp.nodes.forEach((nd, i) => {
+    const to: Pt = [cx + r * Math.cos(ang[i]), cy + r * Math.sin(ang[i])];
+    moved = Math.max(moved, Math.hypot(to[0] - nd.pt[0], to[1] - nd.pt[1]));
+    nd.pt = to;
+    nd.hIn = null;
+    nd.hOut = null;
+  });
+
+  const segs = sp.closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % n;
+    let d = ang[j] - ang[i];
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    // Coincident angles span no arc: leave the segment straight rather than
+    // emitting a zero-length handle that reads as a cusp.
+    if (Math.abs(d) < 1e-9) continue;
+
+    const L = arcHandle(r, d);
+    const a = sp.nodes[i];
+    const b = sp.nodes[j];
+    // The tangent at angle t, for increasing t, is (-sin t, cos t).
+    a.hOut = [a.pt[0] - Math.sin(ang[i]) * L, a.pt[1] + Math.cos(ang[i]) * L];
+    b.hIn = [b.pt[0] + Math.sin(ang[j]) * L, b.pt[1] - Math.cos(ang[j]) * L];
+  }
+
+  return { centre: fit.centre, radius: r, moved };
 }
 
 /* ------------------------------------------------------------- transforms */

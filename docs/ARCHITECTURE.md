@@ -116,6 +116,24 @@ Two tolerances, in `core/types.ts`:
 - **Equal length: 1e-6 relative.** A non-uniform scale legitimately destroys
   equal lengths, and correctly demotes symmetric to smooth.
 
+### Making a corner smooth
+
+Because the reading is derived, `setContinuity` has to change geometry or it
+changes nothing. `corner` removes both handles. `smooth` and `symmetric` used to
+decline outright on a node that had none, which was correct about the model and
+useless as a button: nothing moved and nothing said why. They now materialise
+the missing handles where the hollow ghosts are drawn — a third along each
+neighbouring segment — and align from there. A handle sitting on its own chord
+leaves that segment the same straight line it was, so the drawing does not jump;
+only its spelling changes, from `L` to a `C` that traces it.
+
+Two cases still have nothing to do, and both now say so:
+
+| | Why |
+|---|---|
+| An end of an open subpath | No segment on the outside, so no handle to invent and nothing to align against |
+| Smooth on a symmetric node | Symmetric *is* smooth — collinear handles of equal length. The only way to make the weaker reading true is to break the equality, which is a change nobody asked for |
+
 ## 7. Bend is a view, not a replacement
 
 `core/bend.ts` describes a curved segment with two numbers — how far it bows
@@ -240,7 +258,38 @@ inspector closes and tallens when the drawer does, the keyboard shortcuts land
 in the same state as the buttons, and `scrollHeight` never exceeds
 `clientHeight`.
 
-## 12. Delete never refuses; break is the other operation
+## 12. Primitives are nodes from the start
+
+There is no rect or ellipse in the model. `core/primitives.ts` builds them out
+of the same nodes and handles as everything else, which is why a circle you have
+just drawn can have one of its nodes dragged immediately — there is nothing to
+convert, because there was never anything else.
+
+A circle is four cubics with handles `KAPPA = 4/3·(√2−1)` times the radius,
+round to about 2.7e-4 of it. Every node comes out symmetric by construction,
+so it behaves like the smooth point it looks like without anything being
+declared. A rounded rectangle is four quarter arcs and four straight sides, and
+each corner takes two nodes: a node with a handle on one side and none on the
+other, which `continuityOf` reads as a corner. That is correct — there is no
+pair to keep in line — and it is what keeps the sides straight under later
+edits.
+
+`circulariseSubpath` is the inverse operation, and the interesting one.
+`fitCircle` finds the best circle through the nodes by algebraic least squares
+(Kåsa: `x² + y² = 2ax + 2by + c` is linear in the unknowns, so it is a solve
+rather than an iteration, and centring the data first decouples `c` and keeps
+the conditioning sane far from the origin). Each node then keeps its angle and
+moves to the fitted radius.
+
+The handles are rebuilt at `r · 4/3 · tan(θ/4)` for the angle θ each segment now
+spans, which is the exact handle length for a circular arc and reduces to KAPPA
+at a quarter turn. That is what makes the result independent of how the nodes
+happened to be distributed: three bunched into a corner and two spread over the
+rest come out as round as four even ones. Fitting is a compromise by nature — it
+cannot know which node was the mistake — so the operation reports the radius it
+found and how far the furthest node had to travel, and lets the reader judge.
+
+## 13. Delete never refuses; break is the other operation
 
 `deleteNode` used to keep a floor — three nodes for a closed subpath, two for
 an open one — on the reasoning that a path being edited should not degenerate
@@ -300,7 +349,7 @@ whenever nothing is selected, so a setting parked in the Node group would be
 unreachable at exactly the moment you want to change it — before selecting the
 thing you are about to delete.
 
-## 13. Undo is whole-document snapshots
+## 14. Undo is whole-document snapshots
 
 Not inverse operations. At icon and logo scale a snapshot is a few kilobytes,
 and cloning it is cheaper than maintaining an inverse for every operation and
@@ -311,7 +360,7 @@ being wrong about one of them — a wrong inverse corrupts the document silently
 If a snapshot ever becomes too slow, that is a measurable problem with a known
 fix. A wrong inverse is neither.
 
-## 14. Booleans are the one thing not written here
+## 15. Booleans are the one thing not written here
 
 `io/boolean.ts` is an adapter over [PathBool.js](https://github.com/r-flash/PathBool.js).
 

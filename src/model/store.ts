@@ -14,7 +14,12 @@ import type { Doc, ViewBox } from '../core/types';
 import { emptySelection } from './doc';
 import type { Selection } from './doc';
 
-export type ToolName = 'select' | 'pen';
+/**
+ * `ellipse` and `rect` are draw tools: drag on the canvas to create one. They
+ * are tools rather than buttons because the size comes from the drag, and
+ * because holding the tool lets you place several without going back to a menu.
+ */
+export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect';
 
 /**
  * What deleting a node does to the path around it.
@@ -36,6 +41,8 @@ export interface EditorState {
   selection: Selection;
   tool: ToolName;
   deleteMode: DeleteMode;
+  /** Corner radius the rect tool draws with, in document units. 0 is square. */
+  cornerRadius: number;
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   snapToGrid: boolean;
@@ -87,6 +94,7 @@ export class Store {
       selection: emptySelection(),
       tool: 'select',
       deleteMode: 'fuse',
+      cornerRadius: 0,
       gridStep: 1,
       snapToGrid: true,
       snapToPoints: true,

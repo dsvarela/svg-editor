@@ -278,7 +278,7 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
         s.style.fillRule === 'evenodd' ? 'fill-rule="evenodd"' : '',
         s.style.stroke === 'none' ? '' : `stroke="${s.style.stroke}"`,
         s.style.stroke === 'none' ? '' : `stroke-width="${s.style.strokeWidth}"`,
-        s.name && s.name !== s.id ? `id="${s.name}"` : '',
+        s.name && s.name !== s.id ? `id="${xmlId(s.name)}"` : '',
       ].filter(Boolean);
       return `${pad}<path ${attrs.join(' ')}/>`;
     })
@@ -288,6 +288,25 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}">` +
     nl + body + nl + '</svg>' + nl
   );
+}
+
+/**
+ * A shape name made safe to write as an XML `id`.
+ *
+ * Names are typed by hand and can hold anything -- spaces, quotes, an emoji --
+ * while an `id` is an XML Name: no whitespace, no quotes, and not starting with
+ * a digit. Writing one straight through would produce a document that will not
+ * parse, so anything invalid becomes a hyphen and a leading digit gains a
+ * prefix. The name in the editor is left exactly as typed; only the export is
+ * constrained.
+ */
+export function xmlId(name: string): string {
+  const cleaned = name
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!cleaned) return 'shape';
+  return /^[A-Za-z_]/.test(cleaned) ? cleaned : `n${cleaned}`;
 }
 
 /** Just the path data, for when only the `d` is wanted. */

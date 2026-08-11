@@ -4,20 +4,21 @@
 
 import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
-import { exportPathData, exportSvg, importSvg } from './io/svg';
+import { exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import type { BooleanOp } from './io/boolean';
 import { docBBox, emptyDoc, nextId, parseNodeKey, shapeFromPath } from './model/doc';
-import { transformShape } from './model/ops';
+import { latentHandle, transformShape } from './model/ops';
 import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
 import type { Shape } from './core/types';
 import { serialisePath } from './core/serialise';
 import { Store } from './model/store';
-import { Canvas, latentHandle } from './view/canvas';
+import { Canvas } from './view/canvas';
 import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
 import type { AlignMode } from './model/ops';
 import { $ } from './view/dom';
+import { installTooltips } from './ui/tooltip';
 
 /* A starter shape that exercises the whole import path: cubics, lines, an
    elliptical arc and a quadratic all become the same kind of node. */
@@ -84,12 +85,18 @@ window.addEventListener('keydown', (e) => {
 
 /* ------------------------------------------------------------------ tools */
 
+const TOOLS = ['select', 'pen', 'ellipse', 'rect'] as const;
+type Tool = (typeof TOOLS)[number];
+const isTool = (v: string | null | undefined): v is Tool => TOOLS.includes(v as Tool);
+
 const toolSeg = $('#tool');
 toolSeg.addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest('button');
-  const v = b?.getAttribute('data-v');
-  if (v === 'select' || v === 'pen') store.update((s) => (s.tool = v));
-  if (v === 'select') controller.finishPen();
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
+  if (!isTool(v)) return;
+  store.update((s) => (s.tool = v));
+  // Leaving the pen for any other tool ends the path it was drawing, rather
+  // than leaving it open to be extended by a click made with something else.
+  if (v !== 'pen') controller.finishPen();
 });
 
 const on = (sel: string, fn: () => void): void => $(sel).addEventListener('click', fn);
@@ -159,6 +166,14 @@ gridInput.value = String(store.state.gridStep);
 gridInput.addEventListener('input', () =>
   store.update((s) => (s.gridStep = Math.max(0, Number(gridInput.value) || 0))),
 );
+
+const radiusInput = $('#cornerRadius') as HTMLInputElement;
+radiusInput.value = String(store.state.cornerRadius);
+radiusInput.addEventListener('input', () =>
+  store.update((s) => (s.cornerRadius = Math.max(0, Number(radiusInput.value) || 0))),
+);
+
+on('#circularise', () => controller.circulariseSelection());
 
 const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
@@ -497,9 +512,103 @@ function refreshCombine(): void {
   boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
 }
 
+/**
+ * Which shape's name is being edited, if any.
+ *
+ * The list is rebuilt from scratch on every notification, which would destroy
+ * an open input mid-keystroke -- so while a rename is in flight the rebuild is
+ * skipped entirely, the same guard the source box and the coordinate fields use.
+ */
+let renaming: string | null = null;
+
+function startRename(id: string): void {
+  const shape = store.state.doc.shapes.find((sh) => sh.id === id);
+  // Deliberately NOT the element the event carried: the two clicks that make up
+  // a double-click each select the shape, each notifies, and the list is rebuilt
+  // from scratch every time -- so by now that element is detached, and editing
+  // it would put the input somewhere no longer in the document.
+  const nm = shapeList.querySelector(`li[data-id="${id}"] .nm`);
+  if (!shape || !nm) return;
+
+  renaming = id;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rename';
+  input.value = shape.name;
+  input.setAttribute('aria-label', 'Shape name');
+  nm.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = (commit: boolean): void => {
+    if (settled) return;
+    settled = true;
+    const name = input.value.trim();
+    renaming = null;
+    if (commit && name && name !== shape.name) {
+      store.edit((st) => {
+        const sh = st.doc.shapes.find((x) => x.id === id);
+        if (sh) sh.name = name;
+      });
+      // The name is what the exported `id` carries, and an id is an XML Name --
+      // so say when the export will not read back exactly as typed.
+      const safe = xmlId(name);
+      status.textContent =
+        safe === name ? `Renamed to ${name}.` : `Renamed to ${name}; exports as id="${safe}".`;
+      status.className = 'st ok';
+    } else {
+      listSig = null; // the row was replaced by an input; force it back
+      refreshShapeList();
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation(); // V and P are tool shortcuts; not while typing a name
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+shapeList.addEventListener('dblclick', (e) => {
+  const id = (e.target as HTMLElement).closest('li')?.getAttribute('data-id');
+  if (id && !renaming) startRename(id);
+});
+
+/**
+ * What the list would draw, ignoring which rows are selected.
+ *
+ * Selection changes on every click and geometry changes on every frame of a
+ * drag, but neither alters the rows themselves. Rebuilding anyway churned the
+ * DOM constantly and broke double-click outright: the first click of the pair
+ * replaced the row the second was about to land on, so the `dblclick` never
+ * reached a live element and renaming could not start.
+ */
+const listSignature = (): string =>
+  store.state.doc.shapes
+    .map((sh) =>
+      [sh.id, sh.name, sh.subpaths.reduce((a, sp) => a + sp.nodes.length, 0), swatchOf(sh)].join('\u0001'),
+    )
+    .join('\u0002');
+
+const swatchOf = (sh: Shape): string => (sh.style.fill !== 'none' ? sh.style.fill : sh.style.stroke);
+
+let listSig: string | null = null;
+
 function refreshShapeList(): void {
+  if (renaming) return;
   const s = store.state;
   shapeCount.textContent = String(s.doc.shapes.length);
+
+  const sig = listSignature();
+  if (sig === listSig) {
+    for (const li of shapeList.querySelectorAll('li[data-id]')) {
+      li.setAttribute('aria-selected', String(s.selection.shapes.has(li.getAttribute('data-id')!)));
+    }
+    return;
+  }
+  listSig = sig;
   shapeList.replaceChildren();
 
   if (s.doc.shapes.length === 0) {
@@ -517,7 +626,7 @@ function refreshShapeList(): void {
 
     const sw = document.createElement('span');
     sw.className = 'swatch';
-    sw.style.background = sh.style.fill !== 'none' ? sh.style.fill : sh.style.stroke;
+    sw.style.background = swatchOf(sh);
 
     const nm = document.createElement('span');
     nm.className = 'nm';
@@ -615,6 +724,8 @@ canvas.overlay.addEventListener('pointermove', (e) => {
 canvas.overlay.addEventListener('pointerleave', () => (cursorEl.textContent = ''));
 
 /* -------------------------------------------------------------------- boot */
+
+installTooltips();
 
 requestAnimationFrame(() => {
   store.update((s) => {

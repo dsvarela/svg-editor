@@ -14,6 +14,7 @@ import {
   emptySelection,
   findShape,
   makeShape,
+  nextId,
   nodeKey,
   parseNodeKey,
   selectedShapes,
@@ -23,10 +24,12 @@ import type { HandlePart, NodeRef } from '../model/doc';
 import {
   alignNodes,
   breakAt,
+  circulariseSubpath,
   closeSubpath,
   deleteNode,
   deleteNodesSplitting,
   distributeNodes,
+  latentHandle,
   moveAnchor,
   moveHandle,
   nearestOnPath,
@@ -39,11 +42,12 @@ import {
   transformShape,
 } from '../model/ops';
 import type { AlignMode } from '../model/ops';
+import { ellipseSubpath, rectSubpath } from '../core/primitives';
 import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
 import type { Store } from '../model/store';
 import type { Canvas, OverlayExtras } from '../view/canvas';
-import { latentHandle, shapeIsInBox } from '../view/canvas';
+import { shapeIsInBox } from '../view/canvas';
 import { bendFromPoint } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { fitAspect, screenToDoc, zoomAt } from '../view/viewport';
@@ -54,8 +58,12 @@ type DragKind =
   | { kind: 'marquee'; from: Pt }
   | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
-  | { kind: 'body'; shapes: string[]; last: Pt }
+  | { kind: 'body'; shapes: string[]; refs: NodeRef[]; last: Pt }
   | { kind: 'pen'; ref: NodeRef }
+  /* Drawing a primitive. `id` is null until the drag is big enough to be worth
+     a shape, so a stray click on the canvas leaves no empty one behind and no
+     history entry either. */
+  | { kind: 'create'; tool: 'ellipse' | 'rect'; from: Pt; id: string | null }
   | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number };
 
 export class Controller {
@@ -229,6 +237,11 @@ export class Controller {
       return;
     }
 
+    if (s.tool === 'ellipse' || s.tool === 'rect') {
+      this.drag = { kind: 'create', tool: s.tool, from: this.snap(p), id: null };
+      return;
+    }
+
     const hit = this.hitOf(e);
 
     if (hit?.kind === 'anchor' && hit.ref) {
@@ -282,13 +295,22 @@ export class Controller {
 
     if (hit?.kind === 'outline' && hit.shape) {
       const id = hit.shape;
+      // Grabbing the outline of a shape that already has nodes selected drags
+      // the whole selection. Clearing it and selecting this one shape instead
+      // means a marquee over three shapes followed by a drag moves one of them,
+      // which reads as the marquee having been forgotten.
+      const inNodeSel = [...s.selection.nodes].some((k) => parseNodeKey(k).shape === id);
       this.store.update((st) => {
-        if (!e.shiftKey && !st.selection.shapes.has(id)) st.selection = emptySelection();
-        st.selection.shapes.add(id);
+        if (!e.shiftKey && !st.selection.shapes.has(id) && !inNodeSel) st.selection = emptySelection();
+        if (!inNodeSel || e.shiftKey) st.selection.shapes.add(id);
       });
       this.store.beginBatch();
       this.store.checkpoint();
-      this.drag = { kind: 'body', shapes: [...this.store.state.selection.shapes], last: p };
+      const shapes = [...this.store.state.selection.shapes];
+      // Nodes belonging to a shape that is moving wholesale would be moved
+      // twice, once by each rule.
+      const refs = this.selectedNodeRefs().filter((r) => !shapes.includes(r.shape));
+      this.drag = { kind: 'body', shapes, refs, last: p };
       return;
     }
 
@@ -388,7 +410,17 @@ export class Controller {
             const shape = findShape(st.doc, id);
             if (shape) transformShape(shape, translate(delta[0], delta[1]));
           }
+          for (const r of d.refs) {
+            const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
+            if (!sp?.nodes[r.i]) continue;
+            moveAnchor(sp, r.i, [sp.nodes[r.i].pt[0] + delta[0], sp.nodes[r.i].pt[1] + delta[1]]);
+          }
         });
+        return;
+      }
+
+      case 'create': {
+        this.createDrag(p, e.shiftKey, e.altKey);
         return;
       }
 
@@ -444,9 +476,13 @@ export class Controller {
       this.extras.marquee = null;
     }
 
-    if (this.drag.kind !== 'none' && this.drag.kind !== 'pan' && this.drag.kind !== 'marquee') {
-      this.store.endBatch();
-    }
+    // A create drag that never grew past nothing opened no batch, so there is
+    // none to close -- and the document is untouched, as it should be.
+    const opened =
+      this.drag.kind === 'create'
+        ? this.drag.id !== null
+        : this.drag.kind !== 'none' && this.drag.kind !== 'pan' && this.drag.kind !== 'marquee';
+    if (opened) this.store.endBatch();
 
     this.drag = { kind: 'none' };
     if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
@@ -495,6 +531,150 @@ export class Controller {
       st.camera = zoomAt(st.camera, factor, p);
     });
   };
+
+  /* -------------------------------------------------------------- shapes */
+
+  /**
+   * Size a primitive from the drag so far.
+   *
+   * `shift` constrains to a square or circle by taking the smaller span, which
+   * keeps the result on the grid whenever both spans already were. `alt` reads
+   * the starting point as the centre rather than a corner.
+   *
+   * The shape is created on the first move that has any area, not on the press,
+   * so a click that was meant for something else costs nothing.
+   */
+  private createDrag(p: Pt, shift: boolean, alt: boolean): void {
+    if (this.drag.kind !== 'create') return;
+    const d = this.drag;
+    const cur = this.snap(p);
+
+    let dx = cur[0] - d.from[0];
+    let dy = cur[1] - d.from[1];
+    if (shift) {
+      const m = Math.min(Math.abs(dx), Math.abs(dy));
+      dx = m * (dx < 0 ? -1 : 1);
+      dy = m * (dy < 0 ? -1 : 1);
+    }
+    const x = alt ? d.from[0] - dx : d.from[0];
+    const y = alt ? d.from[1] - dy : d.from[1];
+    const w = alt ? dx * 2 : dx;
+    const h = alt ? dy * 2 : dy;
+
+    if (!d.id && (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9)) return;
+
+    const radius = this.store.state.cornerRadius;
+    const build = (): Subpath =>
+      d.tool === 'ellipse'
+        ? ellipseSubpath(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2)
+        : rectSubpath(x, y, w, h, radius);
+
+    if (!d.id) {
+      this.store.beginBatch();
+      this.store.checkpoint();
+      this.store.update((st) => {
+        const shape = makeShape([build()], nextId(d.tool));
+        st.doc.shapes.push(shape);
+        st.selection = emptySelection();
+        st.selection.shapes.add(shape.id);
+        d.id = shape.id;
+      });
+      return;
+    }
+
+    const id = d.id;
+    this.store.update((st) => {
+      const shape = findShape(st.doc, id);
+      if (shape) shape.subpaths = [build()];
+    });
+  }
+
+  /**
+   * Force the selected subpaths onto their own best-fit circles.
+   *
+   * Whole subpaths rather than loose nodes: circularising some of a path's
+   * nodes would leave the segments joining them to the rest built from a circle
+   * they are not on, which is a worse drawing than either choice on its own.
+   */
+  circulariseSelection(): boolean {
+    const s = this.store.state;
+
+    const targets = new Map<string, Set<number>>();
+    const add = (shape: string, sp: number): void => {
+      const set = targets.get(shape) ?? new Set<number>();
+      set.add(sp);
+      targets.set(shape, set);
+    };
+    for (const key of s.selection.nodes) {
+      const r = parseNodeKey(key);
+      add(r.shape, r.sp);
+    }
+    for (const id of s.selection.shapes) {
+      findShape(s.doc, id)?.subpaths.forEach((_, i) => add(id, i));
+    }
+
+    let eligible = 0;
+    let tooFew = 0;
+    for (const [id, sps] of targets) {
+      const shape = findShape(s.doc, id);
+      for (const i of sps) {
+        const sp = shape?.subpaths[i];
+        if (!sp) continue;
+        if (sp.nodes.length >= 3) eligible++;
+        else tooFew++;
+      }
+    }
+
+    if (!eligible) {
+      this.onMessage?.(
+        targets.size
+          ? 'Circularise needs a contour of three or more nodes.'
+          : 'Select a shape, or some of its nodes, first.',
+        false,
+      );
+      return false;
+    }
+
+    let done = 0;
+    let flat = 0;
+    let moved = 0;
+    let radius = 0;
+    this.store.edit((st) => {
+      for (const [id, sps] of targets) {
+        const shape = findShape(st.doc, id);
+        for (const i of sps) {
+          const sp = shape?.subpaths[i];
+          if (!sp || sp.nodes.length < 3) continue;
+          const r = circulariseSubpath(sp);
+          if (!r) {
+            flat++;
+            continue;
+          }
+          done++;
+          moved = Math.max(moved, r.moved);
+          radius = r.radius;
+        }
+      }
+    });
+
+    if (!done) {
+      this.onMessage?.('Those nodes are collinear, so no circle is determined.', false);
+      return false;
+    }
+
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    const extra = [
+      tooFew ? `${tooFew} too small` : '',
+      flat ? `${flat} collinear` : '',
+    ].filter(Boolean);
+    this.onMessage?.(
+      `Circularised ${done} contour${done === 1 ? '' : 's'} onto r ${dp(radius)}; ` +
+        `furthest node moved ${dp(moved)}.` +
+        (extra.length ? ` Skipped ${extra.join(', ')}.` : ''),
+      true,
+    );
+    return true;
+  }
 
   /* ------------------------------------------------------------------ pen */
 
@@ -630,6 +810,14 @@ export class Controller {
         return;
       }
       case 'Escape': {
+        // Abandoning a primitive mid-drag rolls back to the checkpoint taken
+        // when it was created, which is what leaves no trace of it in history.
+        if (this.drag.kind === 'create' && this.drag.id) {
+          this.store.endBatch();
+          this.store.undo();
+          this.drag = { kind: 'none' };
+          return;
+        }
         this.finishPen();
         this.store.update((st) => (st.selection = emptySelection()));
         return;
@@ -653,6 +841,16 @@ export class Controller {
       }
       case 'p': {
         this.store.update((st) => (st.tool = 'pen'));
+        return;
+      }
+      case 'e': {
+        this.store.update((st) => (st.tool = 'ellipse'));
+        this.finishPen();
+        return;
+      }
+      case 'r': {
+        this.store.update((st) => (st.tool = 'rect'));
+        this.finishPen();
         return;
       }
       case 'ArrowLeft':
@@ -1063,12 +1261,49 @@ export class Controller {
   setSelectedContinuity(kind: NodeContinuity): void {
     const refs = this.selectedNodeRefs();
     if (!refs.length) return;
+
+    let changed = 0;
+    let alreadySymmetric = 0;
+    let atEnd = 0;
+
     this.store.edit((st) => {
       for (const r of refs) {
         const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
-        if (sp?.nodes[r.i]) setContinuity(sp, r.i, kind);
+        const node = sp?.nodes[r.i];
+        if (!sp || !node) continue;
+
+        const before = continuityOf(node);
+        // An end of an open subpath has a segment on one side only, so there is
+        // no pair to line up and smooth/symmetric cannot apply.
+        const oneSided =
+          kind !== 'corner' &&
+          !sp.closed &&
+          (r.i === 0 || r.i === sp.nodes.length - 1) &&
+          (!node.hIn || !node.hOut);
+
+        setContinuity(sp, r.i, kind);
+
+        if (continuityOf(node) !== before) changed++;
+        else if (oneSided) atEnd++;
+        else if (kind === 'smooth' && before === 'symmetric') alreadySymmetric++;
       }
     });
+
+    // A button that does nothing and says nothing reads as broken. These are
+    // the two cases where the geometry genuinely leaves nothing to do.
+    if (changed) return;
+    if (alreadySymmetric) {
+      this.onMessage?.(
+        'Already smooth: symmetric means collinear handles of equal length, which is smooth. ' +
+          'Drag one handle to give them different lengths.',
+        true,
+      );
+    } else if (atEnd) {
+      this.onMessage?.(
+        'That node is an end of the path — there is no second handle to line up with.',
+        false,
+      );
+    }
   }
 
   /**

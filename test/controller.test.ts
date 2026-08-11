@@ -87,10 +87,11 @@ interface Harness {
   canvas: Canvas;
   controller: Controller;
   down(doc: [number, number], target?: Element, opts?: PointerEventInit): void;
-  move(doc: [number, number]): void;
+  move(doc: [number, number], opts?: PointerEventInit): void;
   up(): void;
   key(key: string, opts?: KeyboardEventInit): void;
   anchorEl(shape: string, sp: number, i: number): Element;
+  outlineEl(shape: string): Element;
 }
 
 function harness(pathData?: string): Harness {
@@ -125,10 +126,16 @@ function harness(pathData?: string): Harness {
     canvas,
     controller,
     down: (p, target, opts) => ev('pointerdown', p, target ?? canvas.overlay, opts),
-    move: (p) => ev('pointermove', p, canvas.overlay),
+    move: (p, opts) => ev('pointermove', p, canvas.overlay, opts),
     up: () => ev('pointerup', [0, 0], canvas.overlay),
     key: (key, opts = {}) =>
       window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts })),
+    outlineEl: (shape) => {
+      controller.render();
+      const el = canvas.overlay.querySelector(`[data-hit="outline"][data-shape="${shape}"]`);
+      if (!el) throw new Error(`no outline element for ${shape}`);
+      return el;
+    },
     anchorEl: (shape, sp, i) => {
       controller.render();
       const el = canvas.overlay.querySelector(
@@ -842,5 +849,232 @@ describe('delete mode: split', () => {
     // One subpath, still connected end to end.
     expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(1);
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes).toHaveLength(4);
+  });
+});
+
+describe('the ellipse and rectangle tools', () => {
+  const draw = (h: Harness, tool: 'ellipse' | 'rect', a: [number, number], b: [number, number], opts: PointerEventInit = {}) => {
+    h.store.update((s) => (s.tool = tool));
+    h.down(a);
+    h.move(b, opts);
+    h.up();
+  };
+
+  it('draws an ellipse inscribed in the drag box', () => {
+    const h = harness();
+    draw(h, 'ellipse', [10, 10], [30, 20]);
+
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    expect(sp.closed).toBe(true);
+    // Four nodes on the axes of the box: the box is 10..30 by 10..20.
+    expect(sp.nodes.map((n) => n.pt)).toEqual([
+      [30, 15],
+      [20, 20],
+      [10, 15],
+      [20, 10],
+    ]);
+  });
+
+  it('is round, not merely four-cornered', () => {
+    const h = harness();
+    draw(h, 'ellipse', [0, 0], [20, 20]);
+    // Measured the way the primitive tests do: every sample sits on r = 10.
+    for (const p of samplePath(h, 24)) {
+      expect(Math.hypot(p[0] - 10, p[1] - 10)).toBeCloseTo(10, 2);
+    }
+  });
+
+  it('constrains to a circle with Shift, taking the smaller span', () => {
+    const h = harness();
+    draw(h, 'ellipse', [0, 0], [30, 10], { shiftKey: true });
+
+    const pts = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt);
+    // Square box 0..10, so both radii are 5.
+    expect(pts).toEqual([
+      [10, 5],
+      [5, 10],
+      [0, 5],
+      [5, 0],
+    ]);
+  });
+
+  it('draws from the centre with Alt', () => {
+    const h = harness();
+    draw(h, 'ellipse', [20, 20], [30, 25], { altKey: true });
+
+    const pts = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt);
+    // The press point is the centre: radii 10 and 5 about (20, 20).
+    expect(pts).toEqual([
+      [30, 20],
+      [20, 25],
+      [10, 20],
+      [20, 15],
+    ]);
+  });
+
+  it('leaves nothing behind when the drag never had any area', () => {
+    const h = harness();
+    h.store.update((s) => (s.tool = 'ellipse'));
+    h.down([12, 12]);
+    h.move([12, 12]);
+    h.up();
+
+    expect(h.store.state.doc.shapes).toHaveLength(0);
+    // And no history entry either: there is nothing to undo back to.
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('draws a rectangle as four nodes with no handles at all', () => {
+    const h = harness();
+    draw(h, 'rect', [4, 6], [14, 12]);
+
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    expect(sp.nodes.map((n) => n.pt)).toEqual([
+      [4, 6],
+      [14, 6],
+      [14, 12],
+      [4, 12],
+    ]);
+    for (const n of sp.nodes) {
+      expect(n.hIn).toBeNull();
+      expect(n.hOut).toBeNull();
+    }
+  });
+
+  it('rounds the corners when the radius is set', () => {
+    const h = harness();
+    h.store.update((s) => (s.cornerRadius = 2));
+    draw(h, 'rect', [0, 0], [20, 10]);
+
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    expect(sp.nodes).toHaveLength(8);
+    expect(sp.nodes[0].pt).toEqual([2, 0]);
+    expect(sp.nodes[1].pt).toEqual([18, 0]);
+  });
+
+  it('is one undo step however many moves the drag took', () => {
+    const h = harness();
+    h.store.update((s) => (s.tool = 'ellipse'));
+    h.down([0, 0]);
+    for (let i = 1; i <= 6; i++) h.move([i * 4, i * 3]);
+    h.up();
+
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    h.store.undo();
+    expect(h.store.state.doc.shapes).toHaveLength(0);
+  });
+
+  it('keeps the tool, so several can be drawn in a row', () => {
+    const h = harness();
+    draw(h, 'rect', [0, 0], [10, 10]);
+    draw(h, 'rect', [20, 0], [30, 10]);
+    expect(h.store.state.tool).toBe('rect');
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+  });
+
+  it('selects what it just drew', () => {
+    const h = harness();
+    draw(h, 'ellipse', [0, 0], [10, 10]);
+    const id = h.store.state.doc.shapes[0].id;
+    expect([...h.store.state.selection.shapes]).toEqual([id]);
+  });
+});
+
+describe('circularising', () => {
+  it('makes a selected near-circle exact', () => {
+    // A square's four corners fit a circle exactly, so this is the clearest
+    // case: it becomes the circumscribed circle and every node is on it.
+    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.shapes.add(id));
+
+    expect(h.controller.circulariseSelection()).toBe(true);
+
+    for (const p of samplePath(h, 24)) {
+      expect(Math.hypot(p[0], p[1])).toBeCloseTo(10, 1);
+    }
+  });
+
+  it('works from a node selection, taking the whole contour with it', () => {
+    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+
+    expect(h.controller.circulariseSelection()).toBe(true);
+    // Every node moved onto the circle, not just the selected one.
+    for (const n of h.store.state.doc.shapes[0].subpaths[0].nodes) {
+      expect(Math.hypot(n.pt[0], n.pt[1])).toBeCloseTo(10, 6);
+    }
+  });
+
+  it('refuses a straight line and says so', () => {
+    const h = harness('M0 0 L10 10 L20 20');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.shapes.add(id));
+
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    expect(h.controller.circulariseSelection()).toBe(false);
+    expect(said.join(' ')).toMatch(/collinear/i);
+  });
+
+  it('refuses with nothing selected', () => {
+    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    expect(h.controller.circulariseSelection()).toBe(false);
+    expect(said.join(' ')).toMatch(/select/i);
+  });
+
+  it('is one undo step', () => {
+    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+    h.controller.circulariseSelection();
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
+  });
+});
+
+describe('dragging more than one shape', () => {
+  /** Two separate squares, well apart. */
+  function two(): Harness {
+    const h = harness('M0 0 L10 0 L10 10 L0 10 Z');
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M30 0 L40 0 L40 10 L30 10 Z')));
+    return h;
+  }
+
+  it('moves every selected shape when one of their outlines is dragged', () => {
+    const h = two();
+    const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
+    h.store.update((s) => {
+      s.selection.shapes.add(a);
+      s.selection.shapes.add(b);
+    });
+
+    h.down([5, 0], h.outlineEl(a));
+    h.move([5, 20]);
+    h.up();
+
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([0, 20]);
+    expect(h.store.state.doc.shapes[1].subpaths[0].nodes[0].pt).toEqual([30, 20]);
+  });
+
+  it('does not throw away a node selection to grab one shape', () => {
+    // The marquee selects nodes rather than shapes, so grabbing an outline used
+    // to clear the lot and move the one shape underneath the pointer.
+    const h = two();
+    h.down([-5, -5]);
+    h.move([45, 15]);
+    h.up();
+    expect(h.store.state.selection.nodes.size).toBe(8);
+
+    const a = h.store.state.doc.shapes[0].id;
+    h.down([5, 0], h.outlineEl(a));
+    h.move([5, 20]);
+    h.up();
+
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([0, 20]);
+    expect(h.store.state.doc.shapes[1].subpaths[0].nodes[0].pt).toEqual([30, 20]);
   });
 });

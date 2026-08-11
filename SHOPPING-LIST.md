@@ -32,7 +32,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[ ]` | **Auto-smooth node** — handles re-derive themselves from the neighbours whenever anything nearby moves. Inkscape's fourth type, and the one that saves the most fiddling. Note this one genuinely does need stored state: "keep recomputing me" is not something a static pair of handles can express. | Inkscape | M |
 | `[ ]` | **Continuity shortcuts** — `Shift+C` corner, `Shift+S` smooth, `Shift+Y` symmetric. Double-click already cycles. | Inkscape | S |
 | `[ ]` | **Join nodes** (`Shift+J`) — weld two selected endpoints into one, placed at their midpoint. | Inkscape, TikZiT (`Ctrl+M`) | M |
-| `[x]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends; a closed path opens at that node instead. The node is duplicated, so nothing moves — this is the lossless counterpart to deleting a node, which cannot be. See ARCHITECTURE §11. | Inkscape | — |
+| `[x]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends; a closed path opens at that node instead. The node is duplicated, so nothing moves — this is the lossless counterpart to deleting a node, which cannot be. See ARCHITECTURE §13. | Inkscape | — |
 | `[ ]` | **Join with segment** — connect two endpoints with a new segment rather than merging them. | Inkscape | S |
 | `[ ]` | **Reverse direction** + optional direction arrows on the outline. Matters for fill-rule and for which end a marker lands on. | Boxy SVG, Inkscape | S |
 | `[ ]` | **Make path** — turn a selection into a single path. | TikZiT (`Ctrl+P`) | S |
@@ -51,6 +51,10 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 
 | | Feature | Source | Size |
 |---|---|---|---|
+| `[x]` | **Primitive tools** — done. Ellipse and rectangle draw tools (`E`, `R`), Shift to constrain, Alt from the centre, and a corner radius for the rectangle. Built as nodes and handles, so there is nothing to convert before editing one. | every editor | M |
+| `[x]` | **Circularise** — done. Fits a circle through a contour's nodes by least squares, moves each onto it at its own angle, and rebuilds handles at `r·4/3·tan(θ/4)` so uneven spacing is as round as even. Reports the radius and the furthest node's travel. | Inkscape's "make circle" | M |
+| `[x]` | **Rename shapes** — done. Double-click the name in the list. It is what the exported `id` carries, sanitised to an XML Name on the way out. | every editor | S |
+| `[x]` | **Tooltips** — done. One layer, fed by the markup's own `title` attributes, with the shortcut pulled out as a key cap. Needed once the toolbar became icons. | — | S |
 | `[x]` | **Application shell** — done. One fixed grid filling the window, canvas edge to edge, no page scroll; the toolbar is icons, the source is a drawer you open (`Ctrl+E`) and the inspector collapses (`Ctrl+B`). Panels take space from the canvas rather than floating over it, and a `ResizeObserver` re-fits the camera when they do. | Figma, Rive | M |
 | `[~]` | **Measurement readout** — the pointer's document coordinates are in the status strip. Live length and angle *while dragging* is the part still missing. | Illustrator, IPE | S |
 | `[ ]` | **On-canvas transform box** — drag handles to scale/rotate a selection, instead of only the rail buttons. | every editor | M |

@@ -222,6 +222,7 @@ input[type='number'],
 .btn:active:not(:disabled) { transform: translateY(0.5px); }
 .ib:disabled,
 .btn:disabled { opacity: 0.34; cursor: default; }
+.btn.wide { width: 100%; justify-content: center; }
 .ib[aria-pressed='true'] { color: var(--accent); background: var(--sunk); }
 .btn.primary {
   background: var(--accent);
@@ -277,6 +278,8 @@ input[type='number'],
 .seg button:hover { background: var(--sunk); color: var(--ink); }
 .seg button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
 .seg button[aria-pressed='true']:hover { background: var(--accent); }
+.seg button:disabled { opacity: 0.36; cursor: default; }
+.seg button:disabled:hover { background: transparent; color: var(--ink-2); }
 
 input[type='number'] {
   min-width: 0;
@@ -437,6 +440,18 @@ input[type='number']:disabled { opacity: 0.4; }
 .shapelist .swatch { width: 10px; height: 10px; border-radius: 1px; border: 1px solid var(--line); flex: none; }
 .shapelist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shapelist .ct { font-size: 10.5px; opacity: 0.75; }
+.shapelist .rename {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--accent);
+  border-radius: var(--r);
+}
 .shapelist .empty { justify-content: center; color: var(--ink-3); cursor: default; }
 .shapelist .empty:hover { background: none; color: var(--ink-3); }
 
@@ -514,6 +529,40 @@ kbd {
   background: var(--sunk);
   font-size: 10.5px;
   color: var(--ink-2);
+}
+
+/* --- tooltips --------------------------------------------------------- */
+
+/* Positioned by transform from the top-left corner, so no layout is involved
+   and nothing the tooltip does can move the thing it is describing. */
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 280px;
+  padding: 5px 8px;
+  background: var(--ink);
+  color: var(--canvas);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  font-size: 11.5px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.09s ease;
+}
+.tip.on { opacity: 1; }
+.tip kbd {
+  flex: none;
+  border: 0;
+  padding: 1px 5px;
+  background: color-mix(in srgb, var(--canvas) 22%, transparent);
+  color: inherit;
+  font-size: 10.5px;
 }
 
 /* --- narrow ----------------------------------------------------------- */
