@@ -177,6 +177,21 @@ resizing and removing an image are all ordinary edits that `Ctrl+Z` takes back.
 Opacity, **Show** and **Locked** are not: they say how you want to look at the
 reference, and undo leaves them alone. Nothing survives a reload.
 
+### Canvas
+
+The page the drawing sits on, and the `viewBox` the exported file carries. It is
+drawn on screen as a rectangle, with everything outside it dimmed.
+
+| Control | Does |
+|---|---|
+| **origin** | The top left corner, in document units |
+| **size** | Width and height. Both must be above zero |
+| **Fit canvas to drawing** | Wrap the page around everything drawn, rounded outwards to whole grid steps |
+
+The canvas never changes on its own. Drawing outside it is allowed and leaves it
+alone, and the panel header says `drawing goes outside` when something is out
+there. Every change here is undoable.
+
 ### Grid
 
 | Control | Does |

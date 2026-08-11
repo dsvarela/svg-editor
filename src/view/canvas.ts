@@ -78,6 +78,10 @@ export class Canvas {
   private gridMinor: SVGPathElement;
   private gridMajor: SVGPathElement;
   private axes: SVGPathElement;
+  /** Everything outside the document, dimmed. */
+  private docShade: SVGPathElement;
+  /** The document's own edge: what the exported viewBox will be. */
+  private docEdge: SVGRectElement;
 
   private outlines: Pool<'path'>;
   private handleLines: Pool<'line'>;
@@ -110,6 +114,8 @@ export class Canvas {
     this.gridMinor = svg('path', { class: 'grid-minor' });
     this.gridMajor = svg('path', { class: 'grid-major' });
     this.axes = svg('path', { class: 'grid-axis' });
+    this.docShade = svg('path', { class: 'doc-shade' });
+    this.docEdge = svg('rect', { class: 'doc-edge' });
     const outlineLayer = svg('g', { class: 'outlines' });
     const handleLayer = svg('g', { class: 'handles' });
     const anchorLayer = svg('g', { class: 'anchors' });
@@ -119,6 +125,10 @@ export class Canvas {
       this.gridMinor,
       this.gridMajor,
       this.axes,
+      // Over the grid and under everything else, so the dimming falls on the
+      // lattice and on any artwork that has strayed off the page.
+      this.docShade,
+      this.docEdge,
       outlineLayer,
       handleLayer,
       anchorLayer,
@@ -233,8 +243,36 @@ export class Canvas {
   renderOverlay(state: EditorState, extras: OverlayExtras = {}): void {
     const k = this.scale(state.camera);
     this.renderGrid(state, k);
+    this.renderDocEdge(state);
     this.renderNodes(state, k);
     this.renderChrome(extras, k);
+  }
+
+  /**
+   * Draw the document's own edge, and dim everything outside it.
+   *
+   * This is the `viewBox` the export writes, and until it was drawn there was
+   * nothing on screen that said where it was. You could draw a shape in the
+   * corner of a 88 by 64 document, export it, and find the drawing occupying a
+   * fifth of the file with no clue as to why: the grid runs to the horizon and
+   * looks exactly the same inside the page and outside it.
+   *
+   * The shade is one path of two rectangles with `fill-rule: evenodd`, so the
+   * document is a hole in a sheet covering the camera. Filled elements in the
+   * overlay would otherwise swallow clicks, which is why the stylesheet turns
+   * pointer events off for both.
+   */
+  private renderDocEdge(state: EditorState): void {
+    const vb = state.doc.viewBox;
+    const cam = state.camera;
+    setAttrs(this.docEdge, { x: vb.x, y: vb.y, width: Math.max(0, vb.w), height: Math.max(0, vb.h) });
+
+    // Generous margins on the outer rectangle: it only has to cover the camera,
+    // and growing it costs nothing while a rounding error at the edge shows.
+    const m = Math.max(cam.w, cam.h);
+    const outer = `M${cam.x - m} ${cam.y - m}H${cam.x + cam.w + m}V${cam.y + cam.h + m}H${cam.x - m}Z`;
+    const hole = `M${vb.x} ${vb.y}H${vb.x + vb.w}V${vb.y + vb.h}H${vb.x}Z`;
+    this.docShade.setAttribute('d', `${outer}${hole}`);
   }
 
   private renderGrid(state: EditorState, k: number): void {

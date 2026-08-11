@@ -357,8 +357,29 @@
             </div>
             <p class="note">
               A tracing reference, not part of the drawing. It never appears in the
-              Shapes list and never reaches the export. Unlock it to drag it about;
-              moving it is not undoable, the same bargain the view makes.
+              Shapes list and never reaches the export. Unlock it to drag it about.
+              Loading, moving and removing are all undoable; opacity, Show and Locked
+              are not, because they say how you want to look at it.
+            </p>
+          </div>
+
+          <div class="group">
+            <div class="glabel"><span>Canvas</span><span class="gval" id="canvasinfo"></span></div>
+            <div class="coords">
+              <label for="vbx">origin</label>
+              <input type="number" id="vbx" step="1" aria-label="Canvas X" />
+              <input type="number" id="vby" step="1" aria-label="Canvas Y" />
+              <label for="vbw">size</label>
+              <input type="number" id="vbw" step="1" min="0" aria-label="Canvas width" />
+              <input type="number" id="vbh" step="1" min="0" aria-label="Canvas height" />
+            </div>
+            <button class="btn wide" id="vbFit" type="button" title="Shrink or grow the canvas to wrap the drawing">
+              Fit canvas to drawing
+            </button>
+            <p class="note">
+              The page the drawing sits on, and the <code>viewBox</code> the export writes. It is
+              drawn on the canvas with everything outside it dimmed. It never changes on its own, so
+              drawing outside it is allowed and stays outside it until you say otherwise.
             </p>
           </div>
 

@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
-import { emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
+import { docBBox, emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
 import { serialisePath } from '../src/core/serialise';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
@@ -1045,6 +1045,68 @@ describe('circularising', () => {
     h.controller.circulariseSelection();
     h.store.undo();
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
+  });
+});
+
+describe('fitting the canvas to the drawing', () => {
+  it('wraps the drawing, rounded outwards to whole grid steps', () => {
+    // The shape a user pasted to report this: a drawing in the corner of a
+    // canvas nobody chose, exported with a viewBox four times its size.
+    const h = harness('M2.8 1 L19.4 1 L19.4 39.3 L2.8 39.3 Z');
+    h.store.update((s) => (s.gridStep = 1));
+
+    expect(h.controller.fitCanvasToDrawing()).toBe(true);
+    expect(h.store.state.doc.viewBox).toEqual({ x: 2, y: 1, w: 18, h: 39 });
+  });
+
+  it('grows the box rather than cropping, whatever the step', () => {
+    const h = harness('M2.8 1.2 L19.4 1.2 L19.4 39.3 L2.8 39.3 Z');
+    h.store.update((s) => (s.gridStep = 5));
+    h.controller.fitCanvasToDrawing();
+
+    const vb = h.store.state.doc.viewBox;
+    const b = docBBox(h.store.state.doc)!;
+    expect(vb.x).toBeLessThanOrEqual(b.x0);
+    expect(vb.y).toBeLessThanOrEqual(b.y0);
+    expect(vb.x + vb.w).toBeGreaterThanOrEqual(b.x1);
+    expect(vb.y + vb.h).toBeGreaterThanOrEqual(b.y1);
+  });
+
+  it('uses the exact extent when there is no grid', () => {
+    const h = harness('M2.5 1.5 L19.5 1.5 L19.5 38.5 L2.5 38.5 Z');
+    h.store.update((s) => (s.gridStep = 0));
+    h.controller.fitCanvasToDrawing();
+    expect(h.store.state.doc.viewBox).toEqual({ x: 2.5, y: 1.5, w: 17, h: 37 });
+  });
+
+  it('gives a flat drawing a page it can be seen on', () => {
+    const h = harness('M4 10 L20 10');
+    h.store.update((s) => (s.gridStep = 1));
+    h.controller.fitCanvasToDrawing();
+    expect(h.store.state.doc.viewBox.h).toBeGreaterThan(0);
+  });
+
+  it('declines an empty document, and one that already fits', () => {
+    const empty = harness();
+    const said: string[] = [];
+    empty.controller.onMessage = (m) => said.push(m);
+    expect(empty.controller.fitCanvasToDrawing()).toBe(false);
+    expect(said.join(' ')).toMatch(/nothing drawn/i);
+
+    const h = harness('M0 0 L10 0 L10 10 L0 10 Z');
+    h.store.update((s) => (s.gridStep = 1));
+    h.controller.fitCanvasToDrawing();
+    expect(h.controller.fitCanvasToDrawing()).toBe(false);
+    expect(h.store.canUndo).toBe(true);
+  });
+
+  it('is one undo step', () => {
+    const h = harness('M2 2 L20 2 L20 30 Z');
+    const before = { ...h.store.state.doc.viewBox };
+    h.controller.fitCanvasToDrawing();
+    expect(h.store.state.doc.viewBox).not.toEqual(before);
+    h.store.undo();
+    expect(h.store.state.doc.viewBox).toEqual(before);
   });
 });
 

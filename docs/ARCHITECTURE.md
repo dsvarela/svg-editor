@@ -567,6 +567,48 @@ Everything is baked, per §5. There is no `transform` attribute waiting to be
 applied at render time, which is why the source box always shows what is really
 there.
 
+## 21. The document has a page, and it is drawn
+
+`doc.viewBox` is the `viewBox` the export writes. It was set at startup, replaced
+on import, and touched by nothing else: no control read it, no control changed
+it, and **nothing on screen said where it was.**
+
+That last part is what made the first two confusing rather than merely limiting.
+The grid runs to the horizon and looks identical inside the page and outside it,
+so a drawing placed in one corner of an 88 by 64 document looks centred while you
+are working and occupies a fifth of the file when you export it. The report that
+prompted this said the viewBox "seems to not update at all, with anything", which
+was true, and reasonable to read as a bug.
+
+Three parts, in order of how much each one helps:
+
+- **It is drawn.** `renderDocEdge` puts a rectangle at the viewBox and dims
+  everything outside it, as one path of two rectangles with `fill-rule: evenodd`
+  so the page is a hole in a sheet. Both carry `pointer-events: none`, since
+  filled overlay chrome would otherwise take every click on the canvas.
+- **It is editable**, as four numbers in the Canvas panel. `viewBox` lives in
+  `Doc`, so `cloneDoc` was already copying it and undo works with no extra
+  machinery. Width and height refuse anything at or below zero rather than
+  accepting a document that cannot be exported.
+- **`fitCanvasToDrawing` wraps it around the content**, rounded outwards to whole
+  grid steps. Outwards always: rounding must never crop.
+
+**It still does not follow the drawing on its own, and should not.** An icon is
+drawn to a page, and a page that resized itself whenever a node moved would make
+the margins you were aiming for impossible to hold. Drawing outside the page is
+allowed and stays that way; the panel says `drawing goes outside` when it does,
+which is placed next to the button that fixes it rather than in the status strip,
+because the only moment that matters is export and nobody is looking at the
+canvas then.
+
+One bug worth recording, since only the browser scenario could have caught it.
+The panel's number fields are wired through `liveNum`, a `const` arrow function
+declared two hundred lines below the Canvas block that calls it: a temporal dead
+zone, thrown at module load, which killed every `store.subscribe` registered
+after that point. The unit tests passed, the canvas still rendered because the
+controller subscribes from its own constructor, and the only visible symptom was
+an empty readout in the status strip.
+
 ## 17. One place decides how thick a line is
 
 Overlay chrome has to stay a constant size on screen while the drawing scales,

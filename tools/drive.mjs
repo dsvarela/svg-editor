@@ -817,6 +817,77 @@ const scenarios = {
   },
 
   /**
+   * The document's canvas: drawn on screen, editable, and what gets exported.
+   *
+   * The complaint that prompted it was that the `viewBox` "does not update at
+   * all, with anything" and the drawing did not fill it. Both were true and the
+   * second was a symptom: nothing on screen said where the page was, so there
+   * was no way to notice you were drawing in a corner of it.
+   */
+  async canvasFrame(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`canvasFrame: ${what}`);
+    };
+
+    // Drawn, at the viewBox, with everything outside it dimmed.
+    const edge = await page.$eval('.doc-edge', (el) => ({
+      x: +el.getAttribute('x'),
+      y: +el.getAttribute('y'),
+      w: +el.getAttribute('width'),
+      h: +el.getAttribute('height'),
+    }));
+    check(edge.x === 0 && edge.y === 0 && edge.w === 88 && edge.h === 64, `edge is ${JSON.stringify(edge)}`);
+    const shade = await page.getAttribute('.doc-shade', 'd');
+    check(/M0 0H88V64H0Z$/.test(shade), `the shade has no document-shaped hole: ${shade}`);
+    // Filled overlay chrome that took clicks would break every other scenario.
+    const blocks = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('.doc-shade')).pointerEvents,
+    );
+    check(blocks === 'none', `the shade takes pointer events (${blocks})`);
+
+    const readout = await page.textContent('#stats');
+    check(/^88 × 64 ·/.test(readout), `the readout says "${readout}"`);
+
+    // The numbers are live, and typing one moves the frame.
+    check((await page.inputValue('#vbw')) === '88', 'the width field disagrees with the document');
+    await page.fill('#vbw', '120');
+    await page.dispatchEvent('#vbw', 'input');
+    await page.waitForTimeout(150);
+    check((await page.getAttribute('.doc-edge', 'width')) === '120', 'the frame ignored the field');
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+    check((await page.getAttribute('.doc-edge', 'width')) === '88', 'undo did not restore the canvas');
+
+    /* Fit. The starter shape spans 20..68 by 12..52, so with a grid step of one
+       the page should land on exactly that. */
+    await page.click('#vbFit');
+    await page.waitForTimeout(200);
+    const fitted = await page.$eval('.doc-edge', (el) => [
+      +el.getAttribute('x'), +el.getAttribute('y'),
+      +el.getAttribute('width'), +el.getAttribute('height'),
+    ]);
+    check(String(fitted) === '20,12,48,40', `fitted to ${fitted}, want 20,12,48,40`);
+
+    // And that is what the file says, which was the whole complaint.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(200);
+    const svgText = await page.inputValue('#src');
+    check(/viewBox="20 12 48 40"/.test(svgText), `export says ${svgText.slice(0, 90)}`);
+    await page.click('#closeSrc');
+
+    // Drawing outside the page is allowed, and says so where the fix lives.
+    check((await page.textContent('#canvasinfo')) === '', 'it claims to spill before anything does');
+    await page.fill('#vbw', '10');
+    await page.dispatchEvent('#vbw', 'input');
+    await page.waitForTimeout(200);
+    const warn = await page.textContent('#canvasinfo');
+    check(/outside/.test(warn), `no warning with the drawing outside: "${warn}"`);
+
+    return { edge, fitted, warn };
+  },
+
+  /**
    * The transform box: eight scale handles, four rotation zones.
    *
    * This one is browser-only in every part. The handles are DOM elements, the

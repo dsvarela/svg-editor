@@ -13,7 +13,7 @@ import { cloneShape, continuityOf } from './core/types';
 import type { Shape, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { Store } from './model/store';
-import type { Backdrop } from './model/store';
+import type { Backdrop, EditorState } from './model/store';
 import { Canvas } from './view/canvas';
 import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
@@ -218,6 +218,72 @@ radiusInput.addEventListener('input', () =>
 );
 
 on('#circularise', () => controller.circulariseSelection());
+
+/**
+ * Wire a numeric control to the state.
+ *
+ * A typed number fires `input` per keystroke and a dragged slider fires one per
+ * pixel, which would be an undo entry each. A batch opens on the first of them
+ * and closes when the control settles, so the whole adjustment is one step. It
+ * closes on `change` as well as `blur`, because a range input never gets a blur
+ * if you drag it and then reach straight for the canvas.
+ *
+ * `history: false` is for controls that change how something looks rather than
+ * what it is. Those never enter the undo stack at all.
+ */
+const liveNum = (
+  id: string,
+  apply: (s: EditorState, v: number) => boolean,
+  history = true,
+): void => {
+  const input = $(id) as HTMLInputElement;
+  let open = false;
+  const close = (): void => {
+    if (!open) return;
+    open = false;
+    store.endBatch();
+  };
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    if (!Number.isFinite(v)) return;
+    if (!history) {
+      store.update((s) => apply(s, v));
+      return;
+    }
+    if (!open) {
+      open = true;
+      store.beginBatch();
+    }
+    store.tryEdit((s) => apply(s, v));
+  });
+  input.addEventListener('change', close);
+  input.addEventListener('blur', close);
+};
+
+/* ---------------------------------------------------------------- canvas */
+
+/**
+ * The document's own frame: the `viewBox` the export writes.
+ *
+ * Editable, and never changed by anything else. Drawing outside it is allowed
+ * and leaves it alone, which is right for icon work where the page is chosen
+ * first and the margins matter, and was baffling while nothing on screen said
+ * where the page was. It is drawn now, and this is where the numbers live.
+ */
+const vbNum = (id: string, axis: 'x' | 'y' | 'w' | 'h'): void =>
+  liveNum(id, (s, v) => {
+    // A canvas with no width has no export and no fit. Refusing is better than
+    // accepting a number that makes the document unusable until it is undone.
+    if ((axis === 'w' || axis === 'h') && !(v > 0)) return false;
+    if (s.doc.viewBox[axis] === v) return false;
+    s.doc.viewBox = { ...s.doc.viewBox, [axis]: v };
+    return true;
+  });
+vbNum('#vbx', 'x');
+vbNum('#vby', 'y');
+vbNum('#vbw', 'w');
+vbNum('#vbh', 'h');
+on('#vbFit', () => controller.fitCanvasToDrawing());
 
 /**
  * How far Simplify may move the drawing, in document units.
@@ -595,44 +661,14 @@ canvasRoot.addEventListener('drop', (e) => {
 });
 
 /**
- * Wire a numeric control to the backdrop.
+ * The same, for the backdrop, which may not be loaded.
  *
  * `history` draws the line between what the reference is and how you are
  * looking at it. Where it sits and how big it is are edits, and belong on the
  * undo stack next to everything else. Opacity is a view setting, like the grid.
- *
- * A typed number or a dragged slider fires `input` per keystroke or per pixel,
- * which would be one undo entry each. A batch opens on the first of them and
- * closes when the control settles, so the whole adjustment is one step. It
- * closes on `change` as well as `blur` because a range input never gets a blur
- * if you drag it and then reach for the canvas.
  */
-const backNum = (id: string, apply: (b: Backdrop, v: number) => boolean, history = true): void => {
-  const input = $(id) as HTMLInputElement;
-  let open = false;
-  const close = (): void => {
-    if (!open) return;
-    open = false;
-    store.endBatch();
-  };
-  input.addEventListener('input', () => {
-    const v = Number(input.value);
-    if (!Number.isFinite(v)) return;
-    if (!history) {
-      store.update((s) => {
-        if (s.backdrop) apply(s.backdrop, v);
-      });
-      return;
-    }
-    if (!open) {
-      open = true;
-      store.beginBatch();
-    }
-    store.tryEdit((s) => (s.backdrop ? apply(s.backdrop, v) : false));
-  });
-  input.addEventListener('change', close);
-  input.addEventListener('blur', close);
-};
+const backNum = (id: string, apply: (b: Backdrop, v: number) => boolean, history = true): void =>
+  liveNum(id, (s, v) => (s.backdrop ? apply(s.backdrop, v) : false), history);
 backNum(
   '#backOpacity',
   (b, v) => {
@@ -971,7 +1007,13 @@ store.subscribe((s) => {
 
   const nodes = controller.countNodes();
   const segs = controller.countSegments();
-  stats.textContent = `${s.doc.shapes.length} shape${s.doc.shapes.length === 1 ? '' : 's'} · ${nodes} nodes · ${segs} segments`;
+  const vb = s.doc.viewBox;
+  const round = (v: number): string => (+v.toFixed(3)).toString();
+  // The canvas size leads, because it is the one number about the document that
+  // was invisible and that decides what the exported file looks like.
+  stats.textContent =
+    `${round(vb.w)} × ${round(vb.h)} · ${s.doc.shapes.length} shape${s.doc.shapes.length === 1 ? '' : 's'}` +
+    ` · ${nodes} nodes · ${segs} segments`;
 
   const selCount = s.selection.nodes.size;
   selinfo.textContent = s.selection.shapes.size
@@ -1007,6 +1049,31 @@ store.subscribe((s) => {
   // was the one panel whose header value was permanently blank.
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
+
+  const canvasBox = s.doc.viewBox;
+  for (const [id, v] of [
+    ['#vbx', canvasBox.x],
+    ['#vby', canvasBox.y],
+    ['#vbw', canvasBox.w],
+    ['#vbh', canvasBox.h],
+  ] as [string, number][]) {
+    const el = $(id) as HTMLInputElement;
+    if (document.activeElement !== el) el.value = String(Math.round(v * 1000) / 1000);
+  }
+  /* Said here rather than in the status strip, because this is where the button
+     that fixes it lives. Content outside the canvas is allowed and is sometimes
+     what you want mid-edit; it is only a surprise at export time, which is
+     exactly when nobody is looking at the drawing. */
+  const drawn = docBBox(s.doc);
+  const spills =
+    drawn !== null &&
+    (drawn.x0 < canvasBox.x - 1e-9 ||
+      drawn.y0 < canvasBox.y - 1e-9 ||
+      drawn.x1 > canvasBox.x + canvasBox.w + 1e-9 ||
+      drawn.y1 > canvasBox.y + canvasBox.h + 1e-9);
+  const canvasInfo = $('#canvasinfo');
+  canvasInfo.textContent = spills ? 'drawing goes outside' : '';
+  canvasInfo.className = spills ? 'gval warn' : 'gval';
 
   const b = s.backdrop;
   backinfo.textContent = !b ? 'none' : b.visible ? (b.locked ? b.name : `${b.name} · unlocked`) : 'hidden';

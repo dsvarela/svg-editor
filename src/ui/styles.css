@@ -369,7 +369,25 @@ input[type='number']:disabled { opacity: 0.4; }
 .marquee,
 .sel-box,
 .insert-dot,
-.pen-preview { pointer-events: none; }
+.pen-preview,
+.doc-shade,
+.doc-edge { pointer-events: none; }
+
+/* The page. Light enough to trace over, heavy enough to see where the export
+   stops. `evenodd` is what makes the document a hole rather than a second
+   rectangle painted on top. */
+.doc-shade {
+  fill: var(--ink);
+  fill-rule: evenodd;
+  opacity: 0.05;
+  stroke: none;
+}
+.doc-edge {
+  fill: none;
+  stroke: var(--axis);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
 
 /* --- transform box ---------------------------------------------------- */
 
@@ -450,6 +468,7 @@ input[type='number']:disabled { opacity: 0.4; }
 }
 .glabel.sub { margin-top: 7px; }
 .gval { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--measure); }
+.gval.warn { color: var(--warn); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .row { display: flex; align-items: center; gap: 7px; }

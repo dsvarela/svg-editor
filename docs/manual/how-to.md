@@ -236,6 +236,23 @@ you did not mean and brings back an image you removed by accident. Opacity,
 **Show** and **Locked** stay as you left them, since undo is for taking back an
 edit rather than for restoring a checkbox. Nothing survives a page reload.
 
+## Set the page the drawing exports to
+
+The rectangle drawn on the canvas, with everything outside it dimmed, is the
+page. It is what the exported file's `viewBox` says, and it decides how much
+space the drawing takes up in whatever displays it.
+
+- To choose a page first, type the **origin** and **size** into the **Canvas**
+  panel. `0`, `0`, `24`, `24` is a 24 unit icon.
+- To wrap the page around what you have already drawn, press **Fit canvas to
+  drawing**. The result is rounded outwards to whole grid steps, so the numbers
+  stay tidy and nothing gets cropped.
+
+The page never moves on its own. If your drawing sits in one corner of it, the
+exported file has it in one corner too, which is the usual reason a shape looks
+small in a browser after it looked right here. The panel header says `drawing
+goes outside` when part of the drawing is off the page.
+
 ## Resize or rotate something on the canvas
 
 Select a shape, or two or more of its nodes. A dashed box appears with eight

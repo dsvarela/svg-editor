@@ -11,6 +11,7 @@ import type { Box } from '../core/bezier';
 import { continuityOf, makeNode, segmentCount } from '../core/types';
 import type { NodeContinuity, PathNode, Pt, Subpath } from '../core/types';
 import {
+  docBBox,
   emptySelection,
   findShape,
   makeShape,
@@ -1042,6 +1043,53 @@ export class Controller {
         `Nothing moved further than ${dp(error)}.`,
       true,
     );
+    return true;
+  }
+
+  /**
+   * Wrap the document's canvas around whatever has been drawn.
+   *
+   * The canvas never follows the drawing on its own, and should not: an icon is
+   * drawn to a page, and a page that resized itself every time a node moved
+   * would make the margins you were aiming for impossible to hold. But nothing
+   * else could change it either, which left a drawing sitting in the corner of a
+   * canvas nobody chose with no way to say so.
+   *
+   * Rounded outwards to whole grid steps, so the result is a page with tidy
+   * numbers rather than the drawing's exact extent to three decimals. The
+   * rounding always grows the box, never crops it.
+   */
+  fitCanvasToDrawing(): boolean {
+    const s = this.store.state;
+    const b = docBBox(s.doc);
+    if (!b) {
+      this.onMessage?.('Nothing drawn yet, so there is nothing to fit the canvas to.', false);
+      return false;
+    }
+
+    const step = s.gridStep > 0 ? s.gridStep : 0;
+    const down = (v: number): number => (step ? Math.floor(v / step) * step : v);
+    const up = (v: number): number => (step ? Math.ceil(v / step) * step : v);
+    const x = down(b.x0);
+    const y = down(b.y0);
+    // A drawing with no width at all, such as one straight vertical line, still
+    // needs a page it can be seen on.
+    const w = Math.max(up(b.x1) - x, step || 1);
+    const h = Math.max(up(b.y1) - y, step || 1);
+
+    const changed = this.store.tryEdit((st) => {
+      const vb = st.doc.viewBox;
+      if (vb.x === x && vb.y === y && vb.w === w && vb.h === h) return false;
+      st.doc.viewBox = { x, y, w, h };
+      return true;
+    });
+
+    if (!changed) {
+      this.onMessage?.('The canvas already fits the drawing.', false);
+      return false;
+    }
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    this.onMessage?.(`Canvas is now ${dp(w)} × ${dp(h)} at ${dp(x)}, ${dp(y)}.`, true);
     return true;
   }
 

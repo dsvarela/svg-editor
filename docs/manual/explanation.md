@@ -102,6 +102,27 @@ whose nodes are on the grid ends on the grid; one that is not keeps its offsets.
 Node dragging is different, and does snap the position, because there is only one
 node and its position is what you are choosing.
 
+## The page does not follow the drawing
+
+The canvas is the page the drawing is made for, and nothing you draw changes it.
+That is deliberate, and it is the opposite of what a first look suggests.
+
+An icon is drawn to a size. You choose 24 by 24, you leave two units of margin,
+and the margin is the point. A page that resized itself whenever a node moved
+would make that margin impossible to hold: every edit would redefine what the
+drawing is drawn to.
+
+So the page stays where you put it, drawing outside it is allowed, and one button
+wraps it around what is there when that is what you want. **Fit canvas to
+drawing** rounds outwards to whole grid steps, never inwards, because a page that
+crops the drawing to reach a rounder number is a page that has thrown work away.
+
+None of which was obvious while the page was invisible. The grid runs to the
+horizon and looks the same on both sides of the boundary, so a drawing in one
+corner of a large page looks centred while you work and takes up a fifth of the
+exported file. It is drawn now, with everything outside it dimmed, and the panel
+says so when part of the drawing is out there.
+
 ## The transform box keeps its distance
 
 A selection's box has to be drawn around whatever is selected, and the handles
