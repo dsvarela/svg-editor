@@ -7,7 +7,8 @@ Status: `[ ]` not started · `[~]` partial · `[x]` done
 
 The 2026-08-11 review of the primitives/rename/tooltips commit is in
 [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) — ten defect classes,
-six now fixed. What is left of the other four is noted on the entries below.
+nine now fixed. The tenth, coincident nodes mid-path, waits on **Fuse nodes that
+are not ends** below.
 
 ---
 
@@ -49,7 +50,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | | Feature | Source | Size |
 |---|---|---|---|
 | `[x]` | **Booleans** — unite / intersect / subtract / exclude, in the Combine panel. Select two or more shapes; the first survives with its name and style, and `subtract` takes the rest away from it. Built on [`path-bool`](https://www.npmjs.com/package/path-bool) (MIT) — see below. | Boxy SVG, Inkscape, everything | — |
-| `[ ]` | **Simplify** — fewer nodes within a tolerance, by curve fitting rather than point decimation. | Boxy SVG, Inkscape | M |
+| `[x]` | **Simplify** — done. Schneider's least-squares fit (`core/fit.ts`) under a layer that decides which runs to fit (`model/simplify.ts`): corners past 50° are kept and fitted around, every surviving node keeps its tangents as inputs to the fit, and a closed path is cut at node 0 with the original tangents handed in from both sides so there is no kink at the seam. Sampling caps spacing as well as flatness, without which the tolerance is only checked where a sample happens to sit. A result with the same node count is refused. See ARCHITECTURE §19. | Boxy SVG, Inkscape | — |
 | `[ ]` | **Offset path** — parallel outline at a distance. Shares most of its machinery with stroke-to-path. | Illustrator, Inkscape | L |
 | `[ ]` | **Stroke to path** — convert a stroked outline into a filled shape. | Boxy SVG, Inkscape | L |
 
@@ -59,8 +60,8 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 |---|---|---|---|
 | `[x]` | **Primitive tools** — done. Ellipse and rectangle draw tools (`E`, `R`), Shift to constrain, Alt from the centre, and a corner radius for the rectangle. Built as nodes and handles, so there is nothing to convert before editing one. The drag ignores the shape it is drawing when point-snapping, and refuses to commit one with no area. | every editor | M |
 | `[x]` | **Circularise** — done. Fits a circle through a contour's nodes by least squares, moves each onto it at its own angle, and rebuilds handles at `r·4/3·tan(θ/4)`. A closed contour is treated as a ring — one winding, spans summing to a full turn — so a gap wider than 180° closes instead of retracing, and a node order that is not a ring is refused. Reports the radius, the furthest node's travel, and the widest gap when it is wide enough to limit the result. | Inkscape's "make circle" | M |
-| `[~]` | **Rename shapes** — double-click the name in the list. It is what the exported `id` carries, sanitised to an XML Name and made unique on the way out. Still open: clicking inside the rename field destroys the selection, and the second click of the double-click deselects the shape — [review](docs/REVIEW-2026-08-11.md), Class 8. | every editor | S |
-| `[~]` | **Tooltips** — one layer, fed by the markup's own `title` attributes, with the shortcut pulled out as a key cap; the two tool buttons now put theirs last so it renders. Still open: `adopt()` removes each control's accessible description without replacing it — [review](docs/REVIEW-2026-08-11.md), Class 10. | — | S |
+| `[~]` | **Rename shapes** — double-click the name in the list. It is what the exported `id` carries, sanitised to an XML Name and made unique on the way out. Class 8 of the review is closed: the row's click handler ignores anything inside `.rename`, and a plain click selects rather than toggles. Still open: no keyboard route to start a rename other than `F2` on a focused row. | every editor | S |
+| `[~]` | **Tooltips** — one layer, fed by the markup's own `title` attributes, with the shortcut pulled out as a key cap; the two tool buttons now put theirs last so it renders. Class 10 of the review is closed: `aria-describedby` is set on show and removed on hide, so a control keeps its accessible description. | — | S |
 | `[x]` | **Application shell** — done. One fixed grid filling the window, canvas edge to edge, no page scroll; the toolbar is icons, the source is a drawer you open (`Ctrl+E`) and the inspector collapses (`Ctrl+B`). Panels take space from the canvas rather than floating over it, and a `ResizeObserver` re-fits the camera when they do. | Figma, Rive | M |
 | `[~]` | **Measurement readout** — the pointer's document coordinates are in the status strip. Live length and angle *while dragging* is the part still missing. | Illustrator, IPE | S |
 | `[x]` | **Zoom readout** — done. A percentage in the status strip, where 100 % is one document unit per pixel, and clicking it returns to 100 % about the centre of the view. | every editor | — |
@@ -130,7 +131,7 @@ usually ask for together.
 
 | | Feature | Source | Size |
 |---|---|---|---|
-| `[x]` | **Backdrop image** — done. Drop a raster on the canvas or load it from the Backdrop panel. Opacity, show, lock, X/Y/width and fit. Workspace state rather than document content, so it never exports, never appears in the Shapes list and costs no history; the trade is no undo on moving it and no survival across a reload. See ARCHITECTURE and the manual's explanation page. | every editor | — |
+| `[x]` | **Backdrop image** — done. Drop a raster on the canvas or load it from the Backdrop panel. Opacity, show, lock, X/Y/width and fit. Workspace state rather than document content, so it never exports and never appears in the Shapes list, but it *is* in the undo history: load, move, resize, fit and remove are ordinary edits, while opacity, show and lock are view switches undo leaves alone. The first version shipped with no undo at all, on a memory argument that turned out to be about data URLs and not the object URLs actually used. The only remaining trade is no survival across a reload. See ARCHITECTURE §18 and the manual's explanation page. | every editor | — |
 | `[ ]` | **Auto-trace** — convert a raster to paths in one step. Needs a library; see below. | Illustrator, Inkscape | L |
 
 ### The auto-trace decision, if it is ever taken
@@ -157,8 +158,11 @@ Two things to settle before writing any of it, neither about the library:
    the first thing that is not, and that is a model decision rather than a
    feature.
 
-The honest order is backdrop first, then Simplify, then auto-trace if it still
-looks worth it once tracing by hand over a backdrop is possible.
+The honest order was backdrop first, then Simplify, then auto-trace if it still
+looks worth it once tracing by hand over a backdrop is possible. The first two
+are done, so auto-trace is unblocked. The open question is now size: the build
+is one 153 kB file with no external requests, and a WASM tracer is several
+hundred kilobytes on its own.
 
 ## Explicitly not doing
 
