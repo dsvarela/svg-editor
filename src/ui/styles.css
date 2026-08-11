@@ -356,12 +356,16 @@ input[type='number']:disabled { opacity: 0.4; }
   cursor: grab;
 }
 .anchor.selected { fill: var(--node-sel); stroke: var(--node-sel); }
+/* Widths here are in CSS pixels and stay that way at every zoom, because these
+   four carry `non-scaling-stroke`. Nothing may set `stroke-width` on them from
+   the render loop: scaling a width that is already screen-relative is what made
+   the marquee grow into a picket fence when zoomed out. */
 .marquee,
-.sel-box { fill: none; stroke: var(--accent); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.sel-box { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .marquee { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
 .sel-box { stroke: var(--measure); opacity: 0.8; }
-.insert-dot { fill: none; stroke: var(--measure); vector-effect: non-scaling-stroke; }
-.pen-preview { fill: none; stroke: var(--accent); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.insert-dot { fill: none; stroke: var(--measure); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.pen-preview { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 
 /* --- inspector -------------------------------------------------------- */
 

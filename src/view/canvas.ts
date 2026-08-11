@@ -351,12 +351,17 @@ export class Canvas {
         return;
       }
       elem.removeAttribute('display');
+      /* No `stroke-width` here. The marquee and the selection box carry
+         `vector-effect: non-scaling-stroke`, which already means "one CSS pixel
+         whatever the zoom", so multiplying by `k` scaled the width a second
+         time: at 9 % zoom `k` is about 11, and 11 px of stroke dashed 4-on-3-off
+         is the picket fence that started this. CSS owns the width for anything
+         non-scaling; the code owns it for everything else. */
       setAttrs(elem, {
         x: Math.min(b.x0, b.x1),
         y: Math.min(b.y0, b.y1),
         width: Math.abs(b.x1 - b.x0),
         height: Math.abs(b.y1 - b.y0),
-        'stroke-width': k,
       });
     };
 
@@ -365,12 +370,9 @@ export class Canvas {
 
     if (extras.insertAt) {
       this.insertDot.removeAttribute('display');
-      setAttrs(this.insertDot, {
-        cx: extras.insertAt[0],
-        cy: extras.insertAt[1],
-        r: 4 * k,
-        'stroke-width': 1.5 * k,
-      });
+      // Radius scales with the zoom so the dot stays 4 px; the width does not,
+      // because `.insert-dot` is non-scaling. See `box` above.
+      setAttrs(this.insertDot, { cx: extras.insertAt[0], cy: extras.insertAt[1], r: 4 * k });
     } else {
       this.insertDot.setAttribute('display', 'none');
     }
@@ -379,7 +381,6 @@ export class Canvas {
       this.penLine.removeAttribute('display');
       setAttrs(this.penLine, {
         d: `M${extras.penFrom[0]} ${extras.penFrom[1]}L${extras.penTo[0]} ${extras.penTo[1]}`,
-        'stroke-width': k,
       });
     } else {
       this.penLine.setAttribute('display', 'none');

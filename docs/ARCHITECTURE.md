@@ -432,6 +432,37 @@ silently and destructively.
 
 ---
 
+## 17. One place decides how thick a line is
+
+Overlay chrome has to stay a constant size on screen while the drawing scales,
+and there are two ways to do that. Either the code multiplies a pixel size by
+`scale()` (document units per pixel) and writes it as a normal width, or the CSS
+gives a pixel width and `vector-effect: non-scaling-stroke` exempts it from the
+transform. Both work. Doing both to the same element scales it twice.
+
+That is what turned the marquee into a picket fence when zoomed out: `box()`
+wrote `stroke-width: k` onto elements whose stylesheet already said
+`non-scaling-stroke`, so the rendered width tracked the zoom instead of ignoring
+it — 0.062 px at one end of the range and 0.909 px at the other, dashed 4-on-3
+-off, which is a row of blue bars rather than a rubber band.
+
+The rule now is a split by element, not by judgement at each call site: **if a
+class carries `non-scaling-stroke`, its width lives in the stylesheet and the
+render loop never touches it.** That covers `.marquee`, `.sel-box`,
+`.insert-dot`, `.pen-preview` and `.anchor`. Everything else keeps its width in
+the render loop, multiplied by `k`.
+
+Worth knowing while reading either file: a CSS rule beats a presentation
+attribute, so adding the stylesheet width silently disabled the inline one. The
+inline writes were removed anyway, because a dead attribute that looks live is
+how the next person re-introduces the bug.
+
+The overlay's other size problem is not this one. Markers are screen-sized by
+design, so zooming out shrinks the drawing underneath them until a shape is
+buried in its own anchors. A handle closer to its anchor than the anchor's own
+width is no longer drawn, on the grounds that a control you cannot separate from
+the thing it controls is not a control.
+
 ## 16. A gesture ends exactly once, and a decline costs nothing
 
 Two rules that the 2026-08-11 review found broken in four places each, both

@@ -224,10 +224,9 @@ Named here rather than left for you to find.
   circularised path that had a node at its centre, can both end up with two
   anchors in the same place. **Merge** only works on free ends, so there is no
   way to fuse them yet.
-- **Overlay markers are a fixed size on screen,** so zooming out shrinks the
-  drawing while the anchors stay put and crowd it. Handles closer to their node
-  than the node's own marker are dropped, which thins it out, but the anchors
-  themselves are always drawn.
+- **Anchors are a fixed size on screen,** so zooming out shrinks the drawing
+  while they stay put and crowd it. Handles closer to their node than the node's
+  own marker are dropped, which thins it out, but the anchors are always drawn.
 
 Full detail on all of these is in
 [`docs/REVIEW-2026-08-11.md`](../REVIEW-2026-08-11.md).

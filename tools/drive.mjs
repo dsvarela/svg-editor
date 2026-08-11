@@ -408,11 +408,43 @@ const scenarios = {
   async marqueeDelete(page) {
     const { drag } = await mk(page);
 
+    /* The marquee's stroke must be the same thickness at every zoom. It was
+       not: `box()` multiplied the width by document-units-per-pixel on an
+       element that already carries `vector-effect: non-scaling-stroke`, so the
+       width was scaled twice and the rubber band grew into a picket fence when
+       zoomed out. Measured rather than eyeballed, at both ends of the range. */
+    const strokeMidDrag = async () => {
+      const b = await page.locator('#canvas').boundingBox();
+      await page.mouse.move(b.x + 120, b.y + 120);
+      await page.mouse.down();
+      await page.mouse.move(b.x + 520, b.y + 420, { steps: 3 });
+      const px = await page.$eval('.marquee', (el) => {
+        const cs = getComputedStyle(el);
+        const w = parseFloat(cs.strokeWidth);
+        return cs.vectorEffect === 'non-scaling-stroke' ? w : w * el.getScreenCTM().a;
+      });
+      await page.mouse.up();
+      return px;
+    };
+
+    const near = await strokeMidDrag();
+    for (let i = 0; i < 12; i++) await page.click('#zoomout');
+    await page.waitForTimeout(200);
+    const far = await strokeMidDrag();
+    for (let i = 0; i < 12; i++) await page.click('#zoomin');
+    await page.waitForTimeout(200);
+    if (Math.abs(near - far) > 0.01) {
+      throw new Error(`marquee stroke is ${near}px near and ${far}px far; it must not scale`);
+    }
+    await page.click('#fit');
+    await page.waitForTimeout(150);
+
     // The starter shape lives inside 20..68 x 12..52; sweep well past it.
     await drag([8, 9], [79, 55]);
     await page.waitForTimeout(120);
     const selected = await page.textContent('#selinfo');
     const anchorsSelected = await page.locator('.anchor.selected').count();
+    const marqueeStroke = { near, far };
 
     await page.click('#del');
     await page.waitForTimeout(150);
@@ -428,6 +460,7 @@ const scenarios = {
     return {
       selected,
       anchorsSelected,
+      marqueeStroke,
       afterButton,
       afterKey: await page.textContent('#stats'),
       status: await page.textContent('#status'),
