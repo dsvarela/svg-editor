@@ -10,6 +10,8 @@ route to finishing it.
 - [Make a hand-drawn ring perfectly round](#make-a-hand-drawn-ring-perfectly-round)
 - [Make a corner smooth](#make-a-corner-smooth)
 - [Break one path into two](#break-one-path-into-two)
+- [Join two ends back together](#join-two-ends-back-together)
+- [Carry on drawing a path you already finished](#carry-on-drawing-a-path-you-already-finished)
 - [Delete a node without breaking the path](#delete-a-node-without-breaking-the-path)
 - [Draw a rounded rectangle](#draw-a-rounded-rectangle)
 - [Combine two shapes](#combine-two-shapes)
@@ -92,6 +94,31 @@ path.
 
 This is the lossless way to cut. Use it rather than deleting a node when you care
 that the surviving curves are unchanged.
+
+## Join two ends back together
+
+Select the two end nodes, then press `Shift+J` or **Join ends** in the **Node**
+panel.
+
+They weld into one node at their midpoint, so ends already sitting on top of each
+other do not move at all. That makes this the exact inverse of **Break here**.
+
+Both nodes have to be free ends, meaning the first or last node of an open path.
+Two ends of the *same* path close it into a ring. Two ends of *different* paths
+concatenate into one, and either is reversed as needed so the drawing directions
+agree. If the two paths were separate shapes, the second shape disappears once
+its last path has moved across.
+
+## Carry on drawing a path you already finished
+
+Select the pen with `P`, then click either end of the path.
+
+The pen picks the path up from there, and the next click extends it. If you click
+the start rather than the end, the path is reversed first, because the pen only
+ever appends.
+
+To add a node in the *middle* rather than at an end, double-click the outline
+with the select tool.
 
 ## Delete a node without breaking the path
 

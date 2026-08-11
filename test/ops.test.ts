@@ -7,6 +7,7 @@ import { cloneNode, continuityOf, segmentAsCubic, segmentCount } from '../src/co
 import type { Pt, Subpath } from '../src/core/types';
 import {
   breakAt,
+  joinEnds,
   deleteNode,
   moveAnchor,
   moveHandle,
@@ -676,5 +677,85 @@ describe('breaking', () => {
     expect(breakAt(sp, 0)).toBeNull();
     expect(breakAt(sp, 2)).toBeNull();
     expect(breakAt(sp, 7)).toBeNull();
+  });
+});
+
+describe('joinEnds', () => {
+  /* The inverse of breakAt. The case that has to be exactly lossless is undoing
+     a break, where the two ends are already coincident and nothing should move
+     at all. */
+  it('undoes a break exactly', () => {
+    const sp = parsePath('M0 0 C10 0 20 10 20 20 C20 30 30 40 40 40')[0];
+    const before = sample(sp, 32);
+
+    // Node 1 is the middle one; 2 ends the path and has nothing to split off.
+    const pieces = breakAt(sp, 1)!;
+    expect(pieces).toHaveLength(2);
+    const rejoined = joinEnds({ sp: pieces[0], i: pieces[0].nodes.length - 1 }, { sp: pieces[1], i: 0 })!;
+
+    expect(rejoined.nodes).toHaveLength(sp.nodes.length);
+    sample(rejoined, 32).forEach((p, i) => {
+      expect(p[0]).toBeCloseTo(before[i][0], 9);
+      expect(p[1]).toBeCloseTo(before[i][1], 9);
+    });
+  });
+
+  it('meets in the middle when the ends are apart', () => {
+    const a = parsePath('M0 0 L10 0')[0];
+    const b = parsePath('M20 0 L30 0')[0];
+    const j = joinEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    expect(j.nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [15, 0],
+      [30, 0],
+    ]);
+  });
+
+  it('reverses whichever path is facing the wrong way', () => {
+    // Both selected ends are the paths' first nodes, so `a` has to be flipped.
+    const a = parsePath('M10 0 L0 0')[0];
+    const b = parsePath('M20 0 L30 0')[0];
+    const j = joinEnds({ sp: a, i: 0 }, { sp: b, i: 0 })!;
+    expect(j.nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [15, 0],
+      [30, 0],
+    ]);
+  });
+
+  it('keeps the handle facing away from the joint', () => {
+    const a = parsePath('M0 0 C5 -8 10 -8 10 0')[0];
+    const b = parsePath('M10 0 C10 8 15 8 20 0')[0];
+    const j = joinEnds({ sp: a, i: 1 }, { sp: b, i: 0 })!;
+    const weld = j.nodes[1];
+    // The incoming handle came from `a`, the outgoing one from `b`.
+    expect(weld.hIn).toEqual([10, -8]);
+    expect(weld.hOut).toEqual([10, 8]);
+  });
+
+  it('closes a path when both ends belong to it', () => {
+    const sp = parsePath('M0 0 L10 0 L10 10 L0.4 0.4')[0];
+    const j = joinEnds({ sp, i: 0 }, { sp, i: 3 })!;
+    expect(j.closed).toBe(true);
+    expect(j.nodes).toHaveLength(3);
+    // The two ends met in the middle rather than one winning.
+    expect(j.nodes[0].pt).toEqual([0.2, 0.2]);
+  });
+
+  it('refuses a node that is not a free end', () => {
+    const sp = parsePath('M0 0 L10 0 L10 10')[0];
+    const other = parsePath('M20 0 L30 0')[0];
+    // Middle node.
+    expect(joinEnds({ sp, i: 1 }, { sp: other, i: 0 })).toBeNull();
+    // Same node twice.
+    expect(joinEnds({ sp, i: 0 }, { sp, i: 0 })).toBeNull();
+    // A closed path has no free ends at all.
+    const ring = parsePath('M0 0 L10 0 L10 10 Z')[0];
+    expect(joinEnds({ sp: ring, i: 0 }, { sp: other, i: 0 })).toBeNull();
+  });
+
+  it('refuses to close a two-node path, which would leave one node', () => {
+    const sp = parsePath('M0 0 L10 0')[0];
+    expect(joinEnds({ sp, i: 0 }, { sp, i: 1 })).toBeNull();
   });
 });

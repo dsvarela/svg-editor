@@ -35,8 +35,9 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[x]` | **A point is a point** — continuity is derived from the handles wherever it is needed, never stored. Dragging a handle preserves whatever relationship the pair already had; Alt-drag breaks it. Nothing to choose up front, and the marker on screen cannot disagree with the geometry. | — | — |
 | `[ ]` | **Auto-smooth node** — handles re-derive themselves from the neighbours whenever anything nearby moves. Inkscape's fourth type, and the one that saves the most fiddling. Note this one genuinely does need stored state: "keep recomputing me" is not something a static pair of handles can express. | Inkscape | M |
 | `[ ]` | **Continuity shortcuts** — `Shift+C` corner, `Shift+S` smooth, `Shift+Y` symmetric. Double-click already cycles. | Inkscape | S |
-| `[ ]` | **Fuse coincident nodes** — the exact inverse of split: two nodes at the same position become one, keeping the outer handle of each. Unlike `Join nodes` below there is nothing to average, so it is lossless and it is the operation that undoes a `Break path`. Wanted 2026-08-11; also the repair for the duplicate anchors `rectSubpath` and `circulariseSubpath` can produce (review Class 9). | Inkscape's "join by segment" inverse | S |
-| `[ ]` | **Join nodes** (`Shift+J`) — weld two selected endpoints into one, placed at their midpoint. | Inkscape, TikZiT (`Ctrl+M`) | M |
+| `[x]` | **Join ends** (`Shift+J`) — done. Welds two free ends into one node at their midpoint, so ends already coincident do not move and it is the exact inverse of `Break path`. Two ends of one path close it; two ends of different paths concatenate, reversing either as needed, and an emptied shape is removed. Each end keeps the handle facing away from the joint, since the one facing it governed nothing. | Inkscape, TikZiT (`Ctrl+M`) | — |
+| `[x]` | **Resume a finished path** — done. The pen picks up either end of an existing open path and carries on, reversing it when you click the start. Without it a path put down and let go of could never be extended again, which is the gap that prompted both this and Join. | every editor | — |
+| `[ ]` | **Fuse nodes that are not ends** — merging two coincident nodes in the *middle* of a path, which `Join ends` deliberately refuses. Also the repair for the duplicate anchors `rectSubpath` at its radius clamp and `circulariseSubpath` at the centre can produce (review Class 9). | Inkscape | S |
 | `[x]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends; a closed path opens at that node instead. The node is duplicated, so nothing moves — this is the lossless counterpart to deleting a node, which cannot be. See ARCHITECTURE §13. | Inkscape | — |
 | `[ ]` | **Join with segment** — connect two endpoints with a new segment rather than merging them. | Inkscape | S |
 | `[ ]` | **Reverse direction** + optional direction arrows on the outline. Matters for fill-rule and for which end a marker lands on. | Boxy SVG, Inkscape | S |
@@ -122,6 +123,43 @@ non-finite output rather than returning it, and `booleanSelection` catches both
 that and a library throw, leaving the document untouched. Nothing is mutated
 until a finite result exists, and the operation is one undo step.
 
+## Tracing an image
+
+Researched 2026-08-11 on request, not started. Two separate features that people
+usually ask for together.
+
+| | Feature | Source | Size |
+|---|---|---|---|
+| `[ ]` | **Backdrop image** — drop a raster in, show it under the artwork at an adjustable opacity, and draw over it by hand. Does not export. This is the one that earns its keep first: it needs no library, and hand-tracing on a grid is what this editor is already for. | every editor | S |
+| `[ ]` | **Auto-trace** — convert a raster to paths in one step. Needs a library; see below. | Illustrator, Inkscape | L |
+
+### The auto-trace decision, if it is ever taken
+
+| Candidate | Licence | Colour | Ships to a browser | Note |
+|---|---|---|---|---|
+| [VTracer](https://github.com/visioncortex/vtracer) | MIT | yes | WASM, `@visioncortex/vtracer` | Rust, a linear pipeline rather than Potrace's optimal-polygon search. The only candidate that is both permissive and colour-capable. |
+| [Potrace](https://potrace.sourceforge.net/) | **GPL-2.0-or-later** | no, bilevel | WASM builds exist | The best-known tracer and the reason to read licences. GPL would govern this whole editor. |
+| [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs) | public domain | yes | pure JS, no build step | Simplest to adopt, coarser output than VTracer. |
+| [EdgeSVG](https://github.com/raphaelmansuy/edgesvg) | check before use | yes | WASM, plus CLI and bindings | Newer, Rust, several surfaces. Unverified here beyond its README. |
+
+**Potrace is the trap.** It is what most tutorials reach for and it is GPL, so
+linking it would put this editor under the GPL too. The `potrace` npm package is
+a wrapper around the same GPL core. VTracer is the one to use if this is built.
+
+Two things to settle before writing any of it, neither about the library:
+
+1. **Traced output is node soup.** A photograph traces to thousands of nodes, and
+   this editor has no **Simplify** yet. Auto-trace without it produces a document
+   nobody can edit, which defeats the point. Simplify is the prerequisite, not a
+   follow-up.
+2. **Where the raster lives.** A backdrop is not part of the drawing and must not
+   reach the export. Everything in the document is currently a path, so this is
+   the first thing that is not, and that is a model decision rather than a
+   feature.
+
+The honest order is backdrop first, then Simplify, then auto-trace if it still
+looks worth it once tracing by hand over a backdrop is possible.
+
 ## Explicitly not doing
 
 - **Vector networks** (Figma) — points with three or more edges. It solves a real
@@ -143,5 +181,8 @@ until a finite result exists, and the operation is one undo step.
 - [Boxy SVG](https://boxy-svg.com/)
 - [quiver](https://q.uiver.app/)
 - [TikZiT](https://tikzit.github.io/)
+- [VTracer](https://github.com/visioncortex/vtracer) (MIT) and [Potrace](https://potrace.sourceforge.net/README) (GPL-2.0-or-later)
+- [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs) (public domain)
+- [image2svg-awesome](https://github.com/fromtheexchange/image2svg-awesome), a survey of tracers
 - [Icons8: guide to pixel-perfect icons](https://icons8.medium.com/a-guide-to-pixel-perfect-icons-390e2fa2820c)
 - [Helena Zhang: Icon grids & keylines demystified](https://minoraxis.medium.com/icon-grids-keylines-demystified-5a228fe08cfd)

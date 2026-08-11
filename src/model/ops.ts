@@ -21,7 +21,7 @@ import {
   segmentCount,
   segmentIsLine,
 } from '../core/types';
-import type { Doc, NodeContinuity, Pt, Shape, Subpath } from '../core/types';
+import type { Doc, NodeContinuity, PathNode, Pt, Shape, Subpath } from '../core/types';
 import type { HandlePart, NodeRef } from './doc';
 
 const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
@@ -430,6 +430,91 @@ export function appendNode(sp: Subpath, pt: Pt, hIn: Pt | null = null): number {
 
 export function closeSubpath(sp: Subpath): void {
   if (sp.nodes.length >= 2) sp.closed = true;
+}
+
+/** One end of an open path, named as the thing to be joined. */
+export interface JoinEnd {
+  sp: Subpath;
+  i: number;
+}
+
+/** Whether a node is a free end: an open path, first or last node. */
+export function isPathEnd(sp: Subpath, i: number): boolean {
+  return !sp.closed && (i === 0 || i === sp.nodes.length - 1);
+}
+
+/** Move a node and carry its handles, so the curvature either side is kept. */
+function shiftNodeTo(n: PathNode, to: Pt): void {
+  const dx = to[0] - n.pt[0];
+  const dy = to[1] - n.pt[1];
+  n.pt = to;
+  if (n.hIn) n.hIn = [n.hIn[0] + dx, n.hIn[1] + dy];
+  if (n.hOut) n.hOut = [n.hOut[0] + dx, n.hOut[1] + dy];
+}
+
+/**
+ * Weld two free ends into a single node, the inverse of `breakAt`.
+ *
+ * `breakAt` removes a join and leaves two ends sitting on top of each other.
+ * This puts one back. The two nodes merge at their midpoint, so ends that were
+ * already coincident do not move at all and the operation is exactly lossless
+ * in the case that matters most: undoing a break.
+ *
+ * Each end keeps the handle facing away from the joint, which is the one that
+ * shapes a segment that still exists. The handles facing the joint governed
+ * nothing, because an end of an open path has no segment on its outside.
+ *
+ * Two ends of the SAME path close it into a ring. Two ends of different paths
+ * concatenate, reversing either as needed so the drawing directions agree. The
+ * result is one subpath; the caller is responsible for removing whichever
+ * subpath it replaced.
+ *
+ * Returns `null` when either node is not a free end, when both are the same
+ * node, or when closing would leave fewer than two nodes to draw with.
+ */
+export function joinEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
+  if (!isPathEnd(a.sp, a.i) || !isPathEnd(b.sp, b.i)) return null;
+
+  const mid = (p: Pt, q: Pt): Pt => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+
+  if (a.sp === b.sp) {
+    const sp = a.sp;
+    // The two ends of one path. Same node twice is not a join, and welding a
+    // two-node path would leave a single node, which draws nothing.
+    if (a.i === b.i || sp.nodes.length < 3) return null;
+
+    const first = sp.nodes[0];
+    const last = sp.nodes[sp.nodes.length - 1];
+    const at = mid(first.pt, last.pt);
+    shiftNodeTo(first, at);
+    shiftNodeTo(last, at);
+
+    // The closing segment ends at what is now node 0, so it inherits the
+    // incoming handle the old last node carried.
+    first.hIn = last.hIn;
+    sp.nodes.pop();
+    sp.closed = true;
+    return sp;
+  }
+
+  // Orient both so that `a` finishes where `b` starts.
+  if (a.i === 0) reverseSubpath(a.sp);
+  if (b.i !== 0) reverseSubpath(b.sp);
+
+  const tail = a.sp.nodes[a.sp.nodes.length - 1];
+  const head = b.sp.nodes[0];
+  const at = mid(tail.pt, head.pt);
+  shiftNodeTo(tail, at);
+  shiftNodeTo(head, at);
+
+  return {
+    nodes: [
+      ...a.sp.nodes.slice(0, -1),
+      { pt: at, hIn: tail.hIn, hOut: head.hOut },
+      ...b.sp.nodes.slice(1),
+    ],
+    closed: false,
+  };
 }
 
 /** Flip drawing direction. Handles swap sides, and the ring is re-rooted. */

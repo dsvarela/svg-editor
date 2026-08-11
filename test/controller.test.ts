@@ -1232,3 +1232,119 @@ describe('keyboard', () => {
     expect(h.store.state.doc.shapes[0].name).toBe('earlier');
   });
 });
+
+describe('joining and resuming a path', () => {
+  it('welds two ends of separate shapes into one path', () => {
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
+    const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
+    h.store.update((s) => {
+      s.selection.nodes.add(`${a}/0/1`);
+      s.selection.nodes.add(`${b}/0/0`);
+    });
+
+    expect(h.controller.joinSelection()).toBe(true);
+    // One shape left, one path, and the ends met in the middle.
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [15, 0],
+      [30, 0],
+    ]);
+  });
+
+  it('closes a path when both selected ends belong to it', () => {
+    const h = harness('M0 0 L10 0 L10 10');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(`${id}/0/2`);
+    });
+
+    expect(h.controller.joinSelection()).toBe(true);
+    expect(h.store.state.doc.shapes[0].subpaths[0].closed).toBe(true);
+  });
+
+  it('refuses a node in the middle of a path, and records no history', () => {
+    const h = harness('M0 0 L10 0 L10 10 L20 10');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/1`);
+      s.selection.nodes.add(`${id}/0/3`);
+    });
+
+    expect(h.controller.joinSelection()).toBe(false);
+    expect(h.store.canUndo).toBe(false);
+    expect(h.store.state.doc.shapes[0].subpaths[0].closed).toBe(false);
+  });
+
+  it('is one undo step', () => {
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
+    const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
+    h.store.update((s) => {
+      s.selection.nodes.add(`${a}/0/1`);
+      s.selection.nodes.add(`${b}/0/0`);
+    });
+
+    h.controller.joinSelection();
+    h.store.undo();
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('resumes an existing path instead of starting a new shape', () => {
+    /* Without this the pen could only ever start something new: a path put down
+       and then let go of could never be extended again. */
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => {
+      s.tool = 'pen';
+      s.snapToGrid = false;
+    });
+
+    h.down([10, 0]);
+    h.up();
+    h.down([20, 5]);
+    h.up();
+
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt)).toEqual([
+      [0, 0],
+      [10, 0],
+      [20, 5],
+    ]);
+  });
+
+  it('reverses the path when the far end is the one clicked', () => {
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => {
+      s.tool = 'pen';
+      s.snapToGrid = false;
+    });
+
+    h.down([0, 0]);
+    h.up();
+    h.down([-10, 5]);
+    h.up();
+
+    // The pen only appends, so picking up the start flips the path first.
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt)).toEqual([
+      [10, 0],
+      [0, 0],
+      [-10, 5],
+    ]);
+  });
+
+  it('starts a new shape when the click is nowhere near an end', () => {
+    const h = harness('M0 0 L10 0');
+    h.store.update((s) => {
+      s.tool = 'pen';
+      s.snapToGrid = false;
+    });
+
+    h.down([40, 40]);
+    h.up();
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+  });
+});

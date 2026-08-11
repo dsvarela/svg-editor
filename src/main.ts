@@ -6,8 +6,8 @@ import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import type { BooleanOp } from './io/boolean';
-import { docBBox, emptyDoc, nextId, parseNodeKey, shapeFromPath } from './model/doc';
-import { latentHandle, transformShape } from './model/ops';
+import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, shapeFromPath } from './model/doc';
+import { isPathEnd, latentHandle, transformShape } from './model/ops';
 import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
 import type { Shape } from './core/types';
@@ -216,6 +216,7 @@ ntypeSeg.addEventListener('click', (e) => {
 });
 
 on('#breakPath', () => controller.breakAtSelection());
+on('#joinPath', () => controller.joinSelection());
 on('#delNode', () => controller.deleteSelection());
 
 const delModeSeg = $('#delmode');
@@ -300,6 +301,13 @@ function refreshInspector(): void {
   const atEnd = !!sel && !sel.subpath.closed && (sel.ref.i === 0 || sel.ref.i === sel.subpath.nodes.length - 1);
   ($('#breakPath') as HTMLButtonElement).disabled = !sel || atEnd;
   ($('#delNode') as HTMLButtonElement).disabled = count === 0;
+
+  // Join is the inverse: exactly two nodes, each a free end of an open path.
+  const ends = [...store.state.selection.nodes].map(parseNodeKey).filter((r) => {
+    const sp = findShape(store.state.doc, r.shape)?.subpaths[r.sp];
+    return !!sp && isPathEnd(sp, r.i);
+  });
+  ($('#joinPath') as HTMLButtonElement).disabled = count !== 2 || ends.length !== 2;
 
   const dp = store.state.decimals;
   for (const f of coordFields) {

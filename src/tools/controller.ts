@@ -29,10 +29,13 @@ import {
   deleteNode,
   deleteNodesSplitting,
   distributeNodes,
+  isPathEnd,
+  joinEnds,
   latentHandle,
   moveAnchor,
   moveHandle,
   nearestOnPath,
+  reverseSubpath,
   setContinuity,
   setSegmentBend,
   segmentBend,
@@ -795,6 +798,28 @@ export class Controller {
     return findShape(this.store.state.doc, this.penTarget.shape)?.subpaths[this.penTarget.sp] ?? null;
   }
 
+  /** A free end of some existing open path within grabbing distance of `p`. */
+  private endNear(p: Pt): NodeRef | null {
+    const s = this.store.state;
+    const reach = 8 * this.canvas.scale(s.camera);
+    let best = reach;
+    let hit: NodeRef | null = null;
+    for (const shape of s.doc.shapes) {
+      shape.subpaths.forEach((sp, spI) => {
+        if (sp.closed || sp.nodes.length < 1) return;
+        for (const i of [0, sp.nodes.length - 1]) {
+          const q = sp.nodes[i].pt;
+          const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          if (d < best) {
+            best = d;
+            hit = { shape: shape.id, sp: spI, i };
+          }
+        }
+      });
+    }
+    return hit;
+  }
+
   private penDown(p: Pt): void {
     const s = this.store.state;
     const snapped = this.snap(p);
@@ -805,6 +830,38 @@ export class Controller {
     // before trusting it, or the next click reaches for a shape that is gone.
     let target = this.penSubpath();
     if (!target) this.penTarget = null;
+
+    /* Pick up a path that was already finished. Without this the pen could only
+       ever start something new, so a path put down and then let go of could
+       never be extended again -- you could edit its nodes forever and never add
+       one to the end. Clicking either end resumes from there, reversing the path
+       when it was the start, since the pen always appends. */
+    if (!this.penTarget) {
+      const resume = this.endNear(p);
+      if (resume) {
+        this.openBatch();
+        this.store.checkpoint();
+        this.store.update((st) => {
+          const sp = findShape(st.doc, resume.shape)?.subpaths[resume.sp];
+          if (sp && resume.i === 0) reverseSubpath(sp);
+        });
+        this.penTarget = { shape: resume.shape, sp: resume.sp };
+        target = this.penSubpath();
+        if (target) {
+          // Picking the path up is not placing a node. Clicking the end adopts
+          // it and the NEXT click extends, which is what makes the gesture read
+          // as "carry on from here" rather than "stamp another node on top".
+          const i = target.nodes.length - 1;
+          this.drag = { kind: 'pen', ref: { shape: resume.shape, sp: resume.sp, i } };
+          this.extras.penFrom = target.nodes[i].pt;
+          this.store.update((st) => {
+            st.selection = emptySelection();
+            st.selection.nodes.add(nodeKey({ shape: resume.shape, sp: resume.sp, i }));
+          });
+          return;
+        }
+      }
+    }
 
     // Clicking the first node of the subpath being drawn closes it.
     if (this.penTarget && target && target.nodes.length >= 2) {
@@ -952,6 +1009,13 @@ export class Controller {
         if (!e.shiftKey) return;
         e.preventDefault();
         this.breakAtSelection();
+        return;
+      }
+      // Shift+J, the same binding Inkscape uses, and the inverse of Shift+B.
+      case 'J': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.joinSelection();
         return;
       }
       case 'v': {
@@ -1157,6 +1221,75 @@ export class Controller {
       pieces.length === 1 ? 'Opened the path at that node.' : 'Broke the path into two.',
       true,
     );
+    return true;
+  }
+
+  /**
+   * Weld two selected free ends into one node.
+   *
+   * The inverse of `Break here`, and the answer to "I drew this in two pieces
+   * and now I want one path". Ends that already sit on top of each other do not
+   * move; ends apart meet in the middle.
+   */
+  joinSelection(): boolean {
+    const s = this.store.state;
+    const refs = [...s.selection.nodes].map(parseNodeKey);
+    if (refs.length !== 2) {
+      this.onMessage?.('Join needs exactly two nodes selected.', false);
+      return false;
+    }
+
+    const [ra, rb] = refs;
+    const resolve = (r: NodeRef): Subpath | null =>
+      findShape(s.doc, r.shape)?.subpaths[r.sp] ?? null;
+    const spa = resolve(ra);
+    const spb = resolve(rb);
+    if (!spa || !spb) return false;
+
+    if (!isPathEnd(spa, ra.i) || !isPathEnd(spb, rb.i)) {
+      this.onMessage?.(
+        'Join needs two free ends. Both nodes have to start or finish an open path.',
+        false,
+      );
+      return false;
+    }
+    const sameSubpath = ra.shape === rb.shape && ra.sp === rb.sp;
+    if (sameSubpath && spa.nodes.length < 3) {
+      this.onMessage?.('That path is too short to close.', false);
+      return false;
+    }
+
+    let closed = false;
+    const ok = this.store.tryEdit((st) => {
+      const shapeA = findShape(st.doc, ra.shape);
+      const shapeB = findShape(st.doc, rb.shape);
+      const a = shapeA?.subpaths[ra.sp];
+      const b = shapeB?.subpaths[rb.sp];
+      if (!shapeA || !shapeB || !a || !b) return false;
+
+      const joined = joinEnds({ sp: a, i: ra.i }, { sp: b, i: rb.i });
+      if (!joined) return false;
+
+      if (sameSubpath) {
+        closed = true;
+      } else {
+        shapeA.subpaths[ra.sp] = joined;
+        shapeB.subpaths.splice(rb.sp, 1);
+        // A shape with no subpaths left draws nothing and serialises to
+        // nothing, so it goes rather than lingering in the list.
+        if (!shapeB.subpaths.length) {
+          st.doc.shapes = st.doc.shapes.filter((sh) => sh.id !== shapeB.id);
+        }
+      }
+      st.selection = emptySelection();
+      return true;
+    });
+
+    if (!ok) {
+      this.onMessage?.('Those two ends cannot be joined.', false);
+      return false;
+    }
+    this.onMessage?.(closed ? 'Closed the path.' : 'Joined the two ends.', true);
     return true;
   }
 

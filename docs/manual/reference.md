@@ -7,7 +7,7 @@ Every control, and what it does. Dry and complete.
 | Tool | Key | What it does |
 |---|---|---|
 | Select | `V` | Select and drag nodes, handles, outlines and marquees |
-| Pen | `P` | Click to place nodes; click the first node to close the path |
+| Pen | `P` | Click to place nodes. Click the first node to close the path, or either end of an existing open path to carry on drawing it |
 | Ellipse | `E` | Drag out an ellipse |
 | Rectangle | `R` | Drag out a rectangle |
 
@@ -43,6 +43,7 @@ as the centre rather than a corner.
 | `Ctrl`+`↑` `↓` | Loosen or tighten the bend |
 | `Delete` `Backspace` | Delete selected nodes, or selected shapes |
 | `Shift`+`B` | Break the path at the selected node |
+| `Shift`+`J` | Join two selected free ends into one node |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -104,6 +105,7 @@ to set it exactly.
 - **Corner**, **Smooth**, **Symm** show what the handles currently say, and set
   it when pressed.
 - **Break here** duplicates the node to cut the path there.
+- **Join ends** welds two selected free ends into one, the inverse of Break.
 - **Delete node** removes it, following the **Delete** panel's mode.
 
 ### Bend
