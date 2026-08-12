@@ -379,6 +379,11 @@
               <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>
               <button class="btn" id="mergePath" title="Weld two selected free ends into one node at their midpoint (Shift+M)">Merge</button>
               <button class="btn" id="fuseNodes" title="Weld two adjacent nodes into one, anywhere along a path. With a shape selected, sweeps away every zero-length segment (Shift+F)">Fuse</button>
+              <div class="grid2">
+                <button class="btn" id="prevNode" type="button" title="Select the node before this one along the path ([)">&#8592; Node</button>
+                <button class="btn" id="nextNode" type="button" title="Select the node after this one along the path (])">Node &#8594;</button>
+              </div>
+              <button class="btn wide" id="insertNode" type="button" title="Insert a node in the middle of the segment between the two selected nodes (Shift+I)">Insert node</button>
               <button class="btn wide" id="findSrc" title="Open the source and put the cursor on the command that drew this node">Find in source</button>
               <button class="btn wide" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
             </div>

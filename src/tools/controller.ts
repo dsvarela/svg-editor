@@ -769,6 +769,110 @@ export class Controller {
   }
 
   /**
+   * Step the node selection along the path.
+   *
+   * The gap the keyboard survey could not see. Every control in the Node panel
+   * is reachable by Tab and every one of them acts on the selected nodes -- and
+   * until now the only way to select a node was to click it, so the whole panel
+   * was pointer-only however tabbable its buttons were.
+   *
+   * With a shape selected and no nodes, it takes the first. With one node it
+   * moves. `extend` adds instead of replacing, which is how you get the two
+   * adjacent nodes that Insert node and Fuse want.
+   */
+  stepNodeSelection(by: 1 | -1, extend = false): boolean {
+    const s = this.store.state;
+    const refs = this.selectedNodeRefs();
+
+    // Nothing chosen yet: start at the first node of the first selected shape.
+    if (!refs.length) {
+      const id = [...s.selection.shapes][0];
+      const sp = id ? findShape(s.doc, id)?.subpaths[0] : null;
+      if (!id || !sp?.nodes.length) {
+        this.onMessage?.('Select a shape or a node first.', false);
+        return false;
+      }
+      this.store.update((st) => {
+        st.selection.nodes.clear();
+        st.selection.nodes.add(nodeKey({ shape: id, sp: 0, i: by > 0 ? 0 : sp.nodes.length - 1 }));
+      });
+      return true;
+    }
+
+    /* From the last one added, which is the one a run of presses is walking.
+       Taking the lowest index instead would make Shift-extend collapse back on
+       itself the moment the run passed a node with a smaller index. */
+    const from = refs[refs.length - 1];
+    const sp = findShape(s.doc, from.shape)?.subpaths[from.sp];
+    if (!sp?.nodes.length) return false;
+
+    const n = sp.nodes.length;
+    /* Wrapping on a closed path and stopping at the ends of an open one, which
+       is what the path itself does: there is no node past the end of an open
+       path to step to. */
+    let next = from.i + by;
+    if (sp.closed) next = (next + n) % n;
+    else if (next < 0 || next >= n) {
+      this.onMessage?.(`That is the ${by > 0 ? 'last' : 'first'} node of the path.`, false);
+      return false;
+    }
+
+    const key = nodeKey({ shape: from.shape, sp: from.sp, i: next });
+    this.store.update((st) => {
+      if (!extend) st.selection.nodes.clear();
+      // Re-adding moves it to the end of the set, so a run of presses keeps
+      // walking from where it just arrived rather than from where it started.
+      st.selection.nodes.delete(key);
+      st.selection.nodes.add(key);
+      st.selection.shapes.clear();
+    });
+    return true;
+  }
+
+  /**
+   * Insert a node in the middle of the selected segment.
+   *
+   * Double-clicking the outline already does this and needs a pointer to aim.
+   * Two adjacent selected nodes name a segment exactly, so this is the same
+   * operation with the keyboard's way of saying where.
+   */
+  insertInSelection(): boolean {
+    const refs = this.selectedNodeRefs();
+    if (refs.length !== 2 || refs[0].shape !== refs[1].shape || refs[0].sp !== refs[1].sp) {
+      this.onMessage?.('Select the two nodes either side of a segment.', false);
+      return false;
+    }
+    const s = this.store.state;
+    const sp = findShape(s.doc, refs[0].shape)?.subpaths[refs[0].sp];
+    if (!sp) return false;
+
+    const n = sp.nodes.length;
+    const a = Math.min(refs[0].i, refs[1].i);
+    const b = Math.max(refs[0].i, refs[1].i);
+    /* Adjacent, or the pair that wraps: on a closed path the last node and the
+       first are neighbours too, and that segment has as much right to a node
+       as any other. */
+    const seg = b - a === 1 ? a : sp.closed && a === 0 && b === n - 1 ? n - 1 : -1;
+    if (seg < 0) {
+      this.onMessage?.('Those two nodes are not the ends of one segment.', false);
+      return false;
+    }
+
+    let at = -1;
+    const ok = this.tryEdit((st) => {
+      const live = findShape(st.doc, refs[0].shape)?.subpaths[refs[0].sp];
+      if (!live) return false;
+      at = splitSegment(live, seg, 0.5);
+      if (at < 0) return false;
+      st.selection.nodes.clear();
+      st.selection.nodes.add(nodeKey({ shape: refs[0].shape, sp: refs[0].sp, i: at }));
+      return true;
+    });
+    this.onMessage?.(ok ? 'Node inserted, and the curve is unchanged.' : 'Nothing to insert into.', ok);
+    return ok;
+  }
+
+  /**
    * Pin the rays to the middle of the selection, or report that there is none.
    *
    * Not an edit: where the rays come from is a property of how you are working,
@@ -2352,7 +2456,7 @@ export class Controller {
        had this hole from the beginning and Shift+F, Shift+B, Shift+J and
        Shift+M all widened it. Escape and Enter are deliberately still allowed
        -- ending a gesture is exactly what they are for. */
-    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y', 'A'];
+    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y', 'A', 'I'];
     if (this.drag.kind !== 'none' && rewrites.includes(e.key)) {
       e.preventDefault();
       this.onMessage?.('Finish the drag first.', false);
@@ -2390,6 +2494,29 @@ export class Controller {
         if (!e.shiftKey) return;
         e.preventDefault();
         this.breakAtSelection();
+        return;
+      }
+      /* `[` and `]` walk the node selection along the path, with Shift to
+         extend. The one thing the keyboard could not do: every control in the
+         Node panel is reachable by Tab and every one of them acts on selected
+         nodes, and until now selecting a node meant clicking it. */
+      case '[':
+      case ']':
+      // With Shift held the browser reports the shifted character, so the
+      // extend form arrives as a brace and never as a bracket.
+      case '{':
+      case '}': {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        const forward = e.key === ']' || e.key === '}';
+        this.stepNodeSelection(forward ? 1 : -1, e.shiftKey);
+        return;
+      }
+      // Shift+I, the keyboard's version of double-clicking an outline.
+      case 'I': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.insertInSelection();
         return;
       }
       /* Shift+A, beside the three continuity keys. Ctrl+A is select-all in

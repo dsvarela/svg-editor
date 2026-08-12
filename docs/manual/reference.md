@@ -57,6 +57,9 @@ as the centre rather than a corner.
 | `Shift`+`K` | Split the selected shapes, giving each path a shape of its own |
 | `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
 | `Shift`+`A` | Make every selected node auto-smooth, or hand control back |
+| `[` `]` | Select the node before or after this one along the path |
+| `Shift`+`[` `]` | Add it to the selection instead of replacing |
+| `Shift`+`I` | Insert a node in the segment between the two selected nodes |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -229,6 +232,13 @@ to set it exactly.
   selected instead of a pair, it sweeps that shape for segments of zero length
   and welds those. Two free ends are the one case it declines, because that is
   Merge.
+- **&#8592; Node** and **Node &#8594;** (`[` and `]`) walk the selection along the
+  path, wrapping on a closed one. With a shape selected and no nodes, they take
+  the first. `Shift` adds instead of replacing, which is how you get the two
+  adjacent nodes the next two operations want.
+- **Insert node** (`Shift+I`) puts a node in the middle of the segment between
+  two selected nodes, without changing the curve. Double-clicking the outline
+  does the same where you point.
 - **Find in source** opens the source drawer and selects the command that drew
   the node. It switches the box to path data and to that shape alone, since the
   position it points at is only true of that text.

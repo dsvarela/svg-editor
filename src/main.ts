@@ -735,6 +735,9 @@ on('#fuseNodes', () => controller.fuseSelection());
 on('#fitPixels', () => controller.fitToPixels());
 on('#delNode', () => controller.deleteSelection());
 on('#findSrc', () => findInSource());
+on('#prevNode', () => controller.stepNodeSelection(-1));
+on('#nextNode', () => controller.stepNodeSelection(1));
+on('#insertNode', () => controller.insertInSelection());
 
 const delModeSeg = $('#delmode');
 delModeSeg.addEventListener('click', (e) => {
@@ -822,6 +825,13 @@ function refreshInspector(): void {
   const atEnd = !!sel && !sel.subpath.closed && (sel.ref.i === 0 || sel.ref.i === sel.subpath.nodes.length - 1);
   ($('#breakPath') as HTMLButtonElement).disabled = !sel || atEnd;
   ($('#delNode') as HTMLButtonElement).disabled = count === 0;
+  /* Stepping works from a selected shape as well as from a node, since that is
+     how you get the first node without a pointer. */
+  const canStep = count > 0 || store.state.selection.shapes.size > 0;
+  ($('#prevNode') as HTMLButtonElement).disabled = !canStep;
+  ($('#nextNode') as HTMLButtonElement).disabled = !canStep;
+  ($('#insertNode') as HTMLButtonElement).disabled = count !== 2;
+  ($('#findSrc') as HTMLButtonElement).disabled = count === 0;
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
      Every other control in the group was disabled explicitly and the newer ones

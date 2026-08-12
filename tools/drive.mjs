@@ -3316,6 +3316,91 @@ const scenarios = {
 
     return { name };
   },
+
+  /**
+   * Editing a node without ever using the pointer.
+   *
+   * `tools/keys.mjs` reports that every live control is reachable by Tab. What
+   * it cannot see is that until now they all acted on a selection only a click
+   * could make, so the whole Node panel was pointer-only however tabbable its
+   * buttons were. This drives the gap that closed: pick a shape from the list,
+   * walk to a node, extend, insert, and check the drawing changed.
+   */
+  async keyboardNodes(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`keyboardNodes: ${what}`);
+    };
+    const info = async () => (await page.textContent('#nodeinfo')).trim();
+    const count = async () => +/(\d+) nodes/.exec(await page.textContent('#stats'))[1];
+
+    const started = await count();
+    await tab(page, 'shape');
+    await page.click('#shapelist li');
+    // Blur it, so the keys below are the editor's and not the list's own.
+    await page.evaluate(() => document.activeElement.blur());
+    await page.waitForTimeout(120);
+
+    await page.keyboard.press(']');
+    await page.waitForTimeout(120);
+    check((await info()) === '0/0', `the first press selected ${await info()}`);
+
+    await page.keyboard.press(']');
+    await page.keyboard.press(']');
+    await page.waitForTimeout(120);
+    check((await info()) === '0/2', `three presses reached ${await info()}`);
+
+    await page.keyboard.press('[');
+    await page.waitForTimeout(120);
+    check((await info()) === '0/1', `stepping back reached ${await info()}`);
+
+    /* Shift extends. The browser reports the shifted character, so this arrives
+       as a brace and never as a bracket -- which is why the first version
+       stepped instead of extending and left one node selected. */
+    await page.keyboard.press('Shift+BracketRight');
+    await page.waitForTimeout(120);
+    check((await info()) === '2 selected', `extending gave ${await info()}`);
+
+    await page.keyboard.press('Shift+I');
+    await page.waitForTimeout(200);
+    check((await count()) === started + 1, `insert left ${await count()} nodes, not ${started + 1}`);
+    const status = (await page.textContent('#status')).trim();
+    check(/inserted/.test(status), `the status line says "${status}"`);
+
+    /* And the geometry did not move, which is what makes inserting safe. A
+       `DOMRect` does not survive being returned from `$eval` -- its fields are
+       on the prototype, so it arrives as `{}` -- so the numbers are pulled out
+       inside the page. */
+    const box = () =>
+      page.$eval('.artwork path', (el) => {
+        const b = el.getBBox();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
+    const one = await box();
+    await undo(page);
+    const two = await box();
+    check(
+      Math.abs(one.w - two.w) < 0.01 && Math.abs(one.h - two.h) < 0.01,
+      `inserting changed the drawing: ${JSON.stringify([one, two])}`,
+    );
+
+    // The same two operations have buttons, which is the mobile rule as much as
+    // the keyboard one.
+    await tab(page, 'node');
+    /* Escape first: undo restores the selection along with the geometry, so
+       after it there are still two nodes selected and Insert node is correctly
+       live. Checking it there asserted the opposite of the truth. */
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    const wired = await page.evaluate(() => ({
+      step: !!document.querySelector('#nextNode'),
+      insert: !!document.querySelector('#insertNode'),
+      insertOff: document.querySelector('#insertNode').disabled,
+    }));
+    check(wired.step && wired.insert, 'the buttons are missing');
+    check(wired.insertOff, 'Insert node is live with nothing selected');
+
+    return { started, status };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

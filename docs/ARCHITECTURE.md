@@ -1520,6 +1520,41 @@ Three details worth keeping:
   the one form whose offsets can be trusted is honest; tracking the embedding
   would be a second thing to keep in step.
 
+## 37. Keyboard completeness was a selection problem
+
+"Every operation reachable without the mouse" was on the list as partway done,
+with nothing recorded about which way. `tools/keys.mjs` is that survey: it walks
+the tab order in each inspector tab, with a shape and a node selected so the
+panels are live, and reports every enabled control it never reached.
+
+**It reports none.** Every live control in the interface is reachable by Tab.
+The first run said 36 were not, which was the survey measuring the wrong thing:
+a disabled control is legitimately not focusable, and with nothing selected most
+of the Node panel is disabled. It now separates "live and unreachable" from
+"disabled throughout and so not surveyed", and only the first of those is a
+finding.
+
+**The real gap was upstream of every button.** Every control in the Node panel
+acts on the selected nodes, and the only way to select a node was to click it.
+So the panel was pointer-only however tabbable its buttons were, and no survey
+of controls could have found that, because nothing was wrong with the controls.
+
+`[` and `]` walk the selection along the path, `Shift` extends, `Shift+I`
+inserts a node in the selected segment. Three details:
+
+- **The step is taken from the last node added**, not the lowest index, so a run
+  of presses keeps walking from where it just arrived. Re-adding a key moves it
+  to the end of the `Set`, which is what makes that work.
+- **Stepping wraps on a closed path and stops at the ends of an open one**,
+  because that is what the path does: there is no node past the end of an open
+  path to step to.
+- **Shift arrives as a brace.** The browser reports the shifted character, so
+  the extend form is `{` and `}` and never a bracket. The first version stepped
+  instead of extending, which looked like the modifier being ignored.
+
+All three have buttons as well, which is the touch rule in `CLAUDE.md` as much
+as the keyboard one.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.
