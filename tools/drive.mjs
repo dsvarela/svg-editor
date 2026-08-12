@@ -2323,6 +2323,21 @@ const scenarios = {
     // Same geometry, same element. Only the middle changed.
     out.evenodd = await painted();
 
+    out.combined = await page.inputValue('#src');
+
+    /* Back out again. The button's enabled state is the part worth checking
+       here: it does not follow the selection count like the booleans do, it
+       follows whether anything selected holds more than one path. */
+    out.splitEnabled = !(await page.isDisabled('#splitshape'));
+    await page.click('#splitshape');
+    await page.waitForTimeout(200);
+    out.splitMessage = await page.textContent('#status');
+    // Two elements again, and the hole is gone: an inner path in its own
+    // shape is a filled shape, whatever the rule says.
+    out.afterSplit = await painted();
+    // Nothing left to split, so the button goes back even though both new
+    // shapes are selected.
+    out.splitEnabledAfter = !(await page.isDisabled('#splitshape'));
     out.d = await page.inputValue('#src');
     return out;
   },

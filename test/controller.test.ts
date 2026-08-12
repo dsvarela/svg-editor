@@ -2658,3 +2658,161 @@ describe('make one shape', () => {
     expect(h.store.state.tool).toBe('pen');
   });
 });
+
+/**
+ * Split into shapes, the inverse of Make one shape.
+ *
+ * The round trip is the test worth having: combine, split, and every curve
+ * should be where it started. Node counts would pass while the geometry
+ * drifted, so this compares the serialised paths.
+ */
+describe('split into shapes', () => {
+  const OUTER = 'M0 0 L40 0 L40 40 L0 40 Z';
+  const INNER = 'M10 10 L30 10 L30 30 L10 30 Z';
+
+  function combined(): Harness {
+    const h = harness(OUTER);
+    h.store.update((s) => {
+      s.doc.shapes.push(shapeFromPath(INNER));
+      s.selection = { ...emptySelection(), shapes: new Set(s.doc.shapes.map((sh) => sh.id)) };
+    });
+    h.controller.makeOneShape();
+    return h;
+  }
+
+  it('refuses a shape that holds one path, and says which problem it is', () => {
+    const h = harness(OUTER);
+    h.store.update((s) => {
+      s.selection = { ...emptySelection(), shapes: new Set([s.doc.shapes[0].id]) };
+    });
+    const r = h.controller.splitShapes();
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/hold one each/);
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+  });
+
+  it('asks for a selection when there is none, not for more paths', () => {
+    const h = harness(OUTER);
+    const r = h.controller.splitShapes();
+    expect(r.ok).toBe(false);
+    // The other refusal would send someone looking for a second path when the
+    // actual fix is to click a shape.
+    expect(r.message).toMatch(/needs a shape selected/);
+  });
+
+  it('survives the round trip with every curve where it started', () => {
+    const h = harness(OUTER);
+    h.store.update((s) => {
+      s.doc.shapes.push(shapeFromPath(INNER));
+      s.selection = { ...emptySelection(), shapes: new Set(s.doc.shapes.map((sh) => sh.id)) };
+    });
+    const before = h.store.state.doc.shapes.map((sh) =>
+      serialisePath(sh.subpaths, { decimals: 6 }),
+    );
+
+    h.controller.makeOneShape();
+    const r = h.controller.splitShapes();
+    expect(r.ok).toBe(true);
+
+    const after = h.store.state.doc.shapes.map((sh) =>
+      serialisePath(sh.subpaths, { decimals: 6 }),
+    );
+    expect(after).toEqual(before);
+  });
+
+  it('keeps the original id and name on the first, and numbers the rest', () => {
+    const h = combined();
+    const id = h.store.state.doc.shapes[0].id;
+    const name = h.store.state.doc.shapes[0].name;
+
+    h.controller.splitShapes();
+    const shapes = h.store.state.doc.shapes;
+    expect(shapes).toHaveLength(2);
+    expect(shapes[0].id).toBe(id);
+    expect(shapes[0].name).toBe(name);
+    expect(shapes[1].name).toBe(`${name} 2`);
+    expect(shapes[1].id).not.toBe(id);
+  });
+
+  it('inserts the new shapes behind the original, so paint order holds', () => {
+    const h = combined();
+    // A third shape after the combined one. Splitting must not jump the pieces
+    // over it, which is what pushing to the end of the list would do.
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M100 100 L110 100 L110 110 Z')));
+    const lastId = h.store.state.doc.shapes[1].id;
+    h.store.update((s) => {
+      s.selection = { ...emptySelection(), shapes: new Set([s.doc.shapes[0].id]) };
+    });
+
+    h.controller.splitShapes();
+    const order = h.store.state.doc.shapes.map((sh) => sh.id);
+    expect(order).toHaveLength(3);
+    expect(order[2]).toBe(lastId);
+  });
+
+  it('gives every piece the original style, so the hole becomes a shape', () => {
+    const h = combined();
+    h.store.update((s) => {
+      s.doc.shapes[0].style = {
+        fill: '#123456',
+        stroke: '#654321',
+        strokeWidth: 3,
+        fillRule: 'evenodd',
+      };
+    });
+
+    h.controller.splitShapes();
+    for (const sh of h.store.state.doc.shapes) {
+      expect(sh.style.fill).toBe('#123456');
+      expect(sh.style.strokeWidth).toBe(3);
+    }
+    // Each is its own object, so recolouring one does not recolour the other.
+    h.store.edit((s) => (s.doc.shapes[0].style.fill = '#ffffff'));
+    expect(h.store.state.doc.shapes[1].style.fill).toBe('#123456');
+  });
+
+  it('selects every piece it made', () => {
+    const h = combined();
+    h.controller.splitShapes();
+    const ids = h.store.state.doc.shapes.map((sh) => sh.id);
+    expect([...h.store.state.selection.shapes].sort()).toEqual([...ids].sort());
+  });
+
+  it('leaves a single-path shape alone while splitting its neighbour', () => {
+    const h = combined();
+    h.store.update((s) => {
+      s.doc.shapes.push(shapeFromPath('M100 100 L110 100 L110 110 Z'));
+      s.selection = { ...emptySelection(), shapes: new Set(s.doc.shapes.map((sh) => sh.id)) };
+    });
+    const r = h.controller.splitShapes();
+    expect(r.ok).toBe(true);
+    // Two from the split, plus the untouched one.
+    expect(h.store.state.doc.shapes).toHaveLength(3);
+    expect(r.message).toMatch(/split into 2 shapes/);
+  });
+
+  it('is one undo step', () => {
+    const h = combined();
+    h.controller.splitShapes();
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+    h.store.undo();
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(2);
+  });
+
+  it('answers Shift+K', () => {
+    const h = combined();
+    h.key('K', { shiftKey: true });
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+  });
+
+  it('offers itself only when something can actually be split', () => {
+    const h = combined();
+    expect(h.controller.canSplitShapes()).toBe(true);
+    h.controller.splitShapes();
+    // Now every shape holds one path, so the button must go back to disabled
+    // even though two shapes are selected.
+    expect(h.store.state.selection.shapes.size).toBe(2);
+    expect(h.controller.canSplitShapes()).toBe(false);
+  });
+});

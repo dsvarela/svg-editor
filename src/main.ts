@@ -1186,11 +1186,23 @@ makeOneBtn.addEventListener('click', () => {
   status.className = r.ok ? 'st ok' : 'st err';
 });
 
+const splitBtn = $('#splitshape') as HTMLButtonElement;
+splitBtn.addEventListener('click', () => {
+  const r = controller.splitShapes();
+  status.textContent = r.message;
+  status.className = r.ok ? 'st ok' : 'st err';
+});
+
 function refreshCombine(): void {
   const n = store.state.selection.shapes.size;
   for (const b of boolBtns) b.disabled = n < 2;
   // Same requirement as the booleans, so the same disabled state.
   makeOneBtn.disabled = n < 2;
+  /* A different requirement, so a different state. Split needs one shape that
+     holds more than one path, which one selected shape can satisfy and four
+     selected shapes can fail. Tying it to the count would offer it where it
+     does nothing and withhold it where it works. */
+  splitBtn.disabled = !controller.canSplitShapes();
   boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
 }
 

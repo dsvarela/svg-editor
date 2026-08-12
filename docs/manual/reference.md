@@ -53,6 +53,7 @@ as the centre rather than a corner.
 | `Shift`+`F` | Fuse two adjacent nodes, or sweep a shape for zero-length segments |
 | `Shift`+`R` | Reverse the selected paths |
 | `Shift`+`P` | Make the selected shapes into one shape, changing no geometry |
+| `Shift`+`K` | Split the selected shapes, giving each path a shape of its own |
 | `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
@@ -143,6 +144,18 @@ What fills is then up to **Rule** in the Style panel. Under **Nonzero** the
 shape looks the same as before. Under **Even-odd** a path inside another
 becomes a hole. This is the only way to make a hole here, because no boolean
 can produce one.
+
+**Split into shapes** (`Shift+K`) is the way back. It gives every path in the
+selected shapes a shape of its own, and it is enabled whenever one selected
+shape holds more than one path, which can be true of a single shape.
+
+The first path keeps the original shape, with its id and name, and the rest are
+numbered after it and inserted directly behind, so nothing changes paint order.
+Every piece takes the original's fill, stroke and width.
+
+A hole does not survive the trip. A hole is a relationship between two paths in
+one shape, so once they are two shapes the inner one is a filled shape again.
+Undo is the exact inverse of **Make one shape**; this is the useful one.
 
 ### Draw
 

@@ -9,7 +9,7 @@
 import { about, rotate as rotMat, translate } from '../core/affine';
 import type { Box } from '../core/bezier';
 import { continuityOf, makeNode, segmentCount } from '../core/types';
-import type { NodeContinuity, PathNode, Pt, Style, Subpath } from '../core/types';
+import type { NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import {
   docBBox,
   emptySelection,
@@ -1981,6 +1981,17 @@ export class Controller {
         this.onMessage?.(r.message, r.ok);
         return;
       }
+      /* Shift+K for the inverse. Inkscape puts Break Apart on Ctrl+Shift+K,
+         and the letter is the only part of that worth borrowing: Shift+S is
+         already smooth continuity, and every other operation here is Shift and
+         a letter. */
+      case 'K': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        const r = this.splitShapes();
+        this.onMessage?.(r.message, r.ok);
+        return;
+      }
       case 'v': {
         this.store.update((st) => (st.tool = 'select'));
         this.finishPen();
@@ -2426,6 +2437,91 @@ export class Controller {
       message: differs
         ? `${keep.name} now holds ${n} paths. The other colours are gone, and the rule is ${rule}.`
         : `${keep.name} now holds ${n} paths. The rule is ${rule}.`,
+    };
+  }
+
+  /** Whether anything in the selection has more than one path to split. */
+  canSplitShapes(): boolean {
+    const s = this.store.state;
+    return s.doc.shapes.some((sh) => s.selection.shapes.has(sh.id) && sh.subpaths.length > 1);
+  }
+
+  /**
+   * Give every path in the selected shapes a shape of its own.
+   *
+   * The inverse of `makeOneShape`, and the reason that one is safe to use.
+   * Without it the only way back out is undo, which stops being an option the
+   * moment you do anything else, and a door that only opens one way is a trap
+   * however useful the room behind it.
+   *
+   * Not an exact inverse, and cannot be. Splitting a shape that was never made
+   * by combining still works, and `Make one shape` afterwards will not restore
+   * a name or a colour that this discarded. Undo is the exact inverse; this is
+   * the useful one.
+   *
+   * Each new shape takes the original's style, so a ring split out of an
+   * even-odd shape stops being a hole and becomes a filled disc. Nothing else
+   * is honest: a hole is a relationship between two paths in one shape, and
+   * once they are in two shapes the relationship is gone.
+   *
+   * The original keeps its id, name and first path, and the rest are inserted
+   * directly behind it so paint order does not change. Same rule as the
+   * booleans and `makeOneShape`, where the first also survives.
+   */
+  splitShapes(): { ok: boolean; message: string } {
+    const s = this.store.state;
+    const targets = s.doc.shapes.filter(
+      (sh) => s.selection.shapes.has(sh.id) && sh.subpaths.length > 1,
+    );
+    if (!targets.length) {
+      /* Two different refusals, because "nothing selected" and "the thing you
+         selected is already one path" call for different next moves. A single
+         message covering both would be right about neither. */
+      const anySelected = s.selection.shapes.size > 0;
+      return {
+        ok: false,
+        message: anySelected
+          ? 'Split needs a shape holding two or more paths. These hold one each.'
+          : 'Split needs a shape selected. It gives each of its paths a shape of its own.',
+      };
+    }
+
+    const ids = new Set(targets.map((sh) => sh.id));
+    let made = 0;
+
+    this.store.edit((st) => {
+      const out: Shape[] = [];
+      const selected = new Set<string>();
+      for (const sh of st.doc.shapes) {
+        if (!ids.has(sh.id)) {
+          out.push(sh);
+          continue;
+        }
+        const [first, ...rest] = sh.subpaths;
+        // The original, reduced to its first path. Keeping the object rather
+        // than replacing it is what preserves the id the export carries.
+        sh.subpaths = [first];
+        out.push(sh);
+        selected.add(sh.id);
+        rest.forEach((sp, i) => {
+          const copy = makeShape([sp], `${sh.name} ${i + 2}`, sh.style);
+          out.push(copy);
+          selected.add(copy.id);
+          made++;
+        });
+      }
+      st.doc.shapes = out;
+      st.selection = emptySelection();
+      for (const id of selected) st.selection.shapes.add(id);
+    });
+
+    const from = targets.length;
+    return {
+      ok: true,
+      message:
+        from === 1
+          ? `${targets[0].name} split into ${made + 1} shapes.`
+          : `${from} shapes split into ${from + made}.`,
     };
   }
 

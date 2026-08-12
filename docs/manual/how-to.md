@@ -185,6 +185,10 @@ where you put it, and you can drag either ring afterwards.
 No boolean does this. **Subtract** would rebuild the outline as one ring and
 throw the inner nodes away, which looks similar until you try to edit it.
 
+To take it apart again, select the shape and press **Split into shapes**, or
+`Shift+K`. The hole becomes a filled shape, because a hole only exists while
+both paths are in one shape.
+
 ## Line up and space out nodes
 
 Select two or more nodes, then use the **Align** panel. Spacing them out needs three.
