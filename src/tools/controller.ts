@@ -150,6 +150,17 @@ export class Controller {
     ov.addEventListener('wheel', this.onWheel, { passive: false });
     ov.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    /* Last-resort ends for a gesture the overlay never hears the end of.
+       `setPointerCapture` can fail -- it is in a try/catch a few lines up
+       precisely because it does -- and then a release outside the canvas, or a
+       button let go while the window is unfocused after Alt+Tab, never reaches
+       `onUp`. The batch would stay open, `checkpoint` would return early for the
+       rest of the session, and no undo point would ever be recorded again with
+       nothing on screen to say so. That is the worst failure this code has, so
+       it gets a floor under it rather than an argument that it cannot happen. */
+    window.addEventListener('pointerup', this.onStrayUp);
+    window.addEventListener('blur', this.onStrayBlur);
+
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     const refit = (): void => {
@@ -289,6 +300,18 @@ export class Controller {
     return b;
   }
 
+  /**
+   * True while a gesture is in progress.
+   *
+   * `onKeyDown` already refuses Ctrl+Z mid-drag, because popping the checkpoint
+   * a drag is standing on makes it roll back somebody else's edit when it ends.
+   * The toolbar buttons had no such guard, and a second finger on a touchscreen
+   * reaches them while the first is still dragging.
+   */
+  get busy(): boolean {
+    return this.drag.kind !== 'none';
+  }
+
   private selectedNodeRefs(): NodeRef[] {
     const s = this.store.state;
     const refs = [...s.selection.nodes].map(parseNodeKey);
@@ -362,7 +385,6 @@ export class Controller {
         const part = hit.part as TransformPart;
         const at = handlePoint(box, part);
         this.openBatch();
-        this.store.checkpoint();
         this.drag = {
           kind: 'transform',
           mode: hit.kind === 'rotate' ? 'rotate' : 'scale',
@@ -394,7 +416,6 @@ export class Controller {
       const node = findShape(s.doc, hit.ref.shape)?.subpaths[hit.ref.sp]?.nodes[hit.ref.i];
       if (!node) return;
       this.openBatch();
-      this.store.checkpoint();
       this.drag = {
         kind: 'anchor',
         refs: this.selectedNodeRefs(),
@@ -408,7 +429,6 @@ export class Controller {
       const sp = findShape(s.doc, hit.ref.shape)?.subpaths[hit.ref.sp];
       const cur = sp ? segmentBend(sp, hit.seg) : null;
       this.openBatch();
-      this.store.checkpoint();
       this.drag = {
         kind: 'bend',
         shape: hit.ref.shape,
@@ -421,7 +441,6 @@ export class Controller {
 
     if ((hit?.kind === 'in' || hit?.kind === 'out') && hit.ref) {
       this.openBatch();
-      this.store.checkpoint();
       // Alt held at the moment of grabbing breaks the pair for the whole drag.
       // Sampling it once, rather than per move, means letting go of Alt midway
       // does not suddenly snap the far handle back into line.
@@ -451,7 +470,6 @@ export class Controller {
         st.selection.shapes.add(id);
       });
       this.openBatch();
-      this.store.checkpoint();
       const shapes = [...this.store.state.selection.shapes];
       // Nodes belonging to a shape that is moving wholesale would be moved
       // twice, once by each rule.
@@ -465,7 +483,6 @@ export class Controller {
     const back = s.backdrop;
     if (back && back.visible && !back.locked) {
       this.openBatch();
-      this.store.checkpoint();
       this.drag = { kind: 'backdrop', from: p, origin: [back.x, back.y] };
       return;
     }
@@ -512,6 +529,8 @@ export class Controller {
         const d = this.drag;
         const dx = (e.clientX - d.client[0]) * d.k;
         const dy = (e.clientY - d.client[1]) * d.k;
+        // The camera is not the document. Panning records no history, which is
+        // why this one stays an `update` while every other drag became an `edit`.
         this.store.update((st) => {
           st.camera = { ...st.camera, x: d.camera[0] - dx, y: d.camera[1] - dy };
         });
@@ -535,7 +554,7 @@ export class Controller {
         if (!grabbedNode) return;
         const target = this.snap([p[0] - d.offset[0], p[1] - d.offset[1]], d.grabbed);
         const delta: Pt = [target[0] - grabbedNode.pt[0], target[1] - grabbedNode.pt[1]];
-        this.store.update((st) => {
+        this.store.edit((st) => {
           for (const r of d.refs) {
             const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
             if (!sp?.nodes[r.i]) continue;
@@ -547,7 +566,7 @@ export class Controller {
 
       case 'handle': {
         const d = this.drag;
-        this.store.update((st) => {
+        this.store.edit((st) => {
           const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
           // The node index matters as much as the subpath: an undo mid-drag can
           // shorten the path under us, and `moveHandle` would dereference it.
@@ -583,7 +602,7 @@ export class Controller {
           });
           this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
         }
-        this.store.update((st) => transformCaptured(st.doc, d.saved, m));
+        this.store.edit((st) => transformCaptured(st.doc, d.saved, m));
         return;
       }
 
@@ -594,7 +613,7 @@ export class Controller {
         // Snapped as a displacement, like moving a shape: the reference keeps
         // its proportions and lands a whole number of steps from where it was.
         const want: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
-        this.store.update((st) => {
+        this.store.edit((st) => {
           if (st.backdrop) {
             st.backdrop.x = d.origin[0] + want[0];
             st.backdrop.y = d.origin[1] + want[1];
@@ -620,7 +639,7 @@ export class Controller {
         const delta: Pt = [want[0] - d.applied[0], want[1] - d.applied[1]];
         if (delta[0] === 0 && delta[1] === 0) return;
         d.applied = want;
-        this.store.update((st) => {
+        this.store.edit((st) => {
           for (const id of d.shapes) {
             const shape = findShape(st.doc, id);
             if (shape) transformShape(shape, translate(delta[0], delta[1]));
@@ -641,7 +660,7 @@ export class Controller {
 
       case 'bend': {
         const d = this.drag;
-        this.store.update((st) => {
+        this.store.edit((st) => {
           const sp = findShape(st.doc, d.shape)?.subpaths[d.sp];
           if (!sp || d.seg >= segmentCount(sp)) return;
           const a = sp.nodes[d.seg].pt;
@@ -655,7 +674,7 @@ export class Controller {
 
       case 'pen': {
         const d = this.drag;
-        this.store.update((st) => {
+        this.store.edit((st) => {
           const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
           const n = sp?.nodes[d.ref.i];
           if (!sp || !n) return;
@@ -672,63 +691,86 @@ export class Controller {
   };
 
   private onUp = (e: PointerEvent): void => {
-    if (this.drag.kind === 'marquee' && this.extras.marquee) {
-      const box: Box = this.extras.marquee;
-      this.store.update((st) => {
-        for (const shape of st.doc.shapes) {
-          shape.subpaths.forEach((sp, spI) => {
-            sp.nodes.forEach((n, i) => {
-              if (n.pt[0] >= box.x0 && n.pt[0] <= box.x1 && n.pt[1] >= box.y0 && n.pt[1] <= box.y1) {
-                st.selection.nodes.add(nodeKey({ shape: shape.id, sp: spI, i }));
-              }
+    try {
+      if (this.drag.kind === 'marquee' && this.extras.marquee) {
+        const box: Box = this.extras.marquee;
+        this.store.update((st) => {
+          for (const shape of st.doc.shapes) {
+            shape.subpaths.forEach((sp, spI) => {
+              sp.nodes.forEach((n, i) => {
+                if (n.pt[0] >= box.x0 && n.pt[0] <= box.x1 && n.pt[1] >= box.y0 && n.pt[1] <= box.y1) {
+                  st.selection.nodes.add(nodeKey({ shape: shape.id, sp: spI, i }));
+                }
+              });
             });
-          });
-          if (shapeIsInBox(shape, box) && st.selection.nodes.size === 0) {
-            st.selection.shapes.add(shape.id);
+            if (shapeIsInBox(shape, box) && st.selection.nodes.size === 0) {
+              st.selection.shapes.add(shape.id);
+            }
           }
-        }
-      });
-      this.extras.marquee = null;
-    }
-
-    /* The live readout during a transform is a measurement, not an outcome.
-       Restating it as a sentence on release is what turns the last thing on
-       screen into a record of what was done. */
-    if (this.drag.kind === 'transform') {
-      const d = this.drag;
-      const now = selectionBBox(this.store.state.doc, this.store.state.selection);
-      if (d.mode === 'rotate') {
-        const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), e.shiftKey ? 15 : 0);
-        this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
-      } else if (now) {
-        this.onMessage?.(
-          `Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`,
-          true,
-        );
+        });
+        this.extras.marquee = null;
       }
-    }
 
-    // A create drag that never grew past nothing opened no batch, so there is
-    // none to close -- and the document is untouched, as it should be. That is
-    // now recorded rather than inferred: see `batchOpen`.
-    this.closeBatch();
+      /* The live readout during a transform is a measurement, not an outcome.
+         Restating it as a sentence on release is what turns the last thing on
+         screen into a record of what was done. */
+      if (this.drag.kind === 'transform') {
+        const d = this.drag;
+        const now = selectionBBox(this.store.state.doc, this.store.state.selection);
+        if (d.mode === 'rotate') {
+          const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), e.shiftKey ? 15 : 0);
+          this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
+        } else if (now) {
+          this.onMessage?.(
+            `Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`,
+            true,
+          );
+        }
+      }
 
-    this.drag = { kind: 'none' };
-    if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
-      this.canvas.overlay.releasePointerCapture(e.pointerId);
+      /* In a `finally` because everything above runs listeners: the marquee's
+         `update` notifies every subscriber, which touches forty DOM nodes and
+         re-serialises the document. A throw anywhere in there used to leave the
+         batch open, and an open batch makes `checkpoint` return early for the rest
+         of the session. The ending of a gesture is not allowed to depend on the
+         rest of the application behaving. */
+    } finally {
+      // A create drag that never grew past nothing opened no batch, so there is
+      // none to close -- and the document is untouched, as it should be.
+      this.closeBatch();
+
+      this.drag = { kind: 'none' };
+      if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
+        this.canvas.overlay.releasePointerCapture(e.pointerId);
+      }
+      this.schedule();
     }
-    this.schedule();
   };
 
   /** Abandon the gesture, leaving the document as it was before the press. */
   private abortDrag(): void {
-    const had = this.batchOpen;
+    /* Read before closing: `endBatch` clears the flag. `batchOpen` alone is not
+       enough any more -- a press that never moved opens a batch and takes no
+       checkpoint, and rolling back on that would discard the edit before it. */
+    const mine = this.batchOpen && this.store.batchDirty;
     this.closeBatch();
-    if (had) this.store.rollback();
+    if (mine) this.store.rollback();
     this.drag = { kind: 'none' };
     this.extras.marquee = null;
     this.schedule();
   }
+
+  /** A release the overlay never saw. Finish the gesture rather than strand it. */
+  private onStrayUp = (e: PointerEvent): void => {
+    if (this.drag.kind === 'none') return;
+    if (e.target instanceof Node && this.canvas.overlay.contains(e.target)) return;
+    this.onUp(e);
+  };
+
+  /** Focus lost mid-gesture. Nothing more is coming, so abandon it. */
+  private onStrayBlur = (): void => {
+    if (this.drag.kind !== 'none') this.abortDrag();
+  };
 
   private onCancel = (e: PointerEvent): void => {
     this.abortDrag();
@@ -1313,7 +1355,7 @@ export class Controller {
     target = this.penSubpath();
     if (!this.penTarget || !target) {
       // Could not establish a subpath to draw into; leave no half-open batch.
-      this.store.endBatch();
+      this.closeBatch();
       this.finishPen();
       return;
     }
@@ -1334,26 +1376,35 @@ export class Controller {
    * reads as a rendering fault rather than an empty shape.
    */
   finishPen(): void {
-    const wasDrawing = this.penTarget !== null;
+    const drawn = this.penTarget?.shape ?? null;
     this.penTarget = null;
     this.extras.penFrom = null;
     this.extras.penTo = null;
 
-    if (wasDrawing) this.pruneDegenerate();
+    if (drawn) this.pruneDegenerate(drawn);
     this.schedule();
   }
 
-  /** Drop subpaths with fewer than two nodes, and shapes left with none. */
-  private pruneDegenerate(): void {
-    const s = this.store.state;
-    const needed = s.doc.shapes.some(
-      (sh) => sh.subpaths.some((sp) => sp.nodes.length < 2) || sh.subpaths.length === 0,
-    );
+  /**
+   * Drop the pen's own stub: a subpath of fewer than two nodes, and the shape if
+   * that was all it had.
+   *
+   * Scoped to the shape the pen was drawing. It used to sweep the whole
+   * document, so finishing a path also silently deleted any one-node subpath
+   * that had arrived by import or by Apply -- and with no checkpoint, the only
+   * undo that brought it back also undid the drawing. Same rule as
+   * `deleteSelection`: prune what this operation touched, nothing else.
+   */
+  private pruneDegenerate(shapeId: string): void {
+    const shape = findShape(this.store.state.doc, shapeId);
+    if (!shape) return;
+    const needed = shape.subpaths.some((sp) => sp.nodes.length < 2) || shape.subpaths.length === 0;
     if (!needed) return;
 
     this.store.update((st) => {
-      for (const sh of st.doc.shapes) sh.subpaths = sh.subpaths.filter((sp) => sp.nodes.length >= 2);
-      st.doc.shapes = st.doc.shapes.filter((sh) => sh.subpaths.length > 0);
+      const sh = findShape(st.doc, shapeId);
+      if (sh) sh.subpaths = sh.subpaths.filter((sp) => sp.nodes.length >= 2);
+      st.doc.shapes = st.doc.shapes.filter((s2) => s2.subpaths.length > 0);
       // Selection may now point at nodes that are gone.
       for (const key of [...st.selection.nodes]) {
         const r = parseNodeKey(key);
@@ -1370,6 +1421,12 @@ export class Controller {
   private onKeyDown = (e: KeyboardEvent): void => {
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    /* Somebody nearer the event has already claimed this key. The inspector's
+       tab strip and its shape list both handle the arrows and both call
+       `preventDefault`, and this listener is on the window, so without this
+       line arrowing through the shape list also nudged the drawing one grid
+       step per press. */
+    if (e.defaultPrevented) return;
 
     if (e.code === 'Space') {
       this.spaceDown = true;
@@ -1387,10 +1444,13 @@ export class Controller {
       return;
     }
 
-    // Everything below is a bare key. Ctrl+E belongs to the source drawer and
-    // Ctrl+R to the browser; letting them through here switched the tool as a
-    // silent side effect of both.
-    if (mod) return;
+    /* Everything below is a bare key, with one exception. Ctrl+E belongs to the
+       source drawer and Ctrl+R to the browser, and letting them through here
+       switched the tool as a silent side effect of both. The arrows are the
+       exception because Ctrl gives them a second meaning of their own: bend
+       rather than nudge. Guarding them out too made that branch unreachable and
+       quietly retired a documented shortcut. */
+    if (mod && !e.key.startsWith('Arrow')) return;
 
     switch (e.key) {
       case 'Delete':

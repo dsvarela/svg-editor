@@ -432,6 +432,71 @@ silently and destructively.
 
 ---
 
+## 16. A gesture ends exactly once, and a decline costs nothing
+
+Two rules that the 2026-08-11 review found broken in four places each, both
+fixed structurally rather than at the call sites.
+
+**One drag at a time, and it always ends.** `onDown` returns early while a drag
+is live, and whether the gesture opened a history batch is *recorded* in
+`batchOpen` rather than reconstructed at `onUp` by inspecting whichever drag is
+there. It used to be reconstructed, so a second pointerdown — two fingers on a
+touchscreen — replaced the drag, the first batch was never closed, and
+`checkpoint()` then returned early **forever**: no undo point was recorded again
+for the rest of the session, with nothing on screen to say so. Cancelling now
+routes to `abortDrag`, which rolls back rather than committing; `pointercancel`
+used to be wired to `onUp`, so the browser taking a gesture away *committed* the
+half-drawn shape, the opposite of what Escape does with the same intent.
+
+`Store.rollback` exists for that: it restores the last checkpoint without
+offering a redo. Escape used to call `undo`, which kept the abandoned shape on
+the redo stack — one Ctrl+Shift+Z from resurrecting something explicitly thrown
+away. Undo is also refused mid-drag, since popping the checkpoint the drag is
+standing on makes it roll back somebody else's edit when it ends.
+
+**An operation that declines leaves no trace.** `store.edit` checkpoints first
+and asks questions later, which is right for a drag — you cannot know where it
+will end — and wrong for a button. `store.tryEdit` takes a mutation that returns
+whether it changed anything and takes the checkpoint back when it did not,
+restoring the redo stack with it. Without that, a dead button pushed an empty
+undo entry *and* silently destroyed a pending redo, so pressing it five times
+cost five presses of Ctrl+Z, none of which visibly did anything.
+
+The point is that the decision lives in one place. `setContinuity` returning a
+boolean, and `circulariseSubpath` returning `null` before touching anything, are
+the same idea one level down: work out the answer, then commit it.
+
+## 17. One place decides how thick a line is
+
+Overlay chrome has to stay a constant size on screen while the drawing scales,
+and there are two ways to do that. Either the code multiplies a pixel size by
+`scale()` (document units per pixel) and writes it as a normal width, or the CSS
+gives a pixel width and `vector-effect: non-scaling-stroke` exempts it from the
+transform. Both work. Doing both to the same element scales it twice.
+
+That is what turned the marquee into a picket fence when zoomed out: `box()`
+wrote `stroke-width: k` onto elements whose stylesheet already said
+`non-scaling-stroke`, so the rendered width tracked the zoom instead of ignoring
+it — 0.062 px at one end of the range and 0.909 px at the other, dashed 4-on-3
+-off, which is a row of blue bars rather than a rubber band.
+
+The rule now is a split by element, not by judgement at each call site: **if a
+class carries `non-scaling-stroke`, its width lives in the stylesheet and the
+render loop never touches it.** That covers `.marquee`, `.sel-box`,
+`.insert-dot`, `.pen-preview` and `.anchor`. Everything else keeps its width in
+the render loop, multiplied by `k`.
+
+Worth knowing while reading either file: a CSS rule beats a presentation
+attribute, so adding the stylesheet width silently disabled the inline one. The
+inline writes were removed anyway, because a dead attribute that looks live is
+how the next person re-introduces the bug.
+
+The overlay's other size problem is not this one. Markers are screen-sized by
+design, so zooming out shrinks the drawing underneath them until a shape is
+buried in its own anchors. A handle closer to its anchor than the anchor's own
+width is no longer drawn, on the grounds that a control you cannot separate from
+the thing it controls is not a control.
+
 ## 18. The backdrop is workspace state, and is in the history anyway
 
 The tracing image is the first thing in this editor that is not a path, and
@@ -502,10 +567,11 @@ about paths: give it points and two tangents and it returns cubics.
 - **Every surviving node keeps its tangents.** They are inputs to the fit, taken
   from the original geometry, not something the fit chooses. A corner stays
   exactly as sharp and a smooth join stays smooth.
-- **A closed path is cut at node 0** and fitted as a single run, with the
-  original tangents from both sides of that node passed in. This is why a
-  simplified circle has no kink at three o'clock, and it costs nothing: the fit
-  is being told what the path already did there.
+- **A closed path with no corners is cut at node 0** and fitted as a single run,
+  with the original tangents from both sides of that node passed in. This is why
+  a simplified circle has no kink at three o'clock, and it costs nothing: the fit
+  is being told what the path already did there. A closed path that *has* corners
+  is cut at those instead, and node 0 gets no special treatment.
 - **Sampling caps both flatness and spacing.** Flatness alone is not enough. A
   straight input segment is perfectly flat, so it samples to its two ends, and
   the fit is then free to bow out between them because the tolerance is only ever
@@ -513,6 +579,16 @@ about paths: give it points and two tangents and it returns cubics.
   answer could go wrong. Adding it changed a 40-gon at tolerance 0.05 from "12
   nodes, error 0.0495" into an honest refusal, and that number had been wrong by
   a factor of three.
+- **The tolerance is a budget, not the fitter's target.** Three things move the
+  outline and only one of them is the fit: the sampling is up to `SAMPLE_RATIO`
+  of the tolerance away from the true curve to begin with, and straightening a
+  nearly-flat result moves it again by up to `FLATNESS_BOUND * LINE_RATIO`. The
+  fitter is handed what is left. Giving it the whole tolerance and adding the
+  other two afterwards is how a simplify at 8 was measured 8.33 away, which is
+  the same overshoot `SAMPLE_SPACING` was added to stop, arriving by a different
+  road. A result that still cannot fit inside the budget is refused rather than
+  applied, since `fitCurve` does give up at its recursion cap on a dense,
+  heavily oscillating run.
 
 Two smaller decisions. A result with the same node count is refused rather than
 applied, because rebuilding a path into the same number of nodes only trades the
@@ -685,6 +761,16 @@ The radius is clamped to what the shorter side can hold, and the clamp is
 reported. Rounding the four corners of a rectangle one at a time works because
 each one sees the sides the previous ones left behind.
 
+**Where a fillet lands exactly on its neighbour, the neighbour is reused.** Two
+routes get there: the clamp, and two arcs meeting in the middle of a side they
+share. Inserting a node anyway left two anchors on the same point and a
+zero-length command in the exported path, and a path carrying one can never be
+simplified again -- a zero chord gives the fitter no tangent to work from. It is
+also the right answer geometrically: two arcs that meet share the point where
+they meet, which is what turns a 40 by 20 rectangle rounded at 10 into a proper
+six-node stadium. A test asserted the duplicate for a week before the review
+caught it.
+
 Two things the caller has to get right, and `roundSelection` does:
 
 - **Descending index order.** Each rounded corner turns one node into two, so
@@ -699,70 +785,6 @@ The arc is the same cubic approximation used everywhere else. Measured on a
 quarter turn it sits 0.0272 % of the radius off a true circle, which is what
 "about 0.027 %" in §12 was covering.
 
-## 17. One place decides how thick a line is
-
-Overlay chrome has to stay a constant size on screen while the drawing scales,
-and there are two ways to do that. Either the code multiplies a pixel size by
-`scale()` (document units per pixel) and writes it as a normal width, or the CSS
-gives a pixel width and `vector-effect: non-scaling-stroke` exempts it from the
-transform. Both work. Doing both to the same element scales it twice.
-
-That is what turned the marquee into a picket fence when zoomed out: `box()`
-wrote `stroke-width: k` onto elements whose stylesheet already said
-`non-scaling-stroke`, so the rendered width tracked the zoom instead of ignoring
-it — 0.062 px at one end of the range and 0.909 px at the other, dashed 4-on-3
--off, which is a row of blue bars rather than a rubber band.
-
-The rule now is a split by element, not by judgement at each call site: **if a
-class carries `non-scaling-stroke`, its width lives in the stylesheet and the
-render loop never touches it.** That covers `.marquee`, `.sel-box`,
-`.insert-dot`, `.pen-preview` and `.anchor`. Everything else keeps its width in
-the render loop, multiplied by `k`.
-
-Worth knowing while reading either file: a CSS rule beats a presentation
-attribute, so adding the stylesheet width silently disabled the inline one. The
-inline writes were removed anyway, because a dead attribute that looks live is
-how the next person re-introduces the bug.
-
-The overlay's other size problem is not this one. Markers are screen-sized by
-design, so zooming out shrinks the drawing underneath them until a shape is
-buried in its own anchors. A handle closer to its anchor than the anchor's own
-width is no longer drawn, on the grounds that a control you cannot separate from
-the thing it controls is not a control.
-
-## 16. A gesture ends exactly once, and a decline costs nothing
-
-Two rules that the 2026-08-11 review found broken in four places each, both
-fixed structurally rather than at the call sites.
-
-**One drag at a time, and it always ends.** `onDown` returns early while a drag
-is live, and whether the gesture opened a history batch is *recorded* in
-`batchOpen` rather than reconstructed at `onUp` by inspecting whichever drag is
-there. It used to be reconstructed, so a second pointerdown — two fingers on a
-touchscreen — replaced the drag, the first batch was never closed, and
-`checkpoint()` then returned early **forever**: no undo point was recorded again
-for the rest of the session, with nothing on screen to say so. Cancelling now
-routes to `abortDrag`, which rolls back rather than committing; `pointercancel`
-used to be wired to `onUp`, so the browser taking a gesture away *committed* the
-half-drawn shape, the opposite of what Escape does with the same intent.
-
-`Store.rollback` exists for that: it restores the last checkpoint without
-offering a redo. Escape used to call `undo`, which kept the abandoned shape on
-the redo stack — one Ctrl+Shift+Z from resurrecting something explicitly thrown
-away. Undo is also refused mid-drag, since popping the checkpoint the drag is
-standing on makes it roll back somebody else's edit when it ends.
-
-**An operation that declines leaves no trace.** `store.edit` checkpoints first
-and asks questions later, which is right for a drag — you cannot know where it
-will end — and wrong for a button. `store.tryEdit` takes a mutation that returns
-whether it changed anything and takes the checkpoint back when it did not,
-restoring the redo stack with it. Without that, a dead button pushed an empty
-undo entry *and* silently destroyed a pending redo, so pressing it five times
-cost five presses of Ctrl+Z, none of which visibly did anything.
-
-The point is that the decision lives in one place. `setContinuity` returning a
-boolean, and `circulariseSubpath` returning `null` before touching anything, are
-the same idea one level down: work out the answer, then commit it.
 
 ## Known limitations
 

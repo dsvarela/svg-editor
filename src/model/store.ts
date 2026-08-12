@@ -208,10 +208,26 @@ export class Store {
    */
   private restoreBackdrop(next: Backdrop | null): void {
     const cur = this.state.backdrop;
-    this.state.backdrop =
-      next && cur
-        ? { ...next, opacity: cur.opacity, visible: cur.visible, locked: cur.locked }
-        : next;
+    if (!next) {
+      this.state.backdrop = null;
+      return;
+    }
+    if (cur) {
+      this.state.backdrop = {
+        ...next,
+        opacity: cur.opacity,
+        visible: cur.visible,
+        locked: cur.locked,
+      };
+      return;
+    }
+    /* Coming back from having none, so there are no current switches to keep.
+       `visible` is forced rather than restored: hiding an image and then
+       removing it snapshots `visible: false`, and undoing that put the record
+       back while leaving the canvas empty -- a Remove that announces "undo
+       brings it back" and then appears to do nothing. Presence is what was
+       undone, so presence is what comes back. */
+    this.state.backdrop = { ...next, visible: true };
   }
 
   /**
@@ -332,6 +348,12 @@ export class Store {
       this.undoStack.pop();
       this.redoStack = redo;
       this.batchTook = took;
+      /* Reap after putting the redo stack back, not instead of it. `orphans`
+         also holds whatever `HISTORY_LIMIT` shifted off the far end, and the pop
+         above does not bring that back -- so skipping the reap entirely leaked
+         that image for the life of the page. Running it here is safe because
+         `reap` recomputes what is reachable from the stacks as they now are. */
+      this.reap(orphans);
     }
     return false;
   }
@@ -347,6 +369,18 @@ export class Store {
   endBatch(): void {
     this.batch = Math.max(0, this.batch - 1);
     if (this.batch === 0) this.batchTook = false;
+  }
+
+  /**
+   * Whether the batch currently open has already taken a checkpoint.
+   *
+   * A gesture that abandons itself has to know whether it has anything of its
+   * own to roll back. Since drags stopped checkpointing on pointerdown, an
+   * abandoned press that never moved holds an open batch and no entry, and
+   * rolling back regardless would pop whatever the previous edit left there.
+   */
+  get batchDirty(): boolean {
+    return this.batch > 0 && this.batchTook;
   }
 
   get canUndo(): boolean {

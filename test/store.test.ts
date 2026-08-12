@@ -135,14 +135,26 @@ describe('the backdrop in history', () => {
   });
 
   it('holds the bytes for as long as any entry can reach them', () => {
+    /* The earlier version of this only got as far as loading and removing, at
+       which point `reap` returns before it looks at anything -- so deleting the
+       "is it still reachable?" guard passed the whole suite. The image has to be
+       on screen AND on a discarded redo entry at the moment something is freed,
+       which takes an undo and then a fresh edit. */
     const freed: string[] = [];
     const s = store();
     s.onOrphanImage = (src) => freed.push(src);
 
     s.edit((st) => (st.backdrop = image()));
     s.edit((st) => (st.backdrop = null));
-    // On the undo stack, so revoking it now would break the undo above.
     expect(freed).toEqual([]);
+
+    s.undo();
+    expect(s.state.backdrop?.src).toBe('blob:a');
+    // The redo entry naming this image is about to be thrown away, while the
+    // live state is still displaying it.
+    s.edit((st) => (st.doc.shapes[0].name = 'elsewhere'));
+    expect(freed).toEqual([]);
+    expect(s.state.backdrop?.src).toBe('blob:a');
   });
 
   it('frees them once a new edit has thrown the redo away', () => {

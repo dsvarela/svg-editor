@@ -438,7 +438,7 @@ input[type='number']:disabled { opacity: 0.4; }
   display: flex;
   flex-direction: column;
   gap: 7px;
-  width: 288px;
+  width: 100%;
   padding: 10px 13px 14px;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -481,8 +481,11 @@ input[type='number']:disabled { opacity: 0.4; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 2px;
-  /* The same 288 as `.group`, so the rail has one column and not two. */
-  width: 288px;
+  /* `100%`, not a hard 288: the rail is a 288px column minus its border and,
+     once it scrolls, minus a scrollbar. Hard-coding the full width pushed the
+     right-hand padding to nothing in Chrome and shaved the edge off every
+     control in Firefox. */
+  width: 100%;
   padding: 8px 13px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -520,11 +523,18 @@ input[type='color'] {
 input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
 input[type='color']::-webkit-color-swatch { border: 0; border-radius: 2px; }
 input[type='color']:disabled { opacity: 0.4; cursor: default; }
+/* The backdrop's two checkboxes used this and it had no rule at all, so they
+   rendered with no gap between box and word. */
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.rlabel { font-size: 12px; color: var(--ink-2); min-width: 50px; }
 .tick { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; color: var(--ink-2); }
 /* `.seg` is `flex: none` by default, which is right in the toolbar and wrong in
    a 288 pixel row: the Even-odd button ran off the edge of the panel. */
 .row .seg { flex: 1; min-width: 0; }
-.row .seg button { min-width: 0; padding: 0 6px; }
+/* Height too, not just padding. `.seg.spread button` sets `height: auto` and
+   relies on its own vertical padding, which this rule was overriding, so the
+   fill-rule buttons rendered nine pixels shorter than the fields above them. */
+.row .seg button { min-width: 0; height: var(--h); padding: 0 6px; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .row { display: flex; align-items: center; gap: 7px; }

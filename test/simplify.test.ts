@@ -8,7 +8,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { simplifySubpath } from '../src/model/simplify';
-import { projectToCubic } from '../src/core/bezier';
+import { parsePath } from '../src/core/parse';
+import { cubicAt, projectToCubic } from '../src/core/bezier';
 import { continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
@@ -47,6 +48,25 @@ const distanceTo = (sp: Subpath, p: Pt): number => {
     best = Math.min(best, projectToCubic(segmentAsCubic(sp, i), p, 48, 24).d);
   }
   return best;
+};
+
+/** A closed blob with fifteen smooth nodes, from the review's own corpus. */
+const BLOB =
+  'M 88.843 0 C 88.843 19.389 101.051 22.212 92.587 41.222 S 90.58 52.047 66.437 73.786 ' +
+  'S 72.873 108.237 38.769 119.318 S 44.566 102.639 -10.183 96.884 S -45.273 101.581 -55.304 95.79 ' +
+  'S -57.128 108.675 -89.069 64.712 S -120.335 57.204 -126.766 26.945 S -105.076 -1.918 -100.924 -21.452 ' +
+  'S -76.425 -15.676 -57.475 -41.758 S -41.143 -42.449 -28.667 -49.653 S -62.446 -62.083 -7.136 -67.896 ' +
+  'S -26.52 -93.303 24.889 -76.599 S 47.706 -80.074 61.178 -67.945 S 47.454 -65.67 64.004 -28.497 ' +
+  'S 88.843 -19.389 88.843 0 Z';
+
+/** Dense samples along an outline, for measuring how far it actually moved. */
+const densePoints = (sp: Subpath, per = 60): Pt[] => {
+  const out: Pt[] = [];
+  for (let i = 0; i < segmentCount(sp); i++) {
+    const c = segmentAsCubic(sp, i);
+    for (let k = 0; k < per; k++) out.push(cubicAt(c, k / per));
+  }
+  return out;
 };
 
 describe('simplifySubpath', () => {
@@ -171,6 +191,29 @@ describe('simplifySubpath', () => {
     expect(sp.nodes[0].pt).toEqual(first);
     expect(sp.nodes[sp.nodes.length - 1].pt).toEqual(last);
     expect(sp.closed).toBe(false);
+  });
+
+it('reports a number that covers the whole deviation, not just the fit', () => {
+    /* The fit is measured against the sampled polyline, and the polyline is
+       itself a little way off the true curve; straightening a nearly-flat result
+       moves it again. Reporting only the fit error understated the real
+       deviation, and on one blob at a tolerance of 8 the outline actually moved
+       8.33. The tolerance is now a budget split between all three. */
+    const before = parsePath(BLOB)[0];
+    const originals = densePoints(before);
+    const sp = parsePath(BLOB)[0];
+    const r = simplifySubpath(sp, 14);
+    expect(r).not.toBeNull();
+
+    const worst = Math.max(...originals.map((p) => distanceTo(sp, p)));
+    expect(worst).toBeLessThanOrEqual(14);
+    expect(r!.error).toBeGreaterThanOrEqual(worst - 1e-9);
+  });
+
+  it('refuses when it cannot fit inside the budget rather than overshooting', () => {
+    // The same blob at a tolerance it cannot meet. Applying the result anyway
+    // rewrote the path further than the number the user typed.
+    expect(simplifySubpath(parsePath(BLOB)[0], 8)).toBeNull();
   });
 
   it('declines rather than mangling a path too small to fit', () => {

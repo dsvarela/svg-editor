@@ -739,6 +739,7 @@ export function roundCorner(
   radius: number,
 ): RoundResult | RoundRefusal {
   const n = sp.nodes.length;
+  if (!Number.isInteger(i) || i < 0 || i >= n) return 'tiny';
   if (!sp.closed && (i === 0 || i === n - 1)) return 'end';
   if (n < 3 || !(radius > 0)) return 'tiny';
 
@@ -782,17 +783,28 @@ export function roundCorner(
   // The arc turns through the exterior angle, not the interior one.
   const h = arcHandle(r, Math.PI - alpha);
 
-  sp.nodes.splice(i, 1, {
-    // Travel runs prev -> t1 -> arc -> t2 -> next, so the tangent leaving `t1`
-    // points away from `prev`, and the one arriving at `t2` points at `next`.
-    pt: t1,
-    hIn: null,
-    hOut: [t1[0] - u[0] * h, t1[1] - u[1] * h],
-  }, {
-    pt: t2,
-    hIn: [t2[0] - v[0] * h, t2[1] - v[1] * h],
-    hOut: null,
-  });
+  /* A tangent point can land exactly on a neighbour: at the clamp, and whenever
+     two fillets meet in the middle of a side they share. Inserting a node there
+     anyway left two anchors on the same point and a zero-length segment in the
+     exported path -- and a path carrying one can never be simplified again,
+     because a zero chord gives the fitter no tangent to work from. Where they
+     coincide the neighbour is reused, which is also the right answer
+     geometrically: two arcs that meet share the point where they meet. */
+  const MEET = 1e-9;
+  const startsAtPrev = Math.hypot(t1[0] - prev.pt[0], t1[1] - prev.pt[1]) <= MEET;
+  const endsAtNext = Math.hypot(t2[0] - next.pt[0], t2[1] - next.pt[1]) <= MEET;
+
+  const first: PathNode = { pt: t1, hIn: null, hOut: [t1[0] - u[0] * h, t1[1] - u[1] * h] };
+  const second: PathNode = { pt: t2, hIn: [t2[0] - v[0] * h, t2[1] - v[1] * h], hOut: null };
+
+  const insert: PathNode[] = [];
+  if (startsAtPrev) prev.hOut = first.hOut;
+  else insert.push(first);
+  if (endsAtNext) next.hIn = second.hIn;
+  else insert.push(second);
+  // Travel runs prev -> t1 -> arc -> t2 -> next, so the tangent leaving `t1`
+  // points away from `prev`, and the one arriving at `t2` points at `next`.
+  sp.nodes.splice(i, 1, ...insert);
   return { radius: r, clamped };
 }
 

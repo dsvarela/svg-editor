@@ -207,7 +207,15 @@ export class Canvas {
         fill: state.filled ? shape.style.fill : 'none',
         'fill-rule': shape.style.fillRule,
         stroke: shape.style.stroke,
-        'stroke-width': shape.style.strokeWidth * this.scale(state.camera),
+        /* The shape's real width, in document units. It used to be multiplied
+           by `scale()`, which pinned every stroke to a constant number of screen
+           pixels: the drawing did not thicken as you zoomed in, and a shape set
+           to width 4 looked identical to one set to width 1. That was tolerable
+           while every shape was a hairline preview and nothing could change the
+           width; it stopped being tolerable the moment the Style panel could.
+           §17's rule is that overlay chrome holds its screen size and the
+           drawing scales -- this is the drawing. */
+        'stroke-width': shape.style.strokeWidth,
         'stroke-linejoin': 'round',
         'stroke-linecap': 'round',
       });

@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (324 across 10 files) |
+| `npm test` | Unit and DOM tests (406 across 12 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **169.3 kB, 53.2 kB
+The production build is one file, no external requests: **170.7 kB, 53.7 kB
 gzipped**. Open `dist/index.html` from disk and it works.
 
 ---
@@ -47,7 +47,8 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | [`docs/manual/`](docs/manual/README.md) | The manual: tutorial, how-to guides, reference, explanation |
 | [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does |
-| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The last review: ten defect classes, six fixed |
+| [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) | The last review: nine defect classes, 17 doc claims, 6 tests that could not fail |
+| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The one before: ten defect classes, nine fixed |
 | [`SHOPPING-LIST.md`](SHOPPING-LIST.md) | What is deliberately not built yet, and why |
 
 ---
@@ -109,13 +110,13 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-8 743 lines of TypeScript across 22 files, no runtime framework.
+8 952 lines of TypeScript across 22 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 395 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 406 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
 transforms, history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 

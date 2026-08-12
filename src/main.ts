@@ -179,8 +179,11 @@ controller.onMessage = (message, ok) => {
   el.className = ok ? 'st ok' : 'st err';
 };
 
-on('#undo', () => store.undo());
-on('#redo', () => store.redo());
+// Refused mid-gesture for the same reason the keyboard refuses it: the drag is
+// standing on a checkpoint, and popping it makes the drag roll back the edit
+// before it. A second finger can reach these while the first is still down.
+on('#undo', () => !controller.busy && store.undo());
+on('#redo', () => !controller.busy && store.redo());
 on('#del', () => controller.deleteSelection());
 on('#curve', () => controller.setSelectedSegmentsCurved(true));
 on('#straight', () => controller.setSelectedSegmentsCurved(false));
@@ -274,16 +277,34 @@ on('#roundCorner', () => controller.roundSelection(Number(roundR.value)));
  * It closes on `change` as well as `blur`, because a slider or a picker never
  * gets a blur if you use it and then reach straight for the canvas.
  */
+const openStreams = new Set<() => void>();
+
+/* A number field only fires `change` when it loses focus, and pressing the
+   pointer down on the canvas does not blur it until after `pointerdown` has been
+   delivered. So a drag could begin while a field's batch was still open, which
+   made the drag take no checkpoint of its own and put Escape in the position of
+   rolling back the *field's* edit, with no redo offered. Closing every open
+   stream at the start of any press elsewhere removes the overlap. */
+window.addEventListener(
+  'pointerdown',
+  () => {
+    for (const close of [...openStreams]) close();
+  },
+  true,
+);
+
 const streamed = (input: HTMLElement, fn: () => void): void => {
   let open = false;
   const close = (): void => {
     if (!open) return;
     open = false;
+    openStreams.delete(close);
     store.endBatch();
   };
   input.addEventListener('input', () => {
     if (!open) {
       open = true;
+      openStreams.add(close);
       store.beginBatch();
     }
     fn();
@@ -345,6 +366,13 @@ const liveNum = (
  * group's header rather than silently rounded to black.
  */
 const HEX = /^#[0-9a-f]{6}$/i;
+/** `#f00` is as ordinary as `#ff0000`; the picker just cannot hold the short form. */
+const SHORT_HEX = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+const asHex = (c: string): string | null => {
+  if (HEX.test(c)) return c;
+  const m = SHORT_HEX.exec(c);
+  return m ? `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}` : null;
+};
 const fillColour = $('#fillColour') as HTMLInputElement;
 const strokeColour = $('#strokeColour') as HTMLInputElement;
 const fillNone = $('#fillNone') as HTMLInputElement;
@@ -551,6 +579,13 @@ function refreshInspector(): void {
   const atEnd = !!sel && !sel.subpath.closed && (sel.ref.i === 0 || sel.ref.i === sel.subpath.nodes.length - 1);
   ($('#breakPath') as HTMLButtonElement).disabled = !sel || atEnd;
   ($('#delNode') as HTMLButtonElement).disabled = count === 0;
+  /* The group is greyed with `pointer-events: none`, which stops the mouse and
+     not the keyboard: Tab still landed on these and Space still fired them.
+     Every other control in the group was disabled explicitly and the newer ones
+     were missed. */
+  ($('#roundCorner') as HTMLButtonElement).disabled = count === 0;
+  ($('#roundR') as HTMLInputElement).disabled = count === 0;
+  for (const b of ntypeSeg.querySelectorAll('button')) b.disabled = !sel;
 
   // Join is the inverse: exactly two nodes, each a free end of an open path.
   const ends = [...store.state.selection.nodes].map(parseNodeKey).filter((r) => {
@@ -1176,7 +1211,7 @@ store.subscribe((s) => {
      depending on whether anything is selected. */
   const styled = selectedShapes(s.doc, s.selection);
   const shown = styleShown();
-  const odd = [shown.fill, shown.stroke].filter((c) => c !== 'none' && !HEX.test(c));
+  const odd = [shown.fill, shown.stroke].filter((c) => c !== 'none' && asHex(c) === null);
   $('#styleinfo').textContent = !styled.length
     ? 'for new shapes'
     : odd.length
@@ -1194,8 +1229,10 @@ store.subscribe((s) => {
   // Only ever written with something the picker can hold. A named colour or a
   // gradient reference would round to black, and reading that back on the next
   // interaction would quietly change the drawing.
-  if (HEX.test(shown.fill)) fillColour.value = shown.fill;
-  if (HEX.test(shown.stroke)) strokeColour.value = shown.stroke;
+  const fillHex = asHex(shown.fill);
+  const strokeHex = asHex(shown.stroke);
+  if (fillHex) fillColour.value = fillHex;
+  if (strokeHex) strokeColour.value = strokeHex;
   if (document.activeElement !== strokeWidthInput) {
     strokeWidthInput.value = String(shown.strokeWidth);
   }

@@ -5,6 +5,12 @@ S = an afternoon. M = a day, needs tests. L = a project in itself.
 
 Status: `[ ]` not started · `[~]` partial · `[x]` done
 
+The 2026-08-12 review of the backdrop, Simplify, transform box, canvas, Style
+and rounding work is in
+[`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) — nine defect classes
+fixed, seventeen documentation claims corrected, six tests rewritten because
+they could not fail.
+
 The 2026-08-11 review of the primitives/rename/tooltips commit is in
 [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) — ten defect classes,
 nine now fixed. The tenth, coincident nodes mid-path, waits on **Fuse nodes that
@@ -153,19 +159,19 @@ a wrapper around the same GPL core. VTracer is the one to use if this is built.
 
 Two things to settle before writing any of it, neither about the library:
 
-1. **Traced output is node soup.** A photograph traces to thousands of nodes, and
-   this editor has no **Simplify** yet. Auto-trace without it produces a document
-   nobody can edit, which defeats the point. Simplify is the prerequisite, not a
-   follow-up.
+1. **Traced output is node soup.** A photograph traces to thousands of nodes.
+   Auto-trace without a way to thin them produces a document nobody can edit,
+   which is why Simplify was the prerequisite rather than a follow-up. It shipped
+   on 2026-08-11, so this one is settled.
 2. **Where the raster lives.** A backdrop is not part of the drawing and must not
-   reach the export. Everything in the document is currently a path, so this is
-   the first thing that is not, and that is a model decision rather than a
-   feature.
+   reach the export. That was the model decision the backdrop settled: it lives
+   in `EditorState`, and in the history, but never in `Doc`. See ARCHITECTURE
+   §18.
 
 The honest order was backdrop first, then Simplify, then auto-trace if it still
 looks worth it once tracing by hand over a backdrop is possible. The first two
 are done, so auto-trace is unblocked. The open question is now size: the build
-is one 153 kB file with no external requests, and a WASM tracer is several
+is one 170 kB file with no external requests, and a WASM tracer is several
 hundred kilobytes on its own.
 
 ## Explicitly not doing

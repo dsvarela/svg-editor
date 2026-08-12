@@ -1048,6 +1048,57 @@ describe('circularising', () => {
   });
 });
 
+describe('a press that never becomes a drag', () => {
+  it('leaves the redo stack alone', () => {
+    /* Every drag used to checkpoint on pointerdown, before it knew whether the
+       gesture would change anything, and `checkpoint` clears the redo stack. So
+       one stray click on a node threw away everything you could have redone.
+       This is the failure `tryEdit` was written to stop, applied to buttons and
+       never to drags. The checkpoint now happens on the first real mutation. */
+    const h = harness('M10 10 L40 10 L40 30 Z');
+    h.store.edit((s) => (s.doc.shapes[0].name = 'edited'));
+    h.store.undo();
+    expect(h.store.canRedo).toBe(true);
+
+    const id = h.store.state.doc.shapes[0].id;
+    h.down([10, 10], h.anchorEl(id, 0, 0));
+    h.up();
+
+    expect(h.store.canRedo).toBe(true);
+    expect(h.store.canUndo).toBe(false);
+  });
+
+  it('records nothing at all, so the next undo is the real one', () => {
+    const h = harness('M10 10 L40 10 L40 30 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.edit((s) => (s.doc.shapes[0].name = 'first'));
+
+    h.down([10, 10], h.anchorEl(id, 0, 0));
+    h.up();
+    h.down([40, 10], h.anchorEl(id, 0, 1));
+    h.up();
+
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].name).not.toBe('first');
+  });
+
+  it('still records one entry when the drag does move something', () => {
+    const h = harness('M10 10 L40 10 L40 30 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => (s.snapToGrid = false));
+
+    h.down([10, 10], h.anchorEl(id, 0, 0));
+    h.move([15, 12]);
+    h.move([20, 14]);
+    h.up();
+
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).not.toEqual([10, 10]);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([10, 10]);
+    expect(h.store.canUndo).toBe(false);
+  });
+});
+
 describe('rounding corners', () => {
   const square = (): Harness => harness('M0 0 L40 0 L40 40 L0 40 Z');
   const ids = (h: Harness): string => h.store.state.doc.shapes[0].id;
@@ -1246,6 +1297,9 @@ describe('fitting the canvas to the drawing', () => {
     expect(h.store.state.doc.viewBox).not.toEqual(before);
     h.store.undo();
     expect(h.store.state.doc.viewBox).toEqual(before);
+    // One entry, not two. Its siblings in the simplify and rounding blocks
+    // assert this and this one did not, so a stray checkpoint went unnoticed.
+    expect(h.store.canUndo).toBe(false);
   });
 });
 
@@ -1917,12 +1971,28 @@ describe('the backdrop', () => {
   };
 
   it('leaves the marquee alone while locked', () => {
+    /* Asserting only that the image did not move was not enough: making a
+       locked backdrop swallow every canvas drag also left it at zero. The
+       marquee has to actually happen, so the drag runs over a node. */
     const h = harness('M0 0 L20 0 L20 20 Z');
     withBackdrop(h);
-    h.down([50, 50]);
-    h.move([55, 55]);
+    h.down([-5, -5]);
+    h.move([25, 25]);
     h.up();
     expect(h.store.state.backdrop!.x).toBe(0);
+    expect(h.store.state.selection.nodes.size).toBeGreaterThan(0);
+  });
+
+  it('leaves the marquee alone while hidden, unlocked or not', () => {
+    // An unlocked backdrop you cannot see would otherwise eat every drag on
+    // empty canvas, with nothing on screen to explain it.
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    withBackdrop(h, { locked: false, visible: false });
+    h.down([-5, -5]);
+    h.move([25, 25]);
+    h.up();
+    expect(h.store.state.backdrop!.x).toBe(0);
+    expect(h.store.state.selection.nodes.size).toBeGreaterThan(0);
   });
 
   it('moves on an empty-canvas drag once unlocked', () => {

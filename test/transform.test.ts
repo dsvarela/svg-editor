@@ -75,6 +75,22 @@ describe('scaleMatrix', () => {
     expect(shrink[0]).toBeLessThan(1);
   });
 
+  it('sends a constrained corner along its own diagonal', () => {
+    /* Equal factors is not enough to pin the rule: min-of-the-two is also equal
+       and also wrong. What identifies projection is where the corner lands --
+       on the diagonal through the anchor, at the point nearest the pointer. */
+    const m = scaleMatrix(box, 'se', [70, 30], { keepAspect: true });
+    const landed = applyMat(m, handlePoint(box, 'se'));
+    const anchor = handlePoint(box, 'nw');
+    // Still on the diagonal.
+    const dx = landed[0] - anchor[0];
+    const dy = landed[1] - anchor[1];
+    expect(dx / dy).toBeCloseTo(40 / 20, 9);
+    // And it is the nearest point on that diagonal to where the pointer was:
+    // the offset left over is perpendicular to it.
+    expect((70 - landed[0]) * dx + (30 - landed[1]) * dy).toBeCloseTo(0, 6);
+  });
+
   it('mirrors when dragged past the anchor', () => {
     const m = scaleMatrix(box, 'e', [0, 0]);
     expect(m[0]).toBeLessThan(0);
@@ -115,12 +131,30 @@ describe('rotateMatrix', () => {
   });
 
   it('reports the short way round', () => {
-    // Swinging 350 degrees anticlockwise is 10 degrees clockwise, and the
-    // matrix cannot tell them apart, so neither should the readout.
-    const a = (-10 * Math.PI) / 180;
-    const r = rotateMatrix(c, [10, 0], [Math.cos(a) * 10, Math.sin(a) * 10]);
-    expect(r.deg).toBeCloseTo(-10, 9);
-    expect(Math.abs(r.deg)).toBeLessThanOrEqual(180);
+    /* The raw difference has to leave (-180, 180] for the normalisation to do
+       anything. An earlier fixture swung from 0 to -10, which never does, so
+       deleting the normalisation passed the suite. From -170 to +170 the raw
+       difference is 340, and the honest report is -20. */
+    const at = (deg: number): Pt => {
+      const r = (deg * Math.PI) / 180;
+      return [Math.cos(r) * 10, Math.sin(r) * 10];
+    };
+    const r = rotateMatrix(c, at(-170), at(170));
+    expect(r.deg).toBeCloseTo(-20, 9);
+    near(applyMat(r.m, at(-170)), at(170));
+  });
+
+  it('calls a half turn +180, not -180', () => {
+    // The matrix cannot tell the two apart, so the readout should not claim a
+    // direction the drag did not go.
+    expect(rotateMatrix(c, [10, 0], [-10, 0]).deg).toBe(180);
+  });
+
+  it('does nothing when the pointer reaches the centre', () => {
+    // `atan2(0, 0)` is 0 rather than undefined, so sweeping the rotate pointer
+    // through the middle used to apply minus the grab angle in one jump.
+    expect(rotateMatrix(c, [10, 0], c).deg).toBe(0);
+    expect(rotateMatrix(c, c, [10, 0]).deg).toBe(0);
   });
 
   it('does nothing when the pointer has not moved', () => {

@@ -17,9 +17,10 @@
  *    direction to leave and arrive at, taken from the original geometry. A
  *    corner stays exactly as sharp, and a smooth join stays smooth, because
  *    neither is something the fit gets to choose.
- *  - **A closed path is cut at node 0** and fitted as one run, with the original
- *    tangents at that node passed in from both sides. If it was smooth there it
- *    still is; if it was a cusp it still is.
+ *  - **A closed path with no corners is cut at node 0** and fitted as one run,
+ *    with the original tangents at that node passed in from both sides. If it
+ *    was smooth there it still is; if it was a cusp it still is. One that has
+ *    corners is cut at those, and node 0 is not special.
  *  - **Sampling is ten times finer than the tolerance**, so the answer is
  *    limited by the fit rather than by how the curve was measured.
  */
@@ -83,6 +84,13 @@ export function simplifySubpath(sp: Subpath, tol: number): SimplifyResult | null
   const n = sp.nodes.length;
   if (n < 3 || segmentCount(sp) < 2 || !(tol > 0)) return null;
 
+  /* The tolerance is a budget, not a target for the fit alone. Three things
+     move the outline: the sampling, which is up to `SAMPLE_RATIO` of it from the
+     true curve; the fit itself; and straightening a nearly-flat result, bounded
+     by `FLATNESS_BOUND * LINE_RATIO`. Handing the whole tolerance to the fitter
+     and adding the other two afterwards is how a simplify at 0.2 ended up 0.217
+     away, which is exactly the overshoot the sampling cap was added to stop. */
+  const budget = tol * (1 - SAMPLE_RATIO - FLATNESS_BOUND * LINE_RATIO);
   const breaks = breakpoints(sp);
   const curves: Cubic[] = [];
   let error = 0;
@@ -93,7 +101,7 @@ export function simplifySubpath(sp: Subpath, tol: number): SimplifyResult | null
     const pts = samplePoints(sp, from, to, tol * SAMPLE_RATIO, tol * SAMPLE_SPACING);
     if (pts.length < 2) return null;
 
-    const fit = fitCurve(pts, outTangent(sp, from), backTangent(sp, to), tol);
+    const fit = fitCurve(pts, outTangent(sp, from), backTangent(sp, to), budget);
     if (!fit.curves.length) return null;
     curves.push(...fit.curves);
     error = Math.max(error, fit.error);
@@ -109,15 +117,30 @@ export function simplifySubpath(sp: Subpath, tol: number): SimplifyResult | null
   // rather than one with two invisible handles. Straightening moves the outline,
   // so the amount it moves is added to what gets reported.
   const lineEps = tol * LINE_RATIO;
+  let straighten = 0;
   const line = curves.map((c) => {
     const reach = lineReach(c);
     if (reach === null || reach > lineEps) return false;
-    error = Math.max(error, FLATNESS_BOUND * reach);
+    // Added, not maxed. Straightening moves the same curve the fit already
+    // moved, so the two displacements stack rather than compete.
+    straighten = Math.max(straighten, FLATNESS_BOUND * reach);
     return true;
   });
 
+  /* The fit is measured against the sampled polyline, and the polyline is
+     itself up to `tol * SAMPLE_RATIO` from the true outline. Reporting only the
+     fit error understated the real deviation by that much, while the header of
+     this file promises to stay "within a stated distance of the original". */
+  const reported = error + tol * SAMPLE_RATIO + straighten;
+
+  /* Refused rather than applied when even the budget could not be met, which
+     `fitCurve` reports by giving up at its recursion cap on a dense, heavily
+     oscillating run. Applying it anyway rewrote the path further than the number
+     the user typed, and only the status line said so afterwards. */
+  if (reported > tol) return null;
+
   sp.nodes = nodesFrom(curves, sp.closed, line);
-  return { before: n, after, error };
+  return { before: n, after, error: reported };
 }
 
 /**

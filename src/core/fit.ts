@@ -40,9 +40,12 @@ export interface Fit {
 }
 
 /**
- * Recursion cap. The run shrinks with every split, so this cannot be reached by
- * a well-behaved input; it exists so a pathological one degrades instead of
- * exhausting the stack.
+ * Recursion cap.
+ *
+ * Reachable, despite an earlier comment here claiming otherwise: a densely
+ * sampled stroke with twenty oscillations reaches depth 24 and takes the cap.
+ * When it does, the last fit is accepted as-is and `Fit.error` reports what that
+ * actually achieved, which is how the caller learns the tolerance was not met.
  */
 const MAX_DEPTH = 24;
 
@@ -138,9 +141,11 @@ function fitInto(
     }
   }
 
-  // `maxError` only ever nominates an interior point, but a run whose middle is
-  // degenerate could still land on an end, and splitting there would recurse
-  // forever on the same range.
+  /* `maxError` only ever nominates an interior point, so the index test below
+     has never fired and cannot; it is kept as a belt against a future change to
+     that function, not because a degenerate middle can reach it. The depth cap
+     is the live half, and it is reachable: a stroke of nine hundred samples with
+     twenty oscillations gets there. */
   if (depth >= MAX_DEPTH || worst.index <= first || worst.index >= last) {
     out.push(bez);
     return worst.error;
@@ -235,9 +240,20 @@ function generateBezier(
   // A negative or vanishing length means the solve wanted a control point
   // behind its own anchor, which draws a cusp rather than the curve the points
   // describe. Wu and Barsky's fallback is a third of the chord each way.
+  /* A negative or vanishing length means the solve wanted a control point
+     behind its own anchor, which draws a cusp rather than the curve the points
+     describe. An enormous one is the same failure in the other direction: the
+     least-squares system is near-singular and the answer runs away. Both fall
+     back to Wu and Barsky's third of the chord.
+
+     The upper bound matters most when the run closes a loop, where `p0` and
+     `p3` are the same point: the chord is zero, so the lower bound is zero too
+     and nothing catches a control point a thousand units out. */
   const chord = dist(p0, p3);
   const floor = chord * 1e-6;
-  if (a1 < floor || a2 < floor) {
+  const ceiling = chord * 10;
+  const runaway = !Number.isFinite(a1) || !Number.isFinite(a2) || a1 > ceiling || a2 > ceiling;
+  if (a1 < floor || a2 < floor || runaway) {
     a1 = chord / 3;
     a2 = chord / 3;
   }
@@ -290,7 +306,12 @@ function reparameterise(
     // A stationary or inflecting point gives no direction to step in. Leaving
     // the parameter alone costs one wasted iteration; stepping anyway can throw
     // it outside the curve entirely.
-    next.push(Math.abs(den) < 1e-12 ? t : t - num / den);
+    /* Clamped to the curve. Newton is free to step outside [0, 1], and
+       `cubicAt` happily extrapolates there, so an escaped parameter let
+       `maxError` measure the distance to a point that is not on the curve being
+       returned: a fit that missed by 18 units reported an error of 1e-12. */
+    const step = Math.abs(den) < 1e-12 ? t : t - num / den;
+    next.push(Math.min(1, Math.max(0, step)));
   }
   return next;
 }

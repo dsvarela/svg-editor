@@ -173,7 +173,7 @@ line says so. The document is never left in a half-finished state.
 
 ## Line up and space out nodes
 
-Select three or more nodes, then use the **Align** panel.
+Select two or more nodes, then use the **Align** panel. Spacing them out needs three.
 
 The six align buttons move the selection to a common left, centre, right, top,
 middle or bottom. **Space H** and **Space V** distribute the middle nodes evenly
@@ -367,8 +367,8 @@ they are unambiguous, drops leading zeros, drops repeated command letters and
 prefers relative commands when they are shorter.
 
 ```
-off  M 10 30 L 25 15 L 40 30 C 50 20 60 20 70 30
-on   M10 30 25 15 40 30C50 20 60 20 70 30
+off  M 10 30 L 25 15 L 40 30 Q 55 15 70 30
+on   M10 30 25 15 40 30Q55 15 70 30
 ```
 
 ## Rename a shape and control its exported id

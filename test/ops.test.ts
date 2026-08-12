@@ -887,7 +887,42 @@ describe('roundCorner', () => {
     expect(r.clamped).toBe(true);
     // The short side is 20, so the cut is 20 and the radius follows from it.
     expect(r.radius).toBeCloseTo(20, 9);
-    expect(sp.nodes[2].pt).toEqual([40, 0]);
+
+    /* The arc starts exactly where the previous node already is, so that node is
+       reused rather than duplicated. This test used to assert the duplicate --
+       `nodes[2].pt` equal to `[40, 0]` while `nodes[1]` was also `[40, 0]` --
+       which is how a defect gets a test written around it. */
+    expect(sp.nodes.length).toBe(4);
+    expect(sp.nodes[1].pt).toEqual([40, 0]);
+    expect(sp.nodes[1].hOut).not.toBeNull();
+    expect(sp.nodes[2].pt).toEqual([20, 20]);
+  });
+
+  it('never leaves two anchors on the same point', () => {
+    /* Two routes to a coincident pair: the clamp, and two fillets meeting in the
+       middle of the side they share. A zero-length segment reaches the exported
+       path and cannot be simplified away afterwards, because a zero chord leaves
+       the fitter with no tangent to work from. */
+    for (const radius of [4, 9.5, 10, 10.5, 40, 999]) {
+      const sp = rect();
+      for (const i of [3, 2, 1, 0]) roundCorner(sp, i, radius);
+      for (let i = 0; i < sp.nodes.length; i++) {
+        const a = sp.nodes[i].pt;
+        const b = sp.nodes[(i + 1) % sp.nodes.length].pt;
+        expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeGreaterThan(1e-9);
+      }
+    }
+  });
+
+  it('makes a stadium when the fillets exactly fill the short sides', () => {
+    // 40 by 20 at radius 10: each short side is consumed by its two arcs, which
+    // meet at its midpoint and share that node.
+    const sp = rect();
+    for (const i of [3, 2, 1, 0]) roundCorner(sp, i, 10);
+    expect(sp.nodes.length).toBe(6);
+    const ys = sp.nodes.map((n) => n.pt[1]);
+    expect(Math.min(...ys)).toBeCloseTo(0, 9);
+    expect(Math.max(...ys)).toBeCloseTo(20, 9);
   });
 
   it('rounds every corner of a rectangle when applied to each', () => {

@@ -107,8 +107,11 @@ export function scaleMatrix(b: Box, part: TransformPart, to: Pt, o: ScaleOptions
        move at a factor of 1, which is the larger of the two, so a constrained
        drag inwards does nothing at all. Projection is symmetric, and it is what
        makes a diagonal drag land the corner under the pointer. */
+    // Squared, so the threshold has to be squared too. Comparing a squared
+    // length against a length tripped at a diagonal of 3e-5 rather than 1e-9,
+    // which silently ignored Shift on a very small selection.
     const len2 = dx * dx + dy * dy;
-    if (len2 > FLAT) {
+    if (len2 > FLAT * FLAT) {
       const k = ((to[0] - anchor[0]) * dx + (to[1] - anchor[1]) * dy) / len2;
       sx = k;
       sy = k;
@@ -133,12 +136,23 @@ export interface Rotation {
  * which is what someone holding Shift is asking for.
  */
 export function rotateMatrix(centre: Pt, from: Pt, to: Pt, snapDeg = 0): Rotation {
+  /* A point on the centre has no angle. `atan2(0, 0)` is 0 rather than
+     undefined, so sweeping the pointer through the middle of the selection used
+     to apply minus the grab angle in one jump. */
+  const ra = Math.hypot(from[0] - centre[0], from[1] - centre[1]);
+  const rb = Math.hypot(to[0] - centre[0], to[1] - centre[1]);
+  if (ra < FLAT || rb < FLAT) return { m: about(rotate(0), centre[0], centre[1]), deg: 0 };
+
   const a0 = Math.atan2(from[1] - centre[1], from[0] - centre[0]);
   const a1 = Math.atan2(to[1] - centre[1], to[0] - centre[0]);
   let deg = ((a1 - a0) * 180) / Math.PI;
   if (snapDeg > 0) deg = Math.round(deg / snapDeg) * snapDeg;
-  // atan2 differences land anywhere in (-360, 360). Reported as the short way
-  // round, since a 350 degree turn is a 10 degree turn the other way.
-  deg = (((deg + 180) % 360) + 360) % 360 - 180;
+  /* atan2 differences land anywhere in (-360, 360). Reported as the short way
+     round, since a 350 degree turn is a 10 degree turn the other way. The
+     half turn is written as +180: the modulo lands it on -180, and a readout
+     saying "Rotated -180" for a drag that went the other way is a wrong sign
+     on the one angle where the matrix cannot tell the difference. */
+  deg = ((((deg + 180) % 360) + 360) % 360) - 180;
+  if (deg === -180) deg = 180;
   return { m: about(rotate(deg), centre[0], centre[1]), deg };
 }

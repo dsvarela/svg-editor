@@ -77,7 +77,7 @@ Left to right.
 | Fit | Fit the document to the canvas |
 | Source | Open or close the source drawer |
 | Inspector | Collapse or restore the right-hand panel |
-| Theme | Cycle system, light and dark |
+| Theme | Invert the theme, light against dark |
 
 ## Inspector panels
 
@@ -100,7 +100,7 @@ The list of shapes, newest last, with a colour swatch and a node count.
 - Double-click a name to rename it.
 - With the list focused, arrows move the selection (`Shift` extends it), and
   `F2` or `Enter` starts a rename.
-- **Duplicate** copies the selected shapes, naming each copy after its original.
+- **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
 - **Delete** removes them.
 
 ### Style
@@ -167,9 +167,9 @@ and how taut it is.
 
 ### Align
 
-Six align buttons for left, centre, right, top, middle, bottom. **Space H** and
-**Space V** distribute the middle nodes evenly between the outermost two. Needs
-three or more nodes.
+Six align buttons for left, centre, right, top, middle, bottom, which need two
+or more nodes. **Space H** and **Space V** distribute the middle nodes evenly
+between the outermost two, and need three.
 
 ### Delete
 
@@ -236,8 +236,9 @@ there. Every change here is undoable.
 | **Show handles** | Draw handles and their lines |
 | **Show fills** | Draw each shape's fill. Off draws everything as an outline |
 
-The readout in the group header says what is drawn against what is snapped, for
-example `1 · every 5 drawn`.
+The `grid` readout in the status strip says what is drawn against what is
+snapped, for example `1 · every 5 drawn`. The group's own header says whether
+snapping is on.
 
 ### Output
 
@@ -284,7 +285,7 @@ Two modes.
   converted to paths.
 
 **Apply** parses and applies. **Copy** puts the text on the clipboard.
-**Download** saves it to a file. **Close** closes the drawer.
+**Download SVG** saves a whole SVG document, in either mode. **Close** closes the drawer.
 
 ## Status strip
 
@@ -299,7 +300,7 @@ it to go back to 100 % about the centre of the view.
 Read: `M m L l H h V v C c S s Q q T t A a Z z`, the six shape elements above,
 `transform`, `fill`, `fill-rule`, `stroke`, `stroke-width`, `viewBox`.
 
-Written: `M L H V C S Z`, absolute or relative depending on which is shorter when
+Written: `M L H V C S Q Z`, absolute or relative depending on which is shorter when
 minifying, plus `fill`, `fill-rule`, `stroke`, `stroke-width` and an `id` taken
 from the shape's name.
 
