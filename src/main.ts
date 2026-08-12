@@ -469,6 +469,144 @@ const styleShown = (): Style => {
   return sel.length ? sel[0].style : s.style;
 };
 
+/* ------------------------------------------------------------- the palette */
+
+/** Which saved style is highlighted, so Forget knows what to forget. */
+let paletteAt = -1;
+
+const paletteEl = $('#palette');
+
+/**
+ * Redraw the swatches, and only when their content actually changed.
+ *
+ * The shape list learned this the hard way and recorded it: rebuilding on every
+ * click replaces the element the second click of a double-click was about to
+ * land on, so the browser never fires `dblclick` and renaming cannot start.
+ *
+ * What fixes it here is that clicking a swatch updates the highlight in place
+ * rather than rebuilding -- the highlight changes on exactly the click that
+ * must not rebuild. The signature check is insurance against the other route:
+ * any unrelated state change that reaches the subscriber between the two
+ * clicks. Nothing exercises that path today, so nothing tests it.
+ */
+let paletteSig: string | null = null;
+
+function paintHighlight(): void {
+  [...paletteEl.children].forEach((el, i) => el.setAttribute('aria-selected', String(i === paletteAt)));
+  ($('#paletteDrop') as HTMLButtonElement).disabled =
+    paletteAt < 0 || paletteAt >= store.state.palette.length;
+}
+
+function paintPalette(): void {
+  const list = store.state.palette;
+  const sig = list.map((e) => [e.name, e.style.fill, e.style.stroke, e.style.strokeWidth, e.style.fillRule].join('\u0001')).join('\u0002');
+  $('#paletteinfo').textContent = list.length ? `${list.length}` : 'none';
+  if (sig === paletteSig) {
+    paintHighlight();
+    return;
+  }
+  paletteSig = sig;
+
+  paletteEl.replaceChildren();
+  list.forEach((entry, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'option');
+    b.title = `Fill ${entry.style.fill}, stroke ${entry.style.stroke} at ${entry.style.strokeWidth}`;
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    const inner = document.createElement('i');
+    /* Fill over stroke, drawn as a fill with a ring: two colours in one small
+       square, which is what you pick a saved style by. `none` shows the chequer
+       underneath rather than a white square. */
+    inner.style.background = entry.style.fill === 'none' ? 'transparent' : entry.style.fill;
+    inner.style.boxShadow =
+      entry.style.stroke === 'none' ? 'none' : `inset 0 0 0 2px ${entry.style.stroke}`;
+    sw.append(inner);
+    const label = document.createElement('span');
+    label.textContent = entry.name;
+    b.append(sw, label);
+    b.addEventListener('click', () => {
+      paletteAt = i;
+      controller.setStyle({ ...entry.style });
+      paintHighlight();
+    });
+    paletteEl.append(b);
+  });
+  paintHighlight();
+}
+
+/* Renaming is delegated to the container rather than bound per button, because
+   the first click of a double-click applies the style, which repaints the whole
+   row -- so a listener on the button is on a detached element by the time the
+   second click lands. Delegation survives the repaint. */
+paletteEl.addEventListener('dblclick', (e) => {
+  const b = (e.target as HTMLElement).closest('button');
+  if (!b || !paletteEl.contains(b) || b.querySelector('.rename')) return;
+  const i = [...paletteEl.children].indexOf(b);
+  const entry = store.state.palette[i];
+  if (!entry) return;
+  e.preventDefault();
+
+  const label = b.querySelector('span:not(.sw)');
+  if (!label) return;
+  const field = document.createElement('input');
+  field.className = 'rename';
+  field.value = entry.name;
+  field.size = Math.max(6, entry.name.length);
+  label.replaceWith(field);
+  field.focus();
+  field.select();
+  field.addEventListener('click', (ev) => ev.stopPropagation());
+  field.addEventListener('blur', () => {
+    const next = field.value.trim();
+    if (next) store.update((st) => (st.palette[i].name = next));
+    paintPalette();
+  });
+  field.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') field.blur();
+    else if (ev.key === 'Escape') {
+      field.value = entry.name;
+      field.blur();
+    }
+  });
+});
+
+on('#paletteSave', () => {
+  const shown = styleShown();
+  /* Named after what it is, since that is the only thing the editor knows.
+     Someone who wants "danger" can double-click the name; someone who wants
+     three greys gets three distinguishable defaults rather than three copies
+     of the word "Style". */
+  const base = `${shown.fill === 'none' ? 'no fill' : shown.fill}, ${shown.stroke === 'none' ? 'no stroke' : shown.stroke}`;
+  const same = (a: Style, b: Style): boolean =>
+    a.fill === b.fill && a.stroke === b.stroke && a.strokeWidth === b.strokeWidth && a.fillRule === b.fillRule;
+  const already = store.state.palette.findIndex((e) => same(e.style, shown));
+  if (already >= 0) {
+    paletteAt = already;
+    paintPalette();
+    status.textContent = `Already saved as ${store.state.palette[already].name}.`;
+    status.className = 'st warn';
+    return;
+  }
+  store.update((st) => st.palette.push({ name: base, style: { ...shown } }));
+  paletteAt = store.state.palette.length - 1;
+  paintPalette();
+  status.textContent = `Saved ${base}.`;
+  status.className = 'st ok';
+});
+
+on('#paletteDrop', () => {
+  const at = paletteAt;
+  if (at < 0 || at >= store.state.palette.length) return;
+  const gone = store.state.palette[at].name;
+  store.update((st) => st.palette.splice(at, 1));
+  paletteAt = -1;
+  paintPalette();
+  status.textContent = `Forgot ${gone}.`;
+  status.className = 'st ok';
+});
+
 // Dragging inside a colour picker fires `input` per pixel, so both of these go
 // through the same batching as every other continuous control.
 streamed(fillColour, () => controller.setStyle({ fill: fillColour.value }));
@@ -1570,6 +1708,20 @@ store.subscribe((s) => {
      depending on whether anything is selected. */
   const styled = selectedShapes(s.doc, s.selection);
   const shown = styleShown();
+  /* The highlight follows the style actually in force, so it lets go the
+     moment you change a colour by hand -- a swatch still lit while the panel
+     shows something else would be claiming the shape has a style it does not. */
+  const matches = s.palette.findIndex(
+    (e) =>
+      e.style.fill === shown.fill &&
+      e.style.stroke === shown.stroke &&
+      e.style.strokeWidth === shown.strokeWidth &&
+      e.style.fillRule === shown.fillRule,
+  );
+  if (matches !== paletteAt) {
+    paletteAt = matches;
+    paintPalette();
+  }
   const odd = [shown.fill, shown.stroke].filter((c) => c !== 'none' && asHex(c) === null);
   $('#styleinfo').textContent = !styled.length
     ? 'for new shapes'
@@ -1854,6 +2006,7 @@ window.addEventListener('pointercancel', showMeasure);
 
 /* -------------------------------------------------------------------- boot */
 
+paintPalette();
 installTooltips();
 
 requestAnimationFrame(() => {

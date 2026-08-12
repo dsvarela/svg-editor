@@ -126,6 +126,16 @@ With nothing selected these set what the next shape you draw will look like. Tha
 is not an edit to the drawing, so it records no undo step, and the header says
 `for new shapes` when it applies.
 
+**Saved** keeps styles you want again. **Save style** stores the four values
+above under a name made from the colours; double-click the name to change it.
+Clicking a swatch puts that style on the selected shapes, or on what you draw
+next if nothing is selected. **Forget** drops the highlighted one.
+
+A saved style is part of how you are working rather than part of the drawing. It
+is not in the file, and it is not in the history: what the export carries is the
+style on each shape, which is what applying one puts there. The highlight lets go
+as soon as the style shown stops matching it.
+
 The colour pickers stay usable while **none** is ticked, and picking a colour
 clears it. A colour the picker cannot show, such as a named colour or a gradient
 from an imported file, is left alone and named in the header instead.

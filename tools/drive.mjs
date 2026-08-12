@@ -3242,6 +3242,80 @@ const scenarios = {
 
     return { picked: got.picked, second, text: got.text };
   },
+
+  /**
+   * The saved-styles palette: save, apply, rename, forget.
+   *
+   * The state is a plain array and the interesting behaviour is all in the
+   * panel -- whether applying one actually reaches the selected shape, and
+   * whether the highlight lets go when the style stops matching.
+   */
+  async palette(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`palette: ${what}`);
+    };
+    const { click } = await mk(page);
+    const swatches = () => page.locator('#palette button').count();
+    const lit = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll('#palette button')].filter(
+            (b) => b.getAttribute('aria-selected') === 'true',
+          ).length,
+      );
+
+    await tab(page, 'shape');
+    check((await swatches()) === 0, 'the palette started with something in it');
+
+    // Save the style the panel is showing, with a width nobody else has.
+    await page.fill('#strokeWidth', '3');
+    await page.dispatchEvent('#strokeWidth', 'input');
+    await page.waitForTimeout(150);
+    await page.click('#paletteSave');
+    await page.waitForTimeout(200);
+    check((await swatches()) === 1, `${await swatches()} swatches after saving one`);
+    check((await lit()) === 1, 'the saved swatch is not highlighted');
+
+    /* Saving the same values twice keeps one swatch. Two identical entries
+       under two names is a palette that cannot tell you anything. */
+    await page.click('#paletteSave');
+    await page.waitForTimeout(200);
+    check((await swatches()) === 1, `saving twice left ${await swatches()} swatches`);
+
+    // Change the style by hand: the highlight has to let go, or it would be
+    // claiming the shape has a style it does not.
+    await page.fill('#strokeWidth', '1');
+    await page.dispatchEvent('#strokeWidth', 'input');
+    await page.waitForTimeout(200);
+    check((await lit()) === 0, 'the swatch stayed lit after the style changed');
+
+    // Apply it to a real shape and check the export, not the panel.
+    await click([44, 12]);
+    await page.waitForTimeout(150);
+    await page.click('#palette button');
+    await page.waitForTimeout(200);
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(150);
+    const svg = await page.inputValue('#src');
+    check(/stroke-width="3"/.test(svg), `the shape did not take the saved width: ${svg.slice(0, 240)}`);
+    await closeSource(page);
+
+    // Rename, which is what makes it a *named* style.
+    await page.dblclick('#palette button');
+    await page.waitForTimeout(150);
+    await page.fill('#palette .rename', 'outline');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(200);
+    const name = (await page.textContent('#palette button')).trim();
+    check(name === 'outline', `the swatch is called "${name}"`);
+
+    await page.click('#paletteDrop');
+    await page.waitForTimeout(200);
+    check((await swatches()) === 0, `Forget left ${await swatches()} swatches`);
+
+    return { name };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

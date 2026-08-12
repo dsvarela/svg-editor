@@ -15,6 +15,12 @@ import { emptySelection } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
 
+/** One entry in the palette: a name and the four style values it stands for. */
+export interface NamedStyle {
+  name: string;
+  style: Style;
+}
+
 /**
  * `ellipse` and `rect` are draw tools: drag on the canvas to create one. They
  * are tools rather than buttons because the size comes from the drag, and
@@ -167,6 +173,16 @@ export interface EditorState {
   sourceMode: 'd' | 'svg';
   /** Set when the source box holds text that will not parse. */
   sourceError: string | null;
+  /**
+   * Named fill/stroke sets you can reapply.
+   *
+   * Session state, not document state and not history: a palette is how you
+   * are working, the same as the grid step or the style-for-new-shapes. Undoing
+   * a node move has no business forgetting a colour you saved, and a palette
+   * cannot be expressed in SVG anyway -- what leaves the editor is the style on
+   * each shape, which is what a named style puts there.
+   */
+  palette: NamedStyle[];
   /** Tracing reference under the artwork. See `Backdrop`. */
   backdrop: Backdrop | null;
   /**
@@ -270,6 +286,7 @@ export class Store {
       sourceMode: 'd',
       sourceError: null,
       backdrop: null,
+      palette: [],
       guides: [],
       showRulers: false,
       showGuides: true,

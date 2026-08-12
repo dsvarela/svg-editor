@@ -224,6 +224,19 @@
                 <button type="button" data-fr="evenodd" aria-pressed="false">Even-odd</button>
               </div>
             </div>
+            <div class="glabel sub"><span>Saved</span><span class="gval" id="paletteinfo">none</span></div>
+            <div class="palette" id="palette" role="listbox" aria-label="Saved styles"></div>
+            <div class="grid2">
+              <button class="btn" id="paletteSave" type="button" title="Save the style shown above under a name">Save style</button>
+              <button class="btn" id="paletteDrop" type="button" title="Forget the selected saved style">Forget</button>
+            </div>
+            <p class="note">
+              A saved style is the four values above under a name. Click one to put it on the
+              selected shapes, or with nothing selected to set what you draw next. It is a way of
+              working rather than part of the drawing, so it is not in the file and not in the
+              history: what the export carries is the style on each shape, which is what applying
+              one puts there.
+            </p>
             <p class="note">
               Fill, stroke and width for the selected shapes. With nothing selected these set what
               the next shape you draw will look like, which records no undo step. <b>Rule</b> decides
