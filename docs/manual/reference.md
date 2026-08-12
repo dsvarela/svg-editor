@@ -432,5 +432,5 @@ Named here rather than left for you to find.
   while they stay put and crowd it. Handles closer to their node than the node's
   own marker are dropped, which thins it out, but the anchors are always drawn.
 
-Full detail on all of these is in
-[`docs/REVIEW-2026-08-11.md`](../REVIEW-2026-08-11.md).
+Why each of these is a limit rather than a bug, with the measurements, is in
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#known-limitations).

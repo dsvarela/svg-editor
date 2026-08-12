@@ -264,7 +264,7 @@ thousands of nodes in a handful of flat colours, which is a poster effect rather
 than a vectorisation.
 
 The editor stays live while a trace runs, so a large image no longer stops
-everything for the several seconds it takes. What a very dense result does cost
+everything for the several seconds it takes. What a dense result does cost
 you is afterwards: past 2 000 node markers in view the overlay stops drawing
 them, the document readout says `markers off, too dense`, and nodes cannot be
 clicked until you zoom in far enough that fewer are on screen. The shapes

@@ -5,23 +5,10 @@ S = an afternoon. M = a day, needs tests. L = a project in itself.
 
 Status: `[ ]` not started · `[~]` partial · `[x]` done
 
-The second 2026-08-12 review, of Fuse, pixel fit, auto-trace and the snap
-priority order, is in
-[`docs/REVIEW-2026-08-12b.md`](docs/REVIEW-2026-08-12b.md) — twelve defect
-classes fixed, fifteen documentation claims corrected, nine tests rewritten
-because they could not fail. Four of those classes were introduced by a fix from
-the same morning.
-
-The first 2026-08-12 review of the backdrop, Simplify, transform box, canvas,
-Style and rounding work is in
-[`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) — nine defect classes
-fixed, seventeen documentation claims corrected, six tests rewritten because
-they could not fail.
-
-The 2026-08-11 review of the primitives/rename/tooltips commit is in
-[`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) — ten defect classes,
-all ten now fixed. The tenth, coincident nodes mid-path, closed on 2026-08-12
-with **Fuse nodes that are not ends** below.
+What each review found, and when, is indexed in
+[`docs/reviews/`](reviews/README.md). One item below closed as a direct result:
+the tenth finding of 2026-08-11, coincident nodes mid-path, is **Fuse nodes that
+are not ends**.
 
 ---
 

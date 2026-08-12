@@ -14,8 +14,9 @@ and writing one out. Everything between is anchors, control points and
 transforms, which is what makes dragging, rotating, flipping and combining
 shapes ordinary operations rather than ten special cases each.
 
-**Status:** working, and short of finished. See [SHOPPING-LIST.md](SHOPPING-LIST.md)
-for what is deliberately not built yet and why.
+**Status:** working, and short of finished. See
+[`docs/SHOPPING-LIST.md`](docs/SHOPPING-LIST.md) for what is deliberately not
+built yet and why.
 
 ---
 
@@ -31,12 +32,14 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (526 across 17 files) |
+| `npm run check:docs` | The [style](docs/STYLE.md) tell sweep, and every link in the docs |
+| `npm test` | Unit and DOM tests. See [Testing](#testing) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **201.5 kB, 61.5 kB
-gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 4.2 kB of
+The production build is one file, no external requests: **201.5 kB, 62.3 kB
+gzipped**, as `npm run build` reports it. Open `dist/index.html` from disk and it
+works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
 and 1.9 kB for the inlined worker it runs in, measured by building without it.
 See ARCHITECTURE §26 and §28.
@@ -45,15 +48,17 @@ See ARCHITECTURE §26 and §28.
 
 ## Documentation
 
-| Where | What |
-|---|---|
-| [`docs/manual/`](docs/manual/README.md) | The manual: tutorial, how-to guides, reference, explanation |
-| [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does |
-| [`docs/REVIEW-2026-08-12b.md`](docs/REVIEW-2026-08-12b.md) | The last review: 12 defect classes, 15 doc claims, 9 tests that could not fail |
-| [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) | Earlier the same day: nine defect classes, 17 doc claims, 6 tests that could not fail |
-| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The one before: ten defect classes, all ten now fixed |
-| [`SHOPPING-LIST.md`](SHOPPING-LIST.md) | What is deliberately not built yet, and why |
+Everything is under [`docs/`](docs/README.md), which opens by saying how each
+kind is meant to be read. Four kinds, because a backlog read as a description
+tells you a feature exists that does not.
+
+| Where | What | Read it as |
+|---|---|---|
+| [`docs/manual/`](docs/manual/README.md) | Tutorial, how-to guides, reference, explanation | the editor as shipped |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does, and what it costs | a standing explanation |
+| [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written | a rule to apply |
+| [`docs/SHOPPING-LIST.md`](docs/SHOPPING-LIST.md) | What is deliberately not built yet, and why | intent, not behaviour |
+| [`docs/reviews/`](docs/reviews/README.md) | Three reviews, 31 defect classes, 40 documentation claims corrected | evidence, true of its date |
 
 ---
 
@@ -101,11 +106,13 @@ src/
     snapping.ts    which snap wins: vertex, then outline, then grid
     pixelfit.ts    where the lattice sits so strokes land on whole pixels
     trace.ts       raster boundaries -> shapes, one per colour
+    trace.worker.ts   the same walk, off the main thread
     transform.ts   what the selection box's handles mean
     store.ts       state, undo, batching
   view/       rendering
     canvas.ts      two stacked SVGs: artwork and overlay
     viewport.ts    camera, zoom, screen<->document
+    pathcache.ts   `d` strings, rebuilt only when the geometry moved
     dom.ts         element pooling
   io/
     svg.ts         import and export whole documents
@@ -118,16 +125,18 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-10 346 lines of TypeScript across 26 files, no runtime framework.
+10 997 lines of TypeScript across 28 files, plus 758 lines of CSS. No runtime
+framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 484 tests over parsing, serialising,
-geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
-fusing, snapping, pixel fit, tracing, transforms, history, the grid and the
-primitives. The rendering tests run in jsdom against the real `Canvas`.
+**Unit and DOM tests**, with `npm test`. 526 tests in 17 files, 7 242 lines,
+over parsing, serialising, geometry ops, rendering invariants, SVG
+import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
+transforms, history, the grid and the primitives. The rendering tests run in
+jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings. It measures instead: curve equality by projected deviation, boolean

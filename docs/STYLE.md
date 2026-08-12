@@ -10,20 +10,17 @@ work on sight stay out.
 
 ## What this stands on
 
-No style invented from scratch. A thin set of project rules on maintained
-foundations:
+No style invented from scratch. This file holds the deltas: the terminology, the
+status line, and the exemptions. For anything it does not cover, the standing
+sources are:
 
-- **Prose:** the [Google developer documentation style guide](https://developers.google.com/style).
-  When this file is silent, follow Google.
-- **Structure:** [Diátaxis](https://diataxis.fr/). Every page is one of four
-  kinds and never mixes them.
-- **How-to guides:** minimalist instruction. Task first, shortest path to a real
-  result, no filler.
+- **Prose and structure:** the [Google developer documentation style guide](https://developers.google.com/style)
+  and [Diátaxis](https://diataxis.fr/). Every manual page is one of four kinds
+  and never mixes them; which page is which is in
+  [`manual/README.md`](manual/README.md).
 - **Acceptance test:** [ISO 24495-1 plain language](https://www.iso.org/standard/78907.html).
   A page ships only if a reader can find it, understand it, use it, and gets
   what they came for.
-
-This file holds the deltas and the things a general guide will not cover.
 
 ## The prime rule: earn the look
 
@@ -75,35 +72,29 @@ Readers decide in seconds. Two things earn it:
 - Hedge only when it buys accuracy ("fitting cannot know which node was the
   mistake, so it reports how far the furthest one moved"), never as a reflex.
 
-## Scope, and the debt this creates
+## Scope, and the two exemptions
 
 This governs **user-facing text**: the manual, the README, the status line,
 tooltips, labels.
 
-`docs/ARCHITECTURE.md` and `docs/REVIEW-*.md` are developer documents and are
-exempt from the em-dash rule, deliberately: they argue about decisions, and the
-aside is the unit of that argument. They are not exempt from anything else.
+`ARCHITECTURE.md` and `reviews/` are developer documents and are exempt from the
+em-dash rule, deliberately. They argue about decisions, and the aside is the unit
+of that argument. They are exempt from nothing else.
 
-The README and the in-app strings currently break the em-dash rule in about
-twenty places. That is real debt, listed in the catalogue below, and it is
-cheaper to fix than to keep explaining.
+`SHOPPING-LIST.md` is exempt on the same grounds. It is a working document that
+weighs one feature against another, and it is read by whoever is deciding what to
+build next rather than by a user.
 
-## Structure (Diátaxis)
+Everything else, including this file, is inside the rule.
 
-Each page declares one type and stays in it.
+## Where implementation detail belongs
 
-| Type | Reader wants | Reads like | Here |
-|---|---|---|---|
-| **Tutorial** | to learn by doing | one guided path, success guaranteed | "Draw your first icon" |
-| **How-to** | to finish a task | goal, steps, done | "Make a shape perfectly round" |
-| **Reference** | the exact facts | dry, complete, mirrors the app | key tables, tool list, panel list |
-| **Explanation** | to understand why | prose about a design choice | why points have no types |
+In user documentation only when it changes what the reader should do or expect.
 
-Implementation detail belongs in user docs only when it changes what the reader
-should do or expect. "Circularise fits a circle by least squares, so it cannot
-know which node was wrong" earns its place, because it tells the reader why the
-result moved. "The fit is a Kåsa algebraic solve with the data centred first"
-does not, and lives in `ARCHITECTURE.md`.
+"Circularise fits a circle by least squares, so it cannot know which node was
+wrong" earns its place, because it tells the reader why the result moved. "The
+fit is a Kåsa algebraic solve with the data centred first" does not, and lives in
+`ARCHITECTURE.md`.
 
 ## Terminology
 
@@ -121,6 +112,11 @@ interface disagree in places; **the interface wins in user-facing text.**
 | Dragging a box over empty canvas | **marquee** | rubber band, lasso, box select |
 | The straight line between two nodes | **segment** | edge, span |
 | The `d` text in the drawer | **source** | code, path data, markup |
+
+One exception, because the interface wins: the drawer's two formats are the
+**Path data** and **SVG** buttons, and the manual names them as they appear. The
+text itself is still the source. "The source gets shorter", not "the path data
+gets shorter".
 
 `subpath` and `contour` appear throughout the code and in `ARCHITECTURE.md`,
 where they are the right words. In the manual they are both **path**, because a
@@ -148,30 +144,19 @@ The status line is one line, read in passing, often after something surprising.
    silent dead clicks were a shipped defect here.
 7. **No em-dash.** A full stop nearly always works.
 
-### Catalogue and decisions
-
-Current strings, and what each has to become. The pattern is the point: the same
-three faults repeat.
-
-| Now | Fault | Becomes |
-|---|---|---|
-| `Imported 3 shapes` | no full stop | `Imported 3 shapes.` |
-| `Copied.` / `Nothing to import.` | fine, keep | keep |
-| `Apply would merge all 4 shapes — select one first, or switch to SVG.` | em-dash, two instructions | `Apply would merge all 4 shapes. Select one first, or switch to SVG.` |
-| `That node is an end of the path — there is no second handle to line up with.` | em-dash, wordy | `That node ends the path. There is no second handle to line up with.` |
-| `That node is already an end of the path — nothing to break.` | em-dash | `That node already ends the path.` |
-| `No circle is determined by those nodes — they are collinear, or they do not go round the ring in order.` | em-dash, 18 words before the point | `Those nodes do not determine a circle. They are collinear, or they do not go round in order.` |
-| `Already smooth: symmetric means collinear handles of equal length, which is smooth. Drag one handle to give them different lengths.` | 22 words, explains the model | `Already smooth. Symmetric is smooth with equal handle lengths; drag one to differ.` |
-| `Already a corner — the handles are where that setting puts them, so there is nothing to move.` | em-dash, explains itself twice | `Already a corner.` |
-| `Renamed to outer ring; exports as id="outer-ring".` | semicolon carries a second fact | `Renamed to outer ring. Exports as id="outer-ring".` |
-| `Circularised 1 contour onto r 17.051; furthest node moved 1.713.` | "contour" is not in the vocabulary | `Circularised 1 path onto r 17.051. Furthest node moved 1.713.` |
-| `Clipboard blocked by the browser.` | fine | keep |
-
 **Pluralisation** is computed, never `shape(s)`. The code already does this; keep
 it.
 
 **Failures** read `{Thing} failed.` in sentence case with a full stop, and add
 the reason only when the reader can act on it.
+
+The three faults that actually recur, and what each becomes:
+
+| Fault | Example of the fix |
+|---|---|
+| An em-dash carrying a second instruction | `Apply would merge all 4 shapes. Select one first, or switch to SVG.` |
+| Explaining the model instead of stating the outcome | `Already a corner.`, not a sentence about where the setting puts the handles |
+| A semicolon carrying a second fact | `Renamed to outer ring. Exports as id="outer-ring".` |
 
 ## Before it ships
 
@@ -179,6 +164,8 @@ the reason only when the reader can act on it.
    it answer what they came for?
 2. **Reader test.** Paste the page to a fresh model with no context and ask what
    a real user would ask. Fix what confuses it.
-3. **Tell sweep.** Search for `—` and the banned vocabulary. In user-facing text
-   the em-dash count should be zero.
-4. **Terminology sweep.** Search for every word in the "Never" column.
+3. **Tell sweep and terminology sweep.** `npm run check:docs` does both, plus
+   the links. The em-dash count in user-facing text is an error and zero. The
+   banned vocabulary and the "Never" column are printed rather than enforced,
+   because every one of those words has a legitimate sense and a check that
+   cries wolf gets turned off.

@@ -97,7 +97,7 @@ Look at the source drawer. The coordinates are shorter and the shape has not
 moved, because two decimal places is far more precision than a 100-unit canvas
 needs.
 
-Now tick **Minify**. The path data gets shorter again: separators disappear
+Now tick **Minify**. The source gets shorter again: separators disappear
 where they are not needed, leading zeros go, and repeated command letters are
 dropped. The geometry is identical. This is the form to paste into production.
 

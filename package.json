@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "drive": "node tools/drive.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "check:docs": "node tools/docs.mjs"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",

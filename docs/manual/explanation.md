@@ -55,7 +55,7 @@ A circle drawn this way is four curves, and it is round to about 0.027 % of its
 radius. That is not exact, because a Bézier curve cannot be a circular arc. It is
 closer than a screen can show and closer than most renderers care about.
 
-The number matters when you circularise something with one very wide gap between
+The number matters when you circularise something with one wide gap between
 nodes, because the error grows quickly with the arc a single curve has to cover.
 That is why the status line tells you when a gap is wide, and suggests adding a
 node in it.
@@ -151,7 +151,7 @@ Rotating a shape rewrites its coordinates. There is no `transform` attribute
 hanging off it waiting to be applied at render time, and imported ones are baked
 in on the way in.
 
-This is why the source box always shows what is really there. No hidden
+This is why the source box always shows what is there. No hidden
 coordinate system, and no numbers that only make sense after a matrix you cannot
 see. The cost is that rotating by ten degrees and back is not exactly the
 identity. Undo is exact; arithmetic is not.
@@ -175,7 +175,7 @@ Deleting a node has two reasonable meanings and this editor lets you pick.
 
 **Heal** keeps the path whole by rebuilding one segment from the two that met at
 the node. Rebuilding is approximate by nature. When both original curves bowed
-the same way it is very close; across an inflection it visibly differs, because
+the same way it is close; across an inflection it visibly differs, because
 one cubic curve cannot reproduce an S made of two.
 
 **Split** leaves two ends, and is exact: no segment is rebuilt, so every curve
