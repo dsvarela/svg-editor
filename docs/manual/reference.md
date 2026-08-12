@@ -167,27 +167,28 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 - **Within** is how far Simplify may move the drawing, in document units. It
   starts at about one screen pixel for the document you have open and stops
   following it once you type your own number.
-- **Simplify** removes nodes from the selected paths, in one of three modes set
-  by the buttons above it. The status line reports the node count before and
-  after, and the furthest anything moved.
+- **Simplify** removes nodes from the selected paths. **Within** decides how
+  much of the shape it may give up, and **Redraw curves** decides whether it may
+  replace your curves as well as drop nodes. The status line reports the node
+  count before and after, and the furthest anything moved.
 
-| Mode | Removes | Uses **Within** |
-|---|---|---|
-| **Clean up** | Only nodes that cannot change the exported file | No, it uses the export precision |
-| **Keep nodes** | Nodes up to **Within**, without rebuilding any curve | Yes |
-| **Refit** | The same, then refits what is left | Yes |
+  **Within 0 is a real setting, not a refusal.** It means move nothing, and what
+  it removes is every node that cannot change the exported file. A node counts
+  as doing nothing when its two segments are pieces of the same curve, which is
+  exactly what a node added by double-clicking an outline is. Run it on anything:
+  it cannot change a character of what you save.
 
-  Clean up runs first in all three, so a node that is doing nothing is removed
-  whatever mode you pick and whatever **Within** says. A node counts as doing
-  nothing when its two segments are pieces of the same curve, which is exactly
-  what a node added by double-clicking an outline is. Corners are never removed:
-  no single curve replaces two sides of a corner, so no tolerance makes one
-  redundant.
+  Above zero it also gives up nodes that carry a little of the shape, and the
+  drawing moves by at most the number you typed.
 
-  **Refit** is the only mode that invents geometry. It is the right one for a
-  traced path carrying a node every few units. **Keep nodes** is the one to
-  reach for when every node on screen is one you placed, because it will not
-  replace your curves with fitted ones.
+  **Redraw curves** is off by default and is the only thing here that invents
+  geometry. Left off, every node that survives is one you placed. Turn it on for
+  a traced path carrying a node every few units, where the nodes are not yours
+  and there is nothing to preserve.
+
+  Corners are never removed whatever you choose. No single curve replaces two
+  sides of a corner, so no tolerance makes one redundant.
+
 - **Reverse** (`Shift+R`) walks the selected paths the other way round. The
   drawing does not move. Direction is what decides winding under `nonzero`, and
   which end of a path a marker lands on. A closed path keeps its start node, so
@@ -492,10 +493,10 @@ Named here rather than left for you to find.
   whole number the other edge lands mid-pixel. Nothing can do better.
 - **The backdrop does not survive a reload.** Everything else about it is
   undoable; this is not, because nothing here is saved between sessions.
-- **Refit checks the tolerance where it samples.** Sampling is dense, and
-  denser than the tolerance, so the gap is small. It is not zero, and a path with
-  extreme curvature between samples can move a little further than the number you
-  typed. **Clean up** and **Keep nodes** do not sample at all, and their limit is
+- **Redraw curves checks the tolerance where it samples.** Sampling is dense,
+  and denser than the tolerance, so the gap is small. It is not zero, and a path
+  with extreme curvature between samples can move a little further than the
+  number you typed. With the box off nothing is sampled at all, and the limit is
   a bound rather than a measurement.
 - **Anchors are a fixed size on screen,** so zooming out shrinks the drawing
   while they stay put and crowd it. Handles closer to their node than the node's

@@ -1986,6 +1986,10 @@ const scenarios = {
 
     await page.click('#shapelist li');
     await page.waitForTimeout(120);
+    /* Redraw is off by default now, and this scenario is about the refit: a
+       40-node ring holds real shape at every node, so removal alone leaves
+       most of them. Ticking it is the whole point of the checkbox. */
+    await page.check('#simplifyRedraw');
     await page.click('#simplify');
     await page.waitForTimeout(250);
 

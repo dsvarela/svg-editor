@@ -74,16 +74,6 @@ import { bendFromPoint } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { fitAspect, screenToDoc, zoomAt } from '../view/viewport';
 
-/**
- * Which of the three operations Simplify runs.
- *
- * `clean` removes only what cannot change the exported file, at any tolerance.
- * `keep` adds the tolerance budget but never rebuilds a curve, so every node
- * that survives is one somebody placed. `refit` adds Schneider's resample on
- * top, which is the only one of the three that invents geometry.
- */
-export type SimplifyMode = 'clean' | 'keep' | 'refit';
-
 type DragKind =
   | { kind: 'none' }
   | { kind: 'pan'; client: Pt; camera: Pt; k: number }
@@ -1240,9 +1230,9 @@ export class Controller {
    * that was highlighted a moment ago; keeping them would leave the panel
    * editing coordinates nobody chose.
    */
-  simplifySelection(tol: number, mode: SimplifyMode = 'refit'): boolean {
-    if (mode !== 'clean' && !(tol > 0)) {
-      this.onMessage?.('Simplify needs a tolerance above zero. It is how far a node may move.', false);
+  simplifySelection(tol: number, redraw = false): boolean {
+    if (!(tol >= 0) || !Number.isFinite(tol)) {
+      this.onMessage?.('Within has to be a number, and not a negative one.', false);
       return false;
     }
 
@@ -1252,10 +1242,13 @@ export class Controller {
       return false;
     }
 
-    /* Clean up ignores the tolerance box entirely and uses the export
-       precision, because a node that cannot change the saved file is useless
-       at every tolerance rather than at some of them. See `invisibleAt`. */
-    const budget = mode === 'clean' ? invisibleAt(this.store.state.decimals) : tol;
+    /* Zero is a real value, not a refusal. It says "move nothing", and the
+       budget that honours it is the export precision: a node whose removal
+       cannot change a character of the saved file has moved nothing that can
+       be observed. Making the tolerance continuous down to zero is what let
+       three modes collapse into one number and one checkbox. */
+    const floor = invisibleAt(this.store.state.decimals);
+    const budget = tol > 0 ? Math.max(tol, floor) : floor;
 
     let paths = 0;
     let before = 0;
@@ -1276,7 +1269,9 @@ export class Controller {
           let n = k.after;
           let moved = k.cost;
 
-          if (mode === 'refit') {
+          // Refitting needs a budget to fit inside. At zero there is none, and
+          // the checkbox is disabled in the panel for the same reason.
+          if (redraw && tol > 0) {
             const r = simplifySubpath(sp, tol);
             if (r) {
               n = r.after;
@@ -1297,18 +1292,17 @@ export class Controller {
 
     if (!paths) {
       this.onMessage?.(
-        mode === 'clean'
-          ? 'Nothing to clean up. Every node here is carrying the shape.'
-          : 'Nothing to simplify. Raise the tolerance to remove more nodes.',
+        tol > 0
+          ? 'Nothing to simplify. Raise Within to give up more of the shape.'
+          : 'Every node here is carrying the shape. Raise Within to remove some anyway.',
         false,
       );
       return false;
     }
 
     const dp = (v: number): string => (+v.toFixed(3)).toString();
-    const what = mode === 'clean' ? 'Cleaned' : 'Simplified';
     this.onMessage?.(
-      `${what} ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
+      `Simplified ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
         `Nothing moved further than ${dp(error)}.`,
       true,
     );

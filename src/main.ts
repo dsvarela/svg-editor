@@ -23,7 +23,6 @@ import type { Backdrop, EditorState } from './model/store';
 import { Canvas } from './view/canvas';
 import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
-import type { SimplifyMode } from './tools/controller';
 import type { AlignMode } from './model/ops';
 import { $ } from './view/dom';
 import { installTooltips } from './ui/tooltip';
@@ -487,33 +486,20 @@ const simplifyTol = $('#simplifyTol') as HTMLInputElement;
 let tolChosen = false;
 const defaultTol = (vb: ViewBox): number => +(Math.hypot(vb.w, vb.h) * 0.0025).toPrecision(2);
 simplifyTol.addEventListener('input', () => (tolChosen = true));
-/* Which of the three Simplify does. Kept out of the store on purpose: it is a
-   preference about the next command, not part of the document, and the store
-   is what history snapshots. `deleteMode` is in the store because the Delete
-   panel reports it in the readout; this has nowhere to report to. */
-/* Refit by default, which is what the button did before this. Clean-up now
-   runs first in every mode, so the safe removal happens whatever is selected
-   and nobody's existing habit changed meaning. */
-let simplifyMode: SimplifyMode = 'refit';
-const simplifyModeEl = $('#simplifyMode');
-const paintSimplifyMode = (): void => {
-  for (const b of simplifyModeEl.querySelectorAll('button')) {
-    b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === simplifyMode));
-  }
-  // Within has no meaning in clean-up mode, and an input that does nothing is
-  // worse than one that is visibly unavailable.
-  simplifyTol.disabled = simplifyMode === 'clean';
-};
-simplifyModeEl.addEventListener('click', (e) => {
-  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
-  if (v === 'clean' || v === 'keep' || v === 'refit') {
-    simplifyMode = v;
-    paintSimplifyMode();
-  }
-});
-paintSimplifyMode();
+/* Whether Simplify may replace curves as well as remove nodes. Kept out of the
+   store on purpose: it is a preference about the next command, not part of the
+   document, and the store is what history snapshots. */
+const redrawEl = $('#simplifyRedraw') as HTMLInputElement;
+function paintRedraw(): void {
+  /* Refitting needs a budget to fit inside, and Within 0 is the instruction to
+     move nothing. Leaving the box tickable there would offer a choice that
+     cannot act. */
+  redrawEl.disabled = !(Number(simplifyTol.value) > 0);
+}
+simplifyTol.addEventListener('input', paintRedraw);
+paintRedraw();
 
-on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value), simplifyMode));
+on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value), redrawEl.checked));
 on('#reverse', () => controller.reverseSelection());
 
 const decInput = $('#decimals') as HTMLInputElement;
@@ -1539,6 +1525,11 @@ store.subscribe((s) => {
 
   drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
+  /* Here rather than only on `input`, because the line above sets the value
+     programmatically and that fires no event. Without this the box started
+     disabled and stayed disabled until somebody typed in Within, which is the
+     one thing a person who wanted the box would not think to do. */
+  paintRedraw();
 
   const canvasBox = s.doc.viewBox;
   for (const [id, v] of [

@@ -18,7 +18,7 @@ import { Store } from '../src/model/store';
 import { docBBox, emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
-import { segmentBend } from '../src/model/ops';
+import { segmentBend, splitSegment } from '../src/model/ops';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
@@ -1525,14 +1525,32 @@ describe('simplify', () => {
     expect(said.join(' ')).toMatch(/nothing to simplify/i);
   });
 
-  it('refuses a tolerance of zero rather than reporting nothing to do', () => {
-    const h = harness(dense());
+  /* Zero used to be refused. It is now the instruction to move nothing, and
+     what it removes is whatever cannot change the exported file. That is what
+     lets one number cover the whole range instead of a number plus a mode. */
+  it('treats a tolerance of zero as "move nothing" rather than refusing it', () => {
+    const h = harness('M0 0 C 10 -10 20 -10 30 0 C 40 10 50 10 60 0');
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    // A node added the way double-clicking adds one: lossless, so it is free.
+    splitSegment(sp, 0, 0.5);
+    h.controller.render();
+    const nodes = sp.nodes.length;
     h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
     const said: string[] = [];
     h.controller.onMessage = (m) => said.push(m);
 
-    expect(h.controller.simplifySelection(0)).toBe(false);
-    expect(said.join(' ')).toMatch(/above zero/i);
+    expect(h.controller.simplifySelection(0)).toBe(true);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.length).toBe(nodes - 1);
+    expect(said.join(' ')).not.toMatch(/above zero/i);
+  });
+
+  it('refuses a negative tolerance, which is not an instruction at all', () => {
+    const h = harness(dense());
+    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    expect(h.controller.simplifySelection(-1)).toBe(false);
+    expect(said.join(' ')).toMatch(/negative/i);
   });
 
   it('refuses with nothing selected', () => {

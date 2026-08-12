@@ -260,12 +260,10 @@
               <label for="simplifyTol">Within</label>
               <input type="number" id="simplifyTol" step="0.05" min="0" />
             </div>
-            <div class="seg wide" id="simplifyMode" role="group" aria-label="What Simplify does">
-              <button type="button" data-v="clean" title="Remove only the nodes that cannot change the exported file. Ignores Within">Clean up</button>
-              <button type="button" data-v="keep" title="Remove nodes up to Within, but never rebuild a curve">Keep nodes</button>
-              <button type="button" data-v="refit" title="Also refit the survivors, which is the only mode that invents geometry">Refit</button>
+            <div class="checks">
+              <label><input type="checkbox" id="simplifyRedraw" title="Let Simplify replace your curves with fitted ones. Off, every node that survives is one you placed" /> Redraw curves</label>
             </div>
-            <button class="btn wide" id="simplify" title="Simplify the selected paths">
+            <button class="btn wide" id="simplify" title="Remove nodes from the selected paths">
               <svg class="ico"><use href="#i-simplify" /></svg>Simplify
             </button>
             <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
@@ -275,8 +273,12 @@
               <b>Corner</b> is the radius the rectangle tool draws with, clamped to half the shorter
               side. <b>Circularise</b> takes a hand-drawn or imported near-circle and makes it exact,
               keeping every node and rebuilding its handles from the arc each one now spans.
-              <b>Simplify</b> refits a path with fewer nodes, staying <b>Within</b> that many units
-              of where it was. Sharp corners are kept; gentle wobbles are not. <b>Reverse</b> turns
+              <b>Within</b> is how far the drawing
+              may move. At <b>0</b> it removes only nodes that are doing nothing, which cannot
+              change the file you export, so it is safe on anything. Above 0 it also gives up nodes
+              that carry a little of the shape. <b>Redraw curves</b> lets it replace your curves
+              with fitted ones; left off, every node that survives is one you placed. Sharp corners
+              are kept whichever you choose. <b>Reverse</b> turns
               a path round without moving it: the drawing is identical, and which way it runs
               decides winding under <code>nonzero</code> and which end a marker lands on.
             </p>
