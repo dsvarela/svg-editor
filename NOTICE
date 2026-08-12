@@ -1,6 +1,15 @@
 svg-editor
 ==========
 
+Copyright 2026 Daniel Varela
+
+Licensed under the Apache License, Version 2.0. The full text is in LICENSE.
+
+Everything below is work by other people. Each entry names what was taken, from
+where, under what licence, and what was changed.
+
+--
+
 This project contains code adapted from svg-path-editor by Yann Armelin,
 used under the Apache License, Version 2.0.
 

@@ -184,9 +184,17 @@ selecting a node did nothing.
 
 ## Credit and licences
 
+**[Apache-2.0](LICENSE).** It follows the largest thing adapted here, so the
+[NOTICE](NOTICE) file the project already carried is the mechanism the licence
+expects rather than a second scheme running alongside it.
+
 The path tokenizer, the number formatter and the adaptive grid step are adapted
 from **[Yann Armelin's svg-path-editor](https://github.com/Yqnn/svg-path-editor)**
 (Apache-2.0). Attribution is on each adapted function; see [NOTICE](NOTICE).
+
+The raster boundary walk is ported from
+**[ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs)** by András
+Jankovics (Unlicense), which asks for no attribution and gets it anyway.
 
 Boolean operations use **[PathBool.js](https://github.com/r-flash/PathBool.js)**
 by Adam Platkevič (MIT), the one piece of geometry here deliberately not written

@@ -2,6 +2,7 @@
   "name": "svg-editor",
   "private": true,
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "type": "module",
   "description": "A grid-based SVG path editor with direct manipulation and no command table.",
   "scripts": {
