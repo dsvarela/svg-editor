@@ -58,16 +58,26 @@ The ported portions are:
 
   src/core/raster.ts      `layerEdges`, `scanPaths`, `interpolate` and the
                           16-by-4 walk table, from `layering`, `pathscan` and
-                          `internodes`. Rewritten in TypeScript against this
-                          project's own types, with the per-point direction
-                          codes dropped: they exist to feed ImageTracerJS's own
-                          curve fitter, and ours is Schneider's, in
-                          `src/core/fit.ts`.
+                          `internodes`; and three helpers they need --
+                          `inside` from `boundingboxincludes`, `pointInPoly`
+                          from `pointinpoly`, and `isRightAngle` from
+                          `testrightangle`.
+
+                          Rewritten in TypeScript against this project's own
+                          types, with the per-point direction codes dropped:
+                          they exist to feed ImageTracerJS's own curve fitter,
+                          and ours is Schneider's, in `src/core/fit.ts`.
 
                           `censusPalette` and `indexRaster` are NOT ported. The
                           original quantises by k-means sampling; these count
                           the image's exact colours, which suits flat artwork
                           and is what this editor is for.
+
+The port was written against jankovicsandras' original, which is the Unlicense
+release credited above. It was then checked for agreement against the compiled
+output of `imagetracer` (MuRong, MIT), a TypeScript port of the same algorithm,
+purely as a second opinion on whether the port was faithful. No line of that
+package is present here.
 
 The Unlicense asks for nothing, including this notice. It is here because a
 reader deserves to know which lines were solved by someone else.

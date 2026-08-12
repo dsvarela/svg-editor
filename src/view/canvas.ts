@@ -27,7 +27,6 @@ import type { TransformPart } from '../model/transform';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
 import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
-import { phaseInForce } from '../model/pixelfit';
 
 /** Transient things the tools want drawn this frame. */
 export interface OverlayExtras {
@@ -39,6 +38,15 @@ export interface OverlayExtras {
   penTo?: Pt | null;
   /** Bounding box of the current selection, drawn with its transform handles. */
   selectionBox?: Box | null;
+  /**
+   * The snap lattice's phase, from pixel fit.
+   *
+   * Passed in rather than derived here. The controller freezes the phase for the
+   * duration of a gesture (see `Controller.phase`), and a grid that recomputed
+   * it would drift away from the lattice being snapped to at exactly the moment
+   * a drag is under way -- which is §9's defect, half a pixel wide.
+   */
+  gridPhase?: number;
 }
 
 /**
@@ -97,6 +105,9 @@ export class Canvas {
   /** Fixed set: eight scale handles and four rotation zones, made once. */
   private tRotors: { part: TransformPart; el: SVGRectElement }[] = [];
   private tHandles: { part: TransformPart; el: SVGRectElement }[] = [];
+
+  /** Lattice phase for this frame, handed in by whoever owns the gesture. */
+  private gridPhase = 0;
 
   /** Live `<path>` per shape id, so we only touch `d` when it changes. */
   private shapeEls = new Map<string, SVGPathElement>();
@@ -253,6 +264,7 @@ export class Canvas {
   /* ------------------------------------------------------------- overlay */
 
   renderOverlay(state: EditorState, extras: OverlayExtras = {}): void {
+    this.gridPhase = extras.gridPhase ?? 0;
     const k = this.scale(state.camera);
     this.renderGrid(state, k);
     this.renderDocEdge(state);
@@ -320,11 +332,10 @@ export class Canvas {
     const majorD: string[] = [];
     const round = (v: number): number => Math.round(v * 1e10) / 1e10;
 
-    /* Pixel-fit shifts the lattice the tools snap to, so it has to shift the
-       one drawn here by the same amount, from the same function. Drawing an
-       unshifted grid while snapping to a shifted one would be §9's defect
-       again, half a pixel wide and much harder to see. */
-    const phase = state.pixelFit ? (phaseInForce(state.doc, state.selection, state.style) ?? 0) : 0;
+    /* Pixel-fit shifts the lattice the tools snap to, so this has to shift by
+       the same amount. The value comes from the controller, which is the only
+       thing that knows whether a gesture is holding it fixed. */
+    const phase = this.gridPhase;
 
     // Index lines by whole multiples of the step rather than accumulating a
     // float. Major-line selection is then exact integer arithmetic, and index 0

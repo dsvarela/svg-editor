@@ -13,6 +13,7 @@ import { rectSubpath } from '../src/core/primitives';
 import { simplifySubpath } from '../src/model/simplify';
 import { parsePath } from '../src/core/parse';
 import { serialisePath } from '../src/core/serialise';
+import { KAPPA } from '../src/core/primitives';
 import { continuityOf, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
@@ -93,12 +94,18 @@ describe('fuseNodes', () => {
     // The pair that the plain index comparison gets backwards: the last node
     // precedes the first. Node 0 has to stay node 0, or a ring silently rotates
     // under a repair and every stored index moves with it.
-    const sp = closed([
-      [0, 0],
-      [10, 0],
-      [10, 10],
-      [0, 0],
-    ]);
+    const sp: Subpath = {
+      nodes: [
+        // Handles, deliberately. With `hIn`/`hOut` all null the two spellings of
+        // "which node survives" produce identical output and the test cannot
+        // tell them apart -- which is how it first shipped.
+        { pt: [0, 0], hIn: [-1, 0], hOut: [1, 0] },
+        { pt: [10, 0], hIn: [9, 0], hOut: [11, 0] },
+        { pt: [10, 10], hIn: [10, 9], hOut: [10, 11] },
+        { pt: [0, 0], hIn: [0, 2], hOut: [0, -2] },
+      ],
+      closed: true,
+    };
     const r = fuseNodes(sp, 3, 0);
     expect(r).toEqual({ moved: 0 });
     expect(sp.nodes.map((n) => n.pt)).toEqual([
@@ -107,6 +114,10 @@ describe('fuseNodes', () => {
       [10, 10],
     ]);
     expect(sp.closed).toBe(true);
+    // Node 0 is still node 0, and it arrives along the old last node's incoming
+    // handle while leaving along its own.
+    expect(sp.nodes[0].hIn).toEqual([0, 2]);
+    expect(sp.nodes[0].hOut).toEqual([1, 0]);
   });
 
   it('refuses two nodes that are not neighbours', () => {
@@ -176,6 +187,31 @@ describe('fuseDegenerate', () => {
     expect(sp.nodes).toHaveLength(3);
   });
 
+  it('leaves a short segment that is genuinely there', () => {
+    /* The bound was pinned from below and not from above: setting DEGENERATE to
+       3 -- welding anything within three document units -- passed every test and
+       every browser scenario. A repair that quietly redraws real geometry is a
+       worse failure than the one it repairs, so the ceiling is nailed down here.
+       1e-4 is a hundredth of a screen pixel at a typical zoom and a thousand
+       times the threshold. */
+    const sp = closed([
+      [0, 0],
+      [10, 0],
+      [10, 1e-4],
+      [10, 10],
+    ]);
+    expect(fuseDegenerate(sp)).toBe(0);
+    expect(sp.nodes).toHaveLength(4);
+    // And just below it, the weld does happen, so the threshold is real.
+    const tiny = closed([
+      [0, 0],
+      [10, 0],
+      [10, 1e-9],
+      [10, 10],
+    ]);
+    expect(fuseDegenerate(tiny)).toBe(1);
+  });
+
   it('stops at two nodes rather than sweeping a path out of existence', () => {
     // Four anchors all on one point. Two of them have to survive, because one
     // node draws nothing and the parser drops it on the way back in.
@@ -199,6 +235,31 @@ describe('the generators no longer produce coincident anchors', () => {
     for (const n of sp.nodes) {
       expect(Math.hypot(n.pt[0] - 10, n.pt[1] - 10)).toBeCloseTo(10, 9);
     }
+    /* Anchors alone are not a circle. The survivor has to take the arc handle
+       from EACH direction, and every assertion above passes if it takes both
+       from one node: the anchors are identical and only the handles collapse,
+       leaving four control points sitting on their own anchors and an outline
+       with four cusps in it. */
+    const k = 10 * KAPPA;
+    for (const n of sp.nodes) {
+      expect(n.hIn).not.toBeNull();
+      expect(n.hOut).not.toBeNull();
+      expect(Math.hypot(n.hIn![0] - n.pt[0], n.hIn![1] - n.pt[1])).toBeCloseTo(k, 9);
+      expect(Math.hypot(n.hOut![0] - n.pt[0], n.hOut![1] - n.pt[1])).toBeCloseTo(k, 9);
+      // Symmetric, which is what makes it smooth rather than a cusp.
+      expect(continuityOf(n)).toBe('symmetric');
+    }
+  });
+
+  it('collapses a side that has vanished to within a rounding error', () => {
+    /* An exact `===` was the first spelling and it looked safe, because when a
+       side truly vanishes the two tangent coordinates are bit-identical. A width
+       one ulp above twice the radius fails the clamp, leaves them 4.4e-16 apart,
+       and emits both: a zero-length command in the export and a path that can
+       never be simplified again. */
+    const sp = rectSubpath(0, 0, 2.1000000000000005, 20, 1.05);
+    expect(sp.nodes).toHaveLength(6);
+    expect(shortestSegment(sp)).toBeGreaterThan(0.01);
   });
 
   it('rounds an oblong to its limit as a six-node stadium', () => {

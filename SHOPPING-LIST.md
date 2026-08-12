@@ -5,8 +5,15 @@ S = an afternoon. M = a day, needs tests. L = a project in itself.
 
 Status: `[ ]` not started · `[~]` partial · `[x]` done
 
-The 2026-08-12 review of the backdrop, Simplify, transform box, canvas, Style
-and rounding work is in
+The second 2026-08-12 review, of Fuse, pixel fit, auto-trace and the snap
+priority order, is in
+[`docs/REVIEW-2026-08-12b.md`](docs/REVIEW-2026-08-12b.md) — twelve defect
+classes fixed, fifteen documentation claims corrected, nine tests rewritten
+because they could not fail. Four of those classes were introduced by a fix from
+the same morning.
+
+The first 2026-08-12 review of the backdrop, Simplify, transform box, canvas,
+Style and rounding work is in
 [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) — nine defect classes
 fixed, seventeen documentation claims corrected, six tests rewritten because
 they could not fail.
@@ -144,14 +151,14 @@ usually ask for together.
 | | Feature | Source | Size |
 |---|---|---|---|
 | `[x]` | **Backdrop image** — done. Drop a raster on the canvas or load it from the Backdrop panel. Opacity, show, lock, X/Y/width and fit. Workspace state rather than document content, so it never exports and never appears in the Shapes list, but it *is* in the undo history: load, move, resize, fit and remove are ordinary edits, while opacity, show and lock are view switches undo leaves alone. The first version shipped with no undo at all, on a memory argument that turned out to be about data URLs and not the object URLs actually used. The only remaining trade is no survival across a reload. See ARCHITECTURE §18 and the manual's explanation page. | every editor | — |
-| `[x]` | **Auto-trace** — done, in the Backdrop panel. One shape per colour, holes and all, mapped onto the backdrop's placement and fitted with the Schneider fitter Simplify already used. **Cost in this build: +5.6 kB raw, +2.0 kB gzipped**, against the +278 kB gzipped a WASM tracer would have added — 139 times smaller, because the expensive half of a tracer is curve fitting and we owned it. The estimate below said +1.8 kB; the extra is the panel and the shape building. See ARCHITECTURE §26. | Illustrator, Inkscape | — |
+| `[x]` | **Auto-trace** — done, in the Backdrop panel. One shape per colour, holes and all, mapped onto the backdrop's placement and fitted with the Schneider fitter Simplify already used. **Cost in this build: +6.9 kB raw, +2.3 kB gzipped all in** (+5.6 / +2.0 for the code, the rest the panel), against the +278 kB gzipped a WASM tracer would have added — 120 times smaller, because the expensive half of a tracer is curve fitting and we owned it. The estimate below said +1.8 kB; the extra is the panel and the shape building. See ARCHITECTURE §26. | Illustrator, Inkscape | — |
 
 ### The auto-trace decision — settled, and then built
 
 Taken 2026-08-12, on the same terms as the boolean decision: measure in our own
 build, judge the interface against our own model, and ask what we would actually
-be buying. Built the same day; **the measured cost came in at 2.0 kB gzipped
-against the 1.8 kB predicted here.** What follows is the decision as it was
+be buying. Built the same day; **the measured cost came in at 2.0 kB gzipped for the code
+against the 1.8 kB predicted here, and 2.3 kB with the panel.** What follows is the decision as it was
 taken, kept because the reasoning is the useful part.
 
 **VTracer fails on size, and not narrowly.**
@@ -215,7 +222,7 @@ opposite answer, which is worth writing down so neither looks arbitrary later:
 | Size of the thing | 4 925 lines | 255 |
 | Upstream | published five days before we looked, ported into Graphite | last published 2022; the algorithm is finished |
 | Fraction we would use | nearly all of it | about a quarter of the module |
-| The hard part | numerical robustness at intersections | none: an integer walk over a 2×2 lookup |
+| The hard part | numerical robustness at intersections | none: an integer walk over a 16×4 lookup |
 | Forfeited by vendoring | upstream fixes from an author still hunting failure cases | nothing |
 
 **What was verified rather than assumed:**
@@ -223,7 +230,9 @@ opposite answer, which is worth writing down so neither looks arbitrary later:
 - **The extraction is faithful.** `layering`, `pathScan`, `interNodes` and their
   three helpers pulled out by brace matching (255 lines, 9.3 kB of source), then
   run against the npm package on the same image. Output byte-identical, path for
-  path, point for point.
+  path, point for point. What shipped is a TypeScript rewrite against
+  **jankovicsandras' Unlicense original**; the MIT package was the yardstick for
+  that check, not the source. `NOTICE` says the same, and said less before.
 - **Their quantiser is the weak stage, and we should not use it.** On a
   three-colour test image at `numberofcolors: 3` it returned
   `229,229,255 | 255,0,0 | 255,0,0`: blue lost entirely, red duplicated. At eight

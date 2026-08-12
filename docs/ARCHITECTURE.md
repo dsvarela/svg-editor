@@ -817,9 +817,11 @@ through `roundCorner`, and two remained. `rectSubpath` now names its four tangen
 coordinates once and emits a vanished side's two ends as one node, so a square
 rounded to its own limit is a four-node circle and a 40 by 20 rounded at 10 is a
 six-node stadium. `circulariseSubpath` runs `fuseDegenerate` afterwards and
-reports the count, because two nodes at the same angle about the centre land on
-the same point of the circle however faithfully each one was placed, and the node
-count changing is something the person watching should be told.
+reports the count in the status line, because two nodes at the same angle about
+the centre land on the same point of the circle however faithfully each one was
+placed, and the node count changing is something the person watching should be
+told. It computed that count and threw it away for a day, while this paragraph
+and two others said the user was being told.
 
 `fuseDegenerate` is also offered directly: with a shape selected rather than a
 pair, **Fuse** sweeps it. A path can arrive carrying a zero-length segment from
@@ -895,10 +897,15 @@ Measured in this build rather than estimated:
 | | raw | gzipped |
 |---|---|---|
 | `@visioncortex/vtracer`, WASM | 668.0 kB | 278.3 kB |
-| auto-trace as built here | 5.6 kB | **2.0 kB** |
+| auto-trace as built here, all in | 6.9 kB | **2.3 kB** |
 
-139 times smaller, and the larger number would have arrived base64'd inside the
-single HTML file whether anyone traced anything or not. The full comparison, and
+120 times smaller, and the larger number would have arrived base64'd inside the
+single HTML file whether anyone traced anything or not.
+
+Measured by removing the feature from a clone of the tree and rebuilding. The
+figure first published here was 5.6 kB / 2.0 kB with the explanation that it
+included "the panel and the shape building"; it did not. That is the code alone,
+and the panel's markup is the remaining 1.1 kB / 0.3 kB. The full comparison, and
 the five other candidates, are in SHOPPING-LIST.
 
 **The walk is ported from ImageTracerJS** (András Jankovics, Unlicense), which is
@@ -931,9 +938,15 @@ Three smaller decisions:
 **Nothing sweeps for zero-length segments, and that is deliberate.** One was the
 first thing guarded against, since a zero chord leaves the fitter with no tangent
 (§24). Then it was measured: the walk steps one lattice unit at a time and the
-midpoint pass halves that, so consecutive points are 0.5 or 1.0 apart and never
-0. Removing the guard changed nothing on any fixture. The test pins the spacing
-instead of defending against a case the spacing rules out.
+midpoint pass halves that, so **0.5 is the floor** and no pair is ever 0 apart.
+Removing the guard changed nothing on any fixture. The test pins the floor
+instead of defending against a case the floor rules out.
+
+The first version of that sentence said "0.5 or 1.0 apart", which is false and
+was offered as a measured fact. Two midpoints across a turn are √2/2 ≈ 0.7071
+apart, and on a checkerboard **every** gap is. The safety conclusion survives --
+0.5 really is the minimum -- but an enumeration is a stronger claim than a bound
+and this one had not been checked against a diagonal.
 
 End to end, on a 64 by 64 icon of a disc with a square hole: three rings, **344
 boundary points fitted to 19 nodes**. Node soup was the reason Simplify had to

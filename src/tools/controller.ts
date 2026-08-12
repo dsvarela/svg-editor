@@ -53,7 +53,7 @@ import {
 } from '../model/ops';
 import type { AlignMode, FuseRefusal, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
-import { phaseInForce, phaseLabel } from '../model/pixelfit';
+import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import type { SnapResult } from '../model/snapping';
 import { traceImage } from '../model/trace';
@@ -207,6 +207,9 @@ export class Controller {
     // where a box chasing the thing it measures is noise.
     this.extras.selectionBox =
       this.drag.kind === 'none' || this.drag.kind === 'transform' ? this.transformBox() : null;
+    // The grid draws the lattice the tools are actually snapping to, frozen
+    // phase and all, because there is only one of them.
+    this.extras.gridPhase = this.phase();
     this.canvas.renderOverlay(s, this.extras);
   }
 
@@ -219,14 +222,32 @@ export class Controller {
   /**
    * The lattice shift in force, or zero when pixel-fit is off or undecidable.
    *
-   * Read fresh each time rather than cached: it follows the selection and the
-   * pending stroke width, both of which change under the user's hand. The canvas
-   * calls the same function for the grid it draws, so the lattice you aim at and
-   * the lattice you see cannot disagree.
+   * **A drawing tool asks the pending style, not the selection.** That one line
+   * is the whole fix for a defect worth stating: `phaseInForce` prefers what is
+   * selected, and a create drag *replaces the selection with the shape it just
+   * made*. So drawing a rectangle while an unstroked shape happened to be
+   * selected snapped the first corner on that shape's lattice and every later
+   * corner on the new shape's, giving a rectangle 20.5 units wide -- two edges
+   * on whole pixels and two not, the exact failure §25 exists to prevent. The
+   * drawn grid moved with it, leaving the committed corner on no gridline.
+   *
+   * Asking the pending style makes the answer constant for the length of the
+   * gesture, because a tool that is drawing is asking about a shape that does
+   * not exist yet and the pending style is the only honest description of it.
+   *
+   * **There is deliberately no freeze-at-the-press.** One was written first, on
+   * the transform box's principle of capturing at the press. Then it was
+   * measured: with the rule above in place, removing the freeze changed nothing
+   * on any test, because nothing else moves the phase mid-gesture -- a node drag
+   * does not alter the selection, and shape and backdrop drags snap a
+   * displacement, which is phase-invariant. Keeping a guard that cannot be shown
+   * to do anything is the habit this project keeps catching itself in.
    */
   phase(): number {
     const s = this.store.state;
     if (!s.pixelFit) return 0;
+    const creating = s.tool === 'pen' || s.tool === 'ellipse' || s.tool === 'rect';
+    if (creating) return phaseOf(s.style);
     return phaseInForce(s.doc, s.selection, s.style) ?? 0;
   }
 
@@ -1013,6 +1034,7 @@ export class Controller {
     let moved = 0;
     let radius = 0;
     let widest = 0;
+    let fused = 0;
     this.store.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
@@ -1028,6 +1050,7 @@ export class Controller {
           moved = Math.max(moved, r.moved);
           radius = r.radius;
           widest = Math.max(widest, r.widestSpan);
+          fused += r.fused;
         }
       }
       return done > 0;
@@ -1056,6 +1079,10 @@ export class Controller {
         done > 1 ? ' (the last one)' : ''
       }. Furthest node moved ${dp(moved)}.` +
         (extra.length ? ` Skipped ${extra.join(', ')}.` : '') +
+        /* Two nodes at the same angle land on the same point of the circle, so
+           one of them goes. The count was computed and thrown away, while three
+           documents claimed the user was told. */
+        (fused ? ` Welded ${fused} node${fused === 1 ? '' : 's'} that shared an angle.` : '') +
         (wideDeg > 120
           ? ` Widest gap is ${wideDeg}°. One curve cannot hold that arc tightly; add a node in it.`
           : ''),
@@ -1310,7 +1337,7 @@ export class Controller {
     });
 
     if (!count) {
-      this.onMessage?.('Already on the pixel grid. Nothing to move.', true);
+      this.onMessage?.('Already on the pixel grid. Nothing to move.', false);
       return false;
     }
     const dp = (v: number): string => (+v.toFixed(3)).toString();
@@ -1704,6 +1731,20 @@ export class Controller {
        rather than nudge. Guarding them out too made that branch unreachable and
        quietly retired a documented shortcut. */
     if (mod && !e.key.startsWith('Arrow')) return;
+
+    /* An operation that rewrites the document is refused while a drag is live,
+       for the reason §16 refuses undo there: the drag holds node indices into
+       an array the operation is about to splice, its edit folds silently into
+       the drag's batch, and Escape then rolls back both with no redo. Delete
+       had this hole from the beginning and Shift+F, Shift+B, Shift+J and
+       Shift+M all widened it. Escape and Enter are deliberately still allowed
+       -- ending a gesture is exactly what they are for. */
+    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F'];
+    if (this.drag.kind !== 'none' && rewrites.includes(e.key)) {
+      e.preventDefault();
+      this.onMessage?.('Finish the drag first.', false);
+      return;
+    }
 
     switch (e.key) {
       case 'Delete':

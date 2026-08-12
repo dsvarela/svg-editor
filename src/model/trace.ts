@@ -90,7 +90,10 @@ export function traceImage(
     const colour = palette[k];
     if (!colour || colour.a === 0) return;
 
-    const rings = interpolate(scanPaths(layer, Math.max(3, Math.round(opts.minPoints))), true);
+    // Floored at 0, not at 3. A single stray pixel traces to a four-point ring,
+    // so a floor of 3 made `minPoints` of 0, 1, 2, 3 and 4 all behave alike and
+    // the control could not express the case its own docstring names.
+    const rings = interpolate(scanPaths(layer, Math.max(0, Math.round(opts.minPoints))), true);
     if (!rings.length) return;
 
     const subpaths: Subpath[] = [];
@@ -102,11 +105,16 @@ export function traceImage(
       /* No degenerate sweep here, deliberately. A zero-length segment is what
          makes a path permanently un-simplifiable, so it was the first thing
          guarded against -- and then measured: the walk steps one lattice unit
-         at a time and `interpolate` halves that, so consecutive points are 0.5
-         or 1.0 apart and never 0. Removing the sweep changed nothing on any
+         at a time and `interpolate` halves that, so **0.5 is the floor** and no
+         pair is ever 0 apart. Removing the sweep changed nothing on any
          fixture, which is the definition of code that should not be here.
-         `test/trace.test.ts` pins the spacing instead, so if the walk ever
-         stops guaranteeing it, something says so. */
+         `test/trace.test.ts` pins the floor, so if the walk ever stops
+         guaranteeing it, something says so.
+
+         The first version of this comment said "0.5 or 1.0 apart". That is an
+         enumeration rather than a bound, and it is wrong: two midpoints across a
+         turn are √2/2 apart, and on a checkerboard every gap is. The floor is
+         what the argument actually needs. */
       if (sp.nodes.length < 3) continue;
 
       paths++;

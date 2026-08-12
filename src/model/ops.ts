@@ -567,10 +567,12 @@ export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
 }
 
 /**
- * Why two nodes could not be fused, or `null` when they were.
+ * Why two nodes could not be fused.
  *
  * Same shape as `RoundRefusal`, and for the same reason: each of these is
- * something the person who pressed the button can act on.
+ * something the person who pressed the button can act on. `fuseNodes` returns
+ * one of these OR a `FuseResult`; there is no `null` in the union, whatever an
+ * earlier version of this sentence said.
  */
 export type FuseRefusal = 'same' | 'apart' | 'tiny';
 
@@ -657,7 +659,13 @@ export function fuseNodes(sp: Subpath, i: number, j: number): FuseResult | FuseR
 const DEGENERATE = 1e-7;
 
 /**
- * Weld away every zero-length segment in a subpath. Returns how many went.
+ * Weld away a subpath's zero-length segments. Returns how many went.
+ *
+ * Not quite *every* one: the sweep stops at two nodes, because one node draws
+ * nothing and the parser discards it on the way back in. A path whose anchors
+ * are all on the same point therefore comes back as two anchors on that point,
+ * with one zero-length segment still in it. That is the least bad answer
+ * available and it is worth stating rather than claiming otherwise.
  *
  * The sweep behind the fillet generators. `roundCorner` reuses a neighbour when
  * a tangent point lands on one, but the rectangle tool and `circulariseSubpath`
@@ -1133,7 +1141,23 @@ export function nearestOnPath(
       const n = segmentCount(sp);
       for (let seg = 0; seg < n; seg++) {
         if (allow && !allow(shape.id, spI, seg)) continue;
-        const pr = projectToCubic(segmentAsCubic(sp, seg), p);
+        /* Reject on the segment's control hull before projecting. A cubic lies
+           inside the box of its four control points, so anything whose box is
+           further than `maxDist` cannot win, and `projectToCubic` costs 24
+           samples plus 20 refinements. This was pure hit-testing until snapping
+           started calling it on every pointermove: on a traced drawing of 2 400
+           segments a hover over empty canvas cost 12.8 to 16.7 ms, which is a
+           dropped frame for doing nothing. */
+        const c = segmentAsCubic(sp, seg);
+        const lo0 = Math.min(c[0][0], c[1][0], c[2][0], c[3][0]);
+        const hi0 = Math.max(c[0][0], c[1][0], c[2][0], c[3][0]);
+        const lo1 = Math.min(c[0][1], c[1][1], c[2][1], c[3][1]);
+        const hi1 = Math.max(c[0][1], c[1][1], c[2][1], c[3][1]);
+        const reach = best?.d ?? maxDist;
+        if (p[0] < lo0 - reach || p[0] > hi0 + reach) continue;
+        if (p[1] < lo1 - reach || p[1] > hi1 + reach) continue;
+
+        const pr = projectToCubic(c, p);
         if (pr.d < (best?.d ?? maxDist)) {
           best = { shape: shape.id, sp: spI, seg, t: pr.t, d: pr.d, pt: pr.pt };
         }

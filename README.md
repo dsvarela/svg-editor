@@ -31,13 +31,14 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (478 across 16 files) |
+| `npm test` | Unit and DOM tests (484 across 16 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **184.1 kB, 58.2 kB
-gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 2.0 kB of
-that, against the 278 kB a WASM tracer would have cost; see ARCHITECTURE §26.
+The production build is one file, no external requests: **185.1 kB, 58.6 kB
+gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 2.3 kB of
+that all-in, against the 278 kB a WASM tracer would have cost; see
+ARCHITECTURE §26.
 
 ---
 
@@ -48,7 +49,8 @@ that, against the 278 kB a WASM tracer would have cost; see ARCHITECTURE §26.
 | [`docs/manual/`](docs/manual/README.md) | The manual: tutorial, how-to guides, reference, explanation |
 | [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does |
-| [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) | The last review: nine defect classes, 17 doc claims, 6 tests that could not fail |
+| [`docs/REVIEW-2026-08-12b.md`](docs/REVIEW-2026-08-12b.md) | The last review: 12 defect classes, 15 doc claims, 9 tests that could not fail |
+| [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) | Earlier the same day: nine defect classes, 17 doc claims, 6 tests that could not fail |
 | [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The one before: ten defect classes, all ten now fixed |
 | [`SHOPPING-LIST.md`](SHOPPING-LIST.md) | What is deliberately not built yet, and why |
 
@@ -90,10 +92,14 @@ src/
     bend.ts        a curve described as angle + looseness
     fit.ts         cubics through a run of points, by least squares
     primitives.ts  ellipse, rectangle, and fitting a circle to points
+    raster.ts      a raster's boundaries -> polylines, for tracing
   model/      the document and every mutation it allows
     doc.ts         shapes, selection, bounding boxes
     ops.ts         all geometry edits
     simplify.ts    refit a path with fewer nodes
+    snapping.ts    which snap wins: vertex, then outline, then grid
+    pixelfit.ts    where the lattice sits so strokes land on whole pixels
+    trace.ts       raster boundaries -> shapes, one per colour
     transform.ts   what the selection box's handles mean
     store.ts       state, undo, batching
   view/       rendering
@@ -111,15 +117,16 @@ src/
   main.ts     wiring: document -> store -> canvas -> controller -> panels
 ```
 
-8 952 lines of TypeScript across 22 files, no runtime framework.
+10 346 lines of TypeScript across 26 files, no runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 478 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 484 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
-transforms, history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
+fusing, snapping, pixel fit, tracing, transforms, history, the grid and the
+primitives. The rendering tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings. It measures instead: curve equality by projected deviation, boolean
@@ -177,4 +184,4 @@ by hand.
 
 Ideas taken without code: [TikZiT](https://tikzit.github.io/)'s edge model,
 which is where bend comes from, and [IPE](https://otfried.github.io/ipe/)'s
-layered snapping, which is on the shopping list.
+layered snapping, now built: see ARCHITECTURE §27.

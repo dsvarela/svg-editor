@@ -831,7 +831,7 @@ function loadBackdrop(file: File): void {
  */
 async function traceBackdrop(): Promise<void> {
   const b = store.state.backdrop;
-  if (!b) {
+  if (!b || tracing) {
     status.textContent = 'Load an image in the Backdrop panel first.';
     status.className = 'st err';
     return;
@@ -841,13 +841,43 @@ async function traceBackdrop(): Promise<void> {
     return Number.isFinite(v) ? v : fallback;
   };
 
-  const btn = $('#traceGo') as HTMLButtonElement;
-  btn.disabled = true;
+  /* A flag rather than writing `disabled` here, because the store subscriber
+     writes it too -- it sets `disabled = !backdrop` on every notification. With
+     both owners, any unrelated update during the await re-enabled the button,
+     and a second click ran a second trace: two identical piles of shapes, one
+     of which one undo could not reach. The subscriber now reads this flag, so
+     there is one writer and no way for the two to disagree. */
+  tracing = true;
+  refreshTraceButton();
+  /* Two frames before the work starts. `traceImage` is synchronous and holds
+     the main thread -- 13 seconds on a 900 by 900 photograph -- so without
+     yielding, neither the status line nor the disabled button is ever painted
+     and the application simply stops answering with no explanation. This does
+     not make it faster; it makes it honest. */
+  status.textContent = `Tracing ${b.name}…`;
+  status.className = 'st ok';
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
   try {
     const img = new Image();
     img.src = b.src;
     await img.decode();
-    const raster = rasterFrom(img, b.naturalW, b.naturalH);
+    /* The document may have moved on across the awaits: the backdrop can be
+       removed, or a drag can be under way, and committing into either would put
+       the trace inside somebody else's undo entry. Re-read rather than trust
+       the `b` captured above. */
+    const live = store.state.backdrop;
+    if (!live || live.src !== b.src) {
+      status.textContent = 'The backdrop changed while tracing. Nothing was added.';
+      status.className = 'st err';
+      return;
+    }
+    if (controller.busy) {
+      status.textContent = 'Finish the drag first, then trace.';
+      status.className = 'st err';
+      return;
+    }
+    const raster = rasterFrom(img, live.naturalW, live.naturalH);
     controller.traceBackdrop(raster, {
       colours: num('#traceColours', DEFAULT_TRACE.colours),
       tolerance: num('#traceTol', DEFAULT_TRACE.tolerance),
@@ -857,9 +887,17 @@ async function traceBackdrop(): Promise<void> {
     status.textContent = 'That image could not be read for tracing.';
     status.className = 'st err';
   } finally {
-    btn.disabled = false;
+    tracing = false;
+    refreshTraceButton();
   }
 }
+
+/** True while a trace is in flight. Read by the subscriber, written only here. */
+let tracing = false;
+const refreshTraceButton = (): void => {
+  ($('#traceGo') as HTMLButtonElement).disabled = !store.state.backdrop || tracing;
+};
+
 on('#traceGo', () => void traceBackdrop());
 
 on('#backPick', () => backFile.click());
@@ -1279,7 +1317,12 @@ store.subscribe((s) => {
   const pfit = $('#fitPixels') as HTMLButtonElement;
   pnote.hidden = !s.pixelFit;
   pfit.hidden = !s.pixelFit;
-  pfit.disabled = s.selection.shapes.size === 0 && s.selection.nodes.size === 0;
+  /* Disabled on a mixed-width selection too. The phase is already computed two
+     lines below for the readout, and offering a button whose only possible
+     answer is "no one lattice fits them all" is the Class 9 pattern again. */
+  pfit.disabled =
+    (s.selection.shapes.size === 0 && s.selection.nodes.size === 0) ||
+    phaseInForce(s.doc, s.selection, s.style) === null;
   if (s.pixelFit && s.gridStep) {
     gridreadout.textContent += ` · ${phaseLabel(phaseInForce(s.doc, s.selection, s.style))}`;
   }
@@ -1349,9 +1392,12 @@ store.subscribe((s) => {
 
   const b = s.backdrop;
   backinfo.textContent = !b ? 'none' : b.visible ? (b.locked ? b.name : `${b.name} · unlocked`) : 'hidden';
-  for (const id of ['#backOpacity', '#backX', '#backY', '#backScale', '#backFit', '#backClear', '#backShow', '#backLock', '#traceColours', '#traceTol', '#traceNoise', '#traceGo']) {
+  for (const id of ['#backOpacity', '#backX', '#backY', '#backScale', '#backFit', '#backClear', '#backShow', '#backLock', '#traceColours', '#traceTol', '#traceNoise']) {
     ($(id) as HTMLInputElement).disabled = !b;
   }
+  // One writer, so a trace in flight and a backdrop being removed cannot leave
+  // the button enabled by racing each other.
+  refreshTraceButton();
   /* The size traced is the image's own, not the size it has been scaled to on
      screen: the pixels are the information and the placement is not, so a
      reference shrunk to line something up still traces at full detail. */
@@ -1414,9 +1460,15 @@ canvas.overlay.addEventListener('pointermove', (e) => {
      worth knowing before you commit to the click. The grid is not shown that
      way: with a step of 1 the readout would lock to integers and stop being a
      pointer position at all, for a lattice that is already drawn on screen. */
-  const snap = controller.snapPreview(p);
-  const at = snap.kind === 'vertex' || snap.kind === 'boundary' ? snap.pt : p;
-  const label = snap.kind === 'vertex' || snap.kind === 'boundary' ? snapLabel(snap.kind) : null;
+  /* Not during a drag. `snapPreview` deliberately passes no exclusions, which
+     is right for a hover -- a point that does not exist yet may land on any
+     node -- and wrong the moment something is being dragged, because the node
+     under the pointer is the one the drag itself excludes. It read `on a node`
+     for the whole of every node drag, naming that node's own coordinates. */
+  const snap = controller.busy ? null : controller.snapPreview(p);
+  const claimed = snap && (snap.kind === 'vertex' || snap.kind === 'boundary');
+  const at = claimed ? snap.pt : p;
+  const label = claimed ? snapLabel(snap.kind) : null;
   cursorEl.textContent = `${at[0].toFixed(dp)}, ${at[1].toFixed(dp)}${label ? ` · ${label}` : ''}`;
 });
 canvas.overlay.addEventListener('pointerleave', () => (cursorEl.textContent = ''));

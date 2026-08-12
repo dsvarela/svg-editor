@@ -228,7 +228,7 @@ Turn the loaded backdrop into shapes, one per colour.
 
 Traced shapes land on top of the backdrop, which stays where it is so you can
 compare the two. Each shape is filled with its own colour and has no stroke;
-holes come back as extra subpaths under **Even-odd**. A fully transparent
+holes come back as extra paths inside the same shape, under **Even-odd**. A fully transparent
 background is dropped, since it would export an invisible shape; an opaque one is
 kept, because it is part of the picture.
 
@@ -290,11 +290,13 @@ is grey where you wanted black. Ticking it shifts the grid by half the stroke
 width: half-pixels for a width of 1 or 3, whole pixels for 2 or 4. The drawn grid
 moves with it, so what you see is still what you snap to.
 
-The shift follows what is selected, or the width you are about to draw with. The
-header says which is in force: `half pixels`, `whole pixels`, or `mixed widths`
-when the selection holds shapes that want different lattices, in which case the
-plain grid stands. **Fit selection to pixels** applies the same lattice to a
-shape that already exists.
+The shift follows what is selected, except while a drawing tool is chosen, when
+it follows the width you are about to draw with. The header says which is in
+force: `half pixels` for an odd stroke width, `whole pixels` for an even one,
+`offset 0.75` and the like for a fractional width, or `mixed widths` when the
+selection holds shapes that want different lattices, in which case the plain grid
+stands and **Fit selection to pixels** is unavailable. Otherwise **Fit selection
+to pixels** applies the same lattice to a shape that already exists.
 
 ### Output
 
@@ -346,7 +348,7 @@ Two modes.
 ## Status strip
 
 Along the bottom, left to right: the shape, node and segment counts; the grid
-readout; the zoom; the status line; the pointer's document coordinates.
+readout; the zoom; the status line; the `xy` readout, described under Grid above.
 
 **Zoom** is the magnification, so 100 % means one document unit per pixel. Click
 it to go back to 100 % about the centre of the view.
@@ -379,6 +381,14 @@ Named here rather than left for you to find.
   than restoring the original radius. The reported travel is how it tells you.
 - **A wide gap circularises loosely.** One curve cannot hold an arc much wider
   than a quarter turn tightly. The status line says when this applies.
+- **Tracing a large image freezes the editor.** It runs on the same thread as
+  everything else, so a 900 by 900 photograph takes about thirteen seconds during
+  which nothing responds. The status line says `Tracing…` before it starts. Trace
+  small images, or crop first.
+- **A feature one pixel wide loses its corners when traced.** The pass that keeps
+  right angles sharp needs two straight lattice steps on each side of a corner,
+  so a 1 px line or dot has none and comes back as a diamond of half the area.
+  Two pixels and up are exact.
 - **A fractional stroke width cannot be crisp.** Pixel fit aligns the leading
   edge, and the two edges are a stroke width apart, so unless that width is a
   whole number the other edge lands mid-pixel. Nothing can do better.

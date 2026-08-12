@@ -24,6 +24,19 @@ import type { PathNode, Pt, Subpath } from './types';
  */
 export const KAPPA = (4 / 3) * (Math.SQRT2 - 1);
 
+/**
+ * Distance below which two tangent points count as the same point.
+ *
+ * The same bound `roundCorner` uses, and for the same reason. An exact `===`
+ * was the first attempt and it looked safe, because when a side genuinely
+ * vanishes `x0 + rad` and `x1 - rad` really are bit-identical. But a width one
+ * ulp above twice the radius fails `capW`, leaves the two coordinates 4.4e-16
+ * apart, and emits both -- a zero-length command in the exported path, and a
+ * path that can never be simplified again. Exactness is the wrong test for a
+ * predicate about geometry.
+ */
+const MEET = 1e-9;
+
 /** Handle length for an arc of `angle` radians on a circle of radius `r`. */
 export const arcHandle = (r: number, angle: number): number => (r * 4 * Math.tan(angle / 4)) / 3;
 
@@ -92,8 +105,9 @@ export function rectSubpath(x: number, y: number, w: number, h: number, r = 0): 
   /* Where the radius takes a whole side, the two tangent points on it land on
      the same spot, and that side has ceased to exist. Naming the four tangent
      coordinates once, rather than writing `x0 + rad` and `x1 - rad` in eight
-     places, is what makes the two ends of a vanished side bit-identical and so
-     safe to compare exactly below. */
+     places, keeps the two ends of a vanished side identical rather than merely
+     close. The comparison below is still made against `MEET`, for the width
+     that sits an ulp the wrong side of the clamp. */
   const capW = bw <= rad * 2;
   const capH = bh <= rad * 2;
   const lx = capW ? x0 + bw / 2 : x0 + rad;
@@ -135,8 +149,11 @@ export function rectSubpath(x: number, y: number, w: number, h: number, r = 0): 
   for (let i = 0; i < 8; i += 2) {
     const a = n[i];
     const b = n[i + 1];
-    if (a.pt[0] === b.pt[0] && a.pt[1] === b.pt[1]) nodes.push({ pt: a.pt, hIn: a.hIn, hOut: b.hOut });
-    else nodes.push(a, b);
+    if (Math.hypot(b.pt[0] - a.pt[0], b.pt[1] - a.pt[1]) <= MEET) {
+      nodes.push({ pt: a.pt, hIn: a.hIn, hOut: b.hOut });
+    } else {
+      nodes.push(a, b);
+    }
   }
 
   return { nodes, closed: true };

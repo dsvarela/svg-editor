@@ -1191,6 +1191,16 @@ const scenarios = {
     const nowhere = await hover([76, 8]);
     check(!/on a/.test(nowhere), `empty-canvas readout says "${nowhere}"`);
 
+    /* The scenario's headline claim, and the one it did not actually make.
+       Reach is REACH_PX scaled by the camera, so at this zoom it is well under
+       one document unit; replacing it with a bare `8` -- sixteen times larger --
+       passed every assertion here, because nothing was ever placed between the
+       two distances. This point is 3 units from the edge: inside a reach of 8
+       document units and far outside the true one. */
+    const justBeyond = await hover([40, 19.5]);
+    check(!/on an outline/.test(justBeyond),
+      `an outline 3 units away claimed the pointer, so reach is not in screen pixels: "${justBeyond}"`);
+
     /* And the half that matters: dragging a node onto an outline lands it ON
        the outline, not on the nearest gridline. The edge is at y = 16.5 and the
        nearest gridline is 17, so the two answers are a visible half unit apart. */

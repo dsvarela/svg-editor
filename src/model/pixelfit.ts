@@ -39,12 +39,15 @@ import type { Doc, Style } from '../core/types';
 
 /** The lattice phase a single style wants, in document units, always in [0, 1). */
 export function phaseOf(style: Style): number {
-  if (style.stroke === 'none' || !(style.strokeWidth > 0)) return 0;
-  const half = style.strokeWidth / 2;
-  // `% 1` keeps the sign of its operand, and a negative width is already ruled
-  // out above; the fold is for the width that is a whole number, where the
-  // result should be exactly 0 rather than -0.
-  return ((half % 1) + 1) % 1;
+  // `Number.isFinite` and not just `> 0`: an infinite width gives `Infinity % 1`
+  // of NaN, which breaks the [0, 1) contract above and renders as `offset NaN`.
+  if (style.stroke === 'none' || !(style.strokeWidth > 0) || !Number.isFinite(style.strokeWidth)) {
+    return 0;
+  }
+  /* `half` is strictly positive by the guard above, so `half % 1` is already in
+     [0, 1) and never -0. An earlier version folded it through `((x % 1) + 1) % 1`
+     to avoid a negative zero that no reachable input can produce. */
+  return (style.strokeWidth / 2) % 1;
 }
 
 /**

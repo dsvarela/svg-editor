@@ -318,8 +318,14 @@ export function scanPaths(layer: number[][], pathomit = 8): RawPath[] {
  *
  * `rightAngles` keeps the actual corner point wherever two straight runs meet at
  * ninety degrees, because midpoints alone round off exactly the corners that
- * were meant to be sharp. It costs one extra point per corner and is what makes
- * a traced rectangle come back as a rectangle.
+ * were meant to be sharp. It costs one extra point per corner.
+ *
+ * **It needs two lattice steps of straight run on each side**, so it works from
+ * two pixels up and not below. A feature one pixel wide or tall keeps none of
+ * its corners: a single pixel traces to a diamond of half its area. Measured,
+ * because the first version of this sentence said the pass "is what makes a
+ * traced rectangle come back as a rectangle", which is false for exactly the
+ * 1-px-stroke case this editor is aimed at.
  */
 export function interpolate(paths: RawPath[], rightAngles = true): RawPath[] {
   return paths.map((path) => {

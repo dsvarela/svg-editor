@@ -43,6 +43,18 @@ describe('phaseOf', () => {
   it('never returns a negative zero, which would print as "-0"', () => {
     expect(Object.is(phaseOf(style({ strokeWidth: 2 })), 0)).toBe(true);
   });
+
+  it('stays inside [0, 1) for a width that is not a finite number', () => {
+    // `Infinity % 1` is NaN, which broke the contract and rendered as
+    // `offset NaN` in the readout. Not reachable through the UI, which gates on
+    // `Number.isFinite`, but the contract is stated on the function.
+    for (const w of [Infinity, -Infinity, NaN]) {
+      const p = phaseOf(style({ strokeWidth: w }));
+      expect(Number.isFinite(p)).toBe(true);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThan(1);
+    }
+  });
 });
 
 describe('the claim itself: painted edges land on whole pixels', () => {
@@ -89,11 +101,15 @@ describe('the claim itself: painted edges land on whole pixels', () => {
   });
 
   it('leaves a phase of zero exactly where the old grid put it', () => {
-    // The default is off, so this is the compatibility claim for every existing
-    // test and every drawing made before the switch existed.
-    for (const raw of [0.13, 4.62, -3.4, 17.5]) {
-      expect(snap([raw, raw], 2, 0)).toEqual(snap([raw, raw], 2));
-    }
+    /* The compatibility claim, for every drawing made before the switch
+       existed. Against hard-coded values, not against `snap` called a second
+       time: `phase` defaults to 0, so `snap(p, 2, 0)` and `snap(p, 2)` were the
+       same call with the same arguments and no implementation could fail it.
+       The points are asymmetric for the same reason the fixtures elsewhere are:
+       `[raw, raw]` cannot tell the two axes apart. */
+    expect(snap([0.13, 4.62], 2)).toEqual([0, 4]);
+    expect(snap([-3.4, 17.5], 2)).toEqual([-4, 18]);
+    expect(snap([5, -1.2], 2)).toEqual([6, -2]);
   });
 
   it('shifts both axes, since a stroke has horizontal edges too', () => {

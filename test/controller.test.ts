@@ -2078,3 +2078,82 @@ describe('the backdrop', () => {
     expect(exportSvg(h.store.state.doc)).not.toContain('image');
   });
 })
+
+describe('the pixel-fit lattice during a gesture', () => {
+  /**
+   * The defect this exists for. `phase()` read the selection fresh on every
+   * snap, and a create drag REPLACES the selection with the shape it just made.
+   * So a rectangle drawn while an unstroked shape happened to be selected had
+   * its first corner snapped on one lattice and every later corner on another,
+   * and came out 20.5 units wide: two edges on whole pixels, two not, which is
+   * exactly what §25 exists to prevent. The drawn grid moved with it, leaving
+   * the committed corner on no gridline at all.
+   */
+  const scene = (): Harness => {
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    h.store.update((s) => {
+      s.doc.shapes[0].style = { ...s.doc.shapes[0].style, stroke: 'none', strokeWidth: 1 };
+      s.selection.shapes.add(s.doc.shapes[0].id);
+      s.style = { ...s.style, stroke: '#000', strokeWidth: 1 };
+      s.pixelFit = true;
+      s.gridStep = 1;
+      s.snapToPoints = false;
+      s.snapToBoundary = false;
+      s.tool = 'rect';
+    });
+    return h;
+  };
+
+  it('holds one lattice for the whole of a create drag', () => {
+    const h = scene();
+    h.down([40.2, 40.2]);
+    h.move([50.4, 50.4]);
+    h.move([60.4, 60.4]);
+    h.up();
+
+    const drawn = h.store.state.doc.shapes[1];
+    const xs = drawn.subpaths[0].nodes.map((n) => n.pt[0]);
+    // Every corner on the same lattice, so every side is a whole number long.
+    for (const x of xs) expect(Math.abs(x - Math.floor(x) - 0.5)).toBeLessThan(1e-9);
+    expect(Math.max(...xs) - Math.min(...xs)).toBe(20);
+  });
+
+  it('draws the grid on the lattice it is snapping to, mid-gesture', () => {
+    const h = scene();
+    const lines = (): number[] => {
+      h.controller.render();
+      const d = h.canvas.overlay.querySelector('.grid-minor')?.getAttribute('d') ?? '';
+      return [...d.matchAll(/M(-?[\d.]+) [-\d.]+V/g)].map((m) => +m[1]);
+    };
+    h.down([40.2, 40.2]);
+    const during = lines();
+    h.move([50.4, 50.4]);
+    const later = lines();
+    h.up();
+
+    expect(during.length).toBeGreaterThan(2);
+    // Half-integers before and after the selection changed under the gesture.
+    for (const set of [during, later]) {
+      for (const x of set) expect(Math.abs(x - Math.floor(x) - 0.5)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('goes back to the selection once a drawing tool is put down', () => {
+    // The drawing-tool rule applies while a drawing tool is active and not a
+    // moment longer: selecting the unstroked shape with Select afterwards has to
+    // put the grid back on whole pixels.
+    const h = scene();
+    h.down([40.2, 40.2]);
+    h.move([50.4, 50.4]);
+    h.up();
+    h.store.update((s) => {
+      s.tool = 'select';
+      s.selection.shapes.clear();
+      s.selection.shapes.add(s.doc.shapes[0].id);
+    });
+    h.controller.render();
+    const d = h.canvas.overlay.querySelector('.grid-minor')?.getAttribute('d') ?? '';
+    const xs = [...d.matchAll(/M(-?[\d.]+) [-\d.]+V/g)].map((m) => +m[1]);
+    for (const x of xs) expect(x).toBe(Math.round(x));
+  });
+});
