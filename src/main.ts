@@ -12,6 +12,7 @@ import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
 import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
+import type { Mark } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
 import { keylinesFor } from './model/keylines';
 import { Rulers } from './view/rulers';
@@ -595,6 +596,7 @@ on('#mergePath', () => controller.joinSelection('merge'));
 on('#fuseNodes', () => controller.fuseSelection());
 on('#fitPixels', () => controller.fitToPixels());
 on('#delNode', () => controller.deleteSelection());
+on('#findSrc', () => findInSource());
 
 const delModeSeg = $('#delmode');
 delModeSeg.addEventListener('click', (e) => {
@@ -1721,6 +1723,59 @@ store.subscribe((s) => {
  * Deferred rather than dropped: `setPanel` calls this when the drawer opens, so
  * it catches up on everything skipped before anybody can see it.
  */
+/**
+ * Open the source on the command that drew the selected node.
+ *
+ * The other direction is free -- the drawing is on screen and you can point at
+ * it -- and this one is not: a path of forty nodes is a wall of numbers with
+ * nothing in it to say which is which.
+ *
+ * It forces `d` mode and scopes to the node's own shape. The offsets come from
+ * the serialiser, so they are only true of the exact string it just produced,
+ * and in SVG mode that string is embedded in a document with attributes and
+ * other shapes around it. Rather than track where, this asks for the one form
+ * whose offsets it can trust and says so in the status line.
+ */
+function findInSource(): void {
+  const key = [...store.state.selection.nodes][0];
+  if (!key) {
+    status.textContent = 'Select a node first.';
+    status.className = 'st warn';
+    return;
+  }
+  const ref = parseNodeKey(key);
+  const shape = store.state.doc.shapes.find((sh) => sh.id === ref.shape);
+  if (!shape) return;
+
+  // Scope the box to this shape alone and to path data, then let the normal
+  // refresh produce the text these offsets belong to.
+  store.update((s) => {
+    s.sourceMode = 'd';
+    s.selection.shapes = new Set([ref.shape]);
+  });
+  setPanel('src', true);
+
+  const marks: Mark[] = [];
+  const text = serialisePath(shape.subpaths, { decimals: store.state.decimals, minify: store.state.minify }, marks);
+  src.value = text;
+  const mark = marks.find((m) => m.sp === ref.sp && m.i === ref.i);
+  if (!mark) {
+    status.textContent = 'That node has no command of its own: the path closes onto it.';
+    status.className = 'st warn';
+    return;
+  }
+  src.focus();
+  src.setSelectionRange(mark.start, mark.end);
+  /* Scroll the selection into view. A textarea will not do it for a range set
+     programmatically, and the one reliable lever is the caret: blurring and
+     refocusing after the range is set leaves the browser to reveal it. */
+  src.blur();
+  src.focus();
+  src.setSelectionRange(mark.start, mark.end);
+  status.textContent = `Node ${ref.sp}/${ref.i} is the ${text.slice(mark.start, mark.end).trim().split(/\s/)[0]} at character ${mark.start}.`;
+  status.className = 'st ok';
+}
+
 function refreshSource(): void {
   if (!isOpen('src')) return;
   const text = currentSource();

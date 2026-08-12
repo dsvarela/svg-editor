@@ -3175,6 +3175,73 @@ const scenarios = {
 
     return { now, before, after };
   },
+
+  /**
+   * Find in source: select a node, land the cursor on its command.
+   *
+   * Only a browser has a textarea with a selection in it. The offsets come from
+   * the serialiser and are true of exactly the string it produced, so what this
+   * checks is that the string in the box is that string and the range picks out
+   * the right command.
+   */
+  async findInSource(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`findInSource: ${what}`);
+    };
+    const { click } = await mk(page);
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64">' +
+        '<path d="M10 10 H40 V30 L20 44 Z" fill="none" stroke="#2563d8"/></svg>',
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+
+    // The third node, at (40, 30): the one the `V` command draws to.
+    await click([40, 30]);
+    await page.waitForTimeout(150);
+    await tab(page, 'node');
+    await page.click('#findSrc');
+    await page.waitForTimeout(250);
+
+    const got = await page.evaluate(() => {
+      const el = document.querySelector('#src');
+      return {
+        mode: document.querySelector('#srcmode [aria-pressed="true"]')?.getAttribute('data-v'),
+        open: document.querySelector('#app').classList.contains('src-open'),
+        text: el.value,
+        picked: el.value.slice(el.selectionStart, el.selectionEnd),
+        focused: document.activeElement === el,
+      };
+    });
+
+    // It forces path data, because the offsets are only true of that string.
+    check(got.mode === 'd', `the source is in ${got.mode} mode`);
+    check(got.open, 'the source drawer stayed shut');
+    check(got.focused, 'the source box did not take focus');
+    check(got.picked === 'V 30', `it selected "${got.picked}", not the V command`);
+    const status = (await page.textContent('#status')).trim();
+    check(/V/.test(status) && /0\/2/.test(status), `the status line says "${status}"`);
+
+    /* A second node, to prove the range is computed rather than the first
+       command being selected whatever you click. The `H` draws to (40, 10). */
+    await closeSource(page);
+    await click([40, 10]);
+    await page.waitForTimeout(150);
+    await page.click('#findSrc');
+    await page.waitForTimeout(250);
+    const second = await page.evaluate(() => {
+      const el = document.querySelector('#src');
+      return el.value.slice(el.selectionStart, el.selectionEnd);
+    });
+    check(second === 'H 40', `the second node selected "${second}"`);
+
+    return { picked: got.picked, second, text: got.text };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

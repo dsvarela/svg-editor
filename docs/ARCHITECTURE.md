@@ -1491,6 +1491,35 @@ smooth by construction, and each handle reaches a third of the way to its own
 neighbour rather than to an average of both. Separately, because on an uneven run
 a shared length puts a bulge on the short side.
 
+## 36. Find in source, and why the offsets are an out-parameter
+
+Pointing at a node on the canvas is free. Finding it among forty commands of a
+`d` attribute is not, and that asymmetry is the whole feature.
+
+**Only the serialiser knows where it put things.** The spelling of a command
+depends on shorthand detection, on whether relative form came out shorter, and
+on how the numbers rounded -- so an offset computed by anyone else would be a
+re-implementation that agrees until it does not. `serialisePath` therefore takes
+an optional `marks` array and fills it with `{sp, i, start, end}` per node.
+
+**An out-parameter rather than a second return value**, so the overwhelmingly
+common caller -- every render, every export, every keystroke in the source box --
+pays nothing for a feature only one button uses. The same string comes back
+either way.
+
+Three details worth keeping:
+
+- **Subpaths are numbered by their place in the model, not in the output.** A
+  subpath of one node emits nothing, and numbering by emitted order would shift
+  every subpath after it. The marks address the model.
+- **The closing node of a closed path gets its `M`.** `Z` arrives nowhere new,
+  and node 0 was placed by the `M`, which is the command a person would point at.
+- **The button forces path-data mode and scopes to one shape.** The offsets are
+  true of exactly the string the serialiser returned, and in SVG mode that string
+  sits inside a document with attributes and other shapes around it. Asking for
+  the one form whose offsets can be trusted is honest; tracking the embedding
+  would be a second thing to keep in step.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

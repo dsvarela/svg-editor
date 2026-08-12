@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parsePath, tokenize, PathSyntaxError } from '../src/core/parse';
+import type { Mark } from '../src/core/serialise';
 import { serialisePath, formatNumber } from '../src/core/serialise';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
@@ -293,5 +294,71 @@ describe('number formatting', () => {
     // At 2 decimals, x = -0.0001 rounds to 0, matching the current point, so
     // the shorter spelling is correct rather than a bug.
     expect(serialisePath(parsePath('M0 0 L-0.0001 5'), { decimals: 2 })).toBe('M 0 0 V 5');
+  });
+});
+
+describe('marks: where each node landed in the text', () => {
+  /* The source drawer needs to point at the command that drew a node, and only
+     the serialiser knows where it put it -- the spelling depends on shorthands,
+     on relative form, and on how the numbers rounded. Offsets are handed back
+     rather than recomputed by anyone else for exactly that reason. */
+  const marksFor = (d: string, opts = {}): { text: string; marks: Mark[] } => {
+    const marks: Mark[] = [];
+    const text = serialisePath(parsePath(d), opts, marks);
+    return { text, marks };
+  };
+
+  it('points at the command that ends at each node', () => {
+    const { text, marks } = marksFor('M0 0 L10 0 L10 10');
+    expect(marks.map((m) => m.i)).toEqual([0, 1, 2]);
+    for (const m of marks) {
+      // Every mark is a slice of the string it was produced with, and the
+      // slices are the commands.
+      expect(text.slice(m.start, m.end)).toMatch(/^[MLHVCSQZmlhvcsqz]/);
+    }
+    expect(text.slice(marks[1].start, marks[1].end)).toBe('H 10');
+  });
+
+  it('survives the minifier, where commands lose their letters', () => {
+    /* Minified output drops a repeated command letter and packs numbers
+       together, so an offset computed from the pretty form would land in the
+       middle of a number. */
+    const { text, marks } = marksFor('M0 0 L10 0 L20 0 L30 0', { minify: true });
+    expect(marks).toHaveLength(4);
+    for (const m of marks) {
+      expect(m.start).toBeGreaterThanOrEqual(0);
+      expect(m.end).toBeLessThanOrEqual(text.length);
+      expect(m.end).toBeGreaterThan(m.start);
+    }
+    // The slices tile the string end to end, with nothing between them.
+    expect(marks.map((m) => text.slice(m.start, m.end)).join('')).toBe(text);
+  });
+
+  it('numbers subpaths by their place in the model, not in the output', () => {
+    /* A subpath of one node emits nothing. Numbering by emitted order would
+       shift every subpath after it, and the marks address the model. */
+    const sub = parsePath('M0 0 L10 0');
+    sub.unshift({ nodes: [{ pt: [5, 5], hIn: null, hOut: null }], closed: false });
+    const marks: Mark[] = [];
+    serialisePath(sub, {}, marks);
+    expect(marks.every((m) => m.sp === 1)).toBe(true);
+  });
+
+  it('gives the closing node of a closed path its opening command', () => {
+    // `Z` arrives nowhere new, and node 0 is placed by `M`.
+    const { text, marks } = marksFor('M0 0 L10 0 L10 10 Z');
+    const zero = marks.filter((m) => m.i === 0);
+    expect(zero).toHaveLength(1);
+    expect(text.slice(zero[0].start, zero[0].end)).toBe('M 0 0');
+  });
+
+  it('costs nothing when nobody asks', () => {
+    // The out-parameter is what keeps every render and every export out of
+    // this: same string either way.
+    const marks: Mark[] = [];
+    expect(serialisePath(parsePath('M0 0 C1 2 3 4 5 6'), {}, marks)).toBe(
+      serialisePath(parsePath('M0 0 C1 2 3 4 5 6')),
+    );
+    expect(marks.length).toBeGreaterThan(0);
   });
 });

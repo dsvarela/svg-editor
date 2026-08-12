@@ -219,6 +219,9 @@ to set it exactly.
   selected instead of a pair, it sweeps that shape for segments of zero length
   and welds those. Two free ends are the one case it declines, because that is
   Merge.
+- **Find in source** opens the source drawer and selects the command that drew
+  the node. It switches the box to path data and to that shape alone, since the
+  position it points at is only true of that text.
 - **Delete node** removes it, following the **Delete** panel's mode.
 
 ### Bend
