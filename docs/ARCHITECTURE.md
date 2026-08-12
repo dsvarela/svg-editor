@@ -553,7 +553,79 @@ modifier. Lining up a reference is a mode you stay in for a minute, not a thing
 you do once, and a mode with a visible checkbox is easier to reason about than a
 chord you have to remember while dragging.
 
-## 19. Simplify decides where to fit; the fitter decides how
+## 19. Simplify is two operations, and only one of them redraws
+
+Simplify used to mean "resample the path and fit curves to the samples". That is
+still in here, but it is now the optional half. The button runs **removal**
+first, always, and **refitting** only if Redraw curves is ticked.
+
+The split exists because of a defect with a very short repro: double-click an
+outline four times to add four nodes, then Simplify, and the shape never comes
+back. Splitting a segment is exact, so the four new nodes say nothing that the
+path was not already saying, and putting them back should be free.
+
+**A resampler cannot recognise a redundant node.** Schneider's algorithm fits
+*digitised points*. "This input is already a cubic" is not a question it can be
+asked, because by the time it sees the input the curve is gone. Measured: given
+100 exact samples of a single cubic at tolerance 0.001, `fitCurve` returns
+**seven** curves. The cause is not the iteration cap. Tracing it shows about
+0.5% convergence per pass against `MAX_ITERATIONS = 4`, and lifting the cap to
+200 still never returns one curve. Hand the same solve the *true* parameters
+instead of chord-length ones and it returns the exact control points in a single
+pass. So the information the fitter needs is the parameterisation, which a path
+carries and the resampling throws away.
+
+### Removal: `model/knots.ts`
+
+A path of cubic Béziers is a cubic B-spline whose interior knots all sit at
+multiplicity equal to the degree. Deleting a node is knot removal at `t = 3`,
+which succeeds exactly when the curve is C3 there -- that is, when the two
+segments are two pieces of one cubic. Tiller (CAD 24(8), 1992) gives the price
+in closed form: a discrepancy between reconstructed control points bounds how
+far the curve can move, everywhere, and confines the movement to one basis
+function's span. That is what makes this affordable. There is no sampling and no
+projection; removing a node costs a few dozen flops, not a scan of the curve.
+
+Tiller assumes a knot vector, and a Bézier path does not carry one. **The
+tangent ratio supplies it.** Splitting a cubic at `t` scales the two handles
+meeting at the join by `t` and `1 - t`, so `t = a / (a + b)` recovers the split
+parameter exactly, and de Casteljau run backwards recovers the parent's control
+points from either side.
+
+The cost of a removal is the **maximum of three** disagreements, and each of the
+last two is there because a shape survived without it:
+
+- **The control points.** The parent cubic reconstructed from the left segment
+  against the same cubic reconstructed from the right. This is Tiller's bound.
+- **The bend.** A right angle scored *zero* on the first version. Taking `t`
+  from the handle ratio makes the reconstruction internally self-consistent
+  about a curve that is not the input, so both sides agreed exactly and a square
+  lost its corners. The C1 error is now priced separately.
+- **The join.** Dragging a node together with its handles was invisible: every
+  ratio survives a translation, and at `t = 0.5` both reconstructions shift by
+  the same amount, so a node moved two whole units read as free. The candidate
+  curve now has to pass through the join at parameter `t`.
+
+**Order matters more than it looks.** Cheapest-first is wrong on a circle, where
+every node costs about the same and greedy eats it from one end. Lyche & Mørken
+(IMA J. Numer. Anal. 8(2), 1988) bucket the costs by powers of two and spread
+the removals within a bucket, which is what `pickSpread` does. No two adjacent
+nodes go in one pass, and costs are recomputed between passes, because removing
+a node changes what its neighbours are worth.
+
+The paper's advice on pass count does not transfer, for that same reason: taking
+no two adjacent nodes means one pass can only ever halve a run. At a cap of five
+passes, 128 subdivisions stranded at 5 nodes and 256 at 9, when the answer to
+both is 4. The cap is 24.
+
+Two smaller things. A merged straight run is written back with **null handles**,
+not with controls on the thirds of the chord, or `segmentIsLine` stops
+recognising it and the run collapses once and then refuses to collapse again.
+And **Within 0 is a real setting**, not a refusal: it means move nothing, and
+what it removes is every node that cannot change the exported file. The floor is
+`0.5 * 10^-decimals`, half a unit in the last place the serialiser writes.
+
+### Refitting: `model/simplify.ts`
 
 `core/fit.ts` is Schneider's algorithm from Graphics Gems, and it knows nothing
 about paths: give it points and two tangents and it returns cubics.
@@ -590,11 +662,13 @@ about paths: give it points and two tangents and it returns cubics.
   applied, since `fitCurve` does give up at its recursion cap on a dense,
   heavily oscillating run.
 
-Two smaller decisions. A result with the same node count is refused rather than
-applied, because rebuilding a path into the same number of nodes only trades the
-geometry someone drew for the geometry a fit guessed. And the selection is
-cleared afterwards, since node selections are keyed by index and index 7 is now a
-different point on the drawing.
+A refit with the same node count is refused rather than applied, because
+rebuilding a path into the same number of nodes only trades the geometry someone
+drew for the geometry a fit guessed.
+
+And whichever half ran, the selection is cleared afterwards, since node
+selections are keyed by index and index 7 is now a different point on the
+drawing.
 
 ## 20. The transform box, and the space it has to leave
 

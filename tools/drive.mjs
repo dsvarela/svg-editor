@@ -2345,6 +2345,105 @@ const scenarios = {
     out.d = await page.inputValue('#src');
     return out;
   },
+
+  /**
+   * Within 0, on the gesture that found the bug.
+   *
+   * Double-clicking an outline splits a segment, which adds a node that says
+   * nothing: the two halves still trace the curve their parent traced. The old
+   * Simplify could not see that, because it resampled and refitted rather than
+   * asking whether a node was removable, so the answer to "put it back" was a
+   * different shape. Within 0 is the fix, and the assertion is the exported `d`:
+   * not a smaller node count, not a similar outline, the same string.
+   *
+   * Only a browser can run this. The insertion is a double-click at a client
+   * pixel, and where that lands on the document is the camera's answer.
+   */
+  async simplifyWithinZero(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`simplifyWithinZero: ${what}`);
+    };
+    const nodes = async () => +/(\d+) nodes/.exec(await page.textContent('#stats'))[1];
+
+    // Read the starter as path data, then give the canvas its space back.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await closeSource(page);
+    const before = (await page.inputValue('#src')).trim();
+    const nodesIn = await nodes();
+    check(nodesIn === 8, `the starter shape has ${nodesIn} nodes, not 8`);
+
+    /* Where to double-click, asked of the drawing rather than guessed. A point
+       near an existing anchor selects it instead of splitting anything, and a
+       hard-coded coordinate that drifts onto one turns this scenario into a
+       silent no-op that still passes the "d unchanged" test. So: sample the
+       outline, keep only the samples far from every anchor, and spread the four
+       picks along the path. */
+    const spots = await page.evaluate(() => {
+      const path = document.querySelector('.artwork path');
+      const m = document.querySelector('.overlay').getScreenCTM();
+      const total = path.getTotalLength();
+      const anchors = [...document.querySelectorAll('.overlay .n')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2];
+      });
+      const near = (p) => Math.min(...anchors.map(([x, y]) => Math.hypot(p[0] - x, p[1] - y)));
+      const samples = [];
+      for (let i = 0; i < 400; i++) {
+        const at = path.getPointAtLength((i / 400) * total);
+        const c = new DOMPoint(at.x, at.y).matrixTransform(m);
+        samples.push({ client: [c.x, c.y], clear: 0 });
+      }
+      for (const s of samples) s.clear = near(s.client);
+      const picked = [];
+      for (const s of samples.sort((a, b) => b.clear - a.clear)) {
+        if (s.clear < 30) break;
+        if (picked.every((p) => Math.hypot(p.client[0] - s.client[0], p.client[1] - s.client[1]) > 60)) {
+          picked.push(s);
+        }
+        if (picked.length === 4) break;
+      }
+      return picked.map((p) => p.client);
+    });
+    check(spots.length === 4, `found ${spots.length} places on the outline clear of an anchor, wanted 4`);
+
+    for (const [i, [x, y]] of spots.entries()) {
+      const was = await nodes();
+      await page.mouse.dblclick(x, y);
+      await page.waitForTimeout(140);
+      const now = await nodes();
+      check(now === was + 1, `double-click ${i + 1} took the count from ${was} to ${now}`);
+    }
+    const added = await nodes();
+
+    // Within 0 is a real setting, not a refusal, and Redraw has nothing to do
+    // at it: nothing is being refitted, so the checkbox says so by greying out.
+    await page.click('#shapelist li');
+    await page.waitForTimeout(120);
+    await page.fill('#simplifyTol', '0');
+    await page.dispatchEvent('#simplifyTol', 'input');
+    await page.waitForTimeout(100);
+    const redrawDisabled = await page.isDisabled('#simplifyRedraw');
+    check(redrawDisabled, 'Redraw curves stayed enabled at Within 0');
+
+    await page.click('#simplify');
+    await page.waitForTimeout(250);
+    const status = (await page.textContent('#status')).trim();
+    const after = await nodes();
+    check(after === nodesIn, `Within 0 left ${after} nodes, not the ${nodesIn} it started with`);
+
+    /* The whole claim. Four nodes went in and four came out, and the file is
+       byte-for-byte what it was: the removal is exact, not merely close. */
+    const d = (await page.inputValue('#src')).trim();
+    check(d === before, `the path changed:\n  before ${before}\n  after  ${d}`);
+
+    // One edit. Undo brings back all four, not the last one.
+    await undo(page);
+    const undone = await nodes();
+    check(undone === added, `undo restored ${undone} nodes, not ${added}`);
+
+    return { nodesIn, added, after, redrawDisabled, status, unchanged: d === before };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go
