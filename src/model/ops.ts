@@ -6,7 +6,7 @@
  * each one is a handful of lines with no per-command branching.
  */
 
-import { cubicLength, projectToCubic, splitCubic } from '../core/bezier';
+import { cubicAt, cubicLength, projectToCubic, splitCubic } from '../core/bezier';
 import { bendOf, bendToHandles } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { applyMat } from '../core/affine';
@@ -1047,6 +1047,55 @@ export function setSegmentBend(sp: Subpath, segIdx: number, bend: Bend): void {
 /** Read a segment's bend, or `null` when its handles are not symmetric. */
 export function segmentBend(sp: Subpath, segIdx: number): Bend | null {
   return bendOf(sp.nodes[segIdx], sp.nodes[endNodeIndex(sp, segIdx)]);
+}
+
+/**
+ * Move the point at `t` on a segment to `target`, changing both handles.
+ *
+ * `setSegmentBend` is the constrained edit: two numbers, a symmetric result,
+ * and no way to express a curve that leans. It is the better tool when the
+ * segment is already symmetric, and it has nothing to say when it is not,
+ * which is why the bend control used to disappear on two thirds of the curves
+ * in a drawing. This is the unconstrained one.
+ *
+ * A cubic's point at `t` is a weighted sum of its four control points, and the
+ * endpoints are fixed here, so the displacement has to come out of the two
+ * controls:
+ *
+ *   d = b1 * dC1 + b2 * dC2,  b1 = 3(1-t)^2 t,  b2 = 3(1-t) t^2
+ *
+ * One equation, two unknowns, so the answer is a choice rather than a
+ * derivation. Taking the least-norm solution -- `dCi = d * bi / (b1^2 + b2^2)`
+ * -- moves the handles as little as the displacement allows, which is what
+ * makes a drag feel like it is dragging the curve rather than rearranging it.
+ * It also splits the work in the ratio the two controls already influence the
+ * point, so the control nearer the pointer does more of it.
+ *
+ * `t` is clamped away from the ends because `b1` and `b2` vanish there: the
+ * point at `t = 0` is the endpoint, no handle can move it, and the least-norm
+ * answer to an unsatisfiable equation is an infinity.
+ */
+export function reshapeSegment(sp: Subpath, segIdx: number, t: number, target: Pt): void {
+  const tc = Math.min(0.95, Math.max(0.05, t));
+  const cubic = segmentAsCubic(sp, segIdx);
+  const at = cubicAt(cubic, tc);
+
+  const u = 1 - tc;
+  const b1 = 3 * u * u * tc;
+  const b2 = 3 * u * tc * tc;
+  const denom = b1 * b1 + b2 * b2;
+  if (denom < 1e-12) return;
+
+  const dx = target[0] - at[0];
+  const dy = target[1] - at[1];
+
+  const c1: Pt = [cubic[1][0] + (dx * b1) / denom, cubic[1][1] + (dy * b1) / denom];
+  const c2: Pt = [cubic[2][0] + (dx * b2) / denom, cubic[2][1] + (dy * b2) / denom];
+
+  // Through `moveHandle` for the reason `setSegmentBend` does it: a smooth
+  // join rotates its neighbour to match rather than gaining a kink.
+  moveHandle(sp, segIdx, 'out', c1);
+  moveHandle(sp, endNodeIndex(sp, segIdx), 'in', c2);
 }
 
 /* ------------------------------------------------- aligning, distributing */

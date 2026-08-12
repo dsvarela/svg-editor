@@ -16,7 +16,6 @@
  */
 
 import { continuityOf, segmentAsCubic, segmentCount } from '../core/types';
-import { bendHandlePos, bendOf } from '../core/bend';
 import type { Doc, Pt, Shape, Subpath, ViewBox } from '../core/types';
 import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
@@ -24,6 +23,7 @@ import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
 import { CORNER_PARTS, TRANSFORM_PARTS, handlePoint } from '../model/transform';
 import type { TransformPart } from '../model/transform';
+import { cubicAt } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
 import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
@@ -537,9 +537,14 @@ export class Canvas {
                 sel.nodes.has(nodeKey({ shape: shape.id, sp: spI, i: bI })));
             if (!both) continue;
 
-            const bend = bendOf(sp.nodes[aI], sp.nodes[bI]);
-            if (!bend) continue; // asymmetric: free handles are the truth here
-            const at = bendHandlePos(sp.nodes[aI].pt, sp.nodes[bI].pt, bend);
+            /* The curve's own midpoint, taken from the segment rather than
+               from a bend. It used to be drawn only where `bendOf` succeeded,
+               which hid the control on every segment whose handles were not
+               symmetric -- most of them, in any drawing that has been edited.
+               Both cases put the dot in the same place: `bendHandlePos` is the
+               cubic at t = 0.5 for a bend, and this is the cubic at t = 0.5
+               for anything. */
+            const at = cubicAt(segmentAsCubic(sp, seg), 0.5) as Pt;
             if (!inView(at)) continue;
             this.bendDots.next({
               cx: at[0],

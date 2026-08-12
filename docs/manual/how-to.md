@@ -204,9 +204,19 @@ Select both nodes at either end of the segment. A bend dot appears at its middle
 Drag the dot to bow the segment. `Ctrl+←` and `Ctrl+→` change the bend by keyboard,
 with `Shift` for a finer step, and `Ctrl+↑` and `Ctrl+↓` change how taut it is.
 
-The **Bend** panel shows the same two numbers and lets you type them. **Flat**
-returns the segment to a straight line. **Free** hands control back to the
-handles.
+The dot appears on every segment, curved or straight, and dragging it always
+puts the curve through the pointer.
+
+What happens to the handles depends on what they already were, the same way
+dragging a handle does. On a segment whose two handles mirror each other, the
+drag keeps them mirrored, and the **Bend** panel keeps describing it as two
+numbers. On any other segment the drag moves both handles by as little as it
+can, which leans the curve instead of bowing it. Hold `Alt` to get that second
+behaviour on a symmetric segment.
+
+The **Bend** panel shows the two numbers and lets you type them, for as long as
+the segment is symmetric enough to have them. **Flat** returns the segment to a
+straight line. **Free** hands control back to the handles.
 
 ## Rotate or scale by an exact amount
 

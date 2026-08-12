@@ -18,6 +18,7 @@ import { Store } from '../src/model/store';
 import { docBBox, emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
+import { segmentBend } from '../src/model/ops';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
@@ -2814,5 +2815,121 @@ describe('split into shapes', () => {
     // even though two shapes are selected.
     expect(h.store.state.selection.shapes.size).toBe(2);
     expect(h.controller.canSplitShapes()).toBe(false);
+  });
+});
+
+/**
+ * Dragging the curve itself.
+ *
+ * The bend control used to be drawn only where the two handles were symmetric,
+ * which is a minority of the segments in any drawing that has been edited. The
+ * tests below are about the majority case that had no control at all.
+ */
+describe('bend control on any segment', () => {
+  /* Both bow downwards, into positive y. The harness camera starts at the
+     origin, so a curve arching up puts its own midpoint out of view and the
+     control is culled before it is drawn. */
+  /** Both handles pointing different ways and different lengths. */
+  const SKEW = 'M0 0 C 5 12 25 -4 30 0';
+  /** Mirror image handles: what `bendOf` can read as two numbers. */
+  const SYMM = 'M0 0 C 10 10 20 10 30 0';
+
+  function scene(d: string): Harness {
+    const h = harness(d);
+    h.store.update((s) => {
+      s.selection = { ...emptySelection(), shapes: new Set([s.doc.shapes[0].id]) };
+    });
+    return h;
+  }
+
+  function bendEl(h: Harness, seg = 0): Element {
+    h.controller.render();
+    const el = h.canvas.overlay.querySelector(`[data-hit="bend"][data-seg="${seg}"]`);
+    if (!el) throw new Error(`no bend control for segment ${seg}`);
+    return el;
+  }
+
+  /** Where the dot is drawn, in document coordinates. */
+  function bendAt(h: Harness, seg = 0): [number, number] {
+    const el = bendEl(h, seg);
+    return [Number(el.getAttribute('cx')), Number(el.getAttribute('cy'))];
+  }
+
+  it('draws a control on an asymmetric segment', () => {
+    const h = scene(SKEW);
+    // The regression this feature is: `bendOf` returns null here, and the dot
+    // used to be skipped on exactly that test.
+    expect(segmentBend(h.store.state.doc.shapes[0].subpaths[0], 0)).toBeNull();
+    expect(() => bendEl(h)).not.toThrow();
+  });
+
+  it('draws it on the curve, not on the chord', () => {
+    const h = scene(SKEW);
+    const drawn = bendAt(h);
+    const mid = cubicAt(segmentAsCubic(h.store.state.doc.shapes[0].subpaths[0], 0), 0.5);
+    expect(drawn[0]).toBeCloseTo(mid[0], 9);
+    expect(drawn[1]).toBeCloseTo(mid[1], 9);
+    // The chord's midpoint is [15, 0] and the curve's is not, so a control
+    // placed on the chord would have passed a laxer test.
+    expect(Math.hypot(drawn[0] - 15, drawn[1] - 0)).toBeGreaterThan(0.5);
+  });
+
+  it('drags an asymmetric curve through the pointer', () => {
+    const h = scene(SKEW);
+    h.store.update((s) => (s.snapToGrid = false));
+    const start = bendAt(h);
+
+    h.down(start, bendEl(h));
+    h.move([14, 16]);
+    h.up();
+
+    const mid = cubicAt(segmentAsCubic(h.store.state.doc.shapes[0].subpaths[0], 0), 0.5);
+    expect(mid[0]).toBeCloseTo(14, 6);
+    expect(mid[1]).toBeCloseTo(16, 6);
+  });
+
+  it('leaves a symmetric segment symmetric', () => {
+    const h = scene(SYMM);
+    h.store.update((s) => (s.snapToGrid = false));
+    expect(segmentBend(h.store.state.doc.shapes[0].subpaths[0], 0)).not.toBeNull();
+
+    h.down(bendAt(h), bendEl(h));
+    h.move([12, 14]);
+    h.up();
+
+    // Still readable as two numbers, which is the property the constrained
+    // edit exists to preserve.
+    expect(segmentBend(h.store.state.doc.shapes[0].subpaths[0], 0)).not.toBeNull();
+  });
+
+  it('Alt breaks the symmetry, the same key that breaks a handle pair', () => {
+    const h = scene(SYMM);
+    h.store.update((s) => (s.snapToGrid = false));
+
+    h.down(bendAt(h), bendEl(h), { altKey: true });
+    h.move([9, 16]);
+    h.up();
+
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    // Off the perpendicular bisector, so no symmetric bend can describe it.
+    expect(segmentBend(sp, 0)).toBeNull();
+    const mid = cubicAt(segmentAsCubic(sp, 0), 0.5);
+    expect(mid[0]).toBeCloseTo(9, 6);
+    expect(mid[1]).toBeCloseTo(16, 6);
+  });
+
+  it('is one undo step, and gives the curve back', () => {
+    const h = scene(SKEW);
+    h.store.update((s) => (s.snapToGrid = false));
+    const before = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 });
+
+    h.down(bendAt(h), bendEl(h));
+    h.move([14, 16]);
+    h.move([18, 20]);
+    h.up();
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 })).not.toBe(before);
+
+    h.store.undo();
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 })).toBe(before);
   });
 });

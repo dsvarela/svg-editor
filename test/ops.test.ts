@@ -12,6 +12,7 @@ import {
   deleteNode,
   moveAnchor,
   moveHandle,
+  reshapeSegment,
   reverseSubpath,
   roundCorner,
   setContinuity,
@@ -1069,5 +1070,88 @@ describe('reverse', () => {
     reverseSubpath(sp);
     expect(sp.nodes.length).toBe(1);
     expect(sp.nodes[0].pt).toEqual([3, 4]);
+  });
+});
+
+/**
+ * Reshaping a segment by dragging a point on it.
+ *
+ * The defining property is geometric, so it is measured geometrically: after
+ * the call, the curve passes through the target at the parameter that was
+ * dragged. Comparing handle coordinates against numbers computed by hand would
+ * pass for whatever the code happens to do.
+ */
+describe('reshapeSegment', () => {
+  /** An asymmetric curve: unequal handles, pointing different ways. */
+  const skewed = (): Subpath => parsePath('M0 0 C 5 12 25 -4 30 0')[0];
+
+  it('puts the curve through the target at the parameter dragged', () => {
+    for (const t of [0.15, 0.35, 0.5, 0.72, 0.9]) {
+      const sp = skewed();
+      const target: Pt = [12, 18];
+      reshapeSegment(sp, 0, t, target);
+      const at = cubicAt(segmentAsCubic(sp, 0), t);
+      expect(at[0]).toBeCloseTo(target[0], 9);
+      expect(at[1]).toBeCloseTo(target[1], 9);
+    }
+  });
+
+  it('leaves both endpoints exactly where they were', () => {
+    const sp = skewed();
+    const a: Pt = [...sp.nodes[0].pt];
+    const b: Pt = [...sp.nodes[1].pt];
+    reshapeSegment(sp, 0, 0.5, [12, 18]);
+    expect(sp.nodes[0].pt).toEqual(a);
+    expect(sp.nodes[1].pt).toEqual(b);
+  });
+
+  it('moves the handles the least the displacement allows', () => {
+    /* The least-norm solution splits the work in the ratio b1 : b2, so at
+       t = 0.25 the near control does three times the work of the far one.
+       Any other split would also put the curve through the point, which is
+       why this is asserted separately from the property above. */
+    const sp = skewed();
+    const before = segmentAsCubic(sp, 0);
+    const t = 0.25;
+    reshapeSegment(sp, 0, t, [10, 20]);
+    const after = segmentAsCubic(sp, 0);
+
+    const d1 = Math.hypot(after[1][0] - before[1][0], after[1][1] - before[1][1]);
+    const d2 = Math.hypot(after[2][0] - before[2][0], after[2][1] - before[2][1]);
+    const u = 1 - t;
+    expect(d1 / d2).toBeCloseTo((3 * u * u * t) / (3 * u * t * t), 9);
+  });
+
+  it('turns a straight segment into a curve through the point', () => {
+    const sp = parsePath('M0 0 L30 0')[0];
+    expect(sp.nodes[0].hOut).toBeNull();
+    reshapeSegment(sp, 0, 0.5, [15, 10]);
+    const at = cubicAt(segmentAsCubic(sp, 0), 0.5);
+    expect(at[0]).toBeCloseTo(15, 9);
+    expect(at[1]).toBeCloseTo(10, 9);
+  });
+
+  it('clamps a parameter at the ends rather than dividing by zero', () => {
+    /* No handle can move the point at t = 0: it is the endpoint. The honest
+       answer is to act on the nearest parameter that can be moved, not to
+       emit Infinity into the document. */
+    for (const t of [0, 1, -3, 4]) {
+      const sp = skewed();
+      reshapeSegment(sp, 0, t, [12, 18]);
+      for (const n of sp.nodes) {
+        for (const h of [n.hIn, n.hOut]) {
+          if (h) expect(Number.isFinite(h[0]) && Number.isFinite(h[1])).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('keeps a smooth join smooth on the far side of the node', () => {
+    // Two segments meeting smoothly at node 1. Reshaping the first must carry
+    // the neighbour round, which is what going through `moveHandle` buys.
+    const sp = parsePath('M0 0 C 10 -10 20 -10 30 0 C 40 10 50 10 60 0')[0];
+    expect(continuityOf(sp.nodes[1])).not.toBe('corner');
+    reshapeSegment(sp, 0, 0.5, [15, -18]);
+    expect(continuityOf(sp.nodes[1])).not.toBe('corner');
   });
 });

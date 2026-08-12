@@ -31,7 +31,8 @@ as the centre rather than a corner.
 | Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
 | Drag on empty canvas | Marquee-select nodes |
 | `Shift`-click | Add to or remove from the selection |
-| Drag the bend dot | Bow a segment. Appears when both its end nodes are selected |
+| Drag the bend dot | Pull the curve through the pointer. Appears on every segment with both its end nodes selected |
+| `Alt`-drag the bend dot | The same, but without keeping a symmetric segment symmetric |
 | Wheel | Zoom at the pointer |
 | `Shift`+wheel | Pan sideways |
 | `Alt`+wheel | Pan up and down |
@@ -196,7 +197,9 @@ to set it exactly.
 ### Bend
 
 Shows the active segment's bend as two numbers: how far it bows from the chord,
-and how taut it is.
+and how taut it is. A segment whose handles do not mirror each other has no such
+pair: the panel reads `free handles` and the two numbers are unavailable. It can
+still be dragged by its dot.
 
 - **Angle** and the two `Ctrl`+arrow pairs adjust them.
 - **Flat** makes the segment straight.

@@ -44,6 +44,7 @@ import {
   reverseSubpath,
   roundCorner,
   setContinuity,
+  reshapeSegment,
   setSegmentBend,
   segmentBend,
   setSegmentCurved,
@@ -106,7 +107,10 @@ type DragKind =
      a shape, so a stray click on the canvas leaves no empty one behind and no
      history entry either. */
   | { kind: 'create'; tool: 'ellipse' | 'rect'; from: Pt; id: string | null }
-  | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number };
+  /* `free` picks the edit: the two-number symmetric bend, or moving the point
+     under the pointer with both handles. Frozen at the press, like
+     `looseness`. */
+  | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number; free: boolean };
 
 /**
  * What the drag currently under way is worth reporting as a number.
@@ -603,6 +607,13 @@ export class Controller {
         sp: hit.ref.sp,
         seg: hit.seg,
         looseness: cur?.looseness ?? 1,
+        /* Which of the two edits this drag is, decided once at the press.
+           Re-reading it every frame would let a segment that happened to pass
+           through symmetry mid-drag change what dragging means underneath the
+           pointer. `cur` is null exactly when the handles are not symmetric,
+           and Alt asks for the free edit regardless -- the same key that
+           breaks a handle pair, doing the same thing. */
+        free: cur === null || e.altKey,
       };
       return;
     }
@@ -831,6 +842,12 @@ export class Controller {
         this.store.edit((st) => {
           const sp = findShape(st.doc, d.shape)?.subpaths[d.sp];
           if (!sp || d.seg >= segmentCount(sp)) return;
+          if (d.free) {
+            // The curve's midpoint is what the dot is drawn on, so that is the
+            // point the pointer is holding.
+            reshapeSegment(sp, d.seg, 0.5, p);
+            return;
+          }
           const a = sp.nodes[d.seg].pt;
           const b = sp.nodes[(d.seg + 1) % sp.nodes.length].pt;
           // Looseness is held at whatever it was when the drag began, so a
