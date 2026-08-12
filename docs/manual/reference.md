@@ -80,7 +80,7 @@ Left to right.
 | Curve, Straight | Curve or straighten the segments between selected nodes |
 | Delete | Delete the selection, following the **Delete** panel's mode |
 | Zoom out, Zoom in | Zoom about the centre of the view |
-| Fit | Fit the document to the canvas |
+| Fit | Fit the drawing on screen |
 | Source | Open or close the source drawer |
 | Inspector | Collapse or restore the right-hand panel |
 | Theme | Invert the theme, light against dark |
