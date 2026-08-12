@@ -18,9 +18,9 @@ sources are:
   and [Diátaxis](https://diataxis.fr/). Every manual page is one of four kinds
   and never mixes them; which page is which is in
   [`manual/README.md`](manual/README.md).
-- **Acceptance test:** [ISO 24495-1 plain language](https://www.iso.org/standard/78907.html).
-  A page ships only if a reader can find it, understand it, use it, and gets
-  what they came for.
+- **Acceptance test:** [ISO 24495-1 plain language](https://www.iso.org/standard/78907.html),
+  through the `writing` handbook, which states the four conditions. Restating
+  them here as well was how this file came to carry the same test twice.
 
 ## The prime rule: earn the look
 
@@ -160,11 +160,11 @@ The three faults that actually recur, and what each becomes:
 
 ## Before it ships
 
-1. **Plain-language test.** Can a reader find, understand and use this, and does
-   it answer what they came for?
-2. **Reader test.** Paste the page to a fresh model with no context and ask what
-   a real user would ask. Fix what confuses it.
-3. **Tell sweep and terminology sweep.** `npm run check:docs` does both, plus
+1. **The acceptance test**, from the `writing` handbook: paste the page to a
+   fresh model with no context, ask what a real user would ask, and check all
+   four conditions rather than only whether it was understood. Fix what confuses
+   it instead of explaining it.
+2. **Tell sweep and terminology sweep.** `npm run check:docs` does both, plus
    the links. The em-dash count in user-facing text is an error and zero. The
    banned vocabulary and the "Never" column are printed rather than enforced,
    because every one of those words has a legitimate sense and a check that
