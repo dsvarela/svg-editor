@@ -15,6 +15,9 @@ import { serialisePath } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
 import { snapLabel } from './model/snapping';
 import { DEFAULT_TRACE, rasterFrom } from './model/trace';
+import type { Placement, TraceOptions, TraceResult } from './model/trace';
+import TraceWorker from './model/trace.worker?worker&inline';
+import type { TraceReply, TraceRequest } from './model/trace.worker';
 import { Store } from './model/store';
 import type { Backdrop, EditorState } from './model/store';
 import { Canvas } from './view/canvas';
@@ -821,6 +824,40 @@ function loadBackdrop(file: File): void {
 }
 
 /**
+ * Hand a trace to a worker, or say there is no worker to hand it to.
+ *
+ * Returns `null` rather than throwing when one cannot be constructed, which is
+ * the caller's signal to run the tracer here instead: a page served under a
+ * `worker-src` policy that forbids `blob:` can still trace, slowly, rather than
+ * losing the feature to a security header it never set.
+ *
+ * The raster is **copied**, not transferred. Transferring would save a 3 MB
+ * clone on a 900 by 900 image, worth about two milliseconds against three
+ * thousand, and it would detach the only copy of the pixels -- so a worker that
+ * died after the post would take the fallback's input with it.
+ */
+function traceOffThread(req: TraceRequest): Promise<TraceResult> | null {
+  let worker: Worker;
+  try {
+    worker = new TraceWorker();
+  } catch {
+    return null;
+  }
+  return new Promise<TraceResult>((resolve, reject) => {
+    worker.onmessage = (e: MessageEvent<TraceReply>): void => {
+      worker.terminate();
+      if (e.data.ok) resolve(e.data.result);
+      else reject(new Error(e.data.error));
+    };
+    worker.onerror = (): void => {
+      worker.terminate();
+      reject(new Error('the tracer stopped'));
+    };
+    worker.postMessage(req);
+  });
+}
+
+/**
  * Trace the loaded backdrop.
  *
  * The image is re-decoded from its object URL rather than read off the
@@ -849,11 +886,11 @@ async function traceBackdrop(): Promise<void> {
      there is one writer and no way for the two to disagree. */
   tracing = true;
   refreshTraceButton();
-  /* Two frames before the work starts. `traceImage` is synchronous and holds
-     the main thread -- 13 seconds on a 900 by 900 photograph -- so without
-     yielding, neither the status line nor the disabled button is ever painted
-     and the application simply stops answering with no explanation. This does
-     not make it faster; it makes it honest. */
+  /* Two frames before the work starts, so the status line and the disabled
+     button are painted before anything long begins. The walk itself is off the
+     thread now, but decoding and `getImageData` are not, and the fallback below
+     is the old synchronous path in full. Two frames cost 32 ms against seconds.
+  */
   status.textContent = `Tracing ${b.name}…`;
   status.className = 'st ok';
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -878,11 +915,29 @@ async function traceBackdrop(): Promise<void> {
       return;
     }
     const raster = rasterFrom(img, live.naturalW, live.naturalH);
-    controller.traceBackdrop(raster, {
+    const place: Placement = { x: live.x, y: live.y, w: live.w, h: live.h };
+    const opts: TraceOptions = {
       colours: num('#traceColours', DEFAULT_TRACE.colours),
       tolerance: num('#traceTol', DEFAULT_TRACE.tolerance),
       minPoints: num('#traceNoise', DEFAULT_TRACE.minPoints),
-    });
+    };
+
+    const job = traceOffThread({ raster, place, opts });
+    if (!job) {
+      // No worker to be had. The old behaviour, freeze and all, which is still
+      // better than refusing to trace.
+      controller.traceBackdrop(raster, opts);
+      return;
+    }
+    let result: TraceResult;
+    try {
+      result = await job;
+    } catch {
+      status.textContent = 'That image could not be traced.';
+      status.className = 'st err';
+      return;
+    }
+    controller.applyTrace(result, place);
   } catch {
     status.textContent = 'That image could not be read for tracing.';
     status.className = 'st err';
@@ -1254,8 +1309,34 @@ const zoomnum = $('#zoomnum');
 const backinfo = $('#backinfo');
 const outval = $('#outval');
 const cursorEl = $('#cursor');
+const snapKindEl = $('#snapkind');
 const undoBtn = $('#undo') as HTMLButtonElement;
 const redoBtn = $('#redo') as HTMLButtonElement;
+
+/**
+ * The document readout, and whether the overlay is drawing markers.
+ *
+ * Written from two places, which is why it is a function. The document half
+ * changes when the document does; the marker half is only true after a render,
+ * so `controller.onRender` writes it again with an answer that has happened.
+ */
+function refreshStats(): void {
+  const s = store.state;
+  const vb = s.doc.viewBox;
+  const round = (v: number): string => (+v.toFixed(3)).toString();
+  // The canvas size leads, because it is the one number about the document that
+  // was invisible and that decides what the exported file looks like. The
+  // marker note goes last: the overlay stops drawing node markers above a
+  // density where they are neither aimable nor affordable, and a person whose
+  // nodes vanished with no explanation would reasonably think the document had
+  // lost them. Here rather than in the status line, which is for the last thing
+  // that happened and is overwritten by the next.
+  stats.textContent =
+    `${round(vb.w)} × ${round(vb.h)} · ${s.doc.shapes.length} shape${s.doc.shapes.length === 1 ? '' : 's'}` +
+    ` · ${controller.countNodes()} nodes · ${controller.countSegments()} segments` +
+    (canvas.markersCapped ? ' · markers off, too dense' : '');
+}
+controller.onRender = refreshStats;
 
 store.subscribe((s) => {
   for (const b of toolSeg.querySelectorAll('button')) {
@@ -1268,15 +1349,7 @@ store.subscribe((s) => {
   undoBtn.disabled = !store.canUndo;
   redoBtn.disabled = !store.canRedo;
 
-  const nodes = controller.countNodes();
-  const segs = controller.countSegments();
-  const vb = s.doc.viewBox;
-  const round = (v: number): string => (+v.toFixed(3)).toString();
-  // The canvas size leads, because it is the one number about the document that
-  // was invisible and that decides what the exported file looks like.
-  stats.textContent =
-    `${round(vb.w)} × ${round(vb.h)} · ${s.doc.shapes.length} shape${s.doc.shapes.length === 1 ? '' : 's'}` +
-    ` · ${nodes} nodes · ${segs} segments`;
+  refreshStats();
 
   const selCount = s.selection.nodes.size;
   selinfo.textContent = s.selection.shapes.size
@@ -1469,9 +1542,16 @@ canvas.overlay.addEventListener('pointermove', (e) => {
   const claimed = snap && (snap.kind === 'vertex' || snap.kind === 'boundary');
   const at = claimed ? snap.pt : p;
   const label = claimed ? snapLabel(snap.kind) : null;
-  cursorEl.textContent = `${at[0].toFixed(dp)}, ${at[1].toFixed(dp)}${label ? ` · ${label}` : ''}`;
+  cursorEl.textContent = `${at[0].toFixed(dp)}, ${at[1].toFixed(dp)}`;
+  // Its own element, to the left of the coordinates rather than appended to
+  // them. Appended, the name of a tier coming into reach lengthened the string
+  // and shoved the digits sideways mid-gesture.
+  snapKindEl.textContent = label ?? '';
 });
-canvas.overlay.addEventListener('pointerleave', () => (cursorEl.textContent = ''));
+canvas.overlay.addEventListener('pointerleave', () => {
+  cursorEl.textContent = '';
+  snapKindEl.textContent = '';
+});
 
 /* -------------------------------------------------------------------- boot */
 

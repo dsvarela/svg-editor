@@ -57,7 +57,7 @@ import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import type { SnapResult } from '../model/snapping';
 import { traceImage } from '../model/trace';
-import type { TraceOptions, TraceResult } from '../model/trace';
+import type { Placement, TraceOptions, TraceResult } from '../model/trace';
 import type { RasterLike } from '../core/raster';
 import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/transform';
 import type { TransformPart } from '../model/transform';
@@ -123,6 +123,17 @@ export class Controller {
    * them and dropped by the other.
    */
   onMessage: ((message: string, ok: boolean) => void) | null = null;
+
+  /**
+   * Called after every render, for readouts that describe what was drawn.
+   *
+   * The store's own subscribers run the moment state changes; a render happens
+   * on the next animation frame. Anything a readout says about the *drawing*
+   * rather than the document -- whether the overlay drew its markers, say -- is
+   * therefore a frame stale if it is read in a subscriber, and stale for good
+   * if no further change arrives. This fires late enough to be true.
+   */
+  onRender: (() => void) | null = null;
 
   private drag: DragKind = { kind: 'none' };
   /**
@@ -211,6 +222,7 @@ export class Controller {
     // phase and all, because there is only one of them.
     this.extras.gridPhase = this.phase();
     this.canvas.renderOverlay(s, this.extras);
+    this.onRender?.();
   }
 
   /* ------------------------------------------------------------- helpers */
@@ -1248,14 +1260,50 @@ export class Controller {
       this.onMessage?.('Load an image in the Backdrop panel first.', false);
       return false;
     }
+    const place: Placement = { x: b.x, y: b.y, w: b.w, h: b.h };
 
     let r: TraceResult;
     try {
-      r = traceImage(raster, { x: b.x, y: b.y, w: b.w, h: b.h }, opts);
+      r = traceImage(raster, place, opts);
     } catch {
       // The walk is exact integer work and should not throw, but it runs over
       // whatever a file decoded to. A failure here leaves the document alone.
       this.onMessage?.('That image could not be traced.', false);
+      return false;
+    }
+
+    return this.applyTrace(r, place);
+  }
+
+  /**
+   * Commit a finished trace, wherever it was computed.
+   *
+   * Split from `traceBackdrop` because the tracer now usually runs in a worker
+   * (`model/trace.worker.ts`), and the gap between asking for a trace and
+   * getting one back is no longer zero: the main thread stays live for those
+   * seconds, so the person can move the backdrop, delete it, or start a drag
+   * while the walk is still running. Every one of those makes the result wrong
+   * rather than late, so this checks the world it was computed against is still
+   * the world it is landing in.
+   *
+   * The placement comparison is exact on purpose. §Class 4's lesson was that a
+   * question about *geometry* needs a tolerance, and this is not one: it asks
+   * whether these numbers were changed, and a backdrop nudged by a
+   * ten-thousandth is still a backdrop that moved under a trace that assumed
+   * otherwise.
+   */
+  applyTrace(r: TraceResult, place: Placement): boolean {
+    const b = this.store.state.backdrop;
+    if (!b) {
+      this.onMessage?.('The backdrop was removed while tracing. Nothing was added.', false);
+      return false;
+    }
+    if (b.x !== place.x || b.y !== place.y || b.w !== place.w || b.h !== place.h) {
+      this.onMessage?.('The backdrop moved while tracing. Nothing was added.', false);
+      return false;
+    }
+    if (this.busy) {
+      this.onMessage?.('Finish the drag first, then trace.', false);
       return false;
     }
 

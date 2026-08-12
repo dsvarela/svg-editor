@@ -16,6 +16,7 @@ import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
 import { docBBox, emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
+import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
@@ -2155,5 +2156,88 @@ describe('the pixel-fit lattice during a gesture', () => {
     const d = h.canvas.overlay.querySelector('.grid-minor')?.getAttribute('d') ?? '';
     const xs = [...d.matchAll(/M(-?[\d.]+) [-\d.]+V/g)].map((m) => +m[1]);
     for (const x of xs) expect(x).toBe(Math.round(x));
+  });
+});
+
+/**
+ * Committing a trace that was computed somewhere else.
+ *
+ * The tracer runs in a worker now, so between asking for a trace and getting
+ * one back the main thread stays live for as long as the walk takes -- three
+ * seconds on a 900 by 900 photograph. Everything a person can do in three
+ * seconds can invalidate the answer, because the walk was told where the
+ * backdrop was and fitted its coordinates to that. These are the four things
+ * `applyTrace` refuses.
+ */
+describe('a trace landing after the fact', () => {
+  const place = { x: 10, y: 4, w: 40, h: 30 };
+
+  const result = (): TraceResult => {
+    const shape = shapeFromPath('M 10 4 H 50 V 34 H 10 Z', 'traced');
+    return { shapes: [shape], paths: 1, nodesBefore: 4, nodesAfter: 4, colours: 1 };
+  };
+
+  const withBackdrop = (h: Harness, over: Record<string, number> = {}): void => {
+    h.store.update((s) => {
+      s.backdrop = {
+        src: 'blob:test',
+        name: 'ref.png',
+        ...place,
+        naturalW: 400,
+        naturalH: 300,
+        opacity: 0.5,
+        visible: true,
+        locked: true,
+        ...over,
+      };
+    });
+  };
+
+  it('commits when nothing moved', () => {
+    // The control the other three are measured against: without this, every
+    // refusal below would pass on a function that refused unconditionally.
+    const h = harness();
+    withBackdrop(h);
+    const before = h.store.state.doc.shapes.length;
+    expect(h.controller.applyTrace(result(), place)).toBe(true);
+    expect(h.store.state.doc.shapes.length).toBe(before + 1);
+  });
+
+  it('refuses when the backdrop was removed', () => {
+    const h = harness();
+    withBackdrop(h);
+    h.store.update((s) => {
+      s.backdrop = null;
+    });
+    const before = h.store.state.doc.shapes.length;
+    expect(h.controller.applyTrace(result(), place)).toBe(false);
+    expect(h.store.state.doc.shapes.length).toBe(before);
+  });
+
+  it('refuses when the backdrop moved by a ten-thousandth', () => {
+    /* Deliberately smaller than any tolerance in this codebase. The question is
+       not "are these two placements the same place" -- that would want `MEET` --
+       but "were these numbers changed since the walk was told them", and the
+       answer to that is exact. A tolerance here would commit shapes fitted to
+       one rectangle on top of a different one. */
+    const h = harness();
+    withBackdrop(h, { x: place.x + 0.0001 });
+    const before = h.store.state.doc.shapes.length;
+    expect(h.controller.applyTrace(result(), place)).toBe(false);
+    expect(h.store.state.doc.shapes.length).toBe(before);
+  });
+
+  it('refuses while a drag is in flight', () => {
+    // A trace committing mid-drag lands inside somebody else's undo entry: the
+    // drag's checkpoint is already on the stack, so undoing the trace rolls
+    // back the drag as well.
+    const h = harness('M 0 0 L 20 20');
+    withBackdrop(h);
+    h.down([0, 0], h.anchorEl(h.store.state.doc.shapes[0].id, 0, 0));
+    h.move([5, 5]);
+    const before = h.store.state.doc.shapes.length;
+    expect(h.controller.applyTrace(result(), place)).toBe(false);
+    expect(h.store.state.doc.shapes.length).toBe(before);
+    h.up();
   });
 });

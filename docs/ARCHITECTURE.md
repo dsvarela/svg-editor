@@ -1000,6 +1000,79 @@ of 1 the readout would lock to integers and stop being a pointer position at all
 for a lattice that is already drawn on screen.
 
 
+## 28. The tracer moved off the thread; the freeze mostly did not
+
+Tracing a 900 by 900 photograph blocked the main thread. The review of
+2026-08-12 recorded that as "`traceImage` is synchronous — 13 seconds", deferred
+it, and said a worker was the answer. Both halves of that were wrong, and only
+measuring found out.
+
+`model/trace.worker.ts` is the worker, and it is nine lines of real work because
+`traceImage` is a pure function from plain data to plain data: a raster clones
+across the boundary, `Shape`s clone back, and neither `model/trace.ts` nor
+`core/raster.ts` knows the file exists. Vite inlines it as base64 with
+`?worker&inline`, which keeps the single-file build's promise of no external
+requests, at **+1.9 kB gzipped** — measured by building the same tree with the
+worker import removed, not by subtracting the commit's total, which also carries
+the overlay work below. It is constructed as a *classic* worker,
+not a module: Chromium refuses a module worker from a `blob:` URL when the page
+came from `file://`, and opening the file from disk is the whole point of the
+build. Vite's default worker format is `iife`, so this is already what happens
+— setting `worker: { format: 'es' }` would break tracing on disk, silently, and
+only on disk.
+
+The synchronous path is kept and reached whenever a worker cannot be built: a
+`worker-src` policy that forbids `blob:` should cost you speed, not the feature.
+The `traceWorker` scenario runs both, by taking `Worker` away and tracing the
+same picture, and asserts the fallback blocks for at least 100 ms longer —
+otherwise the scenario would be measuring nothing, which is what an earlier
+draft of it did.
+
+Because the answer now arrives some hundreds of milliseconds after it was asked
+for, and the thread is live throughout, `applyTrace` re-checks the world the walk
+was told about: the backdrop still exists, has not moved, and no drag is in
+flight. The placement comparison is exact, deliberately. It is not asking
+whether two placements are the same *place* — that question needs `MEET` — but
+whether these numbers were changed, and a backdrop nudged by a ten-thousandth is
+still one that moved under a trace that assumed otherwise.
+
+**And the worker was only a quarter of it.** With the walk off the thread the
+same trace still blocked for 1 152 ms. The cause was not the tracer at all: the
+overlay drew a marker for **every node in the document**, camera or no camera,
+and a traced photograph is 23 454 nodes. So every pointermove after a trace paid
+205 ms, not just the trace itself. Two rules in `renderNodes` now:
+
+- **Off-screen markers are not drawn.** A marker is a thing you aim at, and one
+  outside the camera cannot be aimed at by anybody.
+- **Above `MARKER_CAP` markers in view, none are drawn**, and the document
+  readout says `markers off, too dense`. Drawing the first 2 000 and stopping
+  would make which nodes you got depend on the order shapes are stored in, which
+  reads as the rest of the document having no nodes.
+
+The cost is stated rather than hidden: with markers off, nodes cannot be clicked
+at all, because the anchors *are* the hit targets. At the densities that trigger
+it they could not be clicked accurately anyway, but "not usefully" and "not at
+all" are different things, so the readout names which one you are in. It is
+written from `controller.onRender` rather than from a store subscriber, because
+whether markers were drawn is a fact about a render, and subscribers run a frame
+before one happens.
+
+Measured on the same 400 by 400 fixture, in Edge:
+
+| | before | after |
+|---|---|---|
+| trace, click to shapes | 1 719 ms | 761 ms |
+| longest blocked task | 1 152 ms | 215 ms |
+| one render afterwards | 205 ms | 113 ms |
+| markers drawn | 23 454 | 0, and said so |
+
+What is left is the honest remainder: a 23 454-node document costs about 113 ms
+a render, spread evenly across serialising the artwork, serialising the overlay
+outlines that duplicate it, and the per-node loops. None of it is waste in the
+way 23 454 unaimable markers were waste; all of it would want a render cache
+keyed on something the store does not currently promise, which is its own piece
+of work and is not begun.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

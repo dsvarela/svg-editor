@@ -106,8 +106,32 @@ function show(el: HTMLElement): void {
   t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
 }
 
+/**
+ * Which element a tooltip is about.
+ *
+ * Normally the nearest ancestor carrying a title. The exception is a label and
+ * its control, which are one thing to a person and two to the DOM: a title on
+ * either belongs to the **control**, because that is what takes focus and what
+ * `aria-describedby` has to be set on for a screen reader to read the
+ * description out. A title on the wrapping `<label>` alone described the words
+ * next to the checkbox and left the checkbox itself with a name and nothing
+ * else -- so the only explanation of what "Pixel fit" means was available to a
+ * mouse and to nobody else.
+ *
+ * Resolving through the label also means hovering the words still works once
+ * the title has moved onto the input, which is where it belongs.
+ */
+function tipTarget(from: HTMLElement): HTMLElement | null {
+  const control = from.closest('label')?.control as HTMLElement | null | undefined;
+  if (control && (control.hasAttribute('title') || control.hasAttribute('data-tip'))) {
+    return control;
+  }
+  return from.closest<HTMLElement>('[title], [data-tip]');
+}
+
 function over(e: Event): void {
-  const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[title], [data-tip]');
+  const from = e.target as HTMLElement | null;
+  const el = from ? tipTarget(from) : null;
   if (!el || el === current) return;
   hide();
   current = el;

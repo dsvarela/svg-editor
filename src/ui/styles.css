@@ -663,7 +663,13 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
   text-transform: uppercase;
   color: var(--ink-3);
 }
-.rd.xy { min-width: 15ch; justify-content: flex-end; }
+/* Fixed width and left aligned, so the digits sit at the same place on every
+   pointermove. Right aligned in a box that grew with its contents, they slid
+   sideways by up to 199 px as a snap tier came into reach -- the numbers being
+   read were the thing that moved. The tier's name is a separate readout to its
+   left for the same reason: appearing, it used to push the coordinates along. */
+.rd.xy { width: 19ch; justify-content: flex-start; overflow: hidden; }
+#snapkind { color: var(--measure); }
 .readout .st { font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .st.err { color: var(--warn); }
 .st.ok { color: var(--measure); }

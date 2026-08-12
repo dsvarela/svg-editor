@@ -276,9 +276,11 @@ between them, so a node seven pixels away still beats a gridline one pixel away.
 Nothing reaches further than eight screen pixels except the grid, which is
 everywhere.
 
-The `xy` readout names whichever claimed it, and shows that target's own
-coordinates rather than the pointer's, so you can see where a click would land
-before you make it. The grid is not shown that way, since it is already drawn.
+The `xy` readout shows that target's own coordinates rather than the pointer's,
+so you can see where a click would land before you make it, and the readout
+immediately to its left names whichever tier claimed it. They are two readouts
+rather than one so that a tier coming into reach cannot move the digits you are
+reading. The grid is never named that way, since it is already drawn.
 
 The `grid` readout in the status strip says what is drawn against what is
 snapped, for example `1 · every 5 drawn`. The group's own header says whether
@@ -348,7 +350,13 @@ Two modes.
 ## Status strip
 
 Along the bottom, left to right: the shape, node and segment counts; the grid
-readout; the zoom; the status line; the `xy` readout, described under Grid above.
+readout; the zoom; the status line; the name of the snap tier under the pointer;
+the `xy` readout, described under Grid above.
+
+The counts gain `markers off, too dense` when the document has more than 2 000
+node markers inside the camera. The overlay draws none at all in that case: a
+marker is something you aim at, and at that density they are neither aimable nor
+affordable. Zoom in until fewer are in view and they come back.
 
 **Zoom** is the magnification, so 100 % means one document unit per pixel. Click
 it to go back to 100 % about the centre of the view.
@@ -381,10 +389,16 @@ Named here rather than left for you to find.
   than restoring the original radius. The reported travel is how it tells you.
 - **A wide gap circularises loosely.** One curve cannot hold an arc much wider
   than a quarter turn tightly. The status line says when this applies.
-- **Tracing a large image freezes the editor.** It runs on the same thread as
-  everything else, so a 900 by 900 photograph takes about thirteen seconds during
-  which nothing responds. The status line says `Tracing…` before it starts. Trace
-  small images, or crop first.
+- **A traced photograph makes a document too dense to edit.** Tracing runs in a
+  worker, so the editor stays live while it works, and the walk itself is no
+  longer what costs the time. What costs it is the result: a 400 by 400
+  photograph at the defaults comes back as 3 695 paths and 23 454 nodes, and a
+  document that size takes about a tenth of a second to redraw whatever you do
+  to it. Above 2 000 node markers in view the overlay stops drawing them and the
+  document readout says `markers off, too dense`; the shapes are all still
+  there, but you cannot click a node until you zoom in far enough for the
+  markers to come back. Tracing is for flat artwork. For a photograph, fewer
+  colours and a higher **Noise** floor are the controls that help.
 - **A feature one pixel wide loses its corners when traced.** The pass that keeps
   right angles sharp needs two straight lattice steps on each side of a corner,
   so a 1 px line or dot has none and comes back as a diamond of half the area.

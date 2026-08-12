@@ -640,6 +640,11 @@ const scenarios = {
 
     const run = async (mode) => {
       await load();
+      // The Delete controls live in the Node tab, and a control in a tab you
+      // cannot see is not there: `hidden` keeps it out of the hit test, so the
+      // click below waited thirty seconds for a visibility that never came.
+      // This scenario had been failing on that since the panels became tabs.
+      await tab(page, 'node');
       await page.click(`#delmode button[data-dm="${mode}"]`);
       await page.waitForTimeout(80);
       await click([40, 30]);
@@ -1145,6 +1150,139 @@ const scenarios = {
   },
 
   /**
+   * The trace does not freeze the page, and still works when it has to.
+   *
+   * Only measurable here: the unit tests call `traceImage` directly, which is
+   * the thing that blocks, and a worker has no meaning in jsdom. What this
+   * asserts is that the page keeps painting while a trace runs -- and then,
+   * with `Worker` taken away, that the same picture still traces on the main
+   * thread, slowly. The second run is what makes the first assertion mean
+   * something: if the frame count were measuring anything other than the
+   * worker, both runs would score alike.
+   */
+  async traceWorker(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`traceWorker: ${what}`);
+    };
+
+    await tab(page, 'doc');
+
+    /* 400 by 400 of gradient and grain: a picture with enough boundary in it to
+       take a few hundred milliseconds, which is long enough for the difference
+       between blocking and not to be several dozen frames. Deterministic, so
+       the timing is the only thing that varies between runs. */
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const buffer = png(400, 400, (x, y) => [
+      (x / 400) * 200 + rnd() * 40,
+      (y / 400) * 180 + rnd() * 40,
+      128 + Math.cos(x / 30) * 60 + rnd() * 40,
+      255,
+    ]);
+    await page.setInputFiles('#backFile', { name: 'photo.png', mimeType: 'image/png', buffer });
+    await page.waitForTimeout(400);
+
+    /**
+     * Click Trace, and measure the longest the main thread was blocked.
+     *
+     * `longtask` entries, not animation frames. Frames were the first attempt
+     * and they lie in headless Chromium: a run whose thread was demonstrably
+     * blocked for 1 152 ms reported a longest frame gap of 17 ms, because with
+     * no compositor the frame callbacks are not scheduled against real vsync.
+     * The long-task observer measures the thing being claimed directly.
+     *
+     * Entries are filtered by start time because a `PerformanceObserver`
+     * delivers in batches: tasks from decoding the PNG arrive after the
+     * counter is reset and would otherwise be counted against the run that
+     * came next. That mistake made the *fallback* look faster than the worker.
+     */
+    const run = async () => {
+      const before = await page.$$eval('.artwork path', (els) => els.length);
+      await page.evaluate(() => {
+        if (!window.__obs) {
+          window.__tasks = [];
+          window.__obs = new PerformanceObserver((l) => {
+            for (const e of l.getEntries()) window.__tasks.push([e.startTime, e.duration]);
+          });
+          window.__obs.observe({ entryTypes: ['longtask'] });
+        }
+        window.__t0 = performance.now();
+        document.querySelector('#status').textContent = '';
+      });
+      const started = Date.now();
+      await page.click('#traceGo', { noWaitAfter: true });
+      await page.waitForFunction(
+        () => /^Traced/.test(document.querySelector('#status')?.textContent ?? ''),
+        null,
+        { timeout: 120000 },
+      );
+      const ms = Date.now() - started;
+      // A moment for the observer's last batch, which arrives after the task
+      // that produced it has ended.
+      await page.waitForTimeout(200);
+      const block = await page.evaluate(() =>
+        Math.round(
+          window.__tasks.filter((t) => t[0] >= window.__t0).reduce((a, t) => Math.max(a, t[1]), 0),
+        ),
+      );
+      const after = await page.$$eval('.artwork path', (els) => els.length);
+      return {
+        ms,
+        block,
+        added: after - before,
+        stats: await page.textContent('#stats'),
+        status: await page.textContent('#status'),
+      };
+    };
+
+    const worker = await run();
+    check(worker.added > 0, 'the worker run added no shapes');
+    /* 400 ms, against a walk that takes twice that. The block is not zero even
+       with the worker, and cannot be: committing the shapes, serialising them
+       and rendering them are all main-thread work. What it no longer contains
+       is the walk. Measured at 215 ms on this fixture in Edge. */
+    check(worker.block < 400, `${worker.block} ms of blocked thread during a ${worker.ms} ms trace`);
+
+    /* The overlay stops drawing markers rather than putting one on each of
+       23 000 nodes, and says so where the node count is. Checked here because
+       the readout is written from `controller.onRender`, and whether that fires
+       late enough to have an answer is only true in a browser. */
+    check(
+      /markers off/.test(worker.stats),
+      `${worker.added} traced shapes and the readout still claims markers: "${worker.stats}"`,
+    );
+    await undo(page);
+
+    /* Take `Worker` away and trace the same picture. `traceOffThread` returns
+       null when one cannot be constructed -- which is what a `worker-src`
+       policy forbidding `blob:` looks like from the inside -- and the tracer
+       runs here instead. */
+    await page.evaluate(() => {
+      window.__blocked = 0;
+      window.Worker = function () {
+        window.__blocked++;
+        throw new Error('worker-src blocked');
+      };
+    });
+    const fallback = await run();
+    const blocked = await page.evaluate(() => window.__blocked);
+    check(blocked > 0, 'the fallback run never tried to build a worker, so it proves nothing');
+    check(fallback.added === worker.added, `fallback added ${fallback.added}, worker added ${worker.added}`);
+    check(fallback.status === worker.status, `fallback says "${fallback.status}"`);
+    /* A difference rather than a ratio. Both runs pay the same commit and
+       render on this thread; only the walk moves. So what separates them is a
+       fixed few hundred milliseconds of walk, not a multiple, and asserting a
+       multiple would tighten as the shared cost falls. */
+    check(
+      fallback.block - worker.block > 100,
+      `the fallback blocked ${fallback.block} ms against the worker's ${worker.block}, so this is not measuring the worker`,
+    );
+    await undo(page);
+
+    return { worker, fallback };
+  },
+
+  /**
    * The snap priority order, driven by an actual pointer.
    *
    * The rule is unit-tested against a document. What is only here is that the
@@ -1170,11 +1308,17 @@ const scenarios = {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(120);
 
+    /* Both halves of the readout, joined for these checks. The tier's name is a
+       separate element from the coordinates now -- it sits to their left, so
+       that a tier coming into reach cannot shove the digits sideways while
+       somebody is reading them. */
     const hover = async (doc) => {
       const c = await toClient(doc);
       await page.mouse.move(c[0], c[1]);
       await page.waitForTimeout(80);
-      return page.textContent('#cursor');
+      const xy = await page.textContent('#cursor');
+      const kind = await page.textContent('#snapkind');
+      return kind ? `${xy} · ${kind}` : xy;
     };
 
     // Middle of the square's top edge: no corner in reach, so the 1-D tier.
@@ -1190,6 +1334,20 @@ const scenarios = {
     // Out in the open: neither tier, so the readout is a plain position.
     const nowhere = await hover([76, 8]);
     check(!/on a/.test(nowhere), `empty-canvas readout says "${nowhere}"`);
+
+    /* And the coordinates stay put while all that changes. They used to be
+       right-aligned in a box that grew with its own contents, so every
+       pointermove that brought a tier into reach slid the digits sideways --
+       by up to 199 px, while somebody was reading them. Only a browser can
+       answer this: it is a question about layout. */
+    const digitsAt = () => page.$eval('#cursor', (el) => Math.round(el.getBoundingClientRect().left));
+    const plainAt = await digitsAt();
+    await hover([40, 16.7]);
+    const claimedAt = await digitsAt();
+    check(
+      plainAt === claimedAt,
+      `the coordinates moved ${claimedAt - plainAt} px when a snap tier came into reach`,
+    );
 
     /* The scenario's headline claim, and the one it did not actually make.
        Reach is REACH_PX scaled by the camera, so at this zoom it is well under
@@ -1778,6 +1936,43 @@ const scenarios = {
     check(
       (await page.getAttribute(`#${described}`, 'aria-hidden')) === 'false',
       'the tooltip is hidden from the accessibility tree while shown',
+    );
+
+    /* The same, for a checkbox inside a wrapping `<label>`. The description
+       used to be a `title` on the label, so the tooltip described the words and
+       the checkbox itself was announced with a name and nothing else: a person
+       using a screen reader could not find out what "Pixel fit" does. Focus,
+       not hover, because focus is the case that was broken and the case a
+       keyboard has. */
+    await tab(page, 'doc');
+    await page.focus('#pixelFit');
+    await page.waitForTimeout(220);
+    const onControl = await page.getAttribute('#pixelFit', 'aria-describedby');
+    check(!!onControl, 'a focused checkbox is not described by its tooltip');
+    const onLabel = await page.$eval('#pixelFit', (el) =>
+      el.closest('label').hasAttribute('aria-describedby'),
+    );
+    check(!onLabel, 'the description is on the label rather than the control');
+
+    /* And hovering the words, which is most of the target and the only part a
+       mouse is likely to hit. The title lives on the input now, so this only
+       works because the tooltip resolves a label to its control. */
+    await page.mouse.move(0, 0);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.waitForTimeout(200);
+    /* Cleared first, and asserted cleared. Without this the check below passed
+       on the description left behind by the focus above -- it was measuring
+       nothing, and said so only when the code it was meant to guard was
+       removed and it kept passing. */
+    check(
+      !(await page.getAttribute('#pixelFit', 'aria-describedby')),
+      'the description outlives the focus that showed it',
+    );
+    await page.hover('label:has(#pixelFit)');
+    await page.waitForTimeout(300);
+    check(
+      !!(await page.getAttribute('#pixelFit', 'aria-describedby')),
+      'hovering the label shows nothing, so the words are not part of the control',
     );
 
     // Leave it inverted, so the screenshot shows the other half of the palette.

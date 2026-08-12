@@ -10,7 +10,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Canvas } from '../src/view/canvas';
+import { Canvas, MARKER_CAP } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
 import { emptyDoc, shapeFromPath } from '../src/model/doc';
@@ -109,10 +109,39 @@ function assertFaithful(canvas: Canvas, store: Store): void {
     expect(renderedNodes, `shape ${i} node count through the renderer`).toBe(modelNodes);
   }
 
-  // 3. Exactly one visible anchor per node in the document.
-  const modelTotal = doc.shapes.reduce(
-    (a, sh) => a + sh.subpaths.reduce((b, sp) => b + sp.nodes.length, 0), 0);
-  expect(visible(canvas.overlay, '.anchor').length, 'visible anchors').toBe(modelTotal);
+  /* 3. Every node inside the camera has an anchor, and no node well outside it
+        has one. This used to be "one anchor per node in the document", which
+        stopped being true when the overlay started culling to the camera -- a
+        23 454-node trace was drawing 23 454 markers, all of them, every frame.
+        The per-node form is the stronger claim anyway: the old count would have
+        been satisfied by any 3 anchors, including three on the same node.
+
+        The band within `M` of the camera edge is asserted about in neither
+        direction. The overlay's real margin is a marker's own width, which
+        depends on the zoom; restating that here would make this test a copy of
+        the code it is checking rather than a statement about what a person can
+        see. */
+  const cam = store.state.camera;
+  const M = 4;
+  const drawn = new Set(
+    visible(canvas.overlay, '.anchor').map(
+      (el) => `${el.getAttribute('data-shape')}/${el.getAttribute('data-sp')}/${el.getAttribute('data-i')}`,
+    ),
+  );
+  for (const sh of doc.shapes) {
+    sh.subpaths.forEach((sp, spI) => {
+      sp.nodes.forEach((n, i) => {
+        const key = `${sh.id}/${spI}/${i}`;
+        const [x, y] = n.pt;
+        if (x > cam.x + M && x < cam.x + cam.w - M && y > cam.y + M && y < cam.y + cam.h - M) {
+          expect(drawn.has(key), `node ${key} at [${x},${y}] is in view with no anchor`).toBe(true);
+        }
+        if (x < cam.x - M || x > cam.x + cam.w + M || y < cam.y - M || y > cam.y + cam.h + M) {
+          expect(drawn.has(key), `node ${key} at [${x},${y}] is off screen but drawn`).toBe(false);
+        }
+      });
+    });
+  }
 
   // 4. Every visible anchor points at a node that actually exists.
   for (const el of visible(canvas.overlay, '.anchor')) {
@@ -314,5 +343,62 @@ describe('degenerate shapes', () => {
     h.store.update((s) => s.selection.nodes.add(`${id}/0/0`));
     h.controller.finishPen();
     expect(h.store.state.selection.nodes.size).toBe(0);
+  });
+});
+
+/**
+ * What the overlay refuses to draw.
+ *
+ * Both rules exist for the same reason and were found by the same measurement:
+ * a traced photograph put 23 454 nodes in a document, the overlay drew a marker
+ * for every one of them on every frame, and a render cost 205 ms -- so every
+ * pointermove after a trace did. Markers are things you aim at; these are the
+ * two cases where drawing one helps nobody.
+ */
+describe('the overlay under load', () => {
+  /** A shape of `n` nodes along a line from `x0`, `step` document units apart. */
+  const row = (n: number, x0: number, y: number, step = 1): string =>
+    `M ${x0} ${y} ` +
+    Array.from({ length: n - 1 }, (_, i) => `L ${+(x0 + (i + 1) * step).toFixed(4)} ${y}`).join(' ');
+
+  it('draws no marker for a node outside the camera', () => {
+    // The camera is the document's 80 by 60. Half this row is past its right
+    // edge, and asymmetric on purpose: a bug that culled the wrong half, or
+    // both halves, or neither, gives three different counts here.
+    const h = setup(row(20, 71, 25));
+    h.controller.render();
+    const drawn = visible(h.canvas.overlay, '.anchor').map((el) => Number(el.getAttribute('data-i')));
+    expect(drawn.length).toBe(10);
+    expect(Math.max(...drawn)).toBe(9);
+  });
+
+  it('draws nothing at all above the cap, rather than an arbitrary prefix', () => {
+    /* Drawing the first `MARKER_CAP` and stopping would leave which nodes you
+       got depending on the order shapes are stored in. The count is what makes
+       that distinguishable: a prefix would give exactly MARKER_CAP. */
+    const h = setup();
+    h.store.edit((s) => {
+      // Packed 0.05 apart so all 2 400 are inside the 80 by 60 camera: at one
+      // unit apart the culling would answer first and the cap would never be
+      // reached, which is what the first draft of this test actually measured.
+      for (let k = 0; k < 3; k++) s.doc.shapes.push(shapeFromPath(row(800, 10, 10 + k, 0.05)));
+    });
+    h.controller.render();
+    expect(visible(h.canvas.overlay, '.anchor').length).toBe(0);
+    expect(h.canvas.markersCapped).toBe(true);
+  });
+
+  it('counts only what is in view when deciding, so panning away brings them back', () => {
+    /* The cap is on markers in view, not nodes in the document. A document far
+       over the cap in total is still perfectly workable a few nodes at a time,
+       which is the whole point of culling first and capping second. */
+    const h = setup();
+    h.store.edit((s) => {
+      for (let k = 0; k < 3; k++) s.doc.shapes.push(shapeFromPath(row(MARKER_CAP, 1000, 10 + k)));
+      s.doc.shapes.push(shapeFromPath('M 10 10 L 20 20'));
+    });
+    h.controller.render();
+    expect(h.canvas.markersCapped).toBe(false);
+    expect(visible(h.canvas.overlay, '.anchor').length).toBe(2);
   });
 });

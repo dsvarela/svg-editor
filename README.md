@@ -31,14 +31,15 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (484 across 16 files) |
+| `npm test` | Unit and DOM tests (493 across 16 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **185.1 kB, 58.6 kB
-gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 2.3 kB of
-that all-in, against the 278 kB a WASM tracer would have cost; see
-ARCHITECTURE §26.
+The production build is one file, no external requests: **197.1 kB, 60.2 kB
+gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 4.2 kB of
+that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
+and 1.9 kB for the inlined worker it runs in, measured by building without it.
+See ARCHITECTURE §26 and §28.
 
 ---
 
@@ -147,7 +148,7 @@ Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
 `backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`,
-`fuse`, `trace`, `pixelFit`, `snapOrder`.
+`fuse`, `trace`, `traceWorker`, `pixelFit`, `snapOrder`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

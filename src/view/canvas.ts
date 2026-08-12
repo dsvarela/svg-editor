@@ -77,6 +77,13 @@ const HANDLE_SIZE = 8;
  */
 const ROTOR_SIZE = 22;
 
+/**
+ * How many node markers the overlay will draw before it draws none.
+ *
+ * See `renderNodes` for the reasoning and the measurement behind the number.
+ */
+export const MARKER_CAP = 2000;
+
 export class Canvas {
   readonly artwork: SVGSVGElement;
   readonly overlay: SVGSVGElement;
@@ -97,6 +104,16 @@ export class Canvas {
   private handleDots: Pool<'circle'>;
   private anchors: Pool<'rect'>;
   private bendDots: Pool<'circle'>;
+
+  /**
+   * True when the last render had more markers in view than it would draw.
+   *
+   * Read by the readout, which says so. Markers disappearing with no
+   * explanation is worse than markers being slow: the drawing is still there,
+   * still selectable, still editable through the source drawer, and a person
+   * who is not told will reasonably conclude the editor lost their nodes.
+   */
+  markersCapped = false;
   private chrome: SVGGElement;
   private marquee: SVGRectElement;
   private selBox: SVGRectElement;
@@ -368,6 +385,45 @@ export class Canvas {
     const dotR = 3.5 * k;
     const sel = state.selection;
 
+    /* Markers are drawn for every node in the document, whether or not the
+       camera is anywhere near it -- which is fine at the fifty nodes a drawn
+       shape has and ruinous at the twenty-three thousand a traced photograph
+       has. Two rules, in this order:
+
+       Off-screen markers are not drawn. A marker is a thing you aim at, and one
+       outside the camera cannot be aimed at by anybody. The margin is the
+       marker's own size, so one straddling the edge still appears.
+
+       Above `MARKER_CAP` markers *in view*, none are drawn. Measured at about
+       2 microseconds each in Edge, so 2 000 is the point where the overlay's
+       own share of a render reaches 4 ms and stops fitting in a frame. Drawing
+       the first 2 000 and stopping would be worse than drawing none: which
+       nodes you got would depend on the order shapes happen to be stored in,
+       and a person would read that as the rest of the document having no nodes.
+
+       The cost of the cap is real and worth stating: with markers off, nodes
+       cannot be clicked, because the anchors are the hit targets. At the
+       densities that trigger it they could not be clicked accurately anyway --
+       23 454 anchors over a 1600 px canvas is eight markers deep -- but "could
+       not usefully" and "cannot at all" are different, so the readout says
+       which state it is in. */
+    const cam = state.camera;
+    const pad = anchorSize;
+    const inView = (p: Pt): boolean =>
+      p[0] >= cam.x - pad &&
+      p[0] <= cam.x + cam.w + pad &&
+      p[1] >= cam.y - pad &&
+      p[1] <= cam.y + cam.h + pad;
+
+    let inFrame = 0;
+    for (const shape of state.doc.shapes) {
+      for (const sp of shape.subpaths) {
+        for (const n of sp.nodes) if (inView(n.pt)) inFrame++;
+      }
+    }
+    this.markersCapped = inFrame > MARKER_CAP;
+    const markers = !this.markersCapped;
+
     for (const shape of state.doc.shapes) {
       const shapeSelected = sel.shapes.has(shape.id);
 
@@ -385,8 +441,9 @@ export class Canvas {
         sp.nodes.forEach((n, i) => {
           const key = nodeKey({ shape: shape.id, sp: spI, i });
           const isSel = sel.nodes.has(key) || shapeSelected;
+          const near = markers && inView(n.pt);
 
-          if (state.showHandles && isSel) {
+          if (state.showHandles && isSel && markers) {
             for (const which of ['in', 'out'] as const) {
               const real = which === 'in' ? n.hIn : n.hOut;
               // A straight segment has no handle, but selecting its node should
@@ -405,6 +462,10 @@ export class Canvas {
                  left to aim at, so the handle is not worth drawing. */
               const reach = Math.hypot(h[0] - n.pt[0], h[1] - n.pt[1]);
               if (reach < anchorSize) continue;
+              // A handle pulled far enough out to be on screen while its node
+              // is not is still a control you can grab, so this asks about both
+              // ends rather than only the node's.
+              if (!near && !inView(h)) continue;
 
               this.handleLines.next({
                 x1: n.pt[0],
@@ -432,6 +493,7 @@ export class Canvas {
           // readable at a glance instead of hidden in a properties panel. It is
           // read off the handles every frame, so the marker cannot claim
           // something the geometry does not back up.
+          if (!near) return;
           const r = continuityOf(n) === 'corner' ? 0 : anchorSize / 2;
           this.anchors.next({
             x: n.pt[0] - anchorSize / 2,
@@ -451,7 +513,7 @@ export class Canvas {
         // One bend control per segment whose BOTH endpoints are selected. That
         // rule is the same one `Curve`/`Straighten` already use, so which
         // segment a control belongs to is never ambiguous.
-        if (state.showHandles) {
+        if (state.showHandles && markers) {
           for (let seg = 0; seg < segmentCount(sp); seg++) {
             const aI = seg;
             const bI = (seg + 1) % sp.nodes.length;
@@ -464,6 +526,7 @@ export class Canvas {
             const bend = bendOf(sp.nodes[aI], sp.nodes[bI]);
             if (!bend) continue; // asymmetric: free handles are the truth here
             const at = bendHandlePos(sp.nodes[aI].pt, sp.nodes[bI].pt, bend);
+            if (!inView(at)) continue;
             this.bendDots.next({
               cx: at[0],
               cy: at[1],

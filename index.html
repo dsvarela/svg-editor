@@ -405,8 +405,8 @@
               <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
               <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
               <label><input type="checkbox" id="snapPoints" checked /> Snap to points</label>
-              <label title="Snap to a point on an existing curve, not only to its anchors"><input type="checkbox" id="snapBoundary" checked /> Snap to outlines</label>
-              <label title="Shift the lattice so the stroke's edges land on whole pixels, not its centreline"><input type="checkbox" id="pixelFit" /> Pixel fit</label>
+              <label><input type="checkbox" id="snapBoundary" title="Snap to a point on an existing curve, not only to its anchors" checked /> Snap to outlines</label>
+              <label><input type="checkbox" id="pixelFit" title="Shift the lattice so the stroke's edges land on whole pixels, not its centreline" /> Pixel fit</label>
               <label><input type="checkbox" id="showHandles" checked /> Show handles</label>
               <label><input type="checkbox" id="filled" checked /> Show fills</label>
             </div>
@@ -450,17 +450,19 @@
             </p>
 
             <div class="glabel sub"><span>Trace</span><span class="gval" id="traceinfo">no image</span></div>
-            <div class="grid2">
+            <div class="row">
               <label for="traceColours">Colours</label>
               <input type="number" id="traceColours" value="6" min="1" max="32" step="1" />
+            </div>
+            <div class="row">
               <label for="traceTol">Within</label>
               <input type="number" id="traceTol" value="1" min="0" step="0.5" />
             </div>
             <div class="row">
               <label for="traceNoise">Noise</label>
               <input type="number" id="traceNoise" value="8" min="3" step="1" />
-              <button class="btn" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
             </div>
+            <button class="btn wide" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
             <p class="note">
               One shape per colour, holes and all. <b>Colours</b> caps the palette,
               <b>Within</b> is how far a fitted curve may move in document units, and
@@ -509,6 +511,7 @@
         <button type="button" class="rd zoomrd" id="zoomval" title="Zoom. Click to return to 1:1"><i>zoom</i><span class="mono" id="zoomnum"></span></button>
         <span id="status" class="st ok">Ready.</span>
         <span class="grow"></span>
+        <span class="rd" id="snapkind"></span>
         <span class="rd xy"><i>xy</i><span id="cursor" class="mono"></span></span>
       </footer>
     </div>
