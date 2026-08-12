@@ -374,11 +374,23 @@ too short to grab and moving one node changes nothing you can see.
 2. Set **Within** in the **Draw** panel. It is how far the drawing may move, in
    document units, and it starts at roughly one screen pixel for the document you
    have open.
-3. Press **Simplify**.
+3. Choose **Refit**, which is the mode for this job.
+4. Press **Simplify**.
 
 The status line reports what happened: `Simplified 1 path: 40 nodes to 6.
 Nothing moved further than 0.19.` If that is more change than you wanted, undo
 and try a smaller number.
+
+### Taking back nodes you added yourself
+
+Double-clicking an outline adds a node without changing the curve, so that node
+is carrying nothing. **Clean up** removes exactly those, at any **Within** and
+without touching anything else, because it can prove they cost nothing: a node
+goes only when its two segments are pieces of the same curve.
+
+Use it after an editing session to get back to the nodes that are actually
+holding the shape. It cannot change the file you export, so it is safe to run
+on anything.
 
 Sharp corners are kept exactly where they are, so the points of a star and the
 corners of a traced letter survive. Gentle wobbles do not. A path that already

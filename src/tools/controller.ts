@@ -55,6 +55,7 @@ import {
 } from '../model/ops';
 import type { AlignMode, FuseRefusal, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
+import { invisibleAt, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import type { SnapResult } from '../model/snapping';
@@ -72,6 +73,16 @@ import { shapeIsInBox } from '../view/canvas';
 import { bendFromPoint } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { fitAspect, screenToDoc, zoomAt } from '../view/viewport';
+
+/**
+ * Which of the three operations Simplify runs.
+ *
+ * `clean` removes only what cannot change the exported file, at any tolerance.
+ * `keep` adds the tolerance budget but never rebuilds a curve, so every node
+ * that survives is one somebody placed. `refit` adds Schneider's resample on
+ * top, which is the only one of the three that invents geometry.
+ */
+export type SimplifyMode = 'clean' | 'keep' | 'refit';
 
 type DragKind =
   | { kind: 'none' }
@@ -1229,8 +1240,8 @@ export class Controller {
    * that was highlighted a moment ago; keeping them would leave the panel
    * editing coordinates nobody chose.
    */
-  simplifySelection(tol: number): boolean {
-    if (!(tol > 0)) {
+  simplifySelection(tol: number, mode: SimplifyMode = 'refit'): boolean {
+    if (mode !== 'clean' && !(tol > 0)) {
       this.onMessage?.('Simplify needs a tolerance above zero. It is how far a node may move.', false);
       return false;
     }
@@ -1240,6 +1251,11 @@ export class Controller {
       this.onMessage?.('Select a shape, or some of its nodes, first.', false);
       return false;
     }
+
+    /* Clean up ignores the tolerance box entirely and uses the export
+       precision, because a node that cannot change the saved file is useless
+       at every tolerance rather than at some of them. See `invisibleAt`. */
+    const budget = mode === 'clean' ? invisibleAt(this.store.state.decimals) : tol;
 
     let paths = 0;
     let before = 0;
@@ -1251,12 +1267,28 @@ export class Controller {
         for (const i of sps) {
           const sp = shape?.subpaths[i];
           if (!sp) continue;
-          const r = simplifySubpath(sp, tol);
-          if (!r) continue;
+
+          /* Knot removal first in every mode. It takes out what is provably
+             free, so the refit is only ever asked to approximate the nodes
+             that are actually carrying the shape. Running it after would be
+             pointless: a refit leaves nothing redundant behind. */
+          const k = removeRedundantNodes(sp, budget);
+          let n = k.after;
+          let moved = k.cost;
+
+          if (mode === 'refit') {
+            const r = simplifySubpath(sp, tol);
+            if (r) {
+              n = r.after;
+              moved = Math.max(moved, r.error);
+            }
+          }
+
+          if (n === k.before) continue;
           paths++;
-          before += r.before;
-          after += r.after;
-          error = Math.max(error, r.error);
+          before += k.before;
+          after += n;
+          error = Math.max(error, moved);
         }
       }
       if (paths) st.selection = emptySelection();
@@ -1265,15 +1297,18 @@ export class Controller {
 
     if (!paths) {
       this.onMessage?.(
-        'Nothing to simplify. Raise the tolerance to remove more nodes.',
+        mode === 'clean'
+          ? 'Nothing to clean up. Every node here is carrying the shape.'
+          : 'Nothing to simplify. Raise the tolerance to remove more nodes.',
         false,
       );
       return false;
     }
 
     const dp = (v: number): string => (+v.toFixed(3)).toString();
+    const what = mode === 'clean' ? 'Cleaned' : 'Simplified';
     this.onMessage?.(
-      `Simplified ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
+      `${what} ${paths} path${paths === 1 ? '' : 's'}: ${before} nodes to ${after}. ` +
         `Nothing moved further than ${dp(error)}.`,
       true,
     );

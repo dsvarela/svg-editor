@@ -138,7 +138,7 @@ framework.
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 565 tests in 17 files, 7 843 lines,
+**Unit and DOM tests**, with `npm test`. 588 tests in 18 files, 8 265 lines,
 over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
 transforms, history, the grid and the primitives. The rendering tests run in

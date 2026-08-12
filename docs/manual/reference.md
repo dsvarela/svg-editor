@@ -167,9 +167,27 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 - **Within** is how far Simplify may move the drawing, in document units. It
   starts at about one screen pixel for the document you have open and stops
   following it once you type your own number.
-- **Simplify** refits the selected paths with as few nodes as **Within** allows.
-  Corners are kept. The status line reports the node count before and after, and
-  the furthest anything actually moved.
+- **Simplify** removes nodes from the selected paths, in one of three modes set
+  by the buttons above it. The status line reports the node count before and
+  after, and the furthest anything moved.
+
+| Mode | Removes | Uses **Within** |
+|---|---|---|
+| **Clean up** | Only nodes that cannot change the exported file | No, it uses the export precision |
+| **Keep nodes** | Nodes up to **Within**, without rebuilding any curve | Yes |
+| **Refit** | The same, then refits what is left | Yes |
+
+  Clean up runs first in all three, so a node that is doing nothing is removed
+  whatever mode you pick and whatever **Within** says. A node counts as doing
+  nothing when its two segments are pieces of the same curve, which is exactly
+  what a node added by double-clicking an outline is. Corners are never removed:
+  no single curve replaces two sides of a corner, so no tolerance makes one
+  redundant.
+
+  **Refit** is the only mode that invents geometry. It is the right one for a
+  traced path carrying a node every few units. **Keep nodes** is the one to
+  reach for when every node on screen is one you placed, because it will not
+  replace your curves with fitted ones.
 - **Reverse** (`Shift+R`) walks the selected paths the other way round. The
   drawing does not move. Direction is what decides winding under `nonzero`, and
   which end of a path a marker lands on. A closed path keeps its start node, so
@@ -474,10 +492,11 @@ Named here rather than left for you to find.
   whole number the other edge lands mid-pixel. Nothing can do better.
 - **The backdrop does not survive a reload.** Everything else about it is
   undoable; this is not, because nothing here is saved between sessions.
-- **Simplify checks the tolerance where it samples.** Sampling is dense, and
+- **Refit checks the tolerance where it samples.** Sampling is dense, and
   denser than the tolerance, so the gap is small. It is not zero, and a path with
   extreme curvature between samples can move a little further than the number you
-  typed.
+  typed. **Clean up** and **Keep nodes** do not sample at all, and their limit is
+  a bound rather than a measurement.
 - **Anchors are a fixed size on screen,** so zooming out shrinks the drawing
   while they stay put and crowd it. Handles closer to their node than the node's
   own marker are dropped, which thins it out, but the anchors are always drawn.
