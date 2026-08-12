@@ -52,6 +52,7 @@ as the centre rather than a corner.
 | `Shift`+`M` | Merge two selected free ends into one node |
 | `Shift`+`F` | Fuse two adjacent nodes, or sweep a shape for zero-length segments |
 | `Shift`+`R` | Reverse the selected paths |
+| `Shift`+`P` | Make the selected shapes into one shape, changing no geometry |
 | `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
@@ -131,6 +132,17 @@ from an imported file, is left alone and named in the header instead.
 **Unite**, **Subtract**, **Intersect**, **Exclude**. Needs two or more shapes.
 The first selected survives with its name and style, and **Subtract** removes
 the rest from it.
+
+**Make one shape** (`Shift+P`) also needs two or more, and is the odd one out:
+it changes no geometry. The four booleans work out what region the shapes cover
+and rebuild the outline from the answer, which discards every node that fell
+inside. This one moves the paths into a single shape and leaves each of them
+exactly as it was, so the node you placed is still the node you placed.
+
+What fills is then up to **Rule** in the Style panel. Under **Nonzero** the
+shape looks the same as before. Under **Even-odd** a path inside another
+becomes a hole. This is the only way to make a hole here, because no boolean
+can produce one.
 
 ### Draw
 

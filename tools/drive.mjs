@@ -2254,6 +2254,78 @@ const scenarios = {
 
     return out;
   },
+
+  /**
+   * Make one shape, and whether the hole is real.
+   *
+   * The jsdom tests prove the two paths end up in one shape untouched. They
+   * cannot prove the browser then draws a hole, because that is the renderer
+   * applying `fill-rule` and jsdom has no renderer. `isPointInFill` is the
+   * browser's own answer to "is this point painted", fill rule included, so it
+   * measures the thing rather than a proxy for it.
+   */
+  async makeOneShape(page) {
+    /* Set through the source drawer rather than drawn, for the reason
+       `combine` does the same: the document boots with a starter shape and a
+       camera fitted to it, so a drawn square lands in a scene that already has
+       something in it and the corners of a marquee fall outside the view. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
+  <rect x="10" y="10" width="40" height="40" fill="#2563d8"/>
+  <rect x="20" y="20" width="20" height="20" fill="#e8a54b"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await tab(page, 'doc');
+    await page.check('#filled');
+    await tab(page, 'shape');
+    await page.waitForTimeout(200);
+
+    /* `isPointInFill` is the browser answering "is this point painted", with
+       the fill rule applied. Counting subpaths would only prove the document,
+       which the jsdom tests already do. */
+    const painted = () =>
+      page.evaluate(() => {
+        const paths = [...document.querySelectorAll('.artwork path')];
+        const at = (x, y) => paths.some((p) => p.isPointInFill(new DOMPoint(x, y)));
+        return {
+          paths: paths.length,
+          // Dead centre, inside the inner square. This is where a hole goes.
+          centre: at(30, 30),
+          // Between the two squares, painted under either rule. The control:
+          // without it, a shape that vanished entirely would read as a hole.
+          between: at(14, 14),
+          rules: [...new Set(paths.map((p) => getComputedStyle(p).fillRule))],
+        };
+      });
+
+    const out = { start: await painted() };
+
+    // With nothing selected the button must be unreachable, not merely inert.
+    out.disabledWhenIdle = await page.isDisabled('#makeone');
+
+    await page.click('#shapelist li:nth-child(1)');
+    await page.click('#shapelist li:nth-child(2)', { modifiers: ['Shift'] });
+    await page.waitForTimeout(80);
+    out.enabledWithTwo = !(await page.isDisabled('#makeone'));
+
+    await page.click('#makeone');
+    await page.waitForTimeout(200);
+    out.message = await page.textContent('#status');
+    // One path element now, and no hole: nonzero fills both squares.
+    out.nonzero = await painted();
+
+    await page.click('button[data-fr="evenodd"]');
+    await page.waitForTimeout(200);
+    // Same geometry, same element. Only the middle changed.
+    out.evenodd = await painted();
+
+    out.d = await page.inputValue('#src');
+    return out;
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

@@ -15,6 +15,7 @@ route to finishing it.
 - [Delete a node without breaking the path](#delete-a-node-without-breaking-the-path)
 - [Draw a rounded rectangle](#draw-a-rounded-rectangle)
 - [Combine two shapes](#combine-two-shapes)
+- [Punch a hole in a shape](#punch-a-hole-in-a-shape)
 - [Line up and space out nodes](#line-up-and-space-out-nodes)
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
@@ -170,6 +171,19 @@ that one.
 
 If the operation cannot produce a valid result, nothing changes and the status
 line says so. The document is never left in a half-finished state.
+
+## Punch a hole in a shape
+
+1. Draw the outer shape, then draw the hole inside it as a second shape.
+2. Select both.
+3. Press **Make one shape** in the **Combine** panel, or `Shift+P`.
+4. Set **Rule** to **Even-odd** in the **Style** panel.
+
+The middle is now empty, and the two paths are still two paths: every node is
+where you put it, and you can drag either ring afterwards.
+
+No boolean does this. **Subtract** would rebuild the outline as one ring and
+throw the inner nodes away, which looks similar until you try to edit it.
 
 ## Line up and space out nodes
 

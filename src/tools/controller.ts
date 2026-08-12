@@ -1971,6 +1971,16 @@ export class Controller {
         this.fuseSelection();
         return;
       }
+      /* Shift+P rather than TikZiT's Ctrl+P, which the browser has already
+         taken for printing and will not give back from a page. It also joins
+         the family every other path operation is already in. */
+      case 'P': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        const r = this.makeOneShape();
+        this.onMessage?.(r.message, r.ok);
+        return;
+      }
       case 'v': {
         this.store.update((st) => (st.tool = 'select'));
         this.finishPen();
@@ -2346,7 +2356,76 @@ export class Controller {
     const n = subpaths.length;
     return {
       ok: true,
-      message: `${label}: ${operands.length} shapes → ${n} contour${n === 1 ? '' : 's'}.`,
+      message: `${label}: ${operands.length} shapes → ${n} path${n === 1 ? '' : 's'}.`,
+    };
+  }
+
+  /**
+   * Put the selected shapes into one shape, without touching their geometry.
+   *
+   * The quiet relative of the booleans, and the one people reach for without
+   * knowing it. `Unite` asks what region the shapes cover and rebuilds the
+   * outline from the answer, which destroys every node that fell inside. This
+   * moves the paths and changes nothing about them, so a ring inside a disc
+   * stays two rings and the fill rule decides whether the middle is a hole.
+   * That is the only way to draw a hole here, and no boolean produces one.
+   *
+   * Shipped as **Make one shape** rather than the shopping list's "Make path".
+   * `STYLE.md` reserves "path" for one continuous run of nodes and "shape" for
+   * one entry in the Shapes list, and this makes one of the latter out of
+   * several of the former. A button called Make path that produces a shape
+   * would teach the wrong noun in the one place the reader is paying attention.
+   *
+   * Same conventions as `booleanSelection`, deliberately: whole shapes only,
+   * document order, the bottom-most survives with its id, name and style. A
+   * sibling that differed for no reason would read as carelessness.
+   */
+  makeOneShape(): { ok: boolean; message: string } {
+    const s = this.store.state;
+    const operands = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    if (operands.length < 2) {
+      return { ok: false, message: 'Make one shape needs two or more selected shapes.' };
+    }
+
+    const keep = operands[0];
+    const keepId = keep.id;
+    const consumed = new Set(operands.slice(1).map((sh) => sh.id));
+    const subpaths = operands.flatMap((sh) => sh.subpaths);
+    const n = subpaths.length;
+
+    /* Worth saying out loud, because it is the one thing that is lost. Every
+       other shape's fill, stroke and width go with it, and a silent recolour
+       is the kind of change people notice three steps later and blame on
+       something else. */
+    const differs = operands
+      .slice(1)
+      .some(
+        (sh) =>
+          sh.style.fill !== keep.style.fill ||
+          sh.style.stroke !== keep.style.stroke ||
+          sh.style.strokeWidth !== keep.style.strokeWidth,
+      );
+
+    this.store.edit((st) => {
+      const target = findShape(st.doc, keepId);
+      if (!target) return;
+      /* The same subpath objects, not copies. Filtering a shape out of
+         `doc.shapes` drops the shape, not the paths inside it, and each one
+         ends up in exactly one place, so nothing is aliased. A hand-written
+         deep copy would also quietly drop any field a future `PathNode`
+         gains, which is a worse failure than the one it guards against. */
+      target.subpaths = subpaths;
+      st.doc.shapes = st.doc.shapes.filter((sh) => !consumed.has(sh.id));
+      st.selection = emptySelection();
+      st.selection.shapes.add(keepId);
+    });
+
+    const rule = keep.style.fillRule === 'evenodd' ? 'Even-odd' : 'Nonzero';
+    return {
+      ok: true,
+      message: differs
+        ? `${keep.name} now holds ${n} paths. The other colours are gone, and the rule is ${rule}.`
+        : `${keep.name} now holds ${n} paths. The rule is ${rule}.`,
     };
   }
 

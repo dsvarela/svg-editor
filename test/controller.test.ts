@@ -2534,3 +2534,127 @@ describe('drag measurement', () => {
     expect(h.store.state.camera.x).not.toBe(0);
   });
 });
+
+/**
+ * Make one shape.
+ *
+ * The claim is a negative one: it changes NOTHING about the geometry. That is
+ * the whole difference between it and `unite`, and it is what makes a hole
+ * possible, so the tests below compare curves rather than counting nodes.
+ */
+describe('make one shape', () => {
+  /** Two separate squares, the second wholly inside the first. */
+  function two(): Harness {
+    const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
+    h.store.update((s) => {
+      s.doc.shapes.push(shapeFromPath('M10 10 L30 10 L30 30 L10 30 Z'));
+      s.selection = {
+        ...emptySelection(),
+        shapes: new Set(s.doc.shapes.map((sh) => sh.id)),
+      };
+    });
+    return h;
+  }
+
+  it('refuses one shape, and says why', () => {
+    const h = harness('M0 0 L40 0 L40 40 Z');
+    h.store.update((s) => {
+      s.selection = { ...emptySelection(), shapes: new Set([s.doc.shapes[0].id]) };
+    });
+    const r = h.controller.makeOneShape();
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/two or more/);
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+  });
+
+  it('leaves every curve exactly where it was', () => {
+    const h = two();
+    const before = h.store.state.doc.shapes.map((sh) =>
+      serialisePath(sh.subpaths, { decimals: 6 }),
+    );
+
+    const r = h.controller.makeOneShape();
+    expect(r.ok).toBe(true);
+
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    const after = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 });
+    // Concatenation, in document order, character for character. Any rebuild
+    // of the outline would fail this even when it looked the same on screen.
+    expect(after).toBe(before.join(' '));
+  });
+
+  it('keeps both paths where unite would have made one', () => {
+    const h = two();
+    h.controller.makeOneShape();
+    const shape = h.store.state.doc.shapes[0];
+    // Two rings, 4 nodes each. Unite of a square containing a square returns
+    // the outer square alone, so a single 4-node subpath would mean the wrong
+    // operation ran.
+    expect(shape.subpaths).toHaveLength(2);
+    expect(shape.subpaths.map((sp) => sp.nodes.length)).toEqual([4, 4]);
+    // And the inner ring really is inside, so even-odd has a hole to punch.
+    expect(shapeBBox(shape)).toEqual({ x0: 0, y0: 0, x1: 40, y1: 40 });
+  });
+
+  it('the survivor keeps its id, name and style', () => {
+    const h = two();
+    const first = h.store.state.doc.shapes[0];
+    const id = first.id;
+    const name = first.name;
+    h.store.update((s) => {
+      s.doc.shapes[0].style = { ...s.doc.shapes[0].style, fill: '#111111', fillRule: 'evenodd' };
+      s.doc.shapes[1].style = { ...s.doc.shapes[1].style, fill: '#eeeeee' };
+    });
+
+    const r = h.controller.makeOneShape();
+    const kept = h.store.state.doc.shapes[0];
+    expect(kept.id).toBe(id);
+    expect(kept.name).toBe(name);
+    expect(kept.style.fill).toBe('#111111');
+    expect(kept.style.fillRule).toBe('evenodd');
+    // The other shape's colour is gone, and the message says so rather than
+    // letting it be noticed three steps later.
+    expect(r.message).toMatch(/other colours are gone/);
+  });
+
+  it('stays quiet about colour when there was none to lose', () => {
+    const h = two();
+    h.store.update((s) => {
+      s.doc.shapes[1].style = { ...s.doc.shapes[0].style };
+    });
+    expect(h.controller.makeOneShape().message).not.toMatch(/other colours are gone/);
+  });
+
+  it('takes them bottom first, which is the order the fill rule reads', () => {
+    const h = two();
+    const bottom = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 });
+    h.controller.makeOneShape();
+    const after = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 });
+    expect(after.startsWith(bottom)).toBe(true);
+  });
+
+  it('is one undo step', () => {
+    const h = two();
+    const before = h.store.state.doc.shapes.length;
+    h.controller.makeOneShape();
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    h.store.undo();
+    expect(h.store.state.doc.shapes).toHaveLength(before);
+    // Both shapes are back with their own geometry, not one shape split again.
+    expect(h.store.state.doc.shapes.map((sh) => sh.subpaths.length)).toEqual([1, 1]);
+  });
+
+  it('answers Shift+P', () => {
+    const h = two();
+    h.key('P', { shiftKey: true });
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(2);
+  });
+
+  it('ignores a bare p, which is the pen tool', () => {
+    const h = two();
+    h.key('p');
+    expect(h.store.state.doc.shapes).toHaveLength(2);
+    expect(h.store.state.tool).toBe('pen');
+  });
+});

@@ -1179,9 +1179,18 @@ for (const b of boolBtns) {
   });
 }
 
+const makeOneBtn = $('#makeone') as HTMLButtonElement;
+makeOneBtn.addEventListener('click', () => {
+  const r = controller.makeOneShape();
+  status.textContent = r.message;
+  status.className = r.ok ? 'st ok' : 'st err';
+});
+
 function refreshCombine(): void {
   const n = store.state.selection.shapes.size;
   for (const b of boolBtns) b.disabled = n < 2;
+  // Same requirement as the booleans, so the same disabled state.
+  makeOneBtn.disabled = n < 2;
   boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
 }
 
