@@ -107,6 +107,24 @@ function assertFaithful(canvas: Canvas, store: Store): void {
     const reparsed = parsePath(d);
     const renderedNodes = reparsed.reduce((a, sp) => a + sp.nodes.length, 0);
     expect(renderedNodes, `shape ${i} node count through the renderer`).toBe(modelNodes);
+
+    /* And the coordinates, not only how many there are. Counting alone passes
+       on a `d` left over from before a node moved, which is exactly the failure
+       the path cache could introduce: it serialises only when the geometry it
+       last saw has changed, so every test in this file that edits and re-renders
+       is a check on that only if it looks at the numbers. Six decimals is what
+       the renderer writes. */
+    const want: number[] = [];
+    for (const sp of shape.subpaths) {
+      if (sp.nodes.length < 2) continue;
+      for (const n of sp.nodes) want.push(n.pt[0], n.pt[1]);
+    }
+    const got: number[] = [];
+    for (const sp of reparsed) for (const n of sp.nodes) got.push(n.pt[0], n.pt[1]);
+    expect(got.length, `shape ${i} coordinate count`).toBe(want.length);
+    for (let k = 0; k < want.length; k++) {
+      expect(got[k], `shape ${i} coordinate ${k} through the renderer`).toBeCloseTo(want[k], 5);
+    }
   }
 
   /* 3. Every node inside the camera has an anchor, and no node well outside it

@@ -2231,6 +2231,22 @@ export class Controller {
 
   /** How many anchors are selected, counting whole-shape selections. */
   selectionCount(): number {
+    const s = this.store.state;
+    /* With nothing selected by key there is nothing for the union in
+       `selectedNodeRefs` to dedupe, so the count is just the selected shapes'
+       nodes and can be added up instead of materialised. That matters because
+       this is called twice on every notification, and a traced document
+       selects seven shapes holding 23 454 nodes: the general path builds 23 454
+       ref objects and 23 454 dedupe keys to answer "how many", twice, on every
+       pointermove. Measured at 13.5 ms per notification before this. */
+    if (s.selection.nodes.size === 0) {
+      let n = 0;
+      for (const id of s.selection.shapes) {
+        const shape = findShape(s.doc, id);
+        if (shape) for (const sp of shape.subpaths) n += sp.nodes.length;
+      }
+      return n;
+    }
     return this.selectedNodeRefs().length;
   }
 
@@ -2239,6 +2255,8 @@ export class Controller {
    * The inspector edits one node at a time; align handles the rest.
    */
   singleSelectedNode(): { ref: NodeRef; node: PathNode; subpath: Subpath } | null {
+    // Asked first, because it can answer "not one" without building the list.
+    if (this.selectionCount() !== 1) return null;
     const refs = this.selectedNodeRefs();
     if (refs.length !== 1) return null;
     const r = refs[0];
@@ -2297,17 +2315,30 @@ export class Controller {
    */
   activeSegment(): { shape: string; sp: number; seg: number; bend: Bend | null } | null {
     const s = this.store.state;
-    const sel = new Set(this.selectedNodeRefs().map(nodeKey));
-    if (sel.size < 2) return null;
+    if (this.selectionCount() < 2) return null;
+    const sel = s.selection;
+
+    /* Membership is asked one node at a time rather than by materialising the
+       whole selection into a Set of keys first. The answer here is `null` the
+       moment a second segment qualifies, so with a whole shape selected this
+       looks at two segments -- while building the Set cost 23 454 refs and
+       23 454 strings before the first question was asked. It was 12.3 ms on
+       every notification, which is most of what a pointermove used to cost. */
+    const picked = (id: string, spI: number, i: number): boolean =>
+      sel.shapes.has(id) || sel.nodes.has(nodeKey({ shape: id, sp: spI, i }));
+    // Shapes with nothing selected in them cannot contribute a segment, and
+    // skipping them keeps this off the other 23 000 nodes entirely.
+    const touched = new Set(sel.shapes);
+    for (const key of sel.nodes) touched.add(parseNodeKey(key).shape);
 
     let found: { shape: string; sp: number; seg: number; bend: Bend | null } | null = null;
     for (const shape of s.doc.shapes) {
+      if (!touched.has(shape.id)) continue;
       for (let spI = 0; spI < shape.subpaths.length; spI++) {
         const sp = shape.subpaths[spI];
         for (let seg = 0; seg < segmentCount(sp); seg++) {
-          const a = nodeKey({ shape: shape.id, sp: spI, i: seg });
-          const b = nodeKey({ shape: shape.id, sp: spI, i: (seg + 1) % sp.nodes.length });
-          if (!sel.has(a) || !sel.has(b)) continue;
+          if (!picked(shape.id, spI, seg)) continue;
+          if (!picked(shape.id, spI, (seg + 1) % sp.nodes.length)) continue;
           if (found) return null; // ambiguous: more than one segment qualifies
           found = { shape: shape.id, sp: spI, seg, bend: segmentBend(sp, seg) };
         }

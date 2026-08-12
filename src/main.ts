@@ -81,6 +81,18 @@ function setPanel(which: 'src' | 'rail', open: boolean): void {
        see. `inert` is the one thing that removes an element from focus, from
        hit-testing and from the accessibility tree at once. */
     sourcePanel.inert = !open;
+    /* Catch up on whatever was skipped while it was shut, before the drawer is
+       visible, so it never shows the old text even for a frame.
+
+       Measured redundant, and kept anyway. Opening the drawer takes space from
+       the canvas, which resizes it, which trips the controller's ResizeObserver,
+       which refits the camera through `store.update`, which notifies, which
+       refreshes the box -- so removing this line changes nothing observable and
+       the scenario cannot tell the difference. That chain is four unrelated
+       components long and none of them is about the source box. A layout that
+       floated the drawer over the canvas instead of squeezing it would break
+       every link at once, silently. */
+    if (open) refreshSource();
     // The textarea keeps focus when the drawer closes under it, and the
     // subscriber skips refreshing a focused box, so reopening showed stale text.
     if (!open && sourcePanel.contains(document.activeElement)) {
@@ -98,11 +110,6 @@ function setPanel(which: 'src' | 'rail', open: boolean): void {
 }
 const isOpen = (which: 'src' | 'rail'): boolean =>
   which === 'src' ? app.classList.contains('src-open') : !app.classList.contains('no-rail');
-
-// Apply the initial state through the same path, so `inert` and the ARIA
-// attributes start out agreeing with the CSS rather than a frame behind it.
-setPanel('src', isOpen('src'));
-setPanel('rail', isOpen('rail'));
 
 toggleSrcBtn.addEventListener('click', () => setPanel('src', !isOpen('src')));
 toggleRailBtn.addEventListener('click', () => setPanel('rail', !isOpen('rail')));
@@ -653,6 +660,15 @@ function refreshInspector(): void {
 const src = $('#src') as HTMLTextAreaElement;
 const status = $('#status');
 const srcinfo = $('#srcinfo');
+
+/* Apply the initial panel state through the same path, so `inert` and the ARIA
+   attributes start out agreeing with the CSS rather than a frame behind it.
+   Down here rather than beside `setPanel`, because opening the source drawer
+   now refreshes its contents, and that reads `src` and `srcinfo` -- which are
+   declared just above. Called any earlier it would work only for as long as the
+   drawer happened to start closed. */
+setPanel('src', isOpen('src'));
+setPanel('rail', isOpen('rail'));
 const srcHint = $('#srchint');
 
 /**
@@ -1514,12 +1530,27 @@ store.subscribe((s) => {
   }
 
   // Do not clobber the box while it is being typed into.
-  if (document.activeElement !== src) {
-    const text = currentSource();
-    if (src.value !== text) src.value = text;
-    srcinfo.textContent = `${text.length} chars`;
-  }
+  if (document.activeElement !== src) refreshSource();
 });
+
+/**
+ * Rewrite the source box, if anybody could be looking at it.
+ *
+ * This is a full serialisation of the document -- a third one per notification,
+ * after the artwork and the overlay -- and it ran whether or not the drawer was
+ * open. On a traced document that is 56 ms of work on every pointermove to
+ * update a textarea of `height: 0`. The drawer is closed on load and stays
+ * closed for most of a session, so the common case was paying the most.
+ *
+ * Deferred rather than dropped: `setPanel` calls this when the drawer opens, so
+ * it catches up on everything skipped before anybody can see it.
+ */
+function refreshSource(): void {
+  if (!isOpen('src')) return;
+  const text = currentSource();
+  if (src.value !== text) src.value = text;
+  srcinfo.textContent = `${text.length} chars`;
+}
 
 /* The pointer's position in document coordinates, which is the one number a
    grid editor should never make you guess. Written straight to the strip rather

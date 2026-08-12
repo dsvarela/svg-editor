@@ -397,8 +397,10 @@ Named here rather than left for you to find.
   to it. Above 2 000 node markers in view the overlay stops drawing them and the
   document readout says `markers off, too dense`; the shapes are all still
   there, but you cannot click a node until you zoom in far enough for the
-  markers to come back. Tracing is for flat artwork. For a photograph, fewer
-  colours and a higher **Noise** floor are the controls that help.
+  markers to come back. A document that size redraws in about 20 ms rather than
+  the 130 ms it once took, so it is workable, but it is not what this editor is
+  shaped for. Tracing is for flat artwork. For a photograph, fewer colours and a
+  higher **Noise** floor are the controls that help.
 - **A feature one pixel wide loses its corners when traced.** The pass that keeps
   right angles sharp needs two straight lattice steps on each side of a corner,
   so a 1 px line or dot has none and comes back as a diamond of half the area.

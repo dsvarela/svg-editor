@@ -18,7 +18,7 @@
 import { continuityOf, segmentAsCubic, segmentCount } from '../core/types';
 import { bendHandlePos, bendOf } from '../core/bend';
 import type { Doc, Pt, Shape, Subpath, ViewBox } from '../core/types';
-import { serialisePath } from '../core/serialise';
+import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
@@ -98,6 +98,9 @@ export class Canvas {
   private docShade: SVGPathElement;
   /** The document's own edge: what the exported viewBox will be. */
   private docEdge: SVGRectElement;
+
+  /** Path data, rebuilt only for shapes whose geometry changed. */
+  private paths = new PathCache();
 
   private outlines: Pool<'path'>;
   private handleLines: Pool<'line'>;
@@ -227,9 +230,12 @@ export class Canvas {
         this.shapeEls.set(shape.id, path);
         this.artLayer.appendChild(path);
       }
-      // Full precision on screen; `decimals` only governs exported text.
+      // Full precision on screen; `decimals` only governs exported text. The
+      // string comes from the cache, which rebuilds it only when the geometry
+      // behind it moved -- see `view/pathcache.ts` for why that is asked as a
+      // question about the numbers rather than answered by a flag.
       setAttrs(path, {
-        d: serialisePath(shape.subpaths, { decimals: 6 }),
+        d: this.paths.get(shape.id, shape.subpaths),
         // The shape's own fill, or none. This used to substitute a grey for
         // shapes whose fill is `none`, which made an unfilled shape and a grey
         // one indistinguishable and left no way to see what the file would say.
@@ -256,6 +262,7 @@ export class Canvas {
         this.shapeEls.delete(id);
       }
     }
+    this.paths.keep(seen);
   }
 
   private renderBackdrop(state: EditorState): void {
@@ -429,8 +436,10 @@ export class Canvas {
 
       // A hit target for the outline itself: invisible, generously wide, and
       // it is what "drag the body" and "click to insert" grab.
+      // The same string as the artwork's, and now literally the same string:
+      // this was a second full serialisation of every shape on every render.
       this.outlines.next({
-        d: serialisePath(shape.subpaths, { decimals: 6 }),
+        d: this.paths.get(shape.id, shape.subpaths),
         'stroke-width': 10 * k,
         'data-hit': 'outline',
         'data-shape': shape.id,

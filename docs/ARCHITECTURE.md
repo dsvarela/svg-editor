@@ -1073,6 +1073,73 @@ way 23 454 unaimable markers were waste; all of it would want a render cache
 keyed on something the store does not currently promise, which is its own piece
 of work and is not begun.
 
+## 29. The render cache asks about numbers, not about flags
+
+§28 left a 23 454-node document costing 113 ms a render and said a cache would
+want something the store does not promise. It does not, as it turns out, because
+the question can be asked a different way.
+
+Measured first, which changed what got built:
+
+| per render | ms |
+|---|---|
+| building the artwork's `d` | 56.1 |
+| building the overlay outline's `d` -- the identical string, again | 56.3 |
+| `setAttribute` for both | 0.7 |
+| per-node marker loops | 8.1 |
+
+Half the cost was a duplicate. The overlay's hit target is the same path as the
+artwork with the same serialiser options, and the two were built independently
+every frame.
+
+**Why not a revision counter.** The obvious cache key is "has the document
+changed", and the obvious implementation is a number the store bumps. It does
+not work here: `Store.edit` and `Store.update` mutate the live document **in
+place** -- history clones on the way into a snapshot, not on the way out of an
+edit -- so a dragged node is the same object with different numbers in it.
+Identity says nothing. A counter would have to be bumped by every call site that
+touches geometry, a contract enforced by nobody, whose failure mode is a canvas
+that silently stops matching its own model.
+
+So `view/pathcache.ts` asks the one question that cannot go stale: *are these
+the numbers I serialised last time?* It keeps a flat `Float64Array` of the
+geometry a `d` is built from, compares element-wise, allocates nothing, and
+stops at the first difference. About 0.5 ms across 23 454 nodes against 56 ms to
+serialise them, so it pays even when it fails. A checksum would have been
+shorter and would have had collisions, and a collision here means showing
+geometry the document does not have.
+
+Handle presence is a flag rather than `NaN` coordinates, because `NaN !== NaN`
+would make every straight segment compare as changed for ever. Style is excluded
+deliberately: it is not in a `d`, so a colour change must not throw the string
+away.
+
+**Two more, found by the same measurement.** The source box was a third full
+serialisation per notification and ran with its drawer closed -- 56 ms to update
+a textarea of `height: 0`. And two panel readouts materialised the whole
+selection to ask its size: `selectionCount` built 23 454 ref objects and 23 454
+dedupe keys to answer "how many", and `activeSegment` built a Set of 23 454 keys
+before asking a question that is settled after two segments. Both are counted or
+tested directly now, which is exact rather than cached.
+
+| on a 23 454-node document | before | after |
+|---|---|---|
+| one render | 130.8 ms | 19 ms |
+| one notification | 34 ms | 7.4 ms |
+| a pan, being both | 202.7 ms | 23 ms |
+
+What remains is genuine: `docBBox` at 5 ms, and the overlay's own per-node loops.
+
+**On testing it.** A stale `d` throws nothing, so `assertFaithful` now compares
+the rendered coordinates against the model rather than only counting nodes --
+counting alone passes on a `d` left over from before a node moved. Disabling
+invalidation kills 16 tests across two files. The source box's catch-up on
+opening is the exception and is marked as such in the code: opening the drawer
+resizes the canvas, which refits the camera, which notifies, which refreshes the
+box, so removing the explicit call changes nothing observable. It is kept
+because that chain is four unrelated components long and none of them is about
+the source box.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

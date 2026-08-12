@@ -1150,6 +1150,55 @@ const scenarios = {
   },
 
   /**
+   * The source box catches up on everything that happened while it was shut.
+   *
+   * Rewriting it is a full serialisation of the document, and it used to run on
+   * every notification whether or not anybody could see it -- 56 ms per
+   * pointermove on a traced document, to update a textarea of `height: 0`. It
+   * is skipped while the drawer is closed now, which is only correct if opening
+   * the drawer refreshes it. Nothing else checks that: with the catch-up
+   * removed, every existing scenario still passed, because they all open the
+   * drawer before they edit.
+   */
+  async sourceDeferred(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`sourceDeferred: ${what}`);
+    };
+    const { drag } = await mk(page);
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    const before = await page.inputValue('#src');
+    await closeSource(page);
+
+    // An edit with nobody watching the box: a rectangle dragged on the canvas.
+    await page.click('#tool button[data-v="rect"]');
+    await drag([12, 12], [40, 34], 8);
+    await page.waitForTimeout(150);
+    const shapes = await page.$$eval('.artwork path', (els) => els.length);
+    check(shapes >= 2, `the drag added no shape: ${shapes} paths`);
+
+    await openSource(page);
+    const after = await page.inputValue('#src');
+    check(after !== before, 'the source box still shows what it showed before the edit');
+    /* The box scopes to a single selected shape, and drawing one selects it, so
+       what it should now show is the rectangle's own path data -- taken from
+       the canvas rather than written out here, so this compares the box against
+       the drawing rather than against my arithmetic. */
+    const drawn = await page.$$eval('.artwork path', (els) => els.map((e) => e.getAttribute('d')));
+    check(
+      drawn.includes(after),
+      `the box shows "${after.slice(0, 60)}", which is not any shape on the canvas`,
+    );
+    // The character count beside it is written by the same path, so a refresh
+    // that updated one and not the other would leave them disagreeing.
+    const said = await page.textContent('#srcinfo');
+    check(said === `${after.length} chars`, `readout says "${said}" for ${after.length} characters`);
+
+    return { before: before.length, after: after.length, shapes };
+  },
+
+  /**
    * The trace does not freeze the page, and still works when it has to.
    *
    * Only measurable here: the unit tests call `traceImage` directly, which is
