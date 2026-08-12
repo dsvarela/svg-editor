@@ -1,0 +1,120 @@
+# Everything the handbook and CLAUDE.md say to run before trusting a change.
+#
+# Two jobs rather than one, because they fail for unrelated reasons. `checks`
+# needs nothing but Node. `browser` needs a real Chromium and is the only part
+# that can be broken by the runner image rather than by the code.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # `npm run build` typechecks first, so this covers `npm run check` too.
+      # It is listed separately anyway: when both break, the shorter one names
+      # the reason and the longer one only says the build failed.
+      - name: Typecheck
+        run: npm run check
+
+      - name: Unit and DOM tests
+        run: npm test
+
+      - name: Style sweep and link check
+        run: npm run check:docs
+
+      - name: Build the single file
+        run: npm run build
+
+      # The whole application is one file. If that stops being true the build
+      # has picked up a separate asset, and every claim about opening it from
+      # `file://` is void. Cheaper to assert than to discover later.
+      - name: Assert the build is still one file
+        run: |
+          count=$(find dist -type f | wc -l)
+          find dist -type f
+          test "$count" -eq 1 || { echo "dist holds $count files, expected 1"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svg-editor
+          path: dist/index.html
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # playwright-core ships no browser. The runner image carries Edge, which
+      # is what `drive.mjs` expects; falling back to Chrome or Chromium keeps
+      # this working if a future image drops it. Failing here with a clear
+      # message beats 29 scenarios each failing to launch.
+      - name: Locate a Chromium
+        run: |
+          for candidate in \
+            /usr/bin/microsoft-edge \
+            /usr/bin/google-chrome \
+            /usr/bin/chromium-browser \
+            /usr/bin/chromium; do
+            if [ -x "$candidate" ]; then
+              echo "BROWSER_PATH=$candidate" >> "$GITHUB_ENV"
+              echo "using $candidate"
+              exit 0
+            fi
+          done
+          echo "no Chromium-family browser on this runner"
+          exit 1
+
+      # Server and scenarios in one step on purpose. A `&` in an earlier step
+      # leaves the process orphaned across the step boundary, which is how this
+      # kind of job ends up failing to connect for reasons unrelated to the
+      # code. Starting and stopping it here keeps its lifetime visible.
+      #
+      # The scenarios run against the dev server, which is what `npm run drive`
+      # does locally. Running them against `dist` instead would test a
+      # different artefact than the one anybody has debugged.
+      - name: Drive every scenario
+        run: |
+          npm run dev -- --port 5173 --strictPort &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+
+          for _ in $(seq 60); do
+            curl -sf -o /dev/null http://localhost:5173/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:5173/ || { echo "dev server never came up"; exit 1; }
+
+          # Taken from drive.mjs itself, so adding a scenario there is enough.
+          # The loop keeps going after a failure so one run reports every
+          # broken scenario instead of only the first.
+          failed=""
+          for s in $(node tools/drive.mjs --list); do
+            echo "::group::$s"
+            node tools/drive.mjs "$s" || failed="$failed $s"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "failed:$failed"
+            exit 1
+          fi

@@ -1,0 +1,56 @@
+# Attach the editor to a GitHub release when a version tag is pushed.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The asset is the whole application: one HTML file that opens from `file://`
+# with no server, no install and no network. Downloading it is the install.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and release
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test before shipping
+        run: |
+          npm test
+          npm run build
+
+      # A named file, because `index.html` in a downloads folder tells nobody
+      # what it is. The version is in the name for the same reason.
+      - name: Name the asset after its version
+        run: |
+          version="${{ inputs.tag || github.ref_name }}"
+          cp dist/index.html "svg-editor-${version}.html"
+          ls -l "svg-editor-${version}.html"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: svg-editor-*.html
+          generate_release_notes: true
+          body: |
+            One file, no install. Download the `.html` asset below and open it
+            in a browser. It works offline and from `file://`.

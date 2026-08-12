@@ -18,6 +18,7 @@ those rules cannot know about this project.
 | Typecheck | `npm run check` |
 | Unit and DOM tests | `npm test` |
 | One browser scenario | `npm run drive <scenario>` |
+| Name every scenario | `npm run drive -- --list` |
 | Style sweep and link check | `npm run check:docs` |
 | Build the single file | `npm run build` |
 

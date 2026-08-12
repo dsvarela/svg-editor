@@ -2,6 +2,7 @@
  * Drive the editor in a real browser.
  *
  *   node tools/drive.mjs <scenario> [--headed] [--out shot.png]
+ *   node tools/drive.mjs --list
  *
  * Uses playwright-core against the system Edge (Chromium), so no browser
  * download is needed. Console messages and page errors are captured and
@@ -11,7 +12,11 @@
 import { chromium } from 'playwright-core';
 import zlib from 'node:zlib';
 
-const EDGE = '/usr/bin/microsoft-edge';
+/* playwright-core ships no browser, so the binary has to already be on the
+   machine. That is the point: it keeps `npm install` small. The path below is
+   where Edge lands on this Linux box, and BROWSER_PATH overrides it for any
+   machine where it lands somewhere else, a CI runner most of all. */
+const EDGE = process.env.BROWSER_PATH ?? '/usr/bin/microsoft-edge';
 const URL = process.env.APP_URL ?? 'http://localhost:5173/';
 
 const args = process.argv.slice(2);
@@ -2175,6 +2180,13 @@ const scenarios = {
     return out;
   },
 };
+
+/* CI runs every scenario, and a list hard-coded in a workflow file would go
+   stale the first time one is added here. This is the one place that knows. */
+if (args.includes('--list')) {
+  console.log(Object.keys(scenarios).join('\n'));
+  process.exit(0);
+}
 
 const scenario = scenarios[scenarioName];
 if (!scenario) {

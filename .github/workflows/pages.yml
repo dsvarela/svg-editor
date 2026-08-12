@@ -1,0 +1,55 @@
+# Publish the editor to GitHub Pages on every push to main.
+#
+# The build is one self-contained HTML file with every asset inlined, so there
+# is no base path to configure and no reason the site could break on a subpath.
+# The same file works from `file://`, which is what the release job ships.
+#
+# Requires the repository to be public on a free plan, and Settings > Pages >
+# Source set to "GitHub Actions".
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read the code, write an OIDC token for the deploy. Nothing else.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A queued deploy is never worth running once a newer one exists, but the one
+# already in flight is allowed to finish rather than leaving Pages half-written.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # This typechecks first, so a deploy that happens is a typecheck that
+      # passed. It does not run the tests: CI does that on the same commit.
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
