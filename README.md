@@ -3,6 +3,12 @@
 A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
+**Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
+or download one file.** The whole editor is a single 201 kB HTML page with every
+asset inlined. Take the `.html` from [the latest
+release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
+browser, and it runs offline with no server and nothing installed.
+
 The reference point is [yqnn's svg-path-editor](https://yqnn.github.io/svg-path-editor/),
 which is excellent at what it does: precise numeric control over a path's
 command list. The trade is that its model *is* a command list, so the interface
