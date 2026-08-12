@@ -25,7 +25,7 @@ those rules cannot know about this project.
 `npm run build` typechecks first, so a build that succeeds is a typecheck that
 succeeded.
 
-## Three constraints that are not obvious from the code
+## Four constraints that are not obvious from the code
 
 **The build must stay one file that opens from `file://`.** Every asset is
 inlined. This is what rules out a module worker: Chromium refuses one from a
@@ -43,6 +43,22 @@ change the live objects; history clones on the way into a snapshot, not on the
 way out of an edit. So object identity and revision counters are useless as
 cache keys, and anything that wants to know whether geometry changed has to
 compare the numbers. See `src/view/pathcache.ts`.
+
+**Touch is not supported yet, and new work must not make it harder.** The
+decision is to finish the desktop backlog first, so nothing here is asked to
+work on a phone today. What is asked is that the gap stops widening, because
+every operation reachable only by key or hover is one more thing to retrofit:
+
+- Every operation gets a button, not only a shortcut. Shortcuts stay as the
+  fast path.
+- No information appears only on hover. A tooltip may enrich, never inform.
+- New controls are laid out at 44 px minimum, which is the touch target
+  minimum in both Apple's and Google's guidance.
+
+The input layer is already there: the controller listens to `pointer*` events
+and never to `mouse*`, and the overlay sets `touch-action: none`. What blocks a
+phone today is the rail covering the canvas below 860 px, no pinch to zoom, and
+53 of 115 controls under 44 px.
 
 ## Tests
 
