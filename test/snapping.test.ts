@@ -177,10 +177,27 @@ describe('what a snap must not do', () => {
 });
 
 describe('snapLabel', () => {
-  it('names each tier, and says nothing when nothing claimed the point', () => {
-    expect(snapLabel('vertex')).toBe('on a node');
-    expect(snapLabel('boundary')).toBe('on an outline');
+  /* Named after what claimed the point rather than after the tier it belongs
+     to. Six things answer three tiers now, and `on an outline` while the
+     pointer sits on a 45-degree ray is a true statement about the tier and a
+     false one about the drawing. */
+  it('names what claimed the point, and says nothing when nothing did', () => {
+    expect(snapLabel('node')).toBe('on a node');
+    expect(snapLabel('outline')).toBe('on an outline');
+    expect(snapLabel('keyline')).toBe('on a keyline');
+    expect(snapLabel('guide')).toBe('on a guide');
+    expect(snapLabel('cross')).toBe('where guides cross');
+    expect(snapLabel('ray')).toBe('on an angle');
     expect(snapLabel('grid')).toBe('on the grid');
     expect(snapLabel('none')).toBeNull();
+  });
+
+  it('gives a different name to each of the six', () => {
+    // A label repeated across two sources would make the readout unable to say
+    // which one moved the pointer, which is the whole reason `via` exists.
+    const all = (['node', 'outline', 'keyline', 'guide', 'cross', 'ray', 'grid'] as const).map(
+      (v) => snapLabel(v),
+    );
+    expect(new Set(all).size).toBe(all.length);
   });
 });

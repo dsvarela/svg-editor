@@ -417,6 +417,18 @@ input[type='number']:disabled { opacity: 0.4; }
 }
 .smart.centre { stroke-dasharray: 5 3; }
 
+/* Angular-snap rays. Faint, because there can be dozens and they are
+   scaffolding: what you are aiming at is the drawing, and these only have to be
+   visible enough that the pointer jumping is not a surprise. */
+.ray {
+  stroke: var(--measure);
+  stroke-width: 1px;
+  opacity: 0.32;
+  vector-effect: non-scaling-stroke;
+  fill: none;
+  pointer-events: none;
+}
+
 .stage .overlay { touch-action: none; cursor: crosshair; }
 /* The hand tool says what it does before you press it, which is the whole
    reason it exists as a button rather than only as Space-drag. */

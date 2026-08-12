@@ -311,6 +311,28 @@ The canvas never changes on its own. Drawing outside it is allowed and leaves it
 alone, and the panel header says `drawing goes outside` when something is out
 there. Every change here is undoable.
 
+### Angles
+
+| Control | Does |
+|---|---|
+| **Snap to angles** | Hold the pointer to rays at a fixed angle |
+| **Every** | Degrees between rays |
+| **From** | Where the first ray points, in degrees |
+| **Origin here** | Radiate from the middle of what is selected |
+| **Origin free** | Go back to radiating from wherever the gesture starts |
+
+The grid gives you positions; this gives you directions. With it on, the pointer
+is held to the nearest ray, so a 45&deg; chamfer or a twelve-armed star is drawn
+rather than nudged into place.
+
+With no origin set the rays come from wherever the gesture started: the node you
+are dragging, or the pen's last point. That means nothing is drawn until you
+start something, which is deliberate. **Origin here** pins them to the middle of
+the selection instead, and they stay after the gesture ends.
+
+A ray is a line, so it is beaten by a node and it beats the grid, the same as an
+outline or a guide. The readout says `on an angle` when one has the pointer.
+
 ### Guides
 
 | Control | Does |
@@ -395,7 +417,11 @@ everywhere.
 
 The `xy` readout shows that target's own coordinates rather than the pointer's,
 so you can see where a click would land before you make it, and the readout
-immediately to its left names whichever tier claimed it. They are two readouts
+immediately to its left names what claimed it: `on a node`, `on an outline`,
+`on a keyline`, `on a guide`, `where guides cross`, or `on an angle`. It names
+the thing rather than the tier, because six things answer three tiers and
+`on an outline` with no outline there would be a true statement about the rule
+and a false one about the drawing. They are two readouts
 rather than one so that a tier coming into reach cannot move the digits you are
 reading. The grid is never named that way, since it is already drawn.
 

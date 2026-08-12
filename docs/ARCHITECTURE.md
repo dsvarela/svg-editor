@@ -1366,6 +1366,43 @@ holding the alignment is what draws it.
 Only body drags are covered. Creating a primitive and scaling a selection are
 both alignments someone would want and neither is wired up.
 
+## 33. Angular snap, and naming what claimed the pointer
+
+The grid gives positions and rays give directions, and the second is not
+expressible as the first. A 45-degree chamfer, an isometric box, a star with
+twelve arms: each is easy with rays and fiddly with a lattice.
+
+Taken from IPE, which sets an origin, a base direction and a step. Two
+differences:
+
+**A ray is 1-D, so it answers the boundary tier** rather than becoming a mode
+that overrides everything. §27's rule applied, and it has the property worth
+having: an angle you set once still loses to a vertex you can see.
+
+**The origin can be implicit.** IPE makes you place it. Most of the time the
+origin wanted is where the gesture started -- the node being dragged, or the
+pen's last point -- so the controller supplies that when none is set, and an
+explicit one takes over when there is. With neither, and nothing being drawn,
+there are no rays at all: a fan radiating from a point nobody chose would be
+worse than none.
+
+Two smaller things. The nearest ray is found by rounding the point's own angle
+to the nearest multiple, which is also what keeps the projection in front of the
+origin rather than behind it. And `rayAngles` walks until it has gone round
+rather than computing `360 / step`, because a step that does not divide 360 is
+legal: 7 degrees gives 52 rays and a final gap of 4.
+
+### The readout names the fact, not the rule
+
+Six things now answer three tiers: nodes and guide crossings and keyline anchors
+at 0-D; outlines, keylines, guides and rays at 1-D. `SnapResult` carries a
+`via` alongside its `kind`, and the status line reads the `via`.
+
+The tier is the rule and the `via` is the fact. `on an outline` while the
+pointer sits on a 45-degree ray is a true statement about the tier and a false
+one about the drawing, and a status line naming a thing that is not there is
+worse than one that says nothing. Each of the six has its own words.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

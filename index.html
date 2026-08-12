@@ -434,6 +434,34 @@
             </p>
           </div>
           <div class="group">
+            <div class="glabel"><span>Angles</span><span class="gval" id="angleinfo"></span></div>
+            <div class="checks">
+              <label><input type="checkbox" id="snapAngles" title="Hold the pointer to rays at a fixed angle" /> Snap to angles</label>
+            </div>
+            <div class="row">
+              <label for="angleStep">Every</label>
+              <input type="number" id="angleStep" value="45" step="5" min="0" title="Degrees between rays" />
+            </div>
+            <div class="row">
+              <label for="angleBase">From</label>
+              <input type="number" id="angleBase" value="0" step="5" title="Where the first ray points, in degrees" />
+            </div>
+            <div class="grid2">
+              <button class="btn" id="angleFromSel" type="button" title="Radiate from the middle of what is selected">Origin here</button>
+              <button class="btn" id="angleClear" type="button" title="Go back to radiating from wherever the gesture starts">Origin free</button>
+            </div>
+            <p class="note">
+              The grid gives you positions; this gives you directions. With it on, the pointer is held
+              to the nearest ray, so a 45&deg; chamfer or a twelve-armed star is drawn rather than
+              nudged into place.
+            </p>
+            <p class="note">
+              With no origin set the rays come from wherever the gesture started: the node you are
+              dragging or the pen's last point. <b>Origin here</b> pins them to the middle of the
+              selection instead. A ray is a line, so it is beaten by a node and it beats the grid.
+            </p>
+          </div>
+          <div class="group">
             <div class="glabel"><span>Guides</span><span class="gval" id="guideinfo"></span></div>
             <div class="checks">
               <label><input type="checkbox" id="showRulers" title="Show the rulers, which is where a guide is dragged from" /> Rulers</label>

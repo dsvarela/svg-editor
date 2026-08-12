@@ -2526,14 +2526,16 @@ const scenarios = {
        landing on 30 is the tier rule and not a coincidence. Drawn with the pen
        so the placed node is the snapped point.
 
-       The status line is what reports it, and `on an outline` is the same
-       label a real path gets: keylines are not a fourth tier. */
+       The status line names what claimed it. A keyline answers the same tier
+       a real outline does -- there is no fourth tier -- but the readout says
+       which of them it was, because `on an outline` with no outline there is a
+       true statement about the rule and a false one about the drawing. */
     await page.click('#tool button[data-v="pen"]');
     const c = await toClient([30.6, 120.9]);
     await page.mouse.move(c[0], c[1]);
     await page.waitForTimeout(120);
     const snapkind = (await page.textContent('#snapkind')).trim();
-    check(/outline/.test(snapkind), `hovering a keyline reported "${snapkind}"`);
+    check(snapkind === 'on a keyline', `hovering a keyline reported "${snapkind}"`);
 
     await click([30.6, 120.9]);
     await page.waitForTimeout(150);
@@ -2722,14 +2724,15 @@ const scenarios = {
     }
 
     /* The crossing. Aim a pen click a third of a unit off both guides, from
-       which the vertex tier should return the crossing exactly -- and it is
-       reported as a node, because that is what a 0-D target is called. */
+       which the vertex tier should return the crossing exactly. The readout
+       names the crossing rather than the tier: two guides meeting is a
+       different thing from a node, and both are 0-D. */
     await page.click('#tool button[data-v="pen"]');
     const near = await toClient([30.3, 30.3]);
     await page.mouse.move(near[0], near[1]);
     await page.waitForTimeout(150);
     const snapkind = (await page.textContent('#snapkind')).trim();
-    check(/node/.test(snapkind), `hovering the crossing reported "${snapkind}"`);
+    check(snapkind === 'where guides cross', `hovering the crossing reported "${snapkind}"`);
 
     await click([30.3, 30.3]);
     await page.waitForTimeout(120);
@@ -2905,6 +2908,94 @@ const scenarios = {
     check(off.length === 0, `${off.length} alignment lines with the switch off`);
 
     return { live, xs };
+  },
+
+  /**
+   * Angular snap: rays, and the pointer held to one.
+   *
+   * The maths is unit-tested. What needs a browser is the implicit origin --
+   * the rays come from wherever the gesture started, which means the pen's last
+   * node -- and that the readout names what claimed the pointer rather than the
+   * tier it belongs to.
+   */
+  async angles(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`angles: ${what}`);
+    };
+    const { toClient, click } = await mk(page);
+    const rays = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll('.ray')].filter(
+            (e) => e.getAttribute('display') !== 'none',
+          ).length,
+      );
+
+    await tab(page, 'doc');
+    check((await rays()) === 0, 'rays were drawn before angular snap was on');
+    await page.check('#snapAngles');
+    await page.waitForTimeout(180);
+    /* Still none: the switch is on but nothing is being drawn and no origin has
+       been set, so there is nothing to radiate from. Drawing a fan from a point
+       nobody chose would be worse than drawing none. */
+    check((await rays()) === 0, `${await rays()} rays with no origin and no gesture`);
+
+    // The pen's last node becomes the origin, which is the implicit case.
+    await page.click('#tool button[data-v="pen"]');
+    await click([30, 30]);
+    await page.waitForTimeout(150);
+    const fan = await rays();
+    check(fan === 8, `${fan} rays at 45 degrees, wanted 8`);
+
+    /* Aim 0.6 off the 45 degree ray and 0.4 off the lattice, so the two tiers
+       want different answers and the ray has to win by rule rather than by
+       being nearer. */
+    const near = await toClient([50, 49.4]);
+    await page.mouse.move(near[0], near[1]);
+    await page.waitForTimeout(150);
+    const kind = (await page.textContent('#snapkind')).trim();
+    check(kind === 'on an angle', `hovering a ray reported "${kind}"`);
+
+    await click([50, 49.4]);
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    const placed = await page.evaluate(() => {
+      const all = document.querySelectorAll('.artwork path');
+      const d = all[all.length - 1].getAttribute('d');
+      const m = /L\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(d);
+      return m ? [+m[1], +m[2]] : null;
+    });
+    check(placed !== null, 'the pen placed no second node');
+    // On the diagonal from (30, 30), which the grid alone would never give:
+    // it would have rounded to (50, 49).
+    check(
+      Math.abs(placed[0] - placed[1]) < 1e-6 && Math.abs(placed[0] - 49.7) < 0.01,
+      `the node landed at ${placed}`,
+    );
+
+    // A pinned origin, which is the explicit case, and it survives the gesture
+    // ending: the rays stay because the origin is no longer borrowed.
+    await page.click('#tool button[data-v="select"]');
+    // The shape list lives in another tab, and a control in a tab you cannot
+    // see is genuinely not there: `hidden` keeps it out of the hit test.
+    await tab(page, 'shape');
+    await page.click('#shapelist li');
+    await page.waitForTimeout(150);
+    await tab(page, 'doc');
+    await page.click('#angleFromSel');
+    await page.waitForTimeout(180);
+    const pinned = await rays();
+    check(pinned === 8, `${pinned} rays after pinning the origin`);
+    const info = (await page.textContent('#angleinfo')).trim();
+    check(/every 45° from/.test(info), `the readout says "${info}"`);
+
+    await page.click('#angleClear');
+    await page.waitForTimeout(180);
+    check((await rays()) === 0, 'freeing the origin left the rays drawn');
+
+    return { fan, kind, placed, info };
   },
 };
 

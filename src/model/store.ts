@@ -186,6 +186,16 @@ export interface EditorState {
    * preference, so it stays out of the history like the rest of them.
    */
   smartGuides: boolean;
+  /** Hold the pointer to rays from a point. See `model/angles.ts`. */
+  snapToAngles: boolean;
+  /** Degrees between rays, and where the first one sits. */
+  angleStep: number;
+  angleBase: number;
+  /**
+   * Where the rays radiate from, or null to use whatever the gesture started
+   * at -- the node being dragged from, or the pen's last point.
+   */
+  angleOrigin: [number, number] | null;
 }
 
 interface Snapshot {
@@ -256,6 +266,10 @@ export class Store {
       showGuides: true,
       guidesLocked: false,
       smartGuides: true,
+      snapToAngles: false,
+      angleStep: 45,
+      angleBase: 0,
+      angleOrigin: null,
     };
   }
 

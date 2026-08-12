@@ -264,6 +264,7 @@ const bindCheck = (
     | 'showGuides'
     | 'guidesLocked'
     | 'smartGuides'
+    | 'snapToAngles'
     | 'snapToGrid'
     | 'snapToPoints'
     | 'snapToBoundary'
@@ -283,6 +284,23 @@ bindCheck('#showRulers', 'showRulers');
 bindCheck('#showGuides', 'showGuides');
 bindCheck('#guidesLocked', 'guidesLocked');
 bindCheck('#smartGuides', 'smartGuides');
+bindCheck('#snapAngles', 'snapToAngles');
+
+/* Angular snap's three numbers. The step is clamped above zero because a step
+   of 0 asks for infinitely many rays; the base is free, since any angle is a
+   legitimate place for the first one. */
+const angleStep = $('#angleStep') as HTMLInputElement;
+angleStep.value = String(store.state.angleStep);
+angleStep.addEventListener('input', () =>
+  store.update((s) => (s.angleStep = Math.max(0, Number(angleStep.value) || 0))),
+);
+const angleBase = $('#angleBase') as HTMLInputElement;
+angleBase.value = String(store.state.angleBase);
+angleBase.addEventListener('input', () =>
+  store.update((s) => (s.angleBase = Number(angleBase.value) || 0)),
+);
+on('#angleFromSel', () => controller.setAngleOrigin());
+on('#angleClear', () => controller.clearAngleOrigin());
 
 /* Guides by number, which is the route that does not need a pointer and the
    only one that is exact. The field is one value used by two buttons, because
@@ -1642,6 +1660,16 @@ store.subscribe((s) => {
   app.classList.toggle('guides-locked', s.guidesLocked);
   if (s.showRulers) rulers.render(s.camera, s.gridStep, rulerAt);
 
+  /* What the rays are doing, and where from. `free` is a real answer: the
+     origin follows the gesture, which is different from having none. */
+  $('#angleinfo').textContent = !s.snapToAngles
+    ? 'off'
+    : !(s.angleStep > 0)
+      ? 'no step'
+      : s.angleOrigin
+        ? `every ${s.angleStep}° from ${+s.angleOrigin[0].toFixed(2)}, ${+s.angleOrigin[1].toFixed(2)}`
+        : `every ${s.angleStep}° · origin free`;
+
   /* How many guides there are, and why you cannot see them if you cannot. A
      count alone would say `2 guides` while both were hidden by a checkbox two
      rows up, which is the same class of lie the grid readout was fixed for. */
@@ -1717,7 +1745,7 @@ canvas.overlay.addEventListener('pointermove', (e) => {
   const snap = controller.busy ? null : controller.snapPreview(p);
   const claimed = snap && (snap.kind === 'vertex' || snap.kind === 'boundary');
   const at = claimed ? snap.pt : p;
-  const label = claimed ? snapLabel(snap.kind) : null;
+  const label = claimed ? snapLabel(snap.via) : null;
   cursorEl.textContent = `${at[0].toFixed(dp)}, ${at[1].toFixed(dp)}`;
   // Its own element, to the left of the coordinates rather than appended to
   // them. Appended, the name of a tier coming into reach lengthened the string

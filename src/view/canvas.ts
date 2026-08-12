@@ -54,6 +54,8 @@ export interface OverlayExtras {
   draggingGuide?: number | null;
   /** Alignment lines for this frame. Transient: they belong to the drag. */
   smart?: Alignment[];
+  /** Angular-snap rays, in document coordinates. */
+  rays?: { x1: number; y1: number; x2: number; y2: number }[];
 }
 
 /**
@@ -113,6 +115,8 @@ export class Canvas {
   private guideHits: Pool<'line'>;
   /** Alignment lines, drawn only while a drag is holding to one. */
   private smartLines: Pool<'line'>;
+  /** Angular-snap rays: what the pointer will be held to, drawn so it is not a surprise. */
+  private rayLines: Pool<'line'>;
 
   /** Path data, rebuilt only for shapes whose geometry changed. */
   private paths = new PathCache();
@@ -165,6 +169,9 @@ export class Canvas {
     this.docEdge = svg('rect', { class: 'doc-edge' });
     this.keylineLive = svg('path', { class: 'keyline-live' });
     this.keylineShapes = svg('path', { class: 'keyline' });
+    // Under the page shading and the guides: rays are scaffolding, and there
+    // are a lot of them at a small step.
+    const rayLayer = svg('g', { class: 'rays' });
     const guideLayer = svg('g', { class: 'guides' });
     const outlineLayer = svg('g', { class: 'outlines' });
     const handleLayer = svg('g', { class: 'handles' });
@@ -177,6 +184,7 @@ export class Canvas {
       this.axes,
       // Over the grid and under everything else, so the dimming falls on the
       // lattice and on any artwork that has strayed off the page.
+      rayLayer,
       this.docShade,
       this.docEdge,
       // Over the page edge and under the artwork's outlines: a keyline is
@@ -200,6 +208,7 @@ export class Canvas {
     this.guideLines = new Pool(guideLayer, 'line');
     this.guideHits = new Pool(guideLayer, 'line');
     this.smartLines = new Pool(guideLayer, 'line');
+    this.rayLines = new Pool(rayLayer, 'line');
 
     this.marquee = svg('rect', { class: 'marquee' });
     this.selBox = svg('rect', { class: 'sel-box' });
@@ -420,6 +429,10 @@ export class Canvas {
       ).setAttribute('class', `smart ${a.kind}`);
     }
     this.smartLines.end();
+
+    this.rayLines.begin();
+    for (const r of extras.rays ?? []) this.rayLines.next(r).setAttribute('class', 'ray');
+    this.rayLines.end();
   }
 
   private renderGrid(state: EditorState, k: number): void {

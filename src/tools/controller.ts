@@ -60,6 +60,8 @@ import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
 import { alignmentsFor, shiftBox } from '../model/smart';
+import { rayAngles } from '../model/angles';
+import type { AngleSetup } from '../model/angles';
 import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
 import type { Guide, GuideAxis } from '../model/guides';
 import type { SnapResult } from '../model/snapping';
@@ -252,6 +254,9 @@ export class Controller {
     // phase and all, because there is only one of them.
     this.extras.gridPhase = this.phase();
     this.extras.draggingGuide = this.drag.kind === 'guide' ? this.drag.i : null;
+    // Recomputed every frame rather than cached: the implicit origin moves with
+    // the gesture, so the rays are only right if they are asked again.
+    this.extras.rays = this.rayLines();
     this.canvas.renderOverlay(s, this.extras);
     this.onRender?.();
   }
@@ -338,6 +343,71 @@ export class Controller {
     return exclude === undefined ? s.guides : s.guides.filter((_, i) => i !== exclude);
   }
 
+  /**
+   * Where the rays radiate from, or null when there is nothing to radiate from.
+   *
+   * An explicit origin wins. Without one the answer is wherever the gesture
+   * started, which is what makes the feature usable without setting anything:
+   * the direction you want to hold is almost always the direction away from the
+   * point you are drawing from. With neither -- angular snap on, no origin set,
+   * nothing being drawn -- there are no rays, and the pointer is left alone
+   * rather than held to an origin nobody chose.
+   */
+  private angleSetup(): AngleSetup | null {
+    const s = this.store.state;
+    if (!s.snapToAngles) return null;
+    const origin = s.angleOrigin ?? this.gestureOrigin();
+    if (!origin) return null;
+    return { origin, step: s.angleStep, base: s.angleBase };
+  }
+
+  /** The point the gesture under way started from, for an implicit origin. */
+  private gestureOrigin(): Pt | null {
+    const s = this.store.state;
+    switch (this.drag.kind) {
+      case 'anchor':
+        return this.drag.start;
+      case 'body':
+      case 'create':
+        return this.drag.from;
+      case 'handle': {
+        const n = findShape(s.doc, this.drag.ref.shape)?.subpaths[this.drag.ref.sp]?.nodes[
+          this.drag.ref.i
+        ];
+        return n ? n.pt : null;
+      }
+      default: {
+        // The pen between clicks is not a drag, and its origin is the node it
+        // is trailing the rubber band from.
+        if (s.tool !== 'pen') return null;
+        const sp = this.penSubpath();
+        const last = sp?.nodes[sp.nodes.length - 1];
+        return last ? last.pt : null;
+      }
+    }
+  }
+
+  /** The rays as document-space line ends, for the overlay to draw. */
+  rayLines(): { x1: number; y1: number; x2: number; y2: number }[] {
+    const a = this.angleSetup();
+    if (!a) return [];
+    const cam = this.store.state.camera;
+    // Long enough to leave the camera from anywhere inside it, whatever the
+    // origin: the far corner plus the camera's own diagonal covers it.
+    const reach =
+      Math.hypot(cam.w, cam.h) +
+      Math.hypot(a.origin[0] - (cam.x + cam.w / 2), a.origin[1] - (cam.y + cam.h / 2));
+    return rayAngles(a.step, a.base).map((deg) => {
+      const r = (deg * Math.PI) / 180;
+      return {
+        x1: a.origin[0],
+        y1: a.origin[1],
+        x2: a.origin[0] + Math.cos(r) * reach,
+        y2: a.origin[1] + Math.sin(r) * reach,
+      };
+    });
+  }
+
   private snapWith(p: Pt, exclude?: NodeRef, excludeShape?: string, excludeGuide?: number): SnapResult {
     const s = this.store.state;
     return resolveSnap(p, {
@@ -354,6 +424,7 @@ export class Controller {
       // pointer off the grid would read as the editor misbehaving.
       guides: s.showKeylines ? keylineGuides(s.doc.viewBox) : undefined,
       guideLines: this.guideTargets(excludeGuide),
+      angles: this.angleSetup(),
     });
   }
 
@@ -609,6 +680,35 @@ export class Controller {
       ok,
     );
     return ok;
+  }
+
+  /**
+   * Pin the rays to the middle of the selection, or report that there is none.
+   *
+   * Not an edit: where the rays come from is a property of how you are working,
+   * not of the drawing, so it records no undo step -- the same reasoning that
+   * keeps the grid step and the style-for-new-shapes out of the history.
+   */
+  setAngleOrigin(): boolean {
+    const s = this.store.state;
+    const box = selectionBBox(s.doc, s.selection);
+    if (!box) {
+      this.onMessage?.('Select something to put the origin on.', false);
+      return false;
+    }
+    const at: Pt = [(box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2];
+    this.store.update((st) => {
+      st.angleOrigin = [at[0], at[1]];
+      st.snapToAngles = true;
+    });
+    this.onMessage?.(`Angles from ${fmt(at[0])}, ${fmt(at[1])}.`, true);
+    return true;
+  }
+
+  /** Back to radiating from wherever the gesture starts. */
+  clearAngleOrigin(): void {
+    this.store.update((st) => (st.angleOrigin = null));
+    this.onMessage?.('Angles from wherever a gesture starts.', true);
   }
 
   /** Remove every guide, in one undo step. */
