@@ -22,6 +22,7 @@
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
   --keyline: #b0339b;
+  --guide: #1aa39a;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -46,6 +47,7 @@
     --accent-ink: #08111f;
     --measure: #dfa34e;
     --keyline: #e07ac9;
+    --guide: #46cfc4;
     --warn: #e4685e;
     --grid: #1c2331;
     --grid-major: #2a3345;
@@ -71,6 +73,7 @@
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
   --keyline: #b0339b;
+  --guide: #1aa39a;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -94,6 +97,7 @@
   --accent-ink: #08111f;
   --measure: #dfa34e;
   --keyline: #e07ac9;
+  --guide: #46cfc4;
   --warn: #e4685e;
   --grid: #1c2331;
   --grid-major: #2a3345;
@@ -110,6 +114,7 @@
   --r: 2px;
   --h: 26px;
   --rail-w: 288px;
+  --ruler-w: 22px;
   --src-h: clamp(180px, 30vh, 340px);
   --bar-h: 42px;
 }
@@ -317,19 +322,89 @@ input[type='number']:disabled { opacity: 0.4; }
 .app.no-rail { --rail-w: 0px; }
 
 .canvas {
-  position: relative;
   min-width: 0;
   background: var(--canvas);
+  display: grid;
+  /* Zero when the rulers are off, so they cost the drawing nothing until asked
+     for. The stage is always the second track on both axes. */
+  grid-template-columns: 0 minmax(0, 1fr);
+  grid-template-rows: 0 minmax(0, 1fr);
 }
-.canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.canvas .artwork { pointer-events: none; }
+.app.rulers .canvas {
+  grid-template-columns: var(--ruler-w) minmax(0, 1fr);
+  grid-template-rows: var(--ruler-w) minmax(0, 1fr);
+}
+.stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  grid-column: 2;
+  grid-row: 2;
+}
+.stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage .artwork { pointer-events: none; }
 /* Crisp when magnified, because tracing means looking at pixel edges. */
 .backdrop { image-rendering: pixelated; }
-.canvas .overlay { touch-action: none; cursor: crosshair; }
+/* --- rulers and guides ------------------------------------------------- */
+
+.ruler {
+  display: none;
+  /* Explicit, because `align-self: stretch` does not apply to a replaced
+     element with an intrinsic aspect ratio, and an `<svg>` with a viewBox has
+     one. Left to itself the horizontal ruler took its height from that ratio
+     and drew a 550 px strip down the middle of the drawing. */
+  width: 100%;
+  height: 100%;
+  background: var(--panel-2);
+  touch-action: none;
+  /* The whole strip is the grab area for a new guide, which is what makes a
+     ruler a control rather than a decoration. */
+  cursor: crosshair;
+}
+.app.rulers .ruler { display: block; }
+.ruler-h { grid-column: 2; grid-row: 1; border-bottom: 1px solid var(--line); }
+.ruler-v { grid-column: 1; grid-row: 2; border-right: 1px solid var(--line); }
+.rcorner { display: none; grid-column: 1; grid-row: 1; background: var(--panel-2); }
+.app.rulers .rcorner {
+  display: block;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.ruler .tick { stroke: var(--ink-3); opacity: 0.55; }
+.ruler .num {
+  fill: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+/* Where the pointer is, on both scales. The one thing a ruler is for that the
+   coordinate readout is not: it says where you are against the drawing. */
+.ruler .at { stroke: var(--accent); }
+
+.guide {
+  stroke: var(--guide);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  fill: none;
+}
+/* A one-pixel line is not a target. The hit strip is transparent, eight pixels
+   wide, and carries the cursor, exactly as the transform box's rotors do. */
+.guide-hit {
+  stroke: transparent;
+  fill: none;
+  stroke-width: 8px;
+  vector-effect: non-scaling-stroke;
+}
+.guide-hit.x { cursor: ew-resize; }
+.guide-hit.y { cursor: ns-resize; }
+.app.guides-locked .guide-hit { pointer-events: none; }
+.guide.dragging { stroke: var(--accent); }
+
+.stage .overlay { touch-action: none; cursor: crosshair; }
 /* The hand tool says what it does before you press it, which is the whole
    reason it exists as a button rather than only as Space-drag. */
-.app.tool-hand .canvas .overlay { cursor: grab; }
-.app.tool-hand .canvas .overlay:active { cursor: grabbing; }
+.app.tool-hand .stage .overlay { cursor: grab; }
+.app.tool-hand .stage .overlay:active { cursor: grabbing; }
 .zoomrd {
   /* A readout you can press, so it has to look pressable without becoming a
      button in a strip of labels. */

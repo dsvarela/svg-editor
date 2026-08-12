@@ -14,6 +14,7 @@ import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
 import { keylinesFor } from './model/keylines';
+import { Rulers } from './view/rulers';
 import { snapLabel } from './model/snapping';
 import { DEFAULT_TRACE, rasterFrom } from './model/trace';
 import type { Placement, TraceOptions, TraceResult } from './model/trace';
@@ -42,9 +43,14 @@ const store = new Store(doc);
 // The store keeps backdrops in the history so removing one can be undone, which
 // means it, not the loader, decides when the bytes are no longer wanted.
 store.onOrphanImage = (src) => URL.revokeObjectURL(src);
-const canvasRoot = $('#canvas');
+/* The stage, not the canvas: the rulers take two tracks of the canvas grid, so
+   the SVGs live in the cell that is left. With rulers off both tracks are zero
+   wide and the stage is the whole canvas again. */
+const canvasRoot = $('#stage');
 const canvas = new Canvas(canvasRoot);
 const controller = new Controller(store, canvas);
+const rulers = new Rulers($('#rulerH') as unknown as SVGSVGElement, $('#rulerV') as unknown as SVGSVGElement);
+controller.attachRulers(rulers.h, rulers.v);
 
 /* ------------------------------------------------------------------ theme */
 
@@ -254,6 +260,9 @@ const bindCheck = (
   key:
     | 'showGrid'
     | 'showKeylines'
+    | 'showRulers'
+    | 'showGuides'
+    | 'guidesLocked'
     | 'snapToGrid'
     | 'snapToPoints'
     | 'snapToBoundary'
@@ -269,6 +278,18 @@ const bindCheck = (
 };
 bindCheck('#showGrid', 'showGrid');
 bindCheck('#showKeylines', 'showKeylines');
+bindCheck('#showRulers', 'showRulers');
+bindCheck('#showGuides', 'showGuides');
+bindCheck('#guidesLocked', 'guidesLocked');
+
+/* Guides by number, which is the route that does not need a pointer and the
+   only one that is exact. The field is one value used by two buttons, because
+   "12" means the same thing on both axes and two fields would be two things to
+   keep in step. */
+const guideAt = $('#guideAt') as HTMLInputElement;
+on('#guideAddV', () => controller.addGuideAt('x', Number(guideAt.value)));
+on('#guideAddH', () => controller.addGuideAt('y', Number(guideAt.value)));
+on('#guideClear', () => controller.clearGuides());
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
 bindCheck('#snapBoundary', 'snapToBoundary');
@@ -1604,6 +1625,21 @@ store.subscribe((s) => {
   const pct = 100 / k;
   zoomnum.textContent = pct >= 1000 ? `${Math.round(pct / 100) * 100}%` : pct >= 100 ? `${Math.round(pct)}%` : `${pct.toFixed(pct < 10 ? 1 : 0)}%`;
   app.classList.toggle('tool-hand', s.tool === 'hand');
+  app.classList.toggle('rulers', s.showRulers);
+  app.classList.toggle('guides-locked', s.guidesLocked);
+  if (s.showRulers) rulers.render(s.camera, s.gridStep, rulerAt);
+
+  /* How many guides there are, and why you cannot see them if you cannot. A
+     count alone would say `2 guides` while both were hidden by a checkbox two
+     rows up, which is the same class of lie the grid readout was fixed for. */
+  const gn = s.guides.length;
+  $('#guideinfo').textContent = !gn
+    ? 'none'
+    : !s.showGuides
+      ? `${gn} hidden`
+      : s.guidesLocked
+        ? `${gn} locked`
+        : `${gn}`;
   outval.textContent = `${s.decimals} dp${s.minify ? ' · min' : ''}`;
 
   refreshShapeList();
@@ -1648,8 +1684,17 @@ function refreshSource(): void {
    grid editor should never make you guess. Written straight to the strip rather
    than through the store: it changes on every mouse move and has nothing to do
    with the document. */
+/* Where the pointer is, for the rulers' own mark. Kept here rather than in the
+   store because it changes on every mouse move and nothing else needs it -- the
+   same reasoning the coordinate readout is written straight to the strip. */
+let rulerAt: [number, number] | null = null;
+
 canvas.overlay.addEventListener('pointermove', (e) => {
   const p = screenToDoc(canvas.overlay, e.clientX, e.clientY);
+  if (store.state.showRulers) {
+    rulerAt = [p[0], p[1]];
+    rulers.render(store.state.camera, store.state.gridStep, rulerAt);
+  }
   const dp = Math.min(3, store.state.decimals);
   /* A node or an outline within reach is shown at ITS coordinates, with what
      claimed it, because that is where a point put down here would go and it is
@@ -1673,6 +1718,8 @@ canvas.overlay.addEventListener('pointermove', (e) => {
   showMeasure();
 });
 canvas.overlay.addEventListener('pointerleave', () => {
+  rulerAt = null;
+  if (store.state.showRulers) rulers.render(store.state.camera, store.state.gridStep, null);
   cursorEl.textContent = '';
   snapKindEl.textContent = '';
 });

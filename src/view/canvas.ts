@@ -49,6 +49,8 @@ export interface OverlayExtras {
    * a drag is under way -- which is §9's defect, half a pixel wide.
    */
   gridPhase?: number;
+  /** Index of the guide being dragged, so it can be drawn as the live one. */
+  draggingGuide?: number | null;
 }
 
 /**
@@ -103,6 +105,9 @@ export class Canvas {
   /** The icon keyline grid. Derived from the viewBox; never in the export. */
   private keylineLive: SVGPathElement;
   private keylineShapes: SVGPathElement;
+  /** Placed guides, and the fat transparent strips that make them grabbable. */
+  private guideLines: Pool<'line'>;
+  private guideHits: Pool<'line'>;
 
   /** Path data, rebuilt only for shapes whose geometry changed. */
   private paths = new PathCache();
@@ -155,6 +160,7 @@ export class Canvas {
     this.docEdge = svg('rect', { class: 'doc-edge' });
     this.keylineLive = svg('path', { class: 'keyline-live' });
     this.keylineShapes = svg('path', { class: 'keyline' });
+    const guideLayer = svg('g', { class: 'guides' });
     const outlineLayer = svg('g', { class: 'outlines' });
     const handleLayer = svg('g', { class: 'handles' });
     const anchorLayer = svg('g', { class: 'anchors' });
@@ -172,6 +178,7 @@ export class Canvas {
       // something to draw against, so it must never sit on top of the drawing.
       this.keylineLive,
       this.keylineShapes,
+      guideLayer,
       outlineLayer,
       handleLayer,
       anchorLayer,
@@ -183,6 +190,10 @@ export class Canvas {
     this.handleDots = new Pool(handleLayer, 'circle');
     this.anchors = new Pool(anchorLayer, 'rect');
     this.bendDots = new Pool(handleLayer, 'circle');
+    // Lines first, hit strips after, so a strip is in front of the line it
+    // belongs to and a press anywhere on it reaches the same guide.
+    this.guideLines = new Pool(guideLayer, 'line');
+    this.guideHits = new Pool(guideLayer, 'line');
 
     this.marquee = svg('rect', { class: 'marquee' });
     this.selBox = svg('rect', { class: 'sel-box' });
@@ -309,6 +320,7 @@ export class Canvas {
     this.renderGrid(state, k);
     this.renderDocEdge(state);
     this.renderKeylines(state);
+    this.renderGuides(state, extras);
     this.renderNodes(state, k);
     this.renderChrome(extras, k);
   }
@@ -358,6 +370,37 @@ export class Canvas {
     }
     this.keylineLive.setAttribute('d', serialisePath([k.live]));
     this.keylineShapes.setAttribute('d', serialisePath(k.shapes));
+  }
+
+  /**
+   * Draw the placed guides, spanning the camera rather than the page.
+   *
+   * A guide is infinite, and drawing it to the page's edge would make it look
+   * like a property of the page -- which is exactly what it is not. Redrawn on
+   * every camera change for the same reason the grid is: the line has to reach
+   * both edges of whatever is on screen.
+   */
+  private renderGuides(state: EditorState, extras: OverlayExtras): void {
+    this.guideLines.begin();
+    this.guideHits.begin();
+    if (state.showGuides) {
+      const c = state.camera;
+      state.guides.forEach((g, i) => {
+        const ends =
+          g.axis === 'x'
+            ? { x1: g.at, y1: c.y, x2: g.at, y2: c.y + c.h }
+            : { x1: c.x, y1: g.at, x2: c.x + c.w, y2: g.at };
+        const cls = extras.draggingGuide === i ? 'guide dragging' : 'guide';
+        setAttrs(this.guideLines.next(ends), { class: cls });
+        setAttrs(this.guideHits.next(ends), {
+          class: `guide-hit ${g.axis}`,
+          'data-hit': 'guide',
+          'data-guide': i,
+        });
+      });
+    }
+    this.guideLines.end();
+    this.guideHits.end();
   }
 
   private renderGrid(state: EditorState, k: number): void {

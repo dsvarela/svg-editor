@@ -16,8 +16,9 @@ are not ends**.
 
 Three tiers, resolved by one rule: the most specific target within eight screen
 pixels wins, so a vertex beats an outline beats the grid. Pixel fit is the grid's
-phase rather than a fourth tier. See ARCHITECTURE §27. What is left below is
-intersections, angles, and guides.
+phase rather than a fourth tier. See ARCHITECTURE §27. Keylines and guides join
+the tiers their dimension puts them in rather than adding one. What is left below
+is intersections and angles.
 
 | | Feature | Source | Size |
 |---|---|---|---|
@@ -27,7 +28,7 @@ intersections, angles, and guides.
 | `[x]` | **Principled priority order** — done. The most specific target within reach wins: vertex (0-D) beats boundary (1-D) beats grid (2-D), and distance does not break ties between tiers. Pixel fit turned out not to be a fourth tier but the grid's phase, which is what settles how it interacts with the other two. The rule is a pure function in `model/snapping.ts` rather than an accident of statement order in the controller. See ARCHITECTURE §27. | IPE | — |
 | `[x]` | **Displayed grid ≠ snap grid (defect)** — fixed. `gridDisplayFor` draws `gridStep × m` with `m` a whole number off the 1-2-5 ladder, so every line on screen is a snap position; zooming out thins the lattice instead of switching to a different one, and the readout says which (`1 · every 5 drawn`). See ARCHITECTURE §9. | — | — |
 | `[x]` | **Pixel-fit** — done. A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate covers half of two pixels instead of all of one, and snapping anchors to integers made it worse rather than better. The fix is one line of arithmetic — the painted edges are whole exactly when `x ≡ w/2 (mod 1)` — so it is the same lattice shifted by a phase, not a second kind of snapping. The drawn grid shifts by the same phase from the same function, which is what keeps §9's contract. A selection whose shapes want different lattices reports `mixed widths` rather than fitting one of them. **Fit selection to pixels** applies it to what already exists. See ARCHITECTURE §25. | icon-design practice | — |
-| `[ ]` | **Rulers + draggable guides** — manual guides you place, distinct from the grid. | Boxy SVG, Method Draw | M |
+| `[x]` | **Rulers + draggable guides** — done. Rulers along the top and left, and guides you drag out of either or place by number. A guide is axis-aligned and infinite, stored rather than derived, and so undoable: that is the whole difference from a keyline, which is a function of the page. Snapping puts a guide in the boundary tier and a crossing of two in the vertex tier, which is ARCHITECTURE §27 applied rather than a fourth tier invented. Dropping one off the canvas puts it away. Never part of the export. See ARCHITECTURE §31. | Boxy SVG, Method Draw | — |
 | `[ ]` | **Smart guides** — transient alignment lines when a drag lines up with another object's edge or centre. | Boxy SVG, Figma | M |
 | `[x]` | **Keyline shapes** — done, as **Show keylines** in the Document panel. Circle, square, portrait and landscape sharing a centre, plus the live area dashed, in Material's system-icon proportions. Held as ratios rather than as the published numbers, since every one of them is exact in thirds and sixths, so a 24-unit canvas reproduces the 24dp grid to the unit and a 240-unit one scales it by ten. There is no non-exporting layer because there is nothing to put on one: the keylines are computed from the viewBox every frame and never enter `Doc`, so the export cannot carry one by construction. While they are shown the tools snap to them, in the tier each keyline belongs to rather than a fourth tier of their own. See ARCHITECTURE §30. | icon-design practice | — |
 

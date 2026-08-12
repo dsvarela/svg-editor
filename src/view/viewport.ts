@@ -124,6 +124,36 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
  * The 1-2-5 ladder and the `minPx` idea come from svg-path-editor's
  * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
  */
+/**
+ * What to tick and what to label on a ruler.
+ *
+ * A ruler is a measurement scale, not a claim about snapping, so unlike the
+ * grid it is allowed to exist when there is no snap step -- the axes take the
+ * same position for the same reason. When there *is* a grid it borrows that
+ * grid's step and labels on its major lines, so the numbers along the edge fall
+ * on lines drawn across the canvas instead of running past them at their own
+ * rhythm.
+ *
+ * `minPx` is larger than the grid's, because a tick has to be told apart from
+ * its neighbour and a label has to fit between two of them.
+ */
+export function rulerTicksFor(
+  snapStep: number,
+  camera: ViewBox,
+  widthPx: number,
+  minPx = 7,
+): { step: number; labelEvery: number } | null {
+  if (widthPx <= 0 || !(camera.w > 0)) return null;
+
+  const g = gridDisplayFor(snapStep, camera, widthPx, minPx);
+  if (g) return { step: g.step, labelEvery: g.majorEvery };
+
+  // No lattice to agree with, so straight onto the ladder from the camera.
+  const step = ladderAtLeast((minPx * camera.w) / widthPx);
+  const mantissa = step / Math.pow(10, Math.floor(Math.log10(step) + 1e-12));
+  return { step, labelEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5 };
+}
+
 export function gridDisplayFor(
   snapStep: number,
   camera: ViewBox,

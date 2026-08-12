@@ -2576,6 +2576,183 @@ const scenarios = {
 
     return { info, live: on.live.box, shapes: on.shapes.box, snapkind, placed, paths };
   },
+
+  /**
+   * Rulers and guides: the gesture, the snap, and the way back out.
+   *
+   * Everything here needs a browser. A guide is dragged out of a strip that is
+   * laid out by CSS grid, tracked through a pointer capture on an element that
+   * is not the overlay, and dropped somewhere measured against the stage's box.
+   * The unit tests own the list and the priority order; this owns the parts
+   * where the page itself has to be right.
+   */
+  async guides(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`guides: ${what}`);
+    };
+    const { toClient, click } = await mk(page);
+    /* Counted on the `display` attribute, not with `:visible` and not by
+       counting elements. Two traps, one after the other: the overlay pools its
+       elements, so a removed guide leaves its `<line>` in the DOM with its last
+       coordinates still on it -- which reported two guides after one had been
+       dropped, with the app right the whole time. And Playwright's `:visible`
+       wants a non-empty box, which a vertical line never has. */
+    const count = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll('.guide')].filter(
+            (el) => el.getAttribute('display') !== 'none',
+          ).length,
+      );
+    const positions = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.guide')].filter((el) => el.getAttribute('display') !== 'none').map((el) => {
+          const x1 = +el.getAttribute('x1');
+          const y1 = +el.getAttribute('y1');
+          return x1 === +el.getAttribute('x2') ? ['x', x1] : ['y', y1];
+        }),
+      );
+
+    await tab(page, 'doc');
+    check((await count()) === 0, 'the document started with guides');
+
+    await page.check('#showRulers');
+    await page.waitForTimeout(250);
+
+    /* The layout, measured rather than assumed. An `<svg>` with a viewBox is a
+       replaced element with an intrinsic aspect ratio, and `align-self:
+       stretch` does not apply to one: left to itself the horizontal ruler took
+       its height from that ratio and drew a 550 px strip down the middle of the
+       drawing. Nothing in a unit test can see that. */
+    const boxes = await page.evaluate(() => {
+      const b = (s) => {
+        const r = document.querySelector(s).getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      };
+      return { canvas: b('#canvas'), h: b('#rulerH'), v: b('#rulerV'), stage: b('#stage') };
+    });
+    check(boxes.h.h < 40, `the horizontal ruler is ${boxes.h.h} px tall`);
+    check(boxes.v.w < 40, `the vertical ruler is ${boxes.v.w} px wide`);
+    // The rulers take their space from the drawing rather than floating over
+    // it, which is the rule every panel here follows.
+    check(
+      Math.abs(boxes.stage.h - (boxes.canvas.h - boxes.h.h)) < 2,
+      `the stage is ${boxes.stage.h} of the canvas's ${boxes.canvas.h}, with a ${boxes.h.h} ruler`,
+    );
+
+    // Drag a horizontal guide out of the top ruler, down to y = 30.
+    const to = await toClient([44, 30]);
+    await page.mouse.move(boxes.h.x + boxes.h.w / 2, boxes.h.y + boxes.h.h / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(boxes.h.x + boxes.h.w / 2, boxes.h.y + ((to[1] - boxes.h.y) * i) / 8);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    check((await count()) === 1, `dragging out of the ruler left ${await count()} guides`);
+    const first = (await positions())[0];
+    check(first[0] === 'y' && Math.abs(first[1] - 30) < 0.001, `it landed at ${first}`);
+
+    // And a vertical one out of the left ruler, which is the other axis and
+    // the case a copy-pasted handler gets wrong.
+    const to2 = await toClient([30, 32]);
+    await page.mouse.move(boxes.v.x + boxes.v.w / 2, boxes.v.y + boxes.v.h / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(boxes.v.x + ((to2[0] - boxes.v.x) * i) / 8, boxes.v.y + boxes.v.h / 2);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    check((await count()) === 2, `the vertical drag left ${await count()} guides`);
+
+    // The ruler is labelled, and both strips are.
+    const nums = await page.evaluate(() => ({
+      h: document.querySelectorAll('#rulerH .num').length,
+      v: document.querySelectorAll('#rulerV .num').length,
+    }));
+    check(nums.h > 2 && nums.v > 2, `ruler labels: ${JSON.stringify(nums)}`);
+
+    /* The crossing. Aim a pen click a third of a unit off both guides, from
+       which the vertex tier should return the crossing exactly -- and it is
+       reported as a node, because that is what a 0-D target is called. */
+    await page.click('#tool button[data-v="pen"]');
+    const near = await toClient([30.3, 30.3]);
+    await page.mouse.move(near[0], near[1]);
+    await page.waitForTimeout(150);
+    const snapkind = (await page.textContent('#snapkind')).trim();
+    check(/node/.test(snapkind), `hovering the crossing reported "${snapkind}"`);
+
+    await click([30.3, 30.3]);
+    await page.waitForTimeout(120);
+    await click([70, 55]);
+    await page.waitForTimeout(120);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    const placed = await page.evaluate(() => {
+      const all = document.querySelectorAll('.artwork path');
+      const m = /M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(all[all.length - 1].getAttribute('d'));
+      return m ? [+m[1], +m[2]] : null;
+    });
+    check(placed !== null, 'the pen placed nothing');
+    check(
+      Math.abs(placed[0] - 30) < 0.001 && Math.abs(placed[1] - 30) < 0.001,
+      `the node landed at ${placed}, not on the crossing`,
+    );
+
+    /* Locked guides stop being draggable but keep snapping, which is the
+       distinction the two checkboxes exist to make. */
+    await page.click('#tool button[data-v="select"]');
+    await page.check('#guidesLocked');
+    await page.waitForTimeout(150);
+    const lockedHits = await page.evaluate(
+      () =>
+        getComputedStyle(
+          [...document.querySelectorAll('.guide-hit')].find(
+            (el) => el.getAttribute('display') !== 'none',
+          ),
+        ).pointerEvents,
+    );
+    check(lockedHits === 'none', `locked guides still take a press: ${lockedHits}`);
+    await page.uncheck('#guidesLocked');
+    await page.waitForTimeout(150);
+
+    // Drag one off the canvas, which is how you put a guide away.
+    const on = await toClient([30, 40]);
+    await page.mouse.move(on[0], on[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(on[0] - ((on[0] - (boxes.v.x + 2)) * i) / 6, on[1]);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const afterDrop = await count();
+    check(afterDrop === 1, `dropping a guide on the ruler left ${afterDrop}`);
+    const dropMsg = (await page.textContent('#status')).trim();
+
+    // And it is one undo step, not one per pointermove.
+    await undo(page);
+    check((await count()) === 2, `undo left ${await count()} guides`);
+
+    // Clear takes the rest, in one step of its own.
+    await page.click('#guideClear');
+    await page.waitForTimeout(200);
+    check((await count()) === 0, `Clear guides left ${await count()}`);
+    const clearMsg = (await page.textContent('#status')).trim();
+    await undo(page);
+    check((await count()) === 2, `undoing Clear left ${await count()}`);
+
+    /* And the guarantee: a guide is not in the document, so it cannot be in
+       the file. Checked on the text that leaves the editor. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(150);
+    const svg = await page.inputValue('#src');
+    check(!/guide/i.test(svg), 'the exported SVG mentions a guide');
+    await closeSource(page);
+
+    return { boxes, nums, snapkind, placed, dropMsg, clearMsg };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

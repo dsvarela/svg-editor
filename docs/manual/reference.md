@@ -311,6 +311,33 @@ The canvas never changes on its own. Drawing outside it is allowed and leaves it
 alone, and the panel header says `drawing goes outside` when something is out
 there. Every change here is undoable.
 
+### Guides
+
+| Control | Does |
+|---|---|
+| **Rulers** | Show the rulers along the top and left |
+| **Show guides** | Draw the guides, and let the tools snap to them |
+| **Lock guides** | Stop guides being dragged, so a press near one edits the drawing |
+| **at** | The position a new guide goes at |
+| **Vertical**, **Horizontal** | Place a guide there |
+| **Clear guides** | Remove every guide |
+
+A guide is a straight line you place and then aim at. It reaches across the whole
+view rather than stopping at the page, and it holds one coordinate fixed: a
+vertical guide is at an `x`, a horizontal one at a `y`.
+
+To place one with the pointer, turn the rulers on and drag out of either: the top
+ruler gives horizontal guides, the left one vertical. Drag a guide off the canvas
+to put it away. To place one exactly, type the number and press **Vertical** or
+**Horizontal**, which is also the route that needs no pointer.
+
+The tools snap to a guide the way they snap to an outline. Where two guides
+cross they make a point, which beats either line on its own, so a pair of them
+places a node exactly.
+
+Guides are never part of the export. Placing, moving and removing one are all
+undoable, and a drag is one step.
+
 ### Keylines
 
 | Control | Does |

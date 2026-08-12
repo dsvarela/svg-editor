@@ -1255,6 +1255,77 @@ Three decisions worth recording:
   than solid, because it is a different kind of claim. The keylines say what
   proportions to draw in; the live area says where to stay.
 
+## 31. Guides are stored, which is what makes them different
+
+The grid is a lattice you are given, and keylines are proportions you are given.
+A guide is one line, at a position someone chose, for a reason only they know.
+Everything else follows from that.
+
+**Axis-aligned and infinite.** Not a segment, because an end is a decision
+nobody asked to make and a thing to have to line up later. Not angled, because a
+ruler cannot produce one and an angled guide wants a placement interface of its
+own. `axis` names the coordinate the guide holds fixed, so an `x` guide is drawn
+as a vertical line -- the reading that stays true when you say it out loud.
+
+**Stored, and therefore undoable.** This is where guides part company with
+keylines, which are a function of the page and so have nothing to undo. A guide
+is a decision, and `Ctrl+Z` has to take it back. That puts them in the history
+next to the backdrop rather than in the view switches next to the grid, and out
+of `Doc` for the two reasons the backdrop is: the export is built from the model,
+so a guide the model does not carry cannot reach a file; and Apply in the source
+box replaces the document wholesale, which would throw guides away as a side
+effect of editing the path text.
+
+`showGuides` and `guidesLocked` stay out of the snapshot, the same as the
+backdrop's switches. Undo is for taking back an edit, not for restoring a
+checkbox you ticked afterwards.
+
+**Two tiers, no new rule.** A guide is 1-D, so it answers the boundary tier.
+Two crossing guides make a point, which is 0-D, so a crossing answers the vertex
+tier and beats either line that formed it. Both are §27 applied to a line that
+happens to be infinite, and the crossing is most of why anyone places a pair.
+Within a tier the nearer target wins, so the drawing still beats a guide.
+
+Three decisions the code would not explain on its own:
+
+- **`moveGuide` does not merge; `settleGuide` does, on release.** Removing a
+  duplicate mid-drag would splice the list under a gesture holding an index into
+  it, and the drag would carry on moving whichever guide inherited the index.
+  Passing over another guide is something a drag does on its way somewhere else,
+  not a decision. Two in one place is allowed while the pointer is down.
+- **The dragged guide is excluded from its own snap targets.** A guide lies on
+  itself at distance zero, so without this the first move would pin it where it
+  already is. The same trap boundary snapping hit with the two segments either
+  side of a dragged node, arriving from a different direction.
+- **Dropping a guide off the stage removes it**, measured against the stage box
+  rather than the window, so the rulers count as off it. That makes dragging one
+  back where it came from the way to put it away, and it means a press on a
+  ruler that goes nowhere leaves nothing behind.
+
+### The rulers, and one CSS trap
+
+The rulers take two tracks of a grid on `.canvas`, and the SVGs moved into a
+`.stage` cell inside it. They take space from the drawing rather than floating
+over it, which is what every panel here does; with rulers off both tracks are
+zero and the stage is the whole canvas again. The camera refits itself either
+way, because the `ResizeObserver` watches the overlay rather than the window.
+
+They are drawn in screen pixels, not document units, unlike everything in the
+overlay. A ruler is furniture: its ticks are four pixels long at every zoom, so
+a document-unit viewBox would mean dividing every length back out again.
+
+**`align-self: stretch` does not apply to a replaced element with an intrinsic
+aspect ratio, and an `<svg>` with a viewBox has one.** Left to itself the
+horizontal ruler took its height from that ratio and drew a 550 px strip down
+the middle of the drawing. `width: 100%; height: 100%` is the fix, and only a
+browser could have found it.
+
+Tick spacing borrows the grid's step and labels on its major lines when there is
+a grid, so the numbers along the edge fall on lines drawn across the canvas. With
+no grid it goes straight to the 1-2-5 ladder, which is honest because a ruler is
+a measurement scale rather than a claim about snapping -- the same position the
+axes take.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

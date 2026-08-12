@@ -13,6 +13,7 @@ import { cloneShape, defaultStyle } from '../core/types';
 import type { Doc, Style, ViewBox } from '../core/types';
 import { emptySelection } from './doc';
 import type { Selection } from './doc';
+import type { Guide } from './guides';
 
 /**
  * `ellipse` and `rect` are draw tools: drag on the canvas to create one. They
@@ -160,12 +161,31 @@ export interface EditorState {
   sourceError: string | null;
   /** Tracing reference under the artwork. See `Backdrop`. */
   backdrop: Backdrop | null;
+  /**
+   * Lines you placed, to aim at. Not part of `Doc`, but part of the history.
+   *
+   * The same split as the backdrop and for the same two reasons: the export is
+   * built from the model, so a guide cannot leak into a file; and Apply in the
+   * source box replaces the document wholesale, so guides living there would be
+   * thrown away as a side effect of editing the path text. Unlike the backdrop
+   * they restore wholesale on undo, because a guide has no view switches of its
+   * own -- `showGuides` and `guidesLocked` belong to the session, not to the
+   * line. See `model/guides.ts`.
+   */
+  guides: Guide[];
+  /** Draw the rulers, and with them the only way to drag a new guide out. */
+  showRulers: boolean;
+  /** Draw the guides, and let the tools snap to them. */
+  showGuides: boolean;
+  /** Stop guides being dragged, so a press near one edits the drawing instead. */
+  guidesLocked: boolean;
 }
 
 interface Snapshot {
   doc: Doc;
   selection: Selection;
   backdrop: Backdrop | null;
+  guides: Guide[];
 }
 
 const cloneDoc = (d: Doc): Doc => ({
@@ -224,6 +244,10 @@ export class Store {
       sourceMode: 'd',
       sourceError: null,
       backdrop: null,
+      guides: [],
+      showRulers: false,
+      showGuides: true,
+      guidesLocked: false,
     };
   }
 
@@ -241,6 +265,7 @@ export class Store {
       doc: cloneDoc(this.state.doc),
       selection: cloneSelection(this.state.selection),
       backdrop: this.state.backdrop ? { ...this.state.backdrop } : null,
+      guides: this.state.guides.map((g) => ({ ...g })),
     };
   }
 
@@ -450,6 +475,7 @@ export class Store {
     const abandoned = this.state.backdrop;
     this.state.doc = prev.doc;
     this.state.selection = prev.selection;
+    this.state.guides = prev.guides;
     this.restoreBackdrop(prev.backdrop);
     // Nothing kept a copy of what the abandoned gesture was holding.
     this.reap([abandoned]);
@@ -462,6 +488,7 @@ export class Store {
     this.redoStack.push(this.snapshot());
     this.state.doc = prev.doc;
     this.state.selection = prev.selection;
+    this.state.guides = prev.guides;
     this.restoreBackdrop(prev.backdrop);
     this.notify();
   }
@@ -472,6 +499,7 @@ export class Store {
     this.undoStack.push(this.snapshot());
     this.state.doc = next.doc;
     this.state.selection = next.selection;
+    this.state.guides = next.guides;
     this.restoreBackdrop(next.backdrop);
     this.notify();
   }

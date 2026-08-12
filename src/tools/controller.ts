@@ -59,6 +59,8 @@ import { invisibleAt, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
+import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
+import type { Guide, GuideAxis } from '../model/guides';
 import type { SnapResult } from '../model/snapping';
 import { traceImage } from '../model/trace';
 import type { Placement, TraceOptions, TraceResult } from '../model/trace';
@@ -112,7 +114,11 @@ type DragKind =
   /* `free` picks the edit: the two-number symmetric bend, or moving the point
      under the pointer with both handles. Frozen at the press, like
      `looseness`. */
-  | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number; free: boolean };
+  | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number; free: boolean }
+  /* Placing or moving a guide. `born` marks one dragged out of a ruler, which
+     is removed rather than left behind if the drag ends where it started --
+     otherwise a stray click on a ruler would litter the canvas. */
+  | { kind: 'guide'; i: number; axis: GuideAxis; born: boolean };
 
 /**
  * What the drag currently under way is worth reporting as a number.
@@ -244,6 +250,7 @@ export class Controller {
     // The grid draws the lattice the tools are actually snapping to, frozen
     // phase and all, because there is only one of them.
     this.extras.gridPhase = this.phase();
+    this.extras.draggingGuide = this.drag.kind === 'guide' ? this.drag.i : null;
     this.canvas.renderOverlay(s, this.extras);
     this.onRender?.();
   }
@@ -316,7 +323,21 @@ export class Controller {
   }
 
   /** The same, keeping which tier answered, for the status line. */
-  private snapWith(p: Pt, exclude?: NodeRef, excludeShape?: string): SnapResult {
+  /**
+   * The guides worth aiming at, which never includes the one being dragged.
+   *
+   * A guide lies on itself at distance zero, so without the exclusion the first
+   * move would pin it where it already is and it could never be moved again --
+   * the same trap boundary snapping hit with the segments either side of a
+   * dragged node, arriving from a different direction.
+   */
+  private guideTargets(exclude?: number): Guide[] | undefined {
+    const s = this.store.state;
+    if (!s.showGuides || !s.guides.length) return undefined;
+    return exclude === undefined ? s.guides : s.guides.filter((_, i) => i !== exclude);
+  }
+
+  private snapWith(p: Pt, exclude?: NodeRef, excludeShape?: string, excludeGuide?: number): SnapResult {
     const s = this.store.state;
     return resolveSnap(p, {
       doc: s.doc,
@@ -331,6 +352,7 @@ export class Controller {
       // Only when they are on screen. A target you cannot see pulling the
       // pointer off the grid would read as the editor misbehaving.
       guides: s.showKeylines ? keylineGuides(s.doc.viewBox) : undefined,
+      guideLines: this.guideTargets(excludeGuide),
     });
   }
 
@@ -507,6 +529,91 @@ export class Controller {
     });
   }
 
+  /* --------------------------------------------------------------- guides */
+
+  /**
+   * Let the two rulers hand out guides.
+   *
+   * A press anywhere on a ruler makes a guide and starts dragging it, rather
+   * than waiting for the pointer to reach the canvas. The guide is visible from
+   * the first frame, so the gesture explains itself; and a press that never
+   * goes anywhere is undone on release by the same rule that removes one
+   * dragged off the canvas.
+   *
+   * The pointer is captured on the ruler, so the drag carries on over the
+   * stage, and coordinates go through the overlay's own matrix -- which is an
+   * inverse transform, not a hit test, and so answers correctly for a client
+   * point that is nowhere near the overlay.
+   */
+  attachRulers(h: SVGSVGElement, v: SVGSVGElement): void {
+    const start = (axis: GuideAxis) => (e: PointerEvent): void => {
+      if (e.button !== 0 || this.drag.kind !== 'none') return;
+      const s = this.store.state;
+      if (s.guidesLocked) return;
+      e.preventDefault();
+      try {
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      } catch {
+        // Same as the overlay's: losing capture costs the drag, aborting costs
+        // it outright.
+      }
+      const p = this.pt(e);
+      const at = axis === 'x' ? p[0] : p[1];
+      this.openBatch();
+      let made = false;
+      this.store.edit((st) => {
+        made = addGuide(st.guides, { axis, at });
+        // Showing a guide is implied by placing one. Dragging one out of a
+        // ruler while they are hidden would otherwise draw nothing at all.
+        if (made) st.showGuides = true;
+      });
+      if (!made) {
+        this.closeBatch();
+        return;
+      }
+      this.drag = { kind: 'guide', i: this.store.state.guides.length - 1, axis, born: true };
+    };
+    h.addEventListener('pointerdown', start('y'));
+    v.addEventListener('pointerdown', start('x'));
+    // The gesture continues on the ruler's own capture, so the ruler has to
+    // forward the rest of it to the same handlers the overlay uses.
+    for (const el of [h, v]) {
+      el.addEventListener('pointermove', (e) => {
+        if (this.drag.kind === 'guide') this.onMove(e);
+      });
+      el.addEventListener('pointerup', (e) => {
+        if (this.drag.kind === 'guide') this.onUp(e);
+      });
+    }
+  }
+
+  /** Place a guide by number, which is the keyboard-and-button route. */
+  addGuideAt(axis: GuideAxis, at: number): boolean {
+    const ok = this.store.tryEdit((st) => {
+      const made = addGuide(st.guides, { axis, at });
+      if (made) st.showGuides = true;
+      return made;
+    });
+    this.onMessage?.(
+      ok
+        ? `Guide at ${axis} = ${fmt(at)}.`
+        : `There is already a guide at ${axis} = ${fmt(at)}.`,
+      ok,
+    );
+    return ok;
+  }
+
+  /** Remove every guide, in one undo step. */
+  clearGuides(): boolean {
+    const n = this.store.state.guides.length;
+    const ok = this.store.tryEdit((st) => {
+      st.guides = [];
+      return n > 0;
+    });
+    if (ok) this.onMessage?.(`Removed ${n} ${n === 1 ? 'guide' : 'guides'}.`, true);
+    return ok;
+  }
+
   /* -------------------------------------------------------------- pointer */
 
   private onDown = (e: PointerEvent): void => {
@@ -662,6 +769,19 @@ export class Controller {
       return;
     }
 
+    /* A guide, if one is under the pointer and they are not locked. After the
+       drawing, because the hit strips sit behind every outline and anchor: a
+       guide crossing a shape must not take a press aimed at the shape. */
+    if (hit?.kind === 'guide' && !s.guidesLocked) {
+      const i = Number((e.target as Element).getAttribute('data-guide'));
+      const g = s.guides[i];
+      if (g) {
+        this.openBatch();
+        this.drag = { kind: 'guide', i, axis: g.axis, born: false };
+        return;
+      }
+    }
+
     // An unlocked backdrop takes the empty-canvas drag, which is the whole
     // meaning of unlocking it.
     const back = s.backdrop;
@@ -790,6 +910,17 @@ export class Controller {
         return;
       }
 
+      case 'guide': {
+        const d = this.drag;
+        // Snapped like anything else being placed, and against everything --
+        // lining a guide up with a node is most of why you would place one.
+        const at = this.snapWith(p, undefined, undefined, d.i).pt;
+        this.store.edit((st) => {
+          moveGuide(st.guides, d.i, d.axis === 'x' ? at[0] : at[1]);
+        });
+        return;
+      }
+
       case 'backdrop': {
         const d = this.drag;
         const s2 = this.store.state;
@@ -899,6 +1030,25 @@ export class Controller {
           }
         });
         this.extras.marquee = null;
+      }
+
+      /* A guide dropped off the canvas is removed, which is how every editor
+         gets rid of one and the only gesture that does not need a second
+         control. Measured against the stage rather than the window, so the
+         rulers themselves count as off it: dragging a guide back where it came
+         from is the obvious way to put it away. One dragged out of a ruler and
+         released without ever reaching the canvas goes the same way, so a
+         stray click on a ruler leaves nothing behind. */
+      if (this.drag.kind === 'guide') {
+        const d = this.drag;
+        const r = this.canvas.overlay.getBoundingClientRect();
+        const out =
+          e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        this.store.edit((st) => {
+          if (out) removeGuide(st.guides, d.i);
+          else settleGuide(st.guides, d.i);
+        });
+        if (out && !d.born) this.onMessage?.('Guide removed.', true);
       }
 
       /* The live readout during a transform is a measurement, not an outcome.

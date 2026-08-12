@@ -222,3 +222,54 @@ describe('rollback', () => {
     expect(() => s.rollback()).not.toThrow();
   });
 });
+
+describe('guides in history', () => {
+  /* A guide is a decision someone made, which is the whole reason it is stored
+     rather than derived like a keyline, and a decision has to be undoable.
+     These are the three routes back: undo, redo, and an abandoned gesture. */
+
+  it('takes a placed guide back on undo, and returns it on redo', () => {
+    const s = store();
+    s.edit((st) => st.guides.push({ axis: 'x', at: 12 }));
+    expect(s.state.guides).toHaveLength(1);
+
+    s.undo();
+    expect(s.state.guides).toHaveLength(0);
+
+    s.redo();
+    expect(s.state.guides).toEqual([{ axis: 'x', at: 12 }]);
+  });
+
+  it('snapshots the positions rather than the array', () => {
+    /* The store mutates in place, so a snapshot holding the same objects would
+       have the undo entry follow the drag it is supposed to undo. Moving a
+       guide is exactly that: one array, one object, one number changing on
+       every pointermove. */
+    const s = store();
+    s.edit((st) => st.guides.push({ axis: 'y', at: 5 }));
+    s.edit((st) => (st.guides[0].at = 60));
+    expect(s.state.guides[0].at).toBe(60);
+
+    s.undo();
+    expect(s.state.guides[0].at).toBe(5);
+  });
+
+  it('takes back a guide dragged out and abandoned', () => {
+    const s = store();
+    s.beginBatch();
+    s.edit((st) => st.guides.push({ axis: 'x', at: 3 }));
+    s.rollback();
+    s.endBatch();
+    expect(s.state.guides).toHaveLength(0);
+  });
+
+  it('leaves the view switches alone, the same as the backdrop does', () => {
+    // Undo is for taking back an edit, not for restoring the state of a
+    // checkbox you ticked afterwards.
+    const s = store();
+    s.edit((st) => st.guides.push({ axis: 'x', at: 12 }));
+    s.update((st) => (st.showGuides = false));
+    s.undo();
+    expect(s.state.showGuides).toBe(false);
+  });
+});

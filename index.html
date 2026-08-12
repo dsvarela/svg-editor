@@ -173,7 +173,16 @@
       </header>
 
       <main class="work">
-        <div class="canvas" id="canvas"></div>
+        <!-- Rulers take space from the drawing area rather than floating over
+             it, the same as every panel here. The two tracks collapse to zero
+             when they are off, so the stage is the whole canvas again and the
+             camera refits itself from the ResizeObserver on the overlay. -->
+        <div class="canvas" id="canvas">
+          <div class="rcorner" id="rcorner" aria-hidden="true"></div>
+          <svg class="ruler ruler-h" id="rulerH" aria-hidden="true"></svg>
+          <svg class="ruler ruler-v" id="rulerV" aria-hidden="true"></svg>
+          <div class="stage" id="stage"></div>
+        </div>
 
         <aside class="rail" id="rail" aria-label="Inspector">
           <div class="tabs" role="tablist" aria-label="Inspector sections">
@@ -422,6 +431,35 @@
               The page the drawing sits on, and the <code>viewBox</code> the export writes. It is
               drawn on the canvas with everything outside it dimmed. It never changes on its own, so
               drawing outside it is allowed and stays outside it until you say otherwise.
+            </p>
+          </div>
+          <div class="group">
+            <div class="glabel"><span>Guides</span><span class="gval" id="guideinfo"></span></div>
+            <div class="checks">
+              <label><input type="checkbox" id="showRulers" title="Show the rulers, which is where a guide is dragged from" /> Rulers</label>
+              <label><input type="checkbox" id="showGuides" checked title="Draw the guides, and let the tools snap to them" /> Show guides</label>
+              <label><input type="checkbox" id="guidesLocked" title="Stop guides being dragged, so a press near one edits the drawing" /> Lock guides</label>
+            </div>
+            <div class="coords">
+              <label for="guideAt">at</label>
+              <input type="number" id="guideAt" step="1" value="0" aria-label="Guide position" />
+              <span></span>
+            </div>
+            <div class="grid2">
+              <button class="btn" id="guideAddV" type="button" title="Place a vertical guide at that x">Vertical</button>
+              <button class="btn" id="guideAddH" type="button" title="Place a horizontal guide at that y">Horizontal</button>
+            </div>
+            <button class="btn wide" id="guideClear" type="button" title="Remove every guide">Clear guides</button>
+            <p class="note">
+              Lines you place and then aim at. Turn the rulers on and drag one out of either; drag it
+              off the canvas to put it away. Or type a number and press <b>Vertical</b> or
+              <b>Horizontal</b>, which is the exact route and the only one without a pointer.
+            </p>
+            <p class="note">
+              A guide reaches across the whole view rather than stopping at the page, and the tools snap to it the
+              way they snap to an outline. Where two of them cross they make a point, which beats
+              either line on its own. Guides are never part of the export, and placing, moving or
+              removing one is undoable.
             </p>
           </div>
           <div class="group">
