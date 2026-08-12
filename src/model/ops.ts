@@ -1116,12 +1116,23 @@ export interface PathHit {
 }
 
 /** Closest point on any shape's outline, for click-to-insert and body drags. */
-export function nearestOnPath(doc: Doc, p: Pt, maxDist: number): PathHit | null {
+export function nearestOnPath(
+  doc: Doc,
+  p: Pt,
+  maxDist: number,
+  /**
+   * Segments to consider. Snapping needs this and hit-testing does not: a node
+   * being dragged sits on the two segments it joins, so without a filter it
+   * would find itself at distance zero and never move again.
+   */
+  allow?: (shape: string, sp: number, seg: number) => boolean,
+): PathHit | null {
   let best: PathHit | null = null;
   for (const shape of doc.shapes) {
     shape.subpaths.forEach((sp, spI) => {
       const n = segmentCount(sp);
       for (let seg = 0; seg < n; seg++) {
+        if (allow && !allow(shape.id, spI, seg)) continue;
         const pr = projectToCubic(segmentAsCubic(sp, seg), p);
         if (pr.d < (best?.d ?? maxDist)) {
           best = { shape: shape.id, sp: spI, seg, t: pr.t, d: pr.d, pt: pr.pt };

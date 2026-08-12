@@ -264,10 +264,21 @@ there. Every change here is undoable.
 | **Step** | The snap interval, in document units |
 | **Show grid** | Draw the lattice |
 | **Snap to grid** | Round positions to a multiple of Step |
-| **Snap to points** | Weld to an existing node within 8 pixels. Beats the grid |
+| **Snap to points** | Weld to an existing node within 8 pixels |
+| **Snap to outlines** | Weld to a point *on* an existing curve, not only to its anchors |
 | **Pixel fit** | Shift the lattice by half the stroke width, so the stroke's edges land on whole pixels |
 | **Show handles** | Draw handles and their lines |
 | **Show fills** | Draw each shape's fill. Off draws everything as an outline |
+
+Three things can claim the pointer, and the most specific one within reach wins:
+a **node** beats an **outline** beats the **grid**. Distance does not break ties
+between them, so a node seven pixels away still beats a gridline one pixel away.
+Nothing reaches further than eight screen pixels except the grid, which is
+everywhere.
+
+The `xy` readout names whichever claimed it, and shows that target's own
+coordinates rather than the pointer's, so you can see where a click would land
+before you make it. The grid is not shown that way, since it is already drawn.
 
 The `grid` readout in the status strip says what is drawn against what is
 snapped, for example `1 · every 5 drawn`. The group's own header says whether

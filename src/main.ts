@@ -13,6 +13,7 @@ import { cloneShape, continuityOf } from './core/types';
 import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
+import { snapLabel } from './model/snapping';
 import { DEFAULT_TRACE, rasterFrom } from './model/trace';
 import { Store } from './model/store';
 import type { Backdrop, EditorState } from './model/store';
@@ -239,7 +240,15 @@ on('#scaleGo', () => {
 
 const bindCheck = (
   id: string,
-  key: 'showGrid' | 'snapToGrid' | 'snapToPoints' | 'pixelFit' | 'showHandles' | 'filled' | 'minify',
+  key:
+    | 'showGrid'
+    | 'snapToGrid'
+    | 'snapToPoints'
+    | 'snapToBoundary'
+    | 'pixelFit'
+    | 'showHandles'
+    | 'filled'
+    | 'minify',
 ): void => {
   const input = $(id) as HTMLInputElement;
   input.checked = store.state[key];
@@ -248,6 +257,7 @@ const bindCheck = (
 bindCheck('#showGrid', 'showGrid');
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
+bindCheck('#snapBoundary', 'snapToBoundary');
 bindCheck('#pixelFit', 'pixelFit');
 bindCheck('#showHandles', 'showHandles');
 bindCheck('#filled', 'filled');
@@ -1399,7 +1409,15 @@ store.subscribe((s) => {
 canvas.overlay.addEventListener('pointermove', (e) => {
   const p = screenToDoc(canvas.overlay, e.clientX, e.clientY);
   const dp = Math.min(3, store.state.decimals);
-  cursorEl.textContent = `${p[0].toFixed(dp)}, ${p[1].toFixed(dp)}`;
+  /* A node or an outline within reach is shown at ITS coordinates, with what
+     claimed it, because that is where a point put down here would go and it is
+     worth knowing before you commit to the click. The grid is not shown that
+     way: with a step of 1 the readout would lock to integers and stop being a
+     pointer position at all, for a lattice that is already drawn on screen. */
+  const snap = controller.snapPreview(p);
+  const at = snap.kind === 'vertex' || snap.kind === 'boundary' ? snap.pt : p;
+  const label = snap.kind === 'vertex' || snap.kind === 'boundary' ? snapLabel(snap.kind) : null;
+  cursorEl.textContent = `${at[0].toFixed(dp)}, ${at[1].toFixed(dp)}${label ? ` · ${label}` : ''}`;
 });
 canvas.overlay.addEventListener('pointerleave', () => (cursorEl.textContent = ''));
 

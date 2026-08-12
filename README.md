@@ -31,11 +31,11 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (463 across 15 files) |
+| `npm test` | Unit and DOM tests (478 across 16 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **182.9 kB, 57.7 kB
+The production build is one file, no external requests: **184.1 kB, 58.2 kB
 gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 2.0 kB of
 that, against the 278 kB a WASM tracer would have cost; see ARCHITECTURE §26.
 
@@ -117,7 +117,7 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 463 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 478 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
 transforms, history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
@@ -140,7 +140,7 @@ Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
 `backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`,
-`fuse`, `trace`, `pixelFit`.
+`fuse`, `trace`, `pixelFit`, `snapOrder`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

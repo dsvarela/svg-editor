@@ -91,7 +91,13 @@ export interface EditorState {
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   snapToGrid: boolean;
+  /** Snap to an anchor already in the drawing: the 0-D tier. */
   snapToPoints: boolean;
+  /**
+   * Snap to a point ON an existing curve rather than only to its anchors: the
+   * 1-D tier. See `model/snapping.ts` for how the three tiers resolve.
+   */
+  snapToBoundary: boolean;
   /**
    * Shift the snap lattice so strokes land on whole pixels rather than anchors.
    *
@@ -178,6 +184,7 @@ export class Store {
       gridStep: 1,
       snapToGrid: true,
       snapToPoints: true,
+      snapToBoundary: true,
       pixelFit: false,
       showGrid: true,
       showHandles: true,

@@ -940,6 +940,53 @@ boundary points fitted to 19 nodes**. Node soup was the reason Simplify had to
 come first, and it did.
 
 
+## 27. The most specific target within reach wins
+
+Snapping had two modes and an implementation detail standing in for a rule:
+compute the grid, then let a nearby point overwrite it. That lands in the right
+place and is not a rule, which stopped mattering the moment pixel fit arrived and
+a third thing wanted a say.
+
+The rule is IPE's, and it is one line: **the most specific target within reach
+wins**, where specific means lower dimensional.
+
+| | Target | What it is |
+|---|---|---|
+| 0-D | vertex | an anchor already in the drawing |
+| 1-D | boundary | any point along an existing curve |
+| 2-D | grid | a lattice that fills the plane |
+
+Each tier beats the one below whenever it is close enough to count.
+**Distance does not break ties between tiers**: a vertex seven pixels away beats
+a gridline one pixel away, because the person aiming at it can see the vertex and
+cannot see the lattice line. Reach is measured in screen pixels, so it feels the
+same at every zoom.
+
+**Pixel fit is not a fourth tier.** It says where the lattice sits, not what to
+aim at, so it lives inside the 2-D tier and is beaten by everything the grid is
+beaten by. That is the honest reading, and it is also the useful one: welding to
+a node someone can see still matters more than landing on a lattice they cannot.
+Writing the rule down is what made this answerable rather than an accident of
+statement order.
+
+**The trap that only appears once boundary snapping exists**: a node being
+dragged lies *on* the two segments it joins, both of which report a distance of
+zero, so without an exclusion it would pin itself where it already is and never
+move again. Excluding the whole subpath would have been the easy fix and the
+wrong one, since the far side of the same path is a legitimate target. Only the
+two incident segments go.
+
+The rule lives in `model/snapping.ts` as a pure function of a document, a point
+and some numbers, because a priority order is exactly the kind of thing worth
+testing and the controller is exactly the kind of thing that is not. The
+controller supplies what only it knows: the camera, and what is being dragged.
+
+The readout shows the snap target's own coordinates when a vertex or a boundary
+claims the pointer, and the raw position otherwise. Not for the grid: with a step
+of 1 the readout would lock to integers and stop being a pointer position at all,
+for a lattice that is already drawn on screen.
+
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

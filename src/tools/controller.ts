@@ -54,6 +54,8 @@ import {
 import type { AlignMode, FuseRefusal, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
 import { phaseInForce, phaseLabel } from '../model/pixelfit';
+import { resolveSnap } from '../model/snapping';
+import type { SnapResult } from '../model/snapping';
 import { traceImage } from '../model/trace';
 import type { TraceOptions, TraceResult } from '../model/trace';
 import type { RasterLike } from '../core/raster';
@@ -229,36 +231,48 @@ export class Controller {
   }
 
   /**
-   * Apply snapping. Grid first, then points -- a nearby existing point beats
-   * the grid, because welding to something the user can see matters more than
-   * landing on an invisible lattice.
+   * How near a 0-D or 1-D target has to be to claim the pointer, in screen
+   * pixels.
+   *
+   * Screen pixels rather than document units, so the reach feels the same at
+   * every zoom: eight pixels is about how far the eye reads as "on it".
+   */
+  private static readonly REACH_PX = 8;
+
+  /**
+   * Apply snapping. The rule lives in `model/snapping.ts`; this supplies it with
+   * the things only the controller knows -- the camera, and what is being
+   * dragged.
    */
   private snap(p: Pt, exclude?: NodeRef, excludeShape?: string): Pt {
-    const s = this.store.state;
-    let out = p;
-    if (s.snapToGrid && s.gridStep > 0) out = snapTo(p, s.gridStep, this.phase());
+    return this.snapWith(p, exclude, excludeShape).pt;
+  }
 
-    if (s.snapToPoints) {
-      const k = this.canvas.scale(s.camera);
-      const threshold = 8 * k;
-      let best = threshold;
-      let hit: Pt | null = null;
-      for (const shape of s.doc.shapes) {
-        if (shape.id === excludeShape) continue;
-        shape.subpaths.forEach((sp, spI) => {
-          sp.nodes.forEach((n, i) => {
-            if (exclude && exclude.shape === shape.id && exclude.sp === spI && exclude.i === i) return;
-            const d = Math.hypot(n.pt[0] - p[0], n.pt[1] - p[1]);
-            if (d < best) {
-              best = d;
-              hit = [n.pt[0], n.pt[1]];
-            }
-          });
-        });
-      }
-      if (hit) out = hit;
-    }
-    return out;
+  /**
+   * Where a point put down here would land, and what claimed it.
+   *
+   * For the readout. No exclusions, because a hover is asking about a point that
+   * does not exist yet: the node under the pointer is a legitimate target for
+   * one, where it would not be a target for itself.
+   */
+  snapPreview(p: Pt): SnapResult {
+    return this.snapWith(p);
+  }
+
+  /** The same, keeping which tier answered, for the status line. */
+  private snapWith(p: Pt, exclude?: NodeRef, excludeShape?: string): SnapResult {
+    const s = this.store.state;
+    return resolveSnap(p, {
+      doc: s.doc,
+      step: s.gridStep,
+      phase: this.phase(),
+      toGrid: s.snapToGrid,
+      toPoints: s.snapToPoints,
+      toBoundary: s.snapToBoundary,
+      reach: Controller.REACH_PX * this.canvas.scale(s.camera),
+      exclude,
+      excludeShape,
+    });
   }
 
   private hitOf(e: PointerEvent | MouseEvent): {

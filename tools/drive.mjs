@@ -1145,6 +1145,79 @@ const scenarios = {
   },
 
   /**
+   * The snap priority order, driven by an actual pointer.
+   *
+   * The rule is unit-tested against a document. What is only here is that the
+   * reach is measured in screen pixels, so it has to survive a real camera, and
+   * that the readout names the tier that actually answered.
+   */
+  async snapOrder(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`snapOrder: ${what}`);
+    };
+    const { drag, toClient } = await mk(page);
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    /* Two separate shapes: a box to snap TO, and a lone segment to drag. The
+       box's top edge is at y = 16.5, deliberately OFF the grid, so "landed on
+       the outline" and "landed on the grid" are different numbers. With it at a
+       whole 16 the final check below passed whichever tier had answered. */
+    await page.fill('#src', 'M20 16.5 L60 16.5 L60 48 L20 48 Z M12 56 L16 60');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+
+    const hover = async (doc) => {
+      const c = await toClient(doc);
+      await page.mouse.move(c[0], c[1]);
+      await page.waitForTimeout(80);
+      return page.textContent('#cursor');
+    };
+
+    // Middle of the square's top edge: no corner in reach, so the 1-D tier.
+    const onEdge = await hover([40, 16.7]);
+    check(/on an outline/.test(onEdge), `mid-edge readout says "${onEdge}"`);
+    check(/16\.5/.test(onEdge), `mid-edge readout is not on the edge: "${onEdge}"`);
+
+    // Near a corner, where the vertex and both its sides all have a claim.
+    const onCorner = await hover([20.3, 16.8]);
+    check(/on a node/.test(onCorner), `near-corner readout says "${onCorner}"`);
+    check(/^20\.?0*, 16\.?0*\b/.test(onCorner), `near-corner readout is not at the corner: "${onCorner}"`);
+
+    // Out in the open: neither tier, so the readout is a plain position.
+    const nowhere = await hover([76, 8]);
+    check(!/on a/.test(nowhere), `empty-canvas readout says "${nowhere}"`);
+
+    /* And the half that matters: dragging a node onto an outline lands it ON
+       the outline, not on the nearest gridline. The edge is at y = 16.5 and the
+       nearest gridline is 17, so the two answers are a visible half unit apart. */
+    await drag([12, 56], [40, 16.7]);
+    await page.waitForTimeout(200);
+    const d = await page.getAttribute('.artwork path', 'd');
+    const moved = d.match(/M\s*([\d.]+)\s+([\d.]+)\s+L/);
+    check(!!moved, `could not read the dragged node back: ${d}`);
+    check(Math.abs(+moved[2] - 16.5) < 1e-6, `landed at y=${moved[2]}, want the outline at 16.5`);
+
+    // With outline snapping off, the same drag goes to the grid instead.
+    await undo(page);
+    await tab(page, 'doc');
+    await page.click('#snapBoundary');
+    await page.waitForTimeout(120);
+    await drag([12, 56], [40, 16.7]);
+    await page.waitForTimeout(200);
+    const d2 = await page.getAttribute('.artwork path', 'd');
+    const g = d2.match(/M\s*([\d.]+)\s+([\d.]+)\s+L/);
+    check(Math.abs(+g[2] - 17) < 1e-6, `off-boundary drag landed at y=${g[2]}, want the grid at 17`);
+    const readout = await hover([40, 16.7]);
+    check(!/on an outline/.test(readout), `outline snap still offered when off: "${readout}"`);
+
+    return { onEdge, onCorner, nowhere, landed: moved[2] };
+  },
+
+  /**
    * Pixel fit, and the one thing only a browser can check.
    *
    * The arithmetic is unit-tested. What is not is whether the grid you *see* is

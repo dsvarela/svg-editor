@@ -20,15 +20,17 @@ with **Fuse nodes that are not ends** below.
 
 ## Snapping — the precision story
 
-Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
-(within 8 px screen, beats the grid). Nothing else.
+Three tiers, resolved by one rule: the most specific target within eight screen
+pixels wins, so a vertex beats an outline beats the grid. Pixel fit is the grid's
+phase rather than a fourth tier. See ARCHITECTURE §27. What is left below is
+intersections, angles, and guides.
 
 | | Feature | Source | Size |
 |---|---|---|---|
-| `[ ]` | **Boundary snap** — snap to a point *on* a curve, not just to its anchors. `projectToCubic` already exists. | IPE | M |
+| `[x]` | **Boundary snap** — done, as **Snap to outlines**. The 1-D tier: a point anywhere along an existing curve, beaten by a vertex and beating the grid. `nearestOnPath` gained a segment filter, because a node being dragged lies on the two segments it joins and both report a distance of zero. See ARCHITECTURE §27. | IPE | — |
 | `[ ]` | **Intersection snap** — snap where two paths cross. Needs a cubic–cubic solver. | IPE | M |
 | `[ ]` | **Angular snap** — constrain to rays at multiples of N° from a settable origin and base direction (IPE: `F1` origin, `F2` direction, `F3` takes both from a nearby edge). | IPE | M |
-| `[ ]` | **Principled priority order** — IPE resolves vertex/intersection → boundary → grid, and treats angular (1-D) as mutually exclusive with the 0-D modes. Ours is grid-then-point-override, which happens to land in the same place but isn't a rule. | IPE | S |
+| `[x]` | **Principled priority order** — done. The most specific target within reach wins: vertex (0-D) beats boundary (1-D) beats grid (2-D), and distance does not break ties between tiers. Pixel fit turned out not to be a fourth tier but the grid's phase, which is what settles how it interacts with the other two. The rule is a pure function in `model/snapping.ts` rather than an accident of statement order in the controller. See ARCHITECTURE §27. | IPE | — |
 | `[x]` | **Displayed grid ≠ snap grid (defect)** — fixed. `gridDisplayFor` draws `gridStep × m` with `m` a whole number off the 1-2-5 ladder, so every line on screen is a snap position; zooming out thins the lattice instead of switching to a different one, and the readout says which (`1 · every 5 drawn`). See ARCHITECTURE §9. | — | — |
 | `[x]` | **Pixel-fit** — done. A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate covers half of two pixels instead of all of one, and snapping anchors to integers made it worse rather than better. The fix is one line of arithmetic — the painted edges are whole exactly when `x ≡ w/2 (mod 1)` — so it is the same lattice shifted by a phase, not a second kind of snapping. The drawn grid shifts by the same phase from the same function, which is what keeps §9's contract. A selection whose shapes want different lattices reports `mixed widths` rather than fitting one of them. **Fit selection to pixels** applies it to what already exists. See ARCHITECTURE §25. | icon-design practice | — |
 | `[ ]` | **Rulers + draggable guides** — manual guides you place, distinct from the grid. | Boxy SVG, Method Draw | M |
