@@ -56,6 +56,7 @@ as the centre rather than a corner.
 | `Shift`+`P` | Make the selected shapes into one shape, changing no geometry |
 | `Shift`+`K` | Split the selected shapes, giving each path a shape of its own |
 | `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
+| `Shift`+`A` | Make every selected node auto-smooth, or hand control back |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -202,6 +203,13 @@ to set it exactly.
 
 - **Corner**, **Smooth**, **Symm** show what the handles currently say, and set
   it when pressed.
+- **Auto** (`Shift+A`) is different in kind: it does not set the handles once, it
+  keeps re-deriving them from the two neighbours, so moving a nearby node re-aims
+  this one and the curve stays fair. Press it again to hand control back, which
+  leaves the handles exactly where they are. Dragging either handle also hands
+  control back. An end of an open path cannot be auto, since there is no
+  neighbour on the far side to take a direction from, and the setting is not part
+  of the export.
 - **Round** with **Apply** replaces the selected corners with an arc of that
   radius. Both sides of the node have to be straight.
 - **Break here** duplicates the node to cut the path there.

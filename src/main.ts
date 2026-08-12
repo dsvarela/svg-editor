@@ -586,6 +586,7 @@ for (const f of coordFields) {
 ntypeSeg.addEventListener('click', (e) => {
   const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
   if (v === 'corner' || v === 'smooth' || v === 'symmetric') controller.setSelectedContinuity(v);
+  else if (v === 'auto') controller.setSelectedAuto();
 });
 
 on('#breakPath', () => controller.breakAtSelection());
@@ -665,7 +666,11 @@ function refreshInspector(): void {
   // These read out what the node's handles currently say, and clicking one
   // moves the handles to match. There is no mode being set, so the highlight
   // can never drift away from what is drawn.
-  const cur = sel ? continuityOf(sel.node) : null;
+  /* `auto` is the one reading that is not derived, so it is asked of the node
+     rather than of its handles -- and it takes precedence in the display,
+     because an auto node is always collinear and would otherwise light up as
+     `smooth` while a second button was also pressed. */
+  const cur = sel ? (sel.node.auto ? 'auto' : continuityOf(sel.node)) : null;
   for (const b of ntypeSeg.querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === cur));
   }

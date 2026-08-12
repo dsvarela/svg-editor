@@ -2951,3 +2951,67 @@ describe('bend control on any segment', () => {
     expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 6 })).toBe(before);
   });
 });
+
+describe('auto-smooth nodes through the controller', () => {
+  /* The model tests own the arithmetic. What only the controller can show is
+     that the sweep runs after every edit it makes, and that taking hold of a
+     handle hands control back -- without which the drag would be undone by the
+     sweep at the end of the same edit, with nothing on screen to say why. */
+  const withRun = (): Harness => harness('M10 10 L30 10 L50 10');
+
+  const handleEl = (h: Harness, which: 'in' | 'out', i: number): Element => {
+    h.controller.render();
+    const shape = h.store.state.doc.shapes[0].id;
+    const el = h.canvas.overlay.querySelector(
+      `[data-hit="${which}"][data-shape="${shape}"][data-sp="0"][data-i="${i}"]`,
+    );
+    if (!el) throw new Error(`no ${which} handle for node ${i}`);
+    return el;
+  };
+
+  it('re-derives when a neighbour is dragged', () => {
+    const h = withRun();
+    const shape = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${shape}/0/1`));
+    h.controller.setSelectedAuto();
+
+    const before = [...h.store.state.doc.shapes[0].subpaths[0].nodes[1].hOut!];
+
+    // Drag the far node down. The auto node in the middle should re-aim.
+    h.store.update((s) => {
+      s.selection.nodes.clear();
+      s.selection.nodes.add(`${shape}/0/2`);
+    });
+    h.down([50, 10], h.anchorEl(shape, 0, 2));
+    h.move([50, 40]);
+    h.up();
+
+    const after = h.store.state.doc.shapes[0].subpaths[0].nodes[1].hOut!;
+    expect(after).not.toEqual(before);
+    // Still on the chord between its neighbours, which now slopes.
+    const n = h.store.state.doc.shapes[0].subpaths[0].nodes[1];
+    const chord = [50 - 10, 40 - 10];
+    const out = [n.hOut![0] - n.pt[0], n.hOut![1] - n.pt[1]];
+    expect(out[0] * chord[1] - out[1] * chord[0]).toBeCloseTo(0, 6);
+  });
+
+  it('hands control back when its own handle is dragged', () => {
+    const h = withRun();
+    const shape = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${shape}/0/1`));
+    h.controller.setSelectedAuto();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[1].auto).toBe(true);
+
+    const el = handleEl(h, 'out', 1);
+    const at = [Number(el.getAttribute('cx')), Number(el.getAttribute('cy'))] as [number, number];
+    h.down(at, el);
+    h.move([at[0], at[1] + 12]);
+    h.up();
+
+    const n = h.store.state.doc.shapes[0].subpaths[0].nodes[1];
+    expect(n.auto).toBeUndefined();
+    // And the drag actually took: the handle is where it was dragged to, not
+    // back where the sweep would have put it.
+    expect(n.hOut![1]).toBeGreaterThan(at[1] + 6);
+  });
+});

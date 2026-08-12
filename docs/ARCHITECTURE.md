@@ -1450,6 +1450,47 @@ The hull prune has no behavioural signature -- with it or without it the same
 crossings are found -- so nothing tests it. That is recorded rather than papered
 over with a timing assertion that would be flaky.
 
+## 35. Auto-smooth is the one stored node flag, and §6 still holds
+
+Inkscape's fourth node type: handles that re-derive themselves from the
+neighbours, so moving one node of a curve re-aims the two either side and the
+shape stays fair without anyone dragging six handles to keep it that way.
+
+§6 argues at length that node state must never be stored, and this stores some.
+The exception rests on a distinction rather than an excuse:
+
+| | |
+|---|---|
+| A stored `smooth` flag | A **claim about the geometry**. Checkable against the handles, and therefore able to disagree with them -- which is what happened in every editor that has one, and why continuity is derived here |
+| `auto` | An **instruction about the future**. "Keep recomputing me when a neighbour moves" is not something any arrangement of control points can express, so there is nothing for it to disagree with |
+
+It is never exported. A file has no way to say it, and reading one back gives
+ordinary handles sitting exactly where the auto node had put them.
+
+**The sweep is whole-document, not targeted.** `Controller.edit` runs
+`reflowDoc` on the way out of every edit it makes. The targeted version -- update
+the node that moved and its two neighbours -- means every operation that could
+disturb an auto node has to work out which indices it touched: moving one,
+deleting one, inserting one, reversing a path, fusing two, applying a boolean.
+Getting that wrong leaves a stale handle, which reads as a rendering bug rather
+than a missed call. The sweep skips a node in one comparison and walks nodes that
+are about to be walked to redraw anyway.
+
+Three decisions:
+
+- **Taking hold of a handle hands control back.** Without it the drag would be
+  undone by the sweep at the end of the same edit, and nothing on screen would
+  say why.
+- **Turning it off keeps the handles.** What you had is what you carry on
+  editing; the only thing that changed is that it stops moving on its own.
+- **Losing a neighbour drops the flag**, rather than leaving it dormant to fire
+  when one reappears -- long after anyone would connect the two.
+
+The handle direction is the chord between the neighbours, which makes the node
+smooth by construction, and each handle reaches a third of the way to its own
+neighbour rather than to an average of both. Separately, because on an uneven run
+a shared length puts a bulge on the short side.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

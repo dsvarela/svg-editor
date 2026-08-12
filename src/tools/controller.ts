@@ -60,6 +60,7 @@ import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
 import { alignmentsFor, shiftBox } from '../model/smart';
+import { canBeAuto, reflowDoc, setAuto } from '../model/auto';
 import { rayAngles } from '../model/angles';
 import type { AngleSetup } from '../model/angles';
 import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
@@ -73,7 +74,7 @@ import type { TransformPart } from '../model/transform';
 import { ellipseSubpath, rectSubpath } from '../core/primitives';
 import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
-import type { Store } from '../model/store';
+import type { EditorState, Store } from '../model/store';
 import type { Canvas, OverlayExtras } from '../view/canvas';
 import { shapeIsInBox } from '../view/canvas';
 import { bendFromPoint } from '../core/bend';
@@ -460,6 +461,35 @@ export class Controller {
     this.batchOpen = true;
   }
 
+  /**
+   * `Store.edit`, with the auto-smooth sweep on the way out.
+   *
+   * One choke point rather than a call at each site that could invalidate an
+   * auto node. Moving one, deleting one, inserting one, reversing a path,
+   * fusing two, applying a boolean: every one of them disturbs a neighbour, and
+   * each would otherwise have to work out which indices it touched. Getting
+   * that wrong leaves a stale handle, which reads as a rendering bug rather
+   * than as a missed call.
+   *
+   * The sweep is one pass over nodes that are about to be walked to redraw
+   * anyway, and it skips every node in one comparison.
+   */
+  private edit(fn: (st: EditorState) => void): void {
+    this.store.edit((st) => {
+      fn(st);
+      reflowDoc(st.doc);
+    });
+  }
+
+  /** The same for `tryEdit`, which reports whether it changed anything. */
+  private tryEdit(fn: (st: EditorState) => boolean): boolean {
+    return this.store.tryEdit((st) => {
+      const changed = fn(st);
+      if (changed) reflowDoc(st.doc);
+      return changed;
+    });
+  }
+
   /** Close it, at most once, whatever route the gesture took out. */
   private closeBatch(): void {
     if (!this.batchOpen) return;
@@ -640,7 +670,7 @@ export class Controller {
          changes nothing, and `edit` checkpoints before it finds that out --
          which left an entry that undoes to the state it was already in, and
          threw the redo stack away on the way. */
-      const made = this.store.tryEdit((st) => {
+      const made = this.tryEdit((st) => {
         const ok = addGuide(st.guides, { axis, at });
         // Showing a guide is implied by placing one. Dragging one out of a
         // ruler while they are hidden would otherwise draw nothing at all.
@@ -669,7 +699,7 @@ export class Controller {
 
   /** Place a guide by number, which is the keyboard-and-button route. */
   addGuideAt(axis: GuideAxis, at: number): boolean {
-    const ok = this.store.tryEdit((st) => {
+    const ok = this.tryEdit((st) => {
       const made = addGuide(st.guides, { axis, at });
       if (made) st.showGuides = true;
       return made;
@@ -680,6 +710,61 @@ export class Controller {
         : `There is already a guide at ${axis} = ${fmt(at)}.`,
       ok,
     );
+    return ok;
+  }
+
+  /**
+   * Make the selected nodes auto-smooth, or hand control back if they are.
+   *
+   * A toggle rather than a fourth setting beside corner, smooth and symmetric,
+   * because it is not the same kind of thing: those three are readings of the
+   * handles and this is an instruction about them. Pressing it on nodes that
+   * already have it leaves the handles exactly where they are and stops them
+   * moving on their own.
+   */
+  setSelectedAuto(): boolean {
+    const refs = this.selectedNodeRefs();
+    if (!refs.length) {
+      this.onMessage?.('Select a node first.', false);
+      return false;
+    }
+    /* Off only when every selected node is already auto. With a mixed
+       selection the useful reading of one press is "make them all auto", not
+       "toggle each of them and leave me with the opposite mixture". */
+    const allAuto = refs.every(
+      (r) => findShape(this.store.state.doc, r.shape)?.subpaths[r.sp]?.nodes[r.i]?.auto === true,
+    );
+
+    let changed = 0;
+    let atEnd = 0;
+    const ok = this.tryEdit((st) => {
+      for (const r of refs) {
+        const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
+        if (!sp?.nodes[r.i]) continue;
+        if (!allAuto && !canBeAuto(sp, r.i)) {
+          atEnd++;
+          continue;
+        }
+        if (setAuto(sp, r.i, !allAuto)) changed++;
+      }
+      return changed > 0;
+    });
+
+    if (ok) {
+      this.onMessage?.(
+        allAuto
+          ? `${changed} ${changed === 1 ? 'node stops' : 'nodes stop'} re-deriving.`
+          : `${changed} ${changed === 1 ? 'node takes' : 'nodes take'} their handles from the neighbours.`,
+        true,
+      );
+    } else if (atEnd) {
+      this.onMessage?.(
+        'That node ends the path. There is no neighbour on the far side to take a direction from.',
+        false,
+      );
+    } else {
+      this.onMessage?.('Nothing changed.', false);
+    }
     return ok;
   }
 
@@ -715,7 +800,7 @@ export class Controller {
   /** Remove every guide, in one undo step. */
   clearGuides(): boolean {
     const n = this.store.state.guides.length;
-    const ok = this.store.tryEdit((st) => {
+    const ok = this.tryEdit((st) => {
       st.guides = [];
       return n > 0;
     });
@@ -999,7 +1084,7 @@ export class Controller {
         if (!grabbedNode) return;
         const target = this.snap([p[0] - d.offset[0], p[1] - d.offset[1]], d.grabbed);
         const delta: Pt = [target[0] - grabbedNode.pt[0], target[1] - grabbedNode.pt[1]];
-        this.store.edit((st) => {
+        this.edit((st) => {
           for (const r of d.refs) {
             const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
             if (!sp?.nodes[r.i]) continue;
@@ -1011,11 +1096,16 @@ export class Controller {
 
       case 'handle': {
         const d = this.drag;
-        this.store.edit((st) => {
+        this.edit((st) => {
           const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
           // The node index matters as much as the subpath: an undo mid-drag can
           // shorten the path under us, and `moveHandle` would dereference it.
           if (!sp?.nodes[d.ref.i]) return;
+          /* Taking hold of a handle takes control back. An auto node would
+             otherwise recompute the handle away on the very next sweep, so the
+             drag would do nothing and there would be nothing on screen to say
+             why -- and the sweep runs at the end of this same edit. */
+          delete sp.nodes[d.ref.i].auto;
           moveHandle(sp, d.ref.i, d.which, this.snap(p, d.ref), d.breakPair);
         });
         return;
@@ -1047,7 +1137,7 @@ export class Controller {
           });
           this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
         }
-        this.store.edit((st) => transformCaptured(st.doc, d.saved, m));
+        this.edit((st) => transformCaptured(st.doc, d.saved, m));
         return;
       }
 
@@ -1056,7 +1146,7 @@ export class Controller {
         // Snapped like anything else being placed, and against everything --
         // lining a guide up with a node is most of why you would place one.
         const at = this.snapWith(p, undefined, undefined, d.i).pt;
-        this.store.edit((st) => {
+        this.edit((st) => {
           moveGuide(st.guides, d.i, d.axis === 'x' ? at[0] : at[1]);
         });
         return;
@@ -1069,7 +1159,7 @@ export class Controller {
         // Snapped as a displacement, like moving a shape: the reference keeps
         // its proportions and lands a whole number of steps from where it was.
         const want: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
-        this.store.edit((st) => {
+        this.edit((st) => {
           if (st.backdrop) {
             st.backdrop.x = d.origin[0] + want[0];
             st.backdrop.y = d.origin[1] + want[1];
@@ -1117,7 +1207,7 @@ export class Controller {
         const delta: Pt = [want[0] - d.applied[0], want[1] - d.applied[1]];
         if (delta[0] === 0 && delta[1] === 0) return;
         d.applied = want;
-        this.store.edit((st) => {
+        this.edit((st) => {
           for (const id of d.shapes) {
             const shape = findShape(st.doc, id);
             if (shape) transformShape(shape, translate(delta[0], delta[1]));
@@ -1138,7 +1228,7 @@ export class Controller {
 
       case 'bend': {
         const d = this.drag;
-        this.store.edit((st) => {
+        this.edit((st) => {
           const sp = findShape(st.doc, d.shape)?.subpaths[d.sp];
           if (!sp || d.seg >= segmentCount(sp)) return;
           if (d.free) {
@@ -1158,7 +1248,7 @@ export class Controller {
 
       case 'pen': {
         const d = this.drag;
-        this.store.edit((st) => {
+        this.edit((st) => {
           const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
           const n = sp?.nodes[d.ref.i];
           if (!sp || !n) return;
@@ -1217,7 +1307,7 @@ export class Controller {
         } else {
           // `tryEdit` again, for the press on a guide that released without
           // moving it: settling a guide that is already settled is not an edit.
-          this.store.tryEdit((st) => (out ? removeGuide(st.guides, d.i) : settleGuide(st.guides, d.i)));
+          this.tryEdit((st) => (out ? removeGuide(st.guides, d.i) : settleGuide(st.guides, d.i)));
           if (out) this.onMessage?.('Guide removed.', true);
         }
       }
@@ -1302,7 +1392,7 @@ export class Controller {
     // to the handles, so the cycle is visible rather than a hidden mode change.
     if (hit?.kind === 'anchor' && hit.ref) {
       const ref = hit.ref;
-      this.store.tryEdit((st) => {
+      this.tryEdit((st) => {
         const sp = findShape(st.doc, ref.shape)?.subpaths[ref.sp];
         if (!sp?.nodes[ref.i]) return false;
         const order = ['corner', 'smooth', 'symmetric'] as const;
@@ -1315,7 +1405,7 @@ export class Controller {
     // Double-clicking the outline inserts a node exactly where you clicked.
     const near = nearestOnPath(s.doc, p, 12 * this.canvas.scale(s.camera));
     if (near) {
-      this.store.edit((st) => {
+      this.edit((st) => {
         const sp = findShape(st.doc, near.shape)?.subpaths[near.sp];
         if (!sp) return;
         const i = splitSegment(sp, near.seg, near.t);
@@ -1494,7 +1584,7 @@ export class Controller {
     let radius = 0;
     let widest = 0;
     let fused = 0;
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
         for (const i of sps) {
@@ -1582,7 +1672,7 @@ export class Controller {
     let before = 0;
     let after = 0;
     let error = 0;
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
         for (const i of sps) {
@@ -1671,7 +1761,7 @@ export class Controller {
     let smallest = Infinity;
     const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
 
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const [key, indices] of byPath) {
         const [shapeId, spIdx] = key.split('/');
         const sp = findShape(st.doc, shapeId)?.subpaths[Number(spIdx)];
@@ -1787,7 +1877,7 @@ export class Controller {
       return false;
     }
 
-    const ok = this.store.tryEdit((st) => {
+    const ok = this.tryEdit((st) => {
       for (const shape of r.shapes) {
         shape.id = nextId('trace');
         st.doc.shapes.push(shape);
@@ -1839,7 +1929,7 @@ export class Controller {
 
     let moved = 0;
     let count = 0;
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
         for (const i of sps) {
@@ -1899,7 +1989,7 @@ export class Controller {
     }
 
     let gone = 0;
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const [id, sps] of targets) {
         const shape = findShape(st.doc, id);
         for (const i of sps) {
@@ -1936,7 +2026,7 @@ export class Controller {
 
     let moved = 0;
     let why: FuseRefusal | null = null;
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       const live = findShape(st.doc, ra.shape)?.subpaths[ra.sp];
       if (!live) return false;
       const r = fuseNodes(live, ra.i, rb.i);
@@ -1991,7 +2081,7 @@ export class Controller {
       return true;
     }
 
-    return this.store.tryEdit((st) => {
+    return this.tryEdit((st) => {
       let changed = false;
       for (const shape of selectedShapes(st.doc, st.selection)) {
         for (const [k, v] of Object.entries(patch)) {
@@ -2035,7 +2125,7 @@ export class Controller {
     const w = Math.max(up(b.x1) - x, step || 1);
     const h = Math.max(up(b.y1) - y, step || 1);
 
-    const changed = this.store.tryEdit((st) => {
+    const changed = this.tryEdit((st) => {
       const vb = st.doc.viewBox;
       if (vb.x === x && vb.y === y && vb.w === w && vb.h === h) return false;
       st.doc.viewBox = { x, y, w, h };
@@ -2129,7 +2219,7 @@ export class Controller {
       const first = target.nodes[0].pt;
       if (Math.hypot(first[0] - p[0], first[1] - p[1]) < 8 * this.canvas.scale(s.camera)) {
         const ref = this.penTarget;
-        this.store.edit((st) => {
+        this.edit((st) => {
           const sp = findShape(st.doc, ref.shape)?.subpaths[ref.sp];
           if (sp) closeSubpath(sp);
         });
@@ -2262,7 +2352,7 @@ export class Controller {
        had this hole from the beginning and Shift+F, Shift+B, Shift+J and
        Shift+M all widened it. Escape and Enter are deliberately still allowed
        -- ending a gesture is exactly what they are for. */
-    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y'];
+    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y', 'A'];
     if (this.drag.kind !== 'none' && rewrites.includes(e.key)) {
       e.preventDefault();
       this.onMessage?.('Finish the drag first.', false);
@@ -2300,6 +2390,14 @@ export class Controller {
         if (!e.shiftKey) return;
         e.preventDefault();
         this.breakAtSelection();
+        return;
+      }
+      /* Shift+A, beside the three continuity keys. Ctrl+A is select-all in
+         every browser, so the plain letter was never available. */
+      case 'A': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.setSelectedAuto();
         return;
       }
       // Shift+R, which is Inkscape's binding for the same thing.
@@ -2429,7 +2527,7 @@ export class Controller {
   nudge(d: Pt): void {
     const refs = this.selectedNodeRefs();
     if (!refs.length) return;
-    this.store.edit((st) => {
+    this.edit((st) => {
       for (const r of refs) {
         const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
         if (!sp?.nodes[r.i]) continue;
@@ -2464,7 +2562,7 @@ export class Controller {
 
     if (s.selection.shapes.size > 0) {
       const n = s.selection.shapes.size;
-      this.store.edit((st) => {
+      this.edit((st) => {
         st.doc.shapes = st.doc.shapes.filter((sh) => !st.selection.shapes.has(sh.id));
         st.selection = emptySelection();
       });
@@ -2487,7 +2585,7 @@ export class Controller {
     let deleted = 0;
     let blocked = 0;
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       // What each touched subpath becomes, applied only once the loop is done:
       // splicing as we go would shift the indices the remaining groups hold.
       const replace = new Map<string, Subpath[]>();
@@ -2563,7 +2661,7 @@ export class Controller {
       return false;
     }
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       const shape = findShape(st.doc, ref.shape);
       if (!shape?.subpaths[ref.sp]) return;
       shape.subpaths.splice(ref.sp, 1, ...pieces);
@@ -2614,7 +2712,7 @@ export class Controller {
     }
 
     let closed = false;
-    const ok = this.store.tryEdit((st) => {
+    const ok = this.tryEdit((st) => {
       const shapeA = findShape(st.doc, ra.shape);
       const shapeB = findShape(st.doc, rb.shape);
       const a = shapeA?.subpaths[ra.sp];
@@ -2684,7 +2782,7 @@ export class Controller {
             : about([amount, 0, 0, amount, 0, 0], cx, cy);
 
     const ids = new Set(targets.map((t) => t.id));
-    this.store.edit((st) => {
+    this.edit((st) => {
       for (const shape of st.doc.shapes) if (ids.has(shape.id)) transformShape(shape, m);
     });
   }
@@ -2729,7 +2827,7 @@ export class Controller {
     const keep = operands[0].id;
     const consumed = new Set(operands.slice(1).map((sh) => sh.id));
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       const target = findShape(st.doc, keep);
       if (!target) return;
       target.subpaths = subpaths;
@@ -2791,7 +2889,7 @@ export class Controller {
           sh.style.strokeWidth !== keep.style.strokeWidth,
       );
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       const target = findShape(st.doc, keepId);
       if (!target) return;
       /* The same subpath objects, not copies. Filtering a shape out of
@@ -2863,7 +2961,7 @@ export class Controller {
     const ids = new Set(targets.map((sh) => sh.id));
     let made = 0;
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       const out: Shape[] = [];
       const selected = new Set<string>();
       for (const sh of st.doc.shapes) {
@@ -2946,7 +3044,7 @@ export class Controller {
     if (!sel || !Number.isFinite(value)) return;
     const ref = sel.ref;
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       const sp = findShape(st.doc, ref.shape)?.subpaths[ref.sp];
       const n = sp?.nodes[ref.i];
       if (!sp || !n) return;
@@ -2970,13 +3068,13 @@ export class Controller {
   alignSelection(mode: AlignMode): void {
     const refs = this.selectedNodeRefs();
     if (refs.length < 2) return;
-    this.store.edit((st) => alignNodes(st.doc, refs, mode));
+    this.edit((st) => alignNodes(st.doc, refs, mode));
   }
 
   distributeSelection(axis: 'h' | 'v'): void {
     const refs = this.selectedNodeRefs();
     if (refs.length < 3) return;
-    this.store.edit((st) => distributeNodes(st.doc, refs, axis));
+    this.edit((st) => distributeNodes(st.doc, refs, axis));
   }
 
   /**
@@ -3021,7 +3119,7 @@ export class Controller {
   setActiveBend(bend: Bend): void {
     const seg = this.activeSegment();
     if (!seg) return;
-    this.store.edit((st) => {
+    this.edit((st) => {
       const sp = findShape(st.doc, seg.shape)?.subpaths[seg.sp];
       if (sp && seg.seg < segmentCount(sp)) setSegmentBend(sp, seg.seg, bend);
     });
@@ -3038,7 +3136,7 @@ export class Controller {
   freeActiveSegment(): void {
     const seg = this.activeSegment();
     if (!seg?.bend) return;
-    this.store.edit((st) => {
+    this.edit((st) => {
       const sp = findShape(st.doc, seg.shape)?.subpaths[seg.sp];
       if (!sp || seg.seg >= segmentCount(sp)) return;
       const n = sp.nodes[seg.seg];
@@ -3091,7 +3189,7 @@ export class Controller {
     }
 
     let done = 0;
-    const ok = this.store.tryEdit((st) => {
+    const ok = this.tryEdit((st) => {
       for (const t of targets) {
         const [shapeId, spText] = t.split('/');
         const sp = findShape(st.doc, shapeId)?.subpaths[Number(spText)];
@@ -3133,7 +3231,7 @@ export class Controller {
     let atEnd = 0;
     let alreadySo = 0;
 
-    this.store.tryEdit((st) => {
+    this.tryEdit((st) => {
       for (const r of refs) {
         const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
         const node = sp?.nodes[r.i];
@@ -3190,7 +3288,7 @@ export class Controller {
     const selected = new Set(this.selectedNodeRefs().map(nodeKey));
     if (!selected.size) return;
 
-    this.store.edit((st) => {
+    this.edit((st) => {
       for (const shape of st.doc.shapes) {
         shape.subpaths.forEach((sp, spI) => {
           for (let seg = 0; seg < segmentCount(sp); seg++) {
