@@ -59,6 +59,7 @@ import { invisibleAt, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
+import { alignmentsFor, shiftBox } from '../model/smart';
 import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
 import type { Guide, GuideAxis } from '../model/guides';
 import type { SnapResult } from '../model/snapping';
@@ -105,7 +106,7 @@ type DragKind =
   /* Moving a selection. The total translation is tracked from the press rather
      than accumulated per move, because it is the TOTAL that gets snapped: see
      `bodyDrag`. */
-  | { kind: 'body'; shapes: string[]; refs: NodeRef[]; from: Pt; applied: Pt }
+  | { kind: 'body'; shapes: string[]; refs: NodeRef[]; from: Pt; applied: Pt; box: Box | null }
   | { kind: 'pen'; ref: NodeRef }
   /* Drawing a primitive. `id` is null until the drag is big enough to be worth
      a shape, so a stray click on the canvas leaves no empty one behind and no
@@ -621,6 +622,28 @@ export class Controller {
     return ok;
   }
 
+  /**
+   * What a drag can line up with: every shape that is not moving, and the page.
+   *
+   * The page earns its place. An icon is drawn to a canvas, so its edges and
+   * its centre are the alignments wanted most often, and they are the ones no
+   * other shape can offer.
+   */
+  private staticBoxes(moving: string[]): Box[] {
+    const s = this.store.state;
+    const out: Box[] = [];
+    for (const shape of s.doc.shapes) {
+      if (moving.includes(shape.id)) continue;
+      const b = shapeBBox(shape);
+      if (b) out.push(b);
+    }
+    const vb = s.doc.viewBox;
+    if (vb.w > 0 && vb.h > 0) {
+      out.push({ x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h });
+    }
+    return out;
+  }
+
   /* -------------------------------------------------------------- pointer */
 
   private onDown = (e: PointerEvent): void => {
@@ -772,7 +795,17 @@ export class Controller {
       // Nodes belonging to a shape that is moving wholesale would be moved
       // twice, once by each rule.
       const refs = this.selectedNodeRefs().filter((r) => !shapes.includes(r.shape));
-      this.drag = { kind: 'body', shapes, refs, from: p, applied: [0, 0] };
+      /* Frozen at the press, like the transform box's. A box recomputed each
+         frame would be the box of what is already moving, so an alignment
+         would be measured against the answer it just produced. */
+      this.drag = {
+        kind: 'body',
+        shapes,
+        refs,
+        from: p,
+        applied: [0, 0],
+        box: selectionBBox(this.store.state.doc, this.store.state.selection),
+      };
       return;
     }
 
@@ -957,7 +990,29 @@ export class Controller {
            the rounding cannot drift over a long drag. */
         const s2 = this.store.state;
         const raw: Pt = [p[0] - d.from[0], p[1] - d.from[1]];
-        const want: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
+        const grid: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
+
+        /* Alignment beats the lattice on whichever axis it found something,
+           and leaves the other axis to the grid. Same reasoning as the snap
+           tiers: a line you can see beats a lattice you cannot, and here you
+           can literally see it, because holding the alignment is what draws
+           it. Computed from the raw translation rather than the snapped one,
+           so the grid does not first pull the box off the edge it was about
+           to meet. */
+        const align =
+          s2.smartGuides && d.box
+            ? alignmentsFor(
+                shiftBox(d.box, raw[0], raw[1]),
+                this.staticBoxes(d.shapes),
+                Controller.REACH_PX * this.canvas.scale(s2.camera),
+              )
+            : { x: null, y: null };
+        this.extras.smart = [align.x, align.y].filter((a) => a !== null);
+
+        const want: Pt = [
+          align.x ? raw[0] + align.x.shift : grid[0],
+          align.y ? raw[1] + align.y.shift : grid[1],
+        ];
         const delta: Pt = [want[0] - d.applied[0], want[1] - d.applied[1]];
         if (delta[0] === 0 && delta[1] === 0) return;
         d.applied = want;
@@ -1095,6 +1150,8 @@ export class Controller {
       this.closeBatch();
 
       this.drag = { kind: 'none' };
+      // The lines are true only while something is being held to them.
+      this.extras.smart = [];
       if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
         this.canvas.overlay.releasePointerCapture(e.pointerId);
       }
@@ -1112,6 +1169,7 @@ export class Controller {
     if (mine) this.store.rollback();
     this.drag = { kind: 'none' };
     this.extras.marquee = null;
+    this.extras.smart = [];
     this.schedule();
   }
 

@@ -1326,6 +1326,46 @@ no grid it goes straight to the 1-2-5 ladder, which is honest because a ruler is
 a measurement scale rather than a claim about snapping -- the same position the
 axes take.
 
+## 32. Smart guides do not go through the snap rule
+
+A guide is a line you placed on purpose. A smart guide is the other half of the
+same idea: the line appears because what you are dragging has just lined up with
+something already on the page, and it goes away when that stops being true.
+
+**It is not a snap tier, and adding one would have been wrong.** Every tier in
+§27 maps a point to a point: the pointer is near a target, so the pointer moves.
+An alignment is not about the pointer at all. It is about the *bounding box of
+what is moving* agreeing with the box of something that is not, and the pointer
+may be nowhere near either edge that matched. So `model/smart.ts` takes boxes and
+returns an offset, and there is nothing for the priority rule to arbitrate.
+
+It does beat the grid, on whichever axis it found something, and leaves the other
+axis to the lattice. That is §27's reasoning arriving by a different road: a line
+you can see beats a lattice you cannot, and here you can literally see it, because
+holding the alignment is what draws it.
+
+- **Nine candidates per axis**: each of the moving box's near edge, centre and
+  far edge against each of the static box's three. Comparing only like with like
+  would miss the useful case of butting one shape's left against another's right.
+- **The axes are decided independently.** A shape can line its left edge up with
+  one object while its middle lines up with another, and reporting a single best
+  match would silently drop one of them.
+- **The page is a static box.** An icon is drawn to a canvas, so its edges and
+  its centre are the alignments wanted most often, and no other shape can offer
+  them.
+- **The moving box is frozen at the press**, like the transform box's. Recomputed
+  each frame it would be the box of what is already moving, so an alignment would
+  be measured against the answer it had just produced.
+- **The line spans both boxes**, so it says what lined up with what. One covering
+  only the shape being dragged leaves you guessing which of four it agreed with.
+- **Ties need beating by 1e-9 to change the answer.** Not a tolerance on the
+  geometry: a box at 0.2 whose far edge is at 10.2 is exactly 0.2 from an edge at
+  0 and 0.19999999999999929 from one at 10, so a strict comparison let binary
+  representation decide which line got drawn.
+
+Only body drags are covered. Creating a primitive and scaling a selection are
+both alignments someone would want and neither is wired up.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

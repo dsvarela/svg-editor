@@ -23,6 +23,7 @@
   --measure: #8f5c0d;
   --keyline: #b0339b;
   --guide: #1aa39a;
+  --smart: #d1453b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -48,6 +49,7 @@
     --measure: #dfa34e;
     --keyline: #e07ac9;
     --guide: #46cfc4;
+    --smart: #ff8577;
     --warn: #e4685e;
     --grid: #1c2331;
     --grid-major: #2a3345;
@@ -74,6 +76,7 @@
   --measure: #8f5c0d;
   --keyline: #b0339b;
   --guide: #1aa39a;
+  --smart: #d1453b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -98,6 +101,7 @@
   --measure: #dfa34e;
   --keyline: #e07ac9;
   --guide: #46cfc4;
+  --smart: #ff8577;
   --warn: #e4685e;
   --grid: #1c2331;
   --grid-major: #2a3345;
@@ -399,6 +403,19 @@ input[type='number']:disabled { opacity: 0.4; }
 .guide-hit.y { cursor: ns-resize; }
 .app.guides-locked .guide-hit { pointer-events: none; }
 .guide.dragging { stroke: var(--accent); }
+
+/* Alignment lines: their own hue, because they mean something a placed guide
+   does not -- they are an observation about the drag, and they go away when it
+   stops being true. Dashed for a centre, solid for an edge, so the two readings
+   are told apart without a label. */
+.smart {
+  stroke: var(--smart);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  fill: none;
+  pointer-events: none;
+}
+.smart.centre { stroke-dasharray: 5 3; }
 
 .stage .overlay { touch-action: none; cursor: crosshair; }
 /* The hand tool says what it does before you press it, which is the whole

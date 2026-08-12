@@ -318,6 +318,7 @@ there. Every change here is undoable.
 | **Rulers** | Show the rulers along the top and left |
 | **Show guides** | Draw the guides, and let the tools snap to them |
 | **Lock guides** | Stop the guides you have from being moved, so a press near one edits the drawing. New ones can still be placed |
+| **Smart guides** | While you drag a shape, line it up with the others and with the page |
 | **at** | The position a new guide goes at |
 | **Vertical**, **Horizontal** | Place a guide there |
 | **Clear guides** | Remove every guide |
@@ -337,6 +338,15 @@ places a node exactly.
 
 Guides are never part of the export. Placing, moving and removing one are all
 undoable, and a drag is one step.
+
+**Smart guides** are the other half, and nothing is placed. Drag a shape and a
+line appears wherever it lines up with another shape or with the page, by an edge
+or by a centre: solid for an edge, dashed for a centre. The drag is held to what
+the line shows, and on that axis the alignment wins over the grid. The line goes
+when the drag does.
+
+Only dragging a shape is covered. Drawing a rectangle and scaling a selection do
+not show them.
 
 ### Keylines
 

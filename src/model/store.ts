@@ -179,6 +179,13 @@ export interface EditorState {
   showGuides: boolean;
   /** Stop guides being dragged, so a press near one edits the drawing instead. */
   guidesLocked: boolean;
+  /**
+   * Show alignment lines while dragging, and hold the drag to them.
+   *
+   * Not a guide and not a snap tier: see `model/smart.ts`. A view-and-input
+   * preference, so it stays out of the history like the rest of them.
+   */
+  smartGuides: boolean;
 }
 
 interface Snapshot {
@@ -248,6 +255,7 @@ export class Store {
       showRulers: false,
       showGuides: true,
       guidesLocked: false,
+      smartGuides: true,
     };
   }
 

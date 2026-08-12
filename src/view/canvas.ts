@@ -22,6 +22,7 @@ import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
 import { keylinesFor } from '../model/keylines';
+import type { Alignment } from '../model/smart';
 import { serialisePath } from '../core/serialise';
 import { CORNER_PARTS, TRANSFORM_PARTS, handlePoint } from '../model/transform';
 import type { TransformPart } from '../model/transform';
@@ -51,6 +52,8 @@ export interface OverlayExtras {
   gridPhase?: number;
   /** Index of the guide being dragged, so it can be drawn as the live one. */
   draggingGuide?: number | null;
+  /** Alignment lines for this frame. Transient: they belong to the drag. */
+  smart?: Alignment[];
 }
 
 /**
@@ -108,6 +111,8 @@ export class Canvas {
   /** Placed guides, and the fat transparent strips that make them grabbable. */
   private guideLines: Pool<'line'>;
   private guideHits: Pool<'line'>;
+  /** Alignment lines, drawn only while a drag is holding to one. */
+  private smartLines: Pool<'line'>;
 
   /** Path data, rebuilt only for shapes whose geometry changed. */
   private paths = new PathCache();
@@ -194,6 +199,7 @@ export class Canvas {
     // belongs to and a press anywhere on it reaches the same guide.
     this.guideLines = new Pool(guideLayer, 'line');
     this.guideHits = new Pool(guideLayer, 'line');
+    this.smartLines = new Pool(guideLayer, 'line');
 
     this.marquee = svg('rect', { class: 'marquee' });
     this.selBox = svg('rect', { class: 'sel-box' });
@@ -401,6 +407,19 @@ export class Canvas {
     }
     this.guideLines.end();
     this.guideHits.end();
+
+    /* Alignment lines. Pooled in the same layer, drawn after the placed guides
+       so a transient line is not hidden under a permanent one that happens to
+       be in the same place -- which is exactly when both are interesting. */
+    this.smartLines.begin();
+    for (const a of extras.smart ?? []) {
+      this.smartLines.next(
+        a.axis === 'x'
+          ? { x1: a.at, y1: a.from, x2: a.at, y2: a.to }
+          : { x1: a.from, y1: a.at, x2: a.to, y2: a.at },
+      ).setAttribute('class', `smart ${a.kind}`);
+    }
+    this.smartLines.end();
   }
 
   private renderGrid(state: EditorState, k: number): void {

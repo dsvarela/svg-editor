@@ -263,6 +263,7 @@ const bindCheck = (
     | 'showRulers'
     | 'showGuides'
     | 'guidesLocked'
+    | 'smartGuides'
     | 'snapToGrid'
     | 'snapToPoints'
     | 'snapToBoundary'
@@ -281,6 +282,7 @@ bindCheck('#showKeylines', 'showKeylines');
 bindCheck('#showRulers', 'showRulers');
 bindCheck('#showGuides', 'showGuides');
 bindCheck('#guidesLocked', 'guidesLocked');
+bindCheck('#smartGuides', 'smartGuides');
 
 /* Guides by number, which is the route that does not need a pointer and the
    only one that is exact. The field is one value used by two buttons, because

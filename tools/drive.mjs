@@ -2802,6 +2802,110 @@ const scenarios = {
 
     return { boxes, nums, zooms, snapkind, placed, dropMsg, clearMsg };
   },
+
+  /**
+   * Smart guides: the line appears, the drag holds to it, both go away.
+   *
+   * The arithmetic is unit-tested against boxes. What needs a browser is that
+   * the boxes handed in are the right ones -- the selection's at the press and
+   * every other shape's -- and that the line is drawn where the alignment says
+   * and removed when the drag ends.
+   */
+  async smartGuides(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`smartGuides: ${what}`);
+    };
+    const { toClient } = await mk(page);
+
+    /* Two rectangles, one above the other. The upper one's left edge is at
+       10.5, deliberately off the grid: at 10 the grid would land the drag on
+       the alignment by itself, and this scenario would pass with the whole
+       feature removed. The first version did exactly that. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64">' +
+        '<path d="M10.5 10 H30.5 V26 H10.5 Z" fill="none" stroke="#888"/>' +
+        '<path d="M50 40 H70 V52 H50 Z" fill="none" stroke="#2563d8"/></svg>',
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+
+    const lines = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.smart')]
+          .filter((e) => e.getAttribute('display') !== 'none')
+          .map((e) => ({
+            cls: e.getAttribute('class'),
+            x1: +e.getAttribute('x1'),
+            y1: +e.getAttribute('y1'),
+            x2: +e.getAttribute('x2'),
+            y2: +e.getAttribute('y2'),
+          })),
+      );
+
+    check((await lines()).length === 0, 'alignment lines were drawn before any drag');
+
+    /* Drag the lower rectangle by its top edge to within 0.2 of the upper
+       one's left edge. Grabbed on the edge, not the middle: the shapes have no
+       fill, so a press inside one hits nothing and sweeps a marquee.
+
+       The pointer asks for a left edge at 10.7. The grid would give 11 and the
+       alignment gives 10.5, so the three answers are all different and the
+       assertion below can only be satisfied one way. */
+    const from = await toClient([60, 40]);
+    const to = await toClient([20.7, 40]);
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(from[0] + ((to[0] - from[0]) * i) / 10, from[1]);
+    }
+    await page.waitForTimeout(150);
+
+    const live = await lines();
+    check(live.length === 1, `${live.length} alignment lines, wanted 1`);
+    const l = live[0];
+    check(/edge/.test(l.cls), `the line reads as "${l.cls}", not an edge`);
+    check(l.x1 === 10.5 && l.x2 === 10.5, `the line sits at x = ${l.x1}, not 10.5`);
+    /* And it spans both boxes, top of the upper one to bottom of the lower.
+       A line covering only the shape being dragged would say nothing about
+       what it had lined up with. */
+    check(l.y1 === 10 && l.y2 === 52, `the line spans ${l.y1} to ${l.y2}, not 10 to 52`);
+
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    check((await lines()).length === 0, 'the alignment line outlived the drag');
+
+    /* The drag was held to the alignment, not merely decorated with it: the
+       pointer asked for 10.4 and the shape is at 10. */
+    await openSource(page);
+    const svg = await page.inputValue('#src');
+    const moved = /M\s*(-?[\d.]+)\s+(-?[\d.]+)\s+H/g;
+    const xs = [...svg.matchAll(moved)].map((m) => +m[1]);
+    check(xs.length === 2, `expected two rectangles in the export, found ${xs.length}`);
+    check(xs[1] === 10.5, `the dragged rectangle landed at x = ${xs[1]}, not 10.5`);
+    await closeSource(page);
+
+    // And the switch turns it off, which is the other half of a checkbox.
+    await tab(page, 'doc');
+    await page.uncheck('#smartGuides');
+    await page.waitForTimeout(120);
+    const from2 = await toClient([20.5, 40]);
+    const to2 = await toClient([40.7, 40]);
+    await page.mouse.move(from2[0], from2[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(from2[0] + ((to2[0] - from2[0]) * i) / 6, from2[1]);
+    }
+    await page.waitForTimeout(120);
+    const off = await lines();
+    await page.mouse.up();
+    check(off.length === 0, `${off.length} alignment lines with the switch off`);
+
+    return { live, xs };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go
