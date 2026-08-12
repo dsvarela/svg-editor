@@ -6,8 +6,9 @@ in it applies here: there is no `pyproject.toml`, no `.venv`, and `uv run` will
 not start anything. Use `npm`.
 
 The general rules for folders, naming, writing, interface, design and code are
-the [handbook](../handbook/README.md) skills. What follows is only what those
-cannot know about this project.
+the `handbook` skills. They live in a separate repository, checked out alongside
+this one, so there is no link to follow from here. What follows is only what
+those rules cannot know about this project.
 
 ## Commands
 
