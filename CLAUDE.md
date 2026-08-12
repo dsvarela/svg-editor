@@ -57,8 +57,15 @@ every operation reachable only by key or hover is one more thing to retrofit:
 
 The input layer is already there: the controller listens to `pointer*` events
 and never to `mouse*`, and the overlay sets `touch-action: none`. What blocks a
-phone today is the rail covering the canvas below 860 px, no pinch to zoom, and
-53 of 115 controls under 44 px.
+phone today is the rail covering the canvas below 860 px (`styles.css`, the
+`max-width: 860px` query), no pinch to zoom, and **71 of 72 controls under
+44 px**.
+
+That last number is measured by `node tools/touch.mjs`, with the dev server up.
+Re-run it rather than trusting the figure written here: the previous one was
+quoted with no method recorded, so nobody could tell whether it had drifted or
+had been counting something else. The tool counts the element that takes the
+press, which for a checkbox is its label rather than the 13 px box.
 
 ## Tests
 

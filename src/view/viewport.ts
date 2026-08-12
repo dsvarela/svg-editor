@@ -125,31 +125,41 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
  * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
  */
 /**
- * What to tick and what to label on a ruler.
+ * What to tick and what to label on a ruler, along one axis.
  *
  * A ruler is a measurement scale, not a claim about snapping, so unlike the
- * grid it is allowed to exist when there is no snap step -- the axes take the
- * same position for the same reason. When there *is* a grid it borrows that
- * grid's step and labels on its major lines, so the numbers along the edge fall
- * on lines drawn across the canvas instead of running past them at their own
- * rhythm.
+ * grid it exists when there is no snap step -- the axes take the same position
+ * for the same reason. When there *is* a grid it borrows that grid's step and
+ * labels on its major lines, so the numbers along the edge fall on lines drawn
+ * across the canvas instead of running past them at their own rhythm.
  *
- * `minPx` is larger than the grid's, because a tick has to be told apart from
- * its neighbour and a label has to fit between two of them.
+ * **One axis at a time.** `span` is the camera's extent along the strip and
+ * `lengthPx` is the strip's own length in pixels, because the two rulers do not
+ * measure the same thing: handing this the camera and letting it read `camera.w`
+ * made the vertical ruler compute its spacing from the horizontal span, which is
+ * out by the aspect ratio. It survived a screenshot because the 1-2-5 ladder
+ * quantises both to the same rung at most zooms; on a 1290 by 772 stage the two
+ * disagree first at a camera 129 units wide, where the ruler ticks every 2 and
+ * the grid draws every 1.
+ *
+ * `minPx` defaults to the grid's own, so borrowing the grid's step actually
+ * agrees with what the grid drew. Asking for a finer minimum here would have
+ * produced ruler ticks between the drawn lines, which is the disagreement this
+ * exists to avoid.
  */
 export function rulerTicksFor(
   snapStep: number,
-  camera: ViewBox,
-  widthPx: number,
-  minPx = 7,
+  span: number,
+  lengthPx: number,
+  minPx = 9,
 ): { step: number; labelEvery: number } | null {
-  if (widthPx <= 0 || !(camera.w > 0)) return null;
+  if (lengthPx <= 0 || !(span > 0)) return null;
 
-  const g = gridDisplayFor(snapStep, camera, widthPx, minPx);
+  const g = gridDisplayFor(snapStep, { x: 0, y: 0, w: span, h: span }, lengthPx, minPx);
   if (g) return { step: g.step, labelEvery: g.majorEvery };
 
   // No lattice to agree with, so straight onto the ladder from the camera.
-  const step = ladderAtLeast((minPx * camera.w) / widthPx);
+  const step = ladderAtLeast((minPx * span) / lengthPx);
   const mantissa = step / Math.pow(10, Math.floor(Math.log10(step) + 1e-12));
   return { step, labelEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5 };
 }

@@ -86,7 +86,7 @@ export class Rulers {
     const perDoc = along > 0 && span > 0 ? along / span : 0;
     const toPx = (v: number): number => (v - origin) * perDoc;
 
-    const t = perDoc > 0 ? rulerTicksFor(snapStep, camera, along) : null;
+    const t = perDoc > 0 ? rulerTicksFor(snapStep, span, along) : null;
     if (!t) {
       ticks.setAttribute('d', '');
       nums.replaceChildren();
@@ -104,8 +104,8 @@ export class Rulers {
     const labels: SVGElement[] = [];
 
     // A cap on a ruler that has gone wrong, not a limit on a legitimate one:
-    // `rulerTicksFor` keeps ticks at least 7 px apart, so a 4000 px strip can
-    // hold about 570.
+    // `rulerTicksFor` keeps ticks at least 9 px apart, so a 4000 px strip can
+    // hold about 440.
     for (let i = i0; i <= i1 && d.length < 2000; i++) {
       const v = i * t.step;
       const px = toPx(v);

@@ -548,8 +548,11 @@ export class Controller {
   attachRulers(h: SVGSVGElement, v: SVGSVGElement): void {
     const start = (axis: GuideAxis) => (e: PointerEvent): void => {
       if (e.button !== 0 || this.drag.kind !== 'none') return;
-      const s = this.store.state;
-      if (s.guidesLocked) return;
+      /* Locked guides are still handed out. Lock says "do not move what is
+         already there, so a press near a guide edits the drawing" -- it is
+         about the guides on the canvas, not about the ruler. Refusing here made
+         the strip look broken while the Vertical and Horizontal buttons next to
+         it carried on working. */
       e.preventDefault();
       try {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -560,12 +563,16 @@ export class Controller {
       const p = this.pt(e);
       const at = axis === 'x' ? p[0] : p[1];
       this.openBatch();
-      let made = false;
-      this.store.edit((st) => {
-        made = addGuide(st.guides, { axis, at });
+      /* `tryEdit`, not `edit`. A press on a ruler where a guide already sits
+         changes nothing, and `edit` checkpoints before it finds that out --
+         which left an entry that undoes to the state it was already in, and
+         threw the redo stack away on the way. */
+      const made = this.store.tryEdit((st) => {
+        const ok = addGuide(st.guides, { axis, at });
         // Showing a guide is implied by placing one. Dragging one out of a
         // ruler while they are hidden would otherwise draw nothing at all.
-        if (made) st.showGuides = true;
+        if (ok) st.showGuides = true;
+        return ok;
       });
       if (!made) {
         this.closeBatch();
@@ -1044,11 +1051,19 @@ export class Controller {
         const r = this.canvas.overlay.getBoundingClientRect();
         const out =
           e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
-        this.store.edit((st) => {
-          if (out) removeGuide(st.guides, d.i);
-          else settleGuide(st.guides, d.i);
-        });
-        if (out && !d.born) this.onMessage?.('Guide removed.', true);
+        if (out && d.born) {
+          /* Dragged out of a ruler and dropped straight back. As far as the
+             drawing is concerned this guide never existed, so the gesture is
+             abandoned rather than reversed: removing it as an edit would leave
+             an undo step that arrives where it already was. Same treatment as
+             any other gesture that decides against itself. */
+          if (this.store.batchDirty) this.store.rollback();
+        } else {
+          // `tryEdit` again, for the press on a guide that released without
+          // moving it: settling a guide that is already settled is not an edit.
+          this.store.tryEdit((st) => (out ? removeGuide(st.guides, d.i) : settleGuide(st.guides, d.i)));
+          if (out) this.onMessage?.('Guide removed.', true);
+        }
       }
 
       /* The live readout during a transform is a measurement, not an outcome.

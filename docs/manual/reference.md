@@ -317,7 +317,7 @@ there. Every change here is undoable.
 |---|---|
 | **Rulers** | Show the rulers along the top and left |
 | **Show guides** | Draw the guides, and let the tools snap to them |
-| **Lock guides** | Stop guides being dragged, so a press near one edits the drawing |
+| **Lock guides** | Stop the guides you have from being moved, so a press near one edits the drawing. New ones can still be placed |
 | **at** | The position a new guide goes at |
 | **Vertical**, **Horizontal** | Place a guide there |
 | **Clear guides** | Remove every guide |

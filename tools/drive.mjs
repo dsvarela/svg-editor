@@ -2672,6 +2672,55 @@ const scenarios = {
     }));
     check(nums.h > 2 && nums.v > 2, `ruler labels: ${JSON.stringify(nums)}`);
 
+    /* Both rulers label on lines the grid actually drew, which is the claim
+       the borrowed step exists to make. Checked at six zoom levels rather than
+       one: the 1-2-5 ladder quantises, so a ruler computing its spacing from
+       the wrong axis agrees with the grid at most zooms and parts from it at a
+       few. One reading would have passed over exactly that.
+
+       `rulers.ts` has no unit test -- it is DOM and measurement all the way
+       down -- so this is the only thing standing under it. */
+    const spacing = () =>
+      page.evaluate(() => {
+        const labels = (sel) =>
+          [...document.querySelectorAll(sel)].map((e) => +e.textContent).sort((a, b) => a - b);
+        const gaps = (v) => [...new Set(v.slice(1).map((n, i) => +(n - v[i]).toFixed(6)))];
+        const d = document.querySelector('.grid-major').getAttribute('d') ?? '';
+        const vert = [...d.matchAll(/M(-?[\d.]+) -?[\d.]+V/g)].map((m) => +m[1]).sort((a, b) => a - b);
+        const horz = [...d.matchAll(/M-?[\d.]+ (-?[\d.]+)H/g)].map((m) => +m[1]).sort((a, b) => a - b);
+        return {
+          hLabels: gaps(labels('#rulerH .num')),
+          vLabels: gaps(labels('#rulerV .num')),
+          gridX: gaps(vert),
+          gridY: gaps(horz),
+        };
+      });
+
+    const zooms = [];
+    for (let z = 0; z < 6; z++) {
+      const m = await spacing();
+      const one = (a) => (a.length === 1 ? a[0] : null);
+      const hl = one(m.hLabels);
+      const vl = one(m.vLabels);
+      const gx = one(m.gridX);
+      const gy = one(m.gridY);
+      check(
+        hl !== null && gx !== null && Math.abs(hl - gx) < 1e-6,
+        `zoom ${z}: the top ruler labels every ${hl} and the grid draws every ${gx}`,
+      );
+      check(
+        vl !== null && gy !== null && Math.abs(vl - gy) < 1e-6,
+        `zoom ${z}: the left ruler labels every ${vl} and the grid draws every ${gy}`,
+      );
+      zooms.push(hl);
+      await page.click('#zoomout');
+      await page.waitForTimeout(160);
+    }
+    for (let z = 0; z < 6; z++) {
+      await page.click('#zoomin');
+      await page.waitForTimeout(160);
+    }
+
     /* The crossing. Aim a pen click a third of a unit off both guides, from
        which the vertex tier should return the crossing exactly -- and it is
        reported as a node, because that is what a 0-D target is called. */
@@ -2751,7 +2800,7 @@ const scenarios = {
     check(!/guide/i.test(svg), 'the exported SVG mentions a guide');
     await closeSource(page);
 
-    return { boxes, nums, snapkind, placed, dropMsg, clearMsg };
+    return { boxes, nums, zooms, snapkind, placed, dropMsg, clearMsg };
   },
 };
 

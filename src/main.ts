@@ -1450,6 +1450,17 @@ function refreshStats(): void {
 }
 controller.onRender = refreshStats;
 
+/* Where the pointer is, for the rulers' own mark. Kept out of the store because
+   it changes on every mouse move and nothing else needs it -- the same reasoning
+   the coordinate readout is written straight to the strip.
+
+   Declared above the subscriber that reads it, not next to the handler that
+   writes it. It was below, and stayed safe only because `showRulers` defaults
+   to false and nothing notifies the store between the two: a `let` read from a
+   function defined earlier is in the temporal dead zone until its line runs, so
+   flipping that default would have been a blank page and a ReferenceError. */
+let rulerAt: [number, number] | null = null;
+
 store.subscribe((s) => {
   for (const b of toolSeg.querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === s.tool));
@@ -1684,11 +1695,6 @@ function refreshSource(): void {
    grid editor should never make you guess. Written straight to the strip rather
    than through the store: it changes on every mouse move and has nothing to do
    with the document. */
-/* Where the pointer is, for the rulers' own mark. Kept here rather than in the
-   store because it changes on every mouse move and nothing else needs it -- the
-   same reasoning the coordinate readout is written straight to the strip. */
-let rulerAt: [number, number] | null = null;
-
 canvas.overlay.addEventListener('pointermove', (e) => {
   const p = screenToDoc(canvas.overlay, e.clientX, e.clientY);
   if (store.state.showRulers) {

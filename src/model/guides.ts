@@ -43,8 +43,6 @@ export interface Guide {
  */
 const SAME = 1e-9;
 
-export const guideKey = (g: Guide): string => `${g.axis}:${g.at}`;
-
 /**
  * Add a guide, or report that there is already one there.
  *

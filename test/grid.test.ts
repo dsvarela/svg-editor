@@ -11,7 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { gridDisplayFor } from '../src/view/viewport';
+import { gridDisplayFor, rulerTicksFor } from '../src/view/viewport';
 import { Canvas } from '../src/view/canvas';
 import { Store } from '../src/model/store';
 import { emptyDoc } from '../src/model/doc';
@@ -195,5 +195,71 @@ describe('the rendered grid', () => {
 
     // Without the thinning this would be 200 million lines in one `d`.
     expect(drawnVerticals(h.root).length).toBeLessThan(WIDTH / MIN_PX + 2);
+  });
+});
+
+describe('rulerTicksFor', () => {
+  /* A ruler is a measurement scale, not a claim about snapping. That is what
+     lets it exist with no grid, and it is also why it borrows the grid's step
+     when there is one: numbers along the edge that fall between the lines drawn
+     across the canvas would be two scales on one screen. */
+  const cam = (w: number): ViewBox => ({ x: 0, y: 0, w, h: w });
+
+  /* A snap step of 3, deliberately. On a step of 1 the grid's answer and the
+     bare ladder's agree at every zoom, so a test written at 1 passes whether or
+     not the grid is consulted -- which is what the first version of this did.
+     Three is not on the 1-2-5 ladder, so the two disagree and the assertion has
+     something to say. */
+  it('borrows the grid, so ticks land on lines that are drawn', () => {
+    const g = gridDisplayFor(3, cam(100), 1000);
+    const t = rulerTicksFor(3, 100, 1000);
+    expect(g).not.toBeNull();
+    expect(t).toEqual({ step: g!.step, labelEvery: g!.majorEvery });
+    // And it is the grid's answer, not the ladder's, which would be 1.
+    expect(t!.step).toBe(3);
+  });
+
+  it('agrees with the grid after it thins, not just at one zoom', () => {
+    // Zoomed out far enough that the grid is drawing every 10th snap position.
+    const g = gridDisplayFor(3, cam(4000), 1000);
+    const t = rulerTicksFor(3, 4000, 1000);
+    expect(g!.multiple).toBeGreaterThan(1);
+    expect(t!.step).toBe(g!.step);
+    expect(t!.step).toBe(60);
+  });
+
+  it('measures each axis against its own span', () => {
+    /* The vertical ruler is shorter than the horizontal one and looks at less
+       of the document, and the two cancel: both strips tick at the same step,
+       because the scale is uniform. A version reading `camera.w` for both was
+       out by the aspect ratio, and the ladder hid it at most zooms -- on a 1290
+       by 772 stage the first camera width where they part is 129. */
+    const scale = 129 / 1290;
+    expect(rulerTicksFor(1, 129, 1290)!.step).toBe(rulerTicksFor(1, 772 * scale, 772)!.step);
+  });
+
+  it('still ticks when there is no grid at all', () => {
+    /* The case that separates the two functions. `gridDisplayFor` returns null
+       with no snap step, because there is no honest lattice to draw; a ruler
+       has numbers either way, the same position the axes take. */
+    expect(gridDisplayFor(0, cam(100), 1000)).toBeNull();
+    const t = rulerTicksFor(0, 100, 1000);
+    expect(t).not.toBeNull();
+    expect(t!.step).toBeGreaterThan(0);
+    expect(t!.labelEvery).toBeGreaterThan(1);
+  });
+
+  it('keeps ticks apart at the width it is given', () => {
+    // The reason for the ladder: at 100 units across 1000 px a tick every 0.1
+    // would be one pixel apart and the strip would be a grey bar.
+    for (const w of [10, 100, 4000, 1e6]) {
+      const t = rulerTicksFor(0, w, 800)!;
+      expect((t.step / w) * 800).toBeGreaterThanOrEqual(9);
+    }
+  });
+
+  it('refuses when there is nothing measured to draw on', () => {
+    expect(rulerTicksFor(1, 100, 0)).toBeNull();
+    expect(rulerTicksFor(1, 0, 1000)).toBeNull();
   });
 });
