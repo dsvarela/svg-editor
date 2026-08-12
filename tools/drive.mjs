@@ -2179,6 +2179,81 @@ const scenarios = {
     out.step2_5 = await check(2.5, 2);
     return out;
   },
+
+  /**
+   * The live measurement in the status strip.
+   *
+   * The jsdom tests cover `controller.measure()` returning the right numbers.
+   * They cannot cover whether the strip shows them. The slot carries `hidden`,
+   * and `.rd` sets `display: flex`, which beats that attribute on specificity
+   * -- so the slot stayed on screen through every test that never consulted a
+   * real stylesheet. This is the check that would have caught it.
+   *
+   * Read mid-drag, which `mk`'s `drag` cannot do because it releases at the
+   * end, so the press and the moves are spelled out here.
+   */
+  async measureReadout(page) {
+    const { toClient } = await mk(page);
+
+    /* Both the attribute and the computed style. Either alone is passable for
+       the wrong reason: `hidden` was set correctly the whole time it was
+       displaying anyway. */
+    const shown = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('#measure');
+        return {
+          hidden: el.hidden,
+          display: getComputedStyle(el).display,
+          text: el.textContent.replace(/\s+/g, ' ').trim(),
+        };
+      });
+
+    const out = { idle: await shown() };
+
+    await page.click('#tool button[data-v="rect"]');
+    const a = await toClient([20, 20]);
+    const b = await toClient([60, 40]);
+    await page.mouse.move(a[0], a[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(a[0] + ((b[0] - a[0]) * i) / 6, a[1] + ((b[1] - a[1]) * i) / 6);
+    }
+    await page.waitForTimeout(60);
+    // 40 wide and 20 tall. The diagonal is 44.7, and reading that here would
+    // mean the box and vector cases had been confused.
+    out.duringCreate = await shown();
+
+    await page.mouse.up();
+    await page.waitForTimeout(60);
+    out.afterRelease = await shown();
+
+    /* Now a move, which is the other shape of measurement. On the top edge of
+       the rectangle, not inside it: the shape has no fill, so a press in the
+       middle hits nothing and sweeps a marquee instead. The first version of
+       this scenario did exactly that and reported a 15 by 0 box, which is a
+       true reading of the wrong gesture.
+
+       And at x = 30 rather than the middle of the edge, because the shape is
+       selected and its scale handles sit at the corners and edge midpoints.
+       The midpoint press started a transform, which is silent by design, so
+       the readout was correctly empty for a gesture this was not testing. */
+    await page.click('#tool button[data-v="select"]');
+    const c = await toClient([30, 20]);
+    const d = await toClient([45, 20]);
+    await page.mouse.move(c[0], c[1]);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(c[0] + ((d[0] - c[0]) * i) / 6, c[1]);
+    }
+    await page.waitForTimeout(60);
+    // Straight right: 15 units at 0 degrees.
+    out.duringMove = await shown();
+    await page.mouse.up();
+    await page.waitForTimeout(60);
+    out.afterMove = await shown();
+
+    return out;
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

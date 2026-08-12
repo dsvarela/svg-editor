@@ -1361,6 +1361,9 @@ const backinfo = $('#backinfo');
 const outval = $('#outval');
 const cursorEl = $('#cursor');
 const snapKindEl = $('#snapkind');
+const measureEl = $('#measure');
+const measureLabel = $('#measure i');
+const measureVal = $('#measure span');
 const undoBtn = $('#undo') as HTMLButtonElement;
 const redoBtn = $('#redo') as HTMLButtonElement;
 
@@ -1613,11 +1616,42 @@ canvas.overlay.addEventListener('pointermove', (e) => {
   // them. Appended, the name of a tier coming into reach lengthened the string
   // and shoved the digits sideways mid-gesture.
   snapKindEl.textContent = label ?? '';
+  showMeasure();
 });
 canvas.overlay.addEventListener('pointerleave', () => {
   cursorEl.textContent = '';
   snapKindEl.textContent = '';
 });
+
+/* How far the live drag has come, and which way.
+   Hidden whenever nothing is being dragged, rather than showing a stale number
+   or a row of zeroes: an empty slot says "not measuring" and 0 says "measured
+   zero", and those are different claims. */
+function showMeasure(): void {
+  const m = controller.measure();
+  if (!m) {
+    measureEl.hidden = true;
+    return;
+  }
+  const dp = Math.min(3, store.state.decimals);
+  if (m.kind === 'box') {
+    measureLabel.textContent = 'size';
+    measureVal.textContent = `${m.w.toFixed(dp)} × ${m.h.toFixed(dp)}`;
+  } else {
+    // The angle keeps one decimal whatever the document's setting. It is
+    // degrees, not document units, and the two have no reason to agree.
+    measureLabel.textContent = 'drag';
+    measureVal.textContent = `${m.len.toFixed(dp)} at ${+m.deg.toFixed(1)}°`;
+  }
+  measureEl.hidden = false;
+}
+
+/* The last move of a drag arrives before the release, so without this the
+   readout would keep the final number on screen until the pointer moved
+   again. Window rather than overlay: a release outside the canvas still ends
+   the drag, and `onStrayUp` in the controller exists for the same reason. */
+window.addEventListener('pointerup', showMeasure);
+window.addEventListener('pointercancel', showMeasure);
 
 /* -------------------------------------------------------------------- boot */
 

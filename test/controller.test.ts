@@ -2416,3 +2416,121 @@ describe('the coarse nudge', () => {
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(12, 9);
   });
 });
+
+/**
+ * The live measurement in the status strip.
+ *
+ * The claim worth testing is not that a number appears. It is that the number
+ * describes what the DOCUMENT did rather than what the pointer did, because
+ * those differ the moment a snap holds something back, and a readout that
+ * tracks the pointer is confidently wrong exactly when you need it.
+ */
+describe('drag measurement', () => {
+  it('says nothing when nothing is being dragged', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    expect(h.controller.measure()).toBeNull();
+  });
+
+  it('reports the snapped translation, not where the pointer went', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.snapToGrid = true;
+      s.gridStep = 5;
+      s.snapToPoints = false;
+      s.selection = { ...emptySelection(), shapes: new Set([id]) };
+    });
+
+    h.down([10, 0], h.outlineEl(id));
+    // 13.2 right and 1.9 down rounds to 15 and 0 on a step of 5. The pointer
+    // moved 13.3 units at 8.2 degrees; the shape moved 15 at 0.
+    h.move([23.2, 1.9]);
+    const m = h.controller.measure();
+    /* `toEqual` on the whole object would also fail on a sign flip, because it
+       separates 0 from -0. That belongs to the angle test below, and a test
+       that fails for someone else's reason names the wrong culprit. */
+    expect(m?.kind).toBe('vector');
+    expect(m && m.kind === 'vector' && m.len).toBeCloseTo(15, 9);
+    expect(m && m.kind === 'vector' && m.deg).toBeCloseTo(0, 9);
+    // The shape really is where the readout says, so the number is not merely
+    // self-consistent with some other bug.
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([15, 0]);
+    h.up();
+    expect(h.controller.measure()).toBeNull();
+  });
+
+  it('measures how far a node moved, not how far the pointer did', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.snapToGrid = true;
+      s.gridStep = 5;
+      s.snapToPoints = false;
+    });
+
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    // Snaps to [5, 10], which is 11.18 away. The pointer is at 10.96 away.
+    h.move([6.4, 8.9]);
+    const m = h.controller.measure();
+    expect(m?.kind).toBe('vector');
+    expect(m && m.kind === 'vector' && m.len).toBeCloseTo(Math.hypot(5, 10), 9);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([5, 10]);
+  });
+
+  it('measures a rectangle as its sides, not its diagonal', () => {
+    const h = harness();
+    h.store.update((s) => {
+      s.tool = 'rect';
+      s.snapToGrid = false;
+    });
+
+    h.down([10, 10]);
+    h.move([50, 30]);
+    const m = h.controller.measure();
+    expect(m).toEqual({ kind: 'box', w: 40, h: 20 });
+    // The diagonal is 44.7. A vector reading would have reported that.
+    expect(m?.kind).not.toBe('vector');
+  });
+
+  it('says nothing while a create drag is too small to have made a shape', () => {
+    const h = harness();
+    h.store.update((s) => {
+      s.tool = 'rect';
+      s.snapToGrid = false;
+    });
+    h.down([10, 10]);
+    // No move, so no shape exists yet and there is no geometry to measure.
+    expect(h.controller.measure()).toBeNull();
+    expect(h.store.state.doc.shapes).toHaveLength(0);
+  });
+
+  it('turns clockwise for a positive angle, like the rotate readout', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.snapToGrid = false;
+      s.snapToPoints = false;
+      s.selection = { ...emptySelection(), shapes: new Set([id]) };
+    });
+
+    // Right and DOWN. Document y grows downwards, so this is +45 on screen.
+    h.down([10, 0], h.outlineEl(id));
+    h.move([20, 10]);
+    const down = h.controller.measure();
+    expect(down && down.kind === 'vector' && down.deg).toBeCloseTo(45, 9);
+
+    // Right and UP is the mirror, and must not share its sign.
+    h.move([20, -10]);
+    const up = h.controller.measure();
+    expect(up && up.kind === 'vector' && up.deg).toBeCloseTo(-45, 9);
+  });
+
+  it('stays silent while panning, which moves the camera and not the drawing', () => {
+    const h = harness('M0 0 L20 0 L20 20 Z');
+    h.store.update((s) => (s.tool = 'hand'));
+    h.down([10, 10]);
+    h.move([40, 40]);
+    expect(h.controller.measure()).toBeNull();
+    expect(h.store.state.camera.x).not.toBe(0);
+  });
+});

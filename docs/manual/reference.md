@@ -365,7 +365,7 @@ clipboard.
 
 Along the bottom, left to right: the shape, node and segment counts; the grid
 readout; the zoom; the status line; the name of the snap tier under the pointer;
-the `xy` readout, described under Grid above.
+the measurement, described below; the `xy` readout, described under Grid above.
 
 The counts gain `markers off, too dense` when the document has more than 2 000
 node markers inside the camera. The overlay draws none at all in that case: a
@@ -374,6 +374,28 @@ affordable. Zoom in until fewer are in view and they come back.
 
 **Zoom** is the magnification, so 100 % means one document unit per pixel. Click
 it to go back to 100 % about the centre of the view.
+
+### The measurement
+
+A slot that is empty until you drag something, and reports one of two things.
+
+| Reading | When | Means |
+|---|---|---|
+| `drag 15 at 0°` | Moving a shape, a node, a handle or the backdrop | How far it went, and which way |
+| `size 40 × 20` | Drawing a rectangle or ellipse, or sweeping a marquee | The width and height of the box |
+
+The measurement is of the drawing, not of the pointer. With snapping on, a shape
+that lands two grid steps away reads two steps even though the pointer stopped
+between them. This is the number you can act on: it is what the document now
+says.
+
+Angles run clockwise from east, so 90° points down the screen and -90° points up.
+That matches the rotation readout, which means an edge you draw at 30° and a
+shape you rotate by 30° agree with each other.
+
+Panning is silent, because it moves the camera and not the drawing. Scaling and
+rotating are silent here too, because they report themselves in the status line
+to the left.
 
 ## What is read on import and what is written on export
 

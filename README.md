@@ -156,14 +156,15 @@ steps. There is no tolerance to tune, so there is no reason to sample.
 
 **Browser tests**, with `npm run drive <scenario>`, which drives the real
 Chromium-based Edge at `/usr/bin/microsoft-edge` through `playwright-core`.
-No browser download; adjust the path at the top of `tools/drive.mjs` if yours
-differs, and pass `--headed` to watch.
+No browser download; set `BROWSER_PATH` if yours is somewhere else, and pass
+`--headed` to watch. `npm run drive -- --list` names every scenario.
 
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
 `backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`,
-`fuse`, `trace`, `traceWorker`, `sourceDeferred`, `reverse`, `pixelFit`, `snapOrder`.
+`fuse`, `trace`, `traceWorker`, `sourceDeferred`, `reverse`, `pixelFit`,
+`snapOrder`, `measureReadout`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be

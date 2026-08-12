@@ -20,6 +20,7 @@ import {
   parseNodeKey,
   selectedShapes,
   selectionBBox,
+  shapeBBox,
 } from '../model/doc';
 import type { HandlePart, NodeRef } from '../model/doc';
 import {
@@ -91,7 +92,10 @@ type DragKind =
       saved: NodeSnapshot[];
       grab: Pt;
     }
-  | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt }
+  /* `start` is where the grabbed node was at the press, kept only so the
+     readout can say how far it has come. Measuring the pointer instead would
+     lie whenever a snap held the node back. */
+  | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt; start: Pt }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
   /* Moving a selection. The total translation is tracked from the press rather
      than accumulated per move, because it is the TOTAL that gets snapped: see
@@ -103,6 +107,19 @@ type DragKind =
      history entry either. */
   | { kind: 'create'; tool: 'ellipse' | 'rect'; from: Pt; id: string | null }
   | { kind: 'bend'; shape: string; sp: number; seg: number; looseness: number };
+
+/**
+ * What the drag currently under way is worth reporting as a number.
+ *
+ * Two shapes, because drags come in two kinds and forcing both through one
+ * would make one of them useless. Moving anything is a displacement, and its
+ * length and direction are the question. Drawing a rectangle or sweeping a
+ * marquee is a box, and its width and height are the question; the diagonal's
+ * length is not what anyone drawing a 40 by 20 rectangle wants to read.
+ */
+export type Measure =
+  | { kind: 'vector'; len: number; deg: number }
+  | { kind: 'box'; w: number; h: number };
 
 /** One decimal at most, and no trailing zero to make an angle look measured. */
 const fmt = (v: number): string => (+v.toFixed(1)).toString();
@@ -379,6 +396,89 @@ export class Controller {
     return this.drag.kind !== 'none';
   }
 
+  /**
+   * What the live drag measures, or null when there is nothing to say.
+   *
+   * Read every frame by the status strip. It reports the RESULT rather than the
+   * pointer: a shape held back by a grid snap has moved a whole number of
+   * steps, and a readout tracking the pointer would show the fraction the shape
+   * did not travel. Every kind below therefore measures geometry that is
+   * already in the document, except `create` before its shape exists.
+   *
+   * Angles are `atan2(dy, dx)` in document coordinates, the same convention as
+   * `rotateMatrix`. Document y grows downwards, so a positive angle turns
+   * clockwise on screen and 90 degrees points down. Matching the rotate readout
+   * matters more than matching a maths textbook: rotating a shape by 30 and
+   * then measuring the edge you made should not disagree about the sign.
+   *
+   * Silent for `pan`, which moves the camera and not the drawing, and for
+   * `transform`, which already reports its own turn or scale through
+   * `onMessage` and would otherwise contradict itself in two places at once.
+   */
+  measure(): Measure | null {
+    const s = this.store.state;
+    const vec = (dx: number, dy: number): Measure => ({
+      kind: 'vector',
+      len: Math.hypot(dx, dy),
+      deg: (Math.atan2(dy, dx) * 180) / Math.PI,
+    });
+    const box = (b: Box): Measure => ({
+      kind: 'box',
+      w: Math.abs(b.x1 - b.x0),
+      h: Math.abs(b.y1 - b.y0),
+    });
+
+    switch (this.drag.kind) {
+      case 'body':
+        // The applied translation, which is the snapped one.
+        return vec(this.drag.applied[0], this.drag.applied[1]);
+
+      case 'anchor': {
+        const d = this.drag;
+        const n = findShape(s.doc, d.grabbed.shape)?.subpaths[d.grabbed.sp]?.nodes[d.grabbed.i];
+        return n ? vec(n.pt[0] - d.start[0], n.pt[1] - d.start[1]) : null;
+      }
+
+      /* The handle itself, not how far it was dragged. Its length and direction
+         are what shape the curve, and they are what you are watching. */
+      case 'handle': {
+        const d = this.drag;
+        const n = findShape(s.doc, d.ref.shape)?.subpaths[d.ref.sp]?.nodes[d.ref.i];
+        const h = d.which === 'in' ? n?.hIn : n?.hOut;
+        return n && h ? vec(h[0] - n.pt[0], h[1] - n.pt[1]) : null;
+      }
+
+      // Pulling handles out of a node just placed. Always the outgoing one:
+      // the incoming one is its mirror, so reporting both would say it twice.
+      case 'pen': {
+        const d = this.drag;
+        const n = findShape(s.doc, d.ref.shape)?.subpaths[d.ref.sp]?.nodes[d.ref.i];
+        return n?.hOut ? vec(n.hOut[0] - n.pt[0], n.hOut[1] - n.pt[1]) : null;
+      }
+
+      case 'backdrop': {
+        const b = s.backdrop;
+        const d = this.drag;
+        return b ? vec(b.x - d.origin[0], b.y - d.origin[1]) : null;
+      }
+
+      case 'marquee':
+        return this.extras.marquee ? box(this.extras.marquee) : null;
+
+      /* Before the drag is big enough to be worth a shape there is no geometry
+         to measure, and inventing one from the pointer would report a size the
+         document does not have. */
+      case 'create': {
+        const shape = this.drag.id ? findShape(s.doc, this.drag.id) : null;
+        const b = shape ? shapeBBox(shape) : null;
+        return b ? box(b) : null;
+      }
+
+      default:
+        return null;
+    }
+  }
+
   private selectedNodeRefs(): NodeRef[] {
     const s = this.store.state;
     const refs = [...s.selection.nodes].map(parseNodeKey);
@@ -488,6 +588,7 @@ export class Controller {
         refs: this.selectedNodeRefs(),
         grabbed: hit.ref,
         offset: [p[0] - node.pt[0], p[1] - node.pt[1]],
+        start: [node.pt[0], node.pt[1]],
       };
       return;
     }

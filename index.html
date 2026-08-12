@@ -528,6 +528,9 @@
         <span id="status" class="st ok">Ready.</span>
         <span class="grow"></span>
         <span class="rd" id="snapkind"></span>
+        <!-- Empty except during a drag, and to the left of the coordinates so
+             appearing does not shove the digits sideways mid-gesture. -->
+        <span class="rd measure" id="measure" hidden><i></i><span class="mono"></span></span>
         <span class="rd xy"><i>xy</i><span id="cursor" class="mono"></span></span>
       </footer>
     </div>
