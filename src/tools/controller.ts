@@ -1787,7 +1787,7 @@ export class Controller {
        had this hole from the beginning and Shift+F, Shift+B, Shift+J and
        Shift+M all widened it. Escape and Enter are deliberately still allowed
        -- ending a gesture is exactly what they are for. */
-    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F'];
+    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y'];
     if (this.drag.kind !== 'none' && rewrites.includes(e.key)) {
       e.preventDefault();
       this.onMessage?.('Finish the drag first.', false);
@@ -1825,6 +1825,26 @@ export class Controller {
         if (!e.shiftKey) return;
         e.preventDefault();
         this.breakAtSelection();
+        return;
+      }
+      // Shift+R, which is Inkscape's binding for the same thing.
+      case 'R': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.reverseSelection();
+        return;
+      }
+      /* Shift+C, Shift+S and Shift+Y set a node's continuity outright, which
+         double-clicking an anchor already cycles through. A cycle is fine for
+         one node and no use for forty: it depends on where each of them
+         started, so the same three double-clicks leave a mixed selection still
+         mixed. These say which one you want. */
+      case 'C':
+      case 'S':
+      case 'Y': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.setSelectedContinuity(e.key === 'C' ? 'corner' : e.key === 'S' ? 'smooth' : 'symmetric');
         return;
       }
       // Shift+J spans the gap; Shift+M welds. Inkscape uses Shift+J for the
@@ -1893,7 +1913,7 @@ export class Controller {
           return;
         }
         const s = this.store.state;
-        const step = (e.shiftKey ? 10 : 1) * (s.gridStep || 1);
+        const step = (e.shiftKey ? s.nudgeBig || 1 : 1) * (s.gridStep || 1);
         const d: Pt = [
           e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0,
           e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0,
@@ -2385,6 +2405,72 @@ export class Controller {
       angle: seg.bend.angle + dAngle,
       looseness: Math.max(0.05, seg.bend.looseness + dLoose),
     });
+  }
+
+  /**
+   * Turn the selected subpaths round.
+   *
+   * A selected shape means all of its subpaths; selected nodes mean the
+   * subpaths they sit in. Both at once is a union, so selecting a shape and one
+   * of its own nodes reverses each subpath once rather than twice.
+   *
+   * The selection is carried across rather than cleared. Reversing renumbers
+   * every node -- `i` becomes `n - 1 - i` in an open subpath, and `n - i` in a
+   * closed one, which keeps node 0 where `reverseSubpath` leaves it -- so
+   * without remapping, the nodes you had selected would stay highlighted while
+   * pointing at different nodes, and the next nudge would move the wrong ones.
+   */
+  reverseSelection(): boolean {
+    const s = this.store.state;
+    const targets = new Set<string>();
+    // `nodeKey` already assumes an id holds no slash, so this can too.
+    const key = (shape: string, sp: number): string => `${shape}/${sp}`;
+
+    for (const id of s.selection.shapes) {
+      const shape = findShape(s.doc, id);
+      shape?.subpaths.forEach((_, spI) => targets.add(key(id, spI)));
+    }
+    for (const k of s.selection.nodes) {
+      const r = parseNodeKey(k);
+      if (findShape(s.doc, r.shape)?.subpaths[r.sp]) targets.add(key(r.shape, r.sp));
+    }
+
+    if (!targets.size) {
+      this.onMessage?.('Select a shape or some nodes to reverse.', false);
+      return false;
+    }
+
+    let done = 0;
+    const ok = this.store.tryEdit((st) => {
+      for (const t of targets) {
+        const [shapeId, spText] = t.split('/');
+        const sp = findShape(st.doc, shapeId)?.subpaths[Number(spText)];
+        if (!sp || sp.nodes.length < 2) continue;
+        reverseSubpath(sp);
+        done++;
+      }
+      if (!done) return false;
+
+      // Renumber the selection to follow the nodes it was pointing at.
+      const moved = new Set<string>();
+      for (const k of st.selection.nodes) {
+        const r = parseNodeKey(k);
+        const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
+        if (!sp || !targets.has(key(r.shape, r.sp))) {
+          moved.add(k);
+          continue;
+        }
+        const n = sp.nodes.length;
+        const i = sp.closed ? (n - r.i) % n : n - 1 - r.i;
+        moved.add(nodeKey({ shape: r.shape, sp: r.sp, i }));
+      }
+      st.selection.nodes = moved;
+      return true;
+    });
+    if (!ok) return false;
+
+    this.onMessage?.(`Reversed ${done} subpath${done === 1 ? '' : 's'}.`, true);
+    return true;
   }
 
   /** Force every selected anchor into a continuity by moving its handles. */

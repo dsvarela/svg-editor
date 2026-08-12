@@ -258,6 +258,7 @@ const bindCheck = (
     | 'pixelFit'
     | 'showHandles'
     | 'filled'
+    | 'wireframe'
     | 'minify',
 ): void => {
   const input = $(id) as HTMLInputElement;
@@ -271,12 +272,21 @@ bindCheck('#snapBoundary', 'snapToBoundary');
 bindCheck('#pixelFit', 'pixelFit');
 bindCheck('#showHandles', 'showHandles');
 bindCheck('#filled', 'filled');
+bindCheck('#wireframe', 'wireframe');
 bindCheck('#minify', 'minify');
 
 const gridInput = $('#gridStep') as HTMLInputElement;
 gridInput.value = String(store.state.gridStep);
 gridInput.addEventListener('input', () =>
   store.update((s) => (s.gridStep = Math.max(0, Number(gridInput.value) || 0))),
+);
+
+const nudgeBigInput = $('#nudgeBig') as HTMLInputElement;
+nudgeBigInput.value = String(store.state.nudgeBig);
+nudgeBigInput.addEventListener('input', () =>
+  // Floored at 1: a multiplier below one would make Shift move things *less*
+  // than a bare arrow key, which is the opposite of what the key is for.
+  store.update((s) => (s.nudgeBig = Math.max(1, Number(nudgeBigInput.value) || 1))),
 );
 
 const radiusInput = $('#cornerRadius') as HTMLInputElement;
@@ -477,6 +487,7 @@ let tolChosen = false;
 const defaultTol = (vb: ViewBox): number => +(Math.hypot(vb.w, vb.h) * 0.0025).toPrecision(2);
 simplifyTol.addEventListener('input', () => (tolChosen = true));
 on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value)));
+on('#reverse', () => controller.reverseSelection());
 
 const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
@@ -713,8 +724,14 @@ srcModeSeg.addEventListener('click', (e) => {
 function applySource(): void {
   try {
     const r = importSvg(src.value);
-    if (r.shapes.length === 0) {
-      status.textContent = 'Nothing to import.';
+    /* "Nothing to import" has to mean nothing *drawable*, not zero elements.
+       `M 0 0` and `M 0 0 Q Q Q` both parse without complaint to a shape holding
+       no segment, and applying one over a selected shape emptied it, reported
+       "Updated Star.", and left a `<path d="">` on the canvas. Text that draws
+       nothing cannot have been what anybody meant to replace a drawing with. */
+    const draws = r.shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
+    if (!draws) {
+      status.textContent = 'That draws nothing, so nothing was changed.';
       status.className = 'st err';
       return;
     }
@@ -755,6 +772,24 @@ function applySource(): void {
 }
 
 on('#apply', applySource);
+
+/**
+ * Put the document's own text back in the box.
+ *
+ * A failed Apply used to leave the box holding text that parses to nothing and
+ * no way back to what the document actually says: the box only rewrites itself
+ * when the document changes, and a failed Apply changes nothing.
+ *
+ * A button rather than doing it automatically on failure. The error names an
+ * offset into the text -- "unexpected 'q' (at 42)" -- so throwing that text
+ * away is throwing away both the typing and the thing the message points at.
+ * Whether the typo is worth keeping is the typist's call, not this function's.
+ */
+on('#revertSrc', () => {
+  refreshSource();
+  status.textContent = "Put back what the document says. Nothing was applied.";
+  status.className = 'st ok';
+});
 src.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') applySource();
 });

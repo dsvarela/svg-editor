@@ -43,7 +43,7 @@ as the centre rather than a corner.
 |---|---|
 | `V` `P` `E` `R` `H` | Select, pen, ellipse, rectangle, hand |
 | Arrows | Nudge by one grid step |
-| `Shift`+arrows | Nudge by ten steps |
+| `Shift`+arrows | Nudge by the coarse step: the grid step times **Shift &times;**, which defaults to 10 |
 | `Ctrl`+`←` `→` | Bend the active segment. `Shift` for a finer step |
 | `Ctrl`+`↑` `↓` | Loosen or tighten the bend |
 | `Delete` `Backspace` | Delete selected nodes, or selected shapes |
@@ -51,6 +51,8 @@ as the centre rather than a corner.
 | `Shift`+`J` | Connect two selected free ends with a segment |
 | `Shift`+`M` | Merge two selected free ends into one node |
 | `Shift`+`F` | Fuse two adjacent nodes, or sweep a shape for zero-length segments |
+| `Shift`+`R` | Reverse the selected paths |
+| `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -142,6 +144,11 @@ the rest from it.
 - **Simplify** refits the selected paths with as few nodes as **Within** allows.
   Corners are kept. The status line reports the node count before and after, and
   the furthest anything actually moved.
+- **Reverse** (`Shift+R`) walks the selected paths the other way round. The
+  drawing does not move. Direction is what decides winding under `nonzero`, and
+  which end of a path a marker lands on. A closed path keeps its start node, so
+  only the direction changes; an open one swaps its ends, because that is what
+  reversing it means. Whatever you had selected stays selected.
 
 ### Node
 
@@ -261,14 +268,16 @@ there. Every change here is undoable.
 
 | Control | Does |
 |---|---|
-| **Step** | The snap interval, in document units |
+| **Step** | The snap interval, in document units. Also the distance one arrow key moves things |
+| **Shift &times;** | How much further an arrow key moves with `Shift` held. 10 by default |
 | **Show grid** | Draw the lattice |
 | **Snap to grid** | Round positions to a multiple of Step |
 | **Snap to points** | Weld to an existing node within 8 pixels |
 | **Snap to outlines** | Weld to a point *on* an existing curve, not only to its anchors |
 | **Pixel fit** | Shift the lattice by half the stroke width, so the stroke's edges land on whole pixels |
 | **Show handles** | Draw handles and their lines |
-| **Show fills** | Draw each shape's fill. Off draws everything as an outline |
+| **Show fills** | Draw each shape's fill. Off leaves each shape's own stroke, so a filled shape with no stroke becomes invisible |
+| **Wireframe** | Draw every shape as a plain one-pixel outline, ignoring its own fill and stroke. The switch for the case above, and for picking apart shapes stacked on top of each other |
 
 Three things can claim the pointer, and the most specific one within reach wins:
 a **node** beats an **outline** beats the **grid**. Distance does not break ties
@@ -344,7 +353,12 @@ Two modes.
   `ellipse`, `line`, `polyline`, `polygon`, and `transform` attributes, all
   converted to paths.
 
-**Apply** parses and applies. **Copy** puts the text on the clipboard.
+**Apply** parses and applies. It refuses text that cannot be parsed, and also
+text that parses to nothing drawable, such as a lone `M 0 0`: either way the
+drawing is left as it was and what you typed is left as you typed it, because
+the error names an offset into that text. **Revert** puts the document's own
+text back when you want to start again. **Copy** puts the text on the
+clipboard.
 **Download SVG** saves a whole SVG document, in either mode. **Close** closes the drawer.
 
 ## Status strip

@@ -972,3 +972,102 @@ describe('roundCorner', () => {
     }
   });
 });
+
+/**
+ * Reversing a path changes its direction and nothing else.
+ *
+ * "Nothing else" is the whole claim, and it is not what a `d` string will tell
+ * you: reversing rewrites every command, so comparing text proves nothing. The
+ * check that means something is to sample the curve itself and find the same
+ * points coming back the other way.
+ */
+describe('reverse', () => {
+  /**
+   * Points along a subpath, `per` samples per segment, **endpoints included**.
+   *
+   * Inclusive because that is what makes the comparison exact. Sampling
+   * `t = 0 .. (per-1)/per` leaves out the far end of every segment, and the
+   * reversed path then samples the far ends and misses the near ones -- so the
+   * two lists are each other's reverse shifted by one, and the first version of
+   * this helper failed on an off-by-one of its own making.
+   */
+  const walk = (sp: Subpath, per = 16): Pt[] => {
+    const out: Pt[] = [];
+    for (let seg = 0; seg < segmentCount(sp); seg++) {
+      const c = segmentAsCubic(sp, seg);
+      for (let k = 0; k <= per; k++) out.push(cubicAt(c, k / per));
+    }
+    return out;
+  };
+
+  const near = (a: Pt[], b: Pt[]): void => {
+    expect(a.length).toBe(b.length);
+    for (let i = 0; i < a.length; i++) {
+      expect(a[i][0]).toBeCloseTo(b[i][0], 9);
+      expect(a[i][1]).toBeCloseTo(b[i][1], 9);
+    }
+  };
+
+  it('draws the identical open curve, backwards', () => {
+    const sp = parsePath('M 0 0 C 4 10 16 10 20 0 L 30 6')[0];
+    const before = walk(sp);
+    reverseSubpath(sp);
+    near(walk(sp), [...before].reverse());
+  });
+
+  it('draws the identical closed curve, backwards, from the same start node', () => {
+    /* Asymmetric on purpose. A shape that is its own mirror would let a reverse
+       that lost the handles pass: every wrong answer would still land on the
+       same points. */
+    const sp = parsePath('M 0 0 C 2 8 14 12 20 4 L 24 -6 C 12 -10 4 -8 0 0 Z')[0];
+    const before = walk(sp);
+    const start = [...sp.nodes[0].pt] as Pt;
+    reverseSubpath(sp);
+
+    expect(sp.nodes[0].pt, 'a ring should keep its start node').toEqual(start);
+    /* A ring reversed and re-rooted traverses the same points backwards, and
+       where in the loop the traversal begins is not part of the claim -- so
+       this looks for a rotation rather than asserting one. Finding none is the
+       failure. */
+    const flipped = [...walk(sp)].reverse();
+    const n = before.length;
+    const rotations = [];
+    for (let r = 0; r < n; r++) {
+      let ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        const a = before[i];
+        const b = flipped[(i + r) % n];
+        ok = Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9;
+      }
+      if (ok) rotations.push(r);
+    }
+    expect(rotations.length, 'the reversed ring is not the same ring backwards').toBeGreaterThan(0);
+  });
+
+  it('is its own inverse', () => {
+    const sp = parsePath('M 0 0 C 4 10 16 10 20 0 L 30 6')[0];
+    const before = serialisePath([sp], { decimals: 9 });
+    reverseSubpath(sp);
+    expect(serialisePath([sp], { decimals: 9 })).not.toBe(before);
+    reverseSubpath(sp);
+    expect(serialisePath([sp], { decimals: 9 })).toBe(before);
+  });
+
+  it('swaps each node\'s handles rather than keeping them where they were', () => {
+    // The one-line summary of what reversing a node means, pinned directly:
+    // `hOut` governs the segment leaving a node and `hIn` the one arriving.
+    const sp = parsePath('M 0 0 C 3 7 11 13 20 0')[0];
+    const firstOut = sp.nodes[0].hOut;
+    const lastIn = sp.nodes[1].hIn;
+    reverseSubpath(sp);
+    expect(sp.nodes[0].hOut).toEqual(lastIn);
+    expect(sp.nodes[1].hIn).toEqual(firstOut);
+  });
+
+  it('leaves a one-node subpath alone', () => {
+    const sp: Subpath = { nodes: [{ pt: [3, 4], hIn: null, hOut: null }], closed: false };
+    reverseSubpath(sp);
+    expect(sp.nodes.length).toBe(1);
+    expect(sp.nodes[0].pt).toEqual([3, 4]);
+  });
+});

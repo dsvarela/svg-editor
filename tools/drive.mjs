@@ -1150,6 +1150,70 @@ const scenarios = {
   },
 
   /**
+   * Reverse, from the button and from the keyboard.
+   *
+   * The model op has been in the codebase since Join needed it and had no way
+   * in until now. What is only checkable here is the two entry points and the
+   * one property a person would check first: the drawing does not move.
+   */
+  async reverse(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`reverse: ${what}`);
+    };
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 60">
+  <path d="M10 40 C 20 10 40 10 50 30 L 70 20" fill="none" stroke="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+
+    const shot = async () => {
+      const el = await page.$('.artwork path');
+      return {
+        d: await el.getAttribute('d'),
+        box: await page.$eval('.artwork path', (p) => {
+          const b = p.getBBox();
+          return [+b.x.toFixed(4), +b.y.toFixed(4), +b.width.toFixed(4), +b.height.toFixed(4)];
+        }),
+      };
+    };
+
+    await page.click('#shapelist li:nth-child(1)');
+    await page.waitForTimeout(120);
+    const before = await shot();
+
+    await page.click('#reverse');
+    await page.waitForTimeout(150);
+    const after = await shot();
+    check(after.d !== before.d, 'the path data did not change, so nothing was reversed');
+    check(
+      JSON.stringify(after.box) === JSON.stringify(before.box),
+      `the drawing moved: ${JSON.stringify(before.box)} became ${JSON.stringify(after.box)}`,
+    );
+    const said = await page.textContent('#status');
+    check(/Reversed 1 subpath\b/.test(said), `status says "${said}"`);
+
+    // Shift+R is the same operation, so it puts the path back exactly.
+    await page.keyboard.press('Shift+R');
+    await page.waitForTimeout(150);
+    const back = await shot();
+    check(back.d === before.d, `Shift+R gave "${back.d}", want "${before.d}"`);
+
+    // And one undo undoes one reverse, not both.
+    await undo(page);
+    const undone = await shot();
+    check(undone.d === after.d, 'undo did not step back exactly one reverse');
+
+    return { before: before.d, after: after.d };
+  },
+
+  /**
    * The source box catches up on everything that happened while it was shut.
    *
    * Rewriting it is a full serialisation of the document, and it used to run on
@@ -1195,7 +1259,39 @@ const scenarios = {
     const said = await page.textContent('#srcinfo');
     check(said === `${after.length} chars`, `readout says "${said}" for ${after.length} characters`);
 
-    return { before: before.length, after: after.length, shapes };
+    /* Revert. A failed Apply changes nothing, and the box only rewrites itself
+       when the document changes, so unparseable text used to sit there with no
+       way back to what the document actually says. */
+    const shapesNow = () => page.$$eval('.artwork path', (els) => els.map((e) => e.getAttribute('d')));
+    const untouched = await shapesNow();
+
+    /* Two ways to fail, and neither may touch the drawing. `@` cannot be
+       parsed at all; `M 0 0` parses perfectly and draws nothing, which used to
+       empty the selected shape and report "Updated". */
+    for (const bad of ['M 0 0 L @', 'M 0 0']) {
+      await page.fill('#src', bad);
+      await page.click('#apply');
+      await page.waitForTimeout(150);
+      const cls = await page.getAttribute('#status', 'class');
+      check(/err/.test(cls ?? ''), `"${bad}" was accepted: status is "${cls}"`);
+      check(
+        JSON.stringify(await shapesNow()) === JSON.stringify(untouched),
+        `"${bad}" changed the drawing`,
+      );
+      check(
+        (await page.inputValue('#src')) === bad,
+        `a failed Apply threw away what was typed, and the offset in its own error with it`,
+      );
+    }
+    const failed = await page.textContent('#status');
+    await page.click('#revertSrc');
+    await page.waitForTimeout(150);
+    check(
+      (await page.inputValue('#src')) === after,
+      `Revert gave "${await page.inputValue('#src')}", want "${after}"`,
+    );
+
+    return { before: before.length, after: after.length, shapes, failed };
   },
 
   /**

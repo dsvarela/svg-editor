@@ -90,6 +90,23 @@ export interface EditorState {
   cornerRadius: number;
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
+  /**
+   * What Shift multiplies an arrow-key nudge by.
+   *
+   * The fine step is the grid step, so a nudge always lands somewhere the tools
+   * would snap to; this is the coarse tier. Settable because 10 is right for a
+   * step of 1 and much too far for a step of 5.
+   */
+  nudgeBig: number;
+  /**
+   * Draw every shape as a plain outline, ignoring its own style.
+   *
+   * Not the same switch as `filled`, which turns fills off and leaves each
+   * shape's stroke alone -- so a shape with `stroke: none` and a fill is
+   * *invisible* with fills off, which is the case this exists for. A view
+   * switch: it changes nothing in the document and nothing in the export.
+   */
+  wireframe: boolean;
   snapToGrid: boolean;
   /** Snap to an anchor already in the drawing: the 0-D tier. */
   snapToPoints: boolean;
@@ -182,6 +199,8 @@ export class Store {
       deleteMode: 'fuse',
       cornerRadius: 0,
       gridStep: 1,
+      nudgeBig: 10,
+      wireframe: false,
       snapToGrid: true,
       snapToPoints: true,
       snapToBoundary: true,

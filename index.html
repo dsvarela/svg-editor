@@ -36,6 +36,11 @@
           <rect class="sq" x="6.8" y="12.3" width="2.4" height="2.4" />
           <rect class="sq" x="1.3" y="6.8" width="2.4" height="2.4" />
         </symbol>
+        <!-- Reverse: a path with an arrowhead, pointing back the way it came. -->
+        <symbol id="i-reverse" viewBox="0 0 16 16">
+          <path d="M14 11.5C11.6 11.5 11 4.5 8 4.5S4.4 11.5 2 11.5" />
+          <path d="M4.6 9.2 2 11.6l2.8 2" />
+        </symbol>
         <symbol id="i-simplify" viewBox="0 0 16 16">
           <path d="M1.6 11.8C4 11.8 4.6 4.2 8 4.2s4 7.6 6.4 7.6" />
           <rect class="sq" x="0.6" y="10.6" width="2.4" height="2.4" />
@@ -246,12 +251,17 @@
             <button class="btn wide" id="simplify" title="Refit the selected paths with as few nodes as this tolerance allows">
               <svg class="ico"><use href="#i-simplify" /></svg>Simplify
             </button>
+            <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
+              <svg class="ico"><use href="#i-reverse" /></svg>Reverse
+            </button>
             <p class="note">
               <b>Corner</b> is the radius the rectangle tool draws with, clamped to half the shorter
               side. <b>Circularise</b> takes a hand-drawn or imported near-circle and makes it exact,
               keeping every node and rebuilding its handles from the arc each one now spans.
               <b>Simplify</b> refits a path with fewer nodes, staying <b>Within</b> that many units
-              of where it was. Sharp corners are kept; gentle wobbles are not.
+              of where it was. Sharp corners are kept; gentle wobbles are not. <b>Reverse</b> turns
+              a path round without moving it: the drawing is identical, and which way it runs
+              decides winding under <code>nonzero</code> and which end a marker lands on.
             </p>
           </div>
           <div class="group">
@@ -401,6 +411,10 @@
               <label for="gridStep">Step</label>
               <input type="number" id="gridStep" value="1" step="0.1" min="0" />
             </div>
+            <div class="row">
+              <label for="nudgeBig">Shift &times;</label>
+              <input type="number" id="nudgeBig" value="10" step="1" min="1" title="How much further an arrow key moves things with Shift held" />
+            </div>
             <div class="checks">
               <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
               <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
@@ -409,6 +423,7 @@
               <label><input type="checkbox" id="pixelFit" title="Shift the lattice so the stroke's edges land on whole pixels, not its centreline" /> Pixel fit</label>
               <label><input type="checkbox" id="showHandles" checked /> Show handles</label>
               <label><input type="checkbox" id="filled" checked /> Show fills</label>
+              <label><input type="checkbox" id="wireframe" title="Draw every shape as a plain outline, ignoring its own fill and stroke" /> Wireframe</label>
             </div>
             <button class="btn wide" id="fitPixels" type="button" hidden title="Move the selected shape's nodes onto the pixel lattice shown">Fit selection to pixels</button>
             <p class="note" id="pixelnote" hidden>
@@ -498,6 +513,7 @@
           <span class="grow"></span>
           <span id="srcinfo" class="st mono"></span>
           <button class="btn" id="apply" type="button" title="Apply (Ctrl+Enter)">Apply</button>
+          <button class="btn" id="revertSrc" type="button" title="Put the document's own text back, discarding what is typed here">Revert</button>
           <button class="btn" id="copy" type="button">Copy</button>
           <button class="btn primary" id="download" type="button">Download SVG</button>
           <button class="ib" id="closeSrc" type="button" title="Close (Ctrl+E)" aria-label="Close source">&times;</button>

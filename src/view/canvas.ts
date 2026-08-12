@@ -253,6 +253,11 @@ export class Canvas {
         'stroke-width': shape.style.strokeWidth,
         'stroke-linejoin': 'round',
         'stroke-linecap': 'round',
+        /* Wireframe is done with a class rather than by rewriting the fill and
+           stroke here, because CSS beats presentation attributes: the shape's
+           own values stay on the element, exactly as the export will write
+           them, and are simply overridden while the switch is on. */
+        class: state.wireframe ? 'wire' : '',
       });
     }
 

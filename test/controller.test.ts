@@ -2241,3 +2241,178 @@ describe('a trace landing after the fact', () => {
     h.up();
   });
 });
+
+/**
+ * Reverse, and the selection following the nodes it was pointing at.
+ *
+ * The geometry half is `test/ops.test.ts`. What is only here is that the
+ * selection survives the renumbering: reversing moves every node to a new
+ * index, so a selection left alone would stay lit while pointing at different
+ * nodes, and the next nudge would move the wrong ones.
+ */
+describe('reverse', () => {
+  it('carries a node selection across an open subpath', () => {
+    const h = harness('M 0 0 L 10 0 L 20 0 L 30 0');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+
+    expect(h.controller.reverseSelection()).toBe(true);
+    // Four nodes, so 1 becomes 3 - 1 = 2, and that node is the one that was at
+    // [10, 0]. Both halves are asserted: an index alone could be right about a
+    // different node.
+    expect([...h.store.state.selection.nodes]).toEqual([`${id}/0/2`]);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[2].pt).toEqual([10, 0]);
+  });
+
+  it('carries a node selection across a closed subpath, which keeps node 0', () => {
+    const h = harness('M 0 0 L 10 0 L 20 6 L 4 9 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(`${id}/0/1`);
+    });
+
+    expect(h.controller.reverseSelection()).toBe(true);
+    const nodes = h.store.state.doc.shapes[0].subpaths[0].nodes;
+    expect(nodes[0].pt, 'a ring keeps its start node').toEqual([0, 0]);
+    // 0 stays 0 and 1 becomes 4 - 1 = 3.
+    expect([...h.store.state.selection.nodes].sort()).toEqual([`${id}/0/0`, `${id}/0/3`]);
+    expect(nodes[3].pt).toEqual([10, 0]);
+  });
+
+  it('reverses every subpath of a selected shape exactly once', () => {
+    /* Selecting the shape and one of its own nodes names the same subpath
+       twice. Reversing it twice would be a no-op that reported success, which
+       is the kind of bug that hides behind a green result. */
+    const h = harness('M 0 0 L 10 0 L 20 6');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.shapes.add(id);
+      s.selection.nodes.add(`${id}/0/0`);
+    });
+
+    expect(h.controller.reverseSelection()).toBe(true);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([20, 6]);
+  });
+
+  it('refuses, and says so, with nothing selected', () => {
+    const h = harness('M 0 0 L 10 0');
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    expect(h.controller.reverseSelection()).toBe(false);
+    expect(said.join(' ')).toMatch(/select/i);
+  });
+
+  it('is one undo step', () => {
+    const h = harness('M 0 0 L 10 0 L 20 6');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.shapes.add(id));
+    h.controller.reverseSelection();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([20, 6]);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt).toEqual([0, 0]);
+  });
+});
+
+/**
+ * Setting a node's continuity from the keyboard.
+ *
+ * Double-clicking an anchor already cycles corner to smooth to symmetric, which
+ * is fine for one node and no use for forty: where a cycle lands depends on
+ * where each node started, so the same three double-clicks leave a mixed
+ * selection still mixed. These say which one you want.
+ */
+describe('continuity shortcuts', () => {
+  const scene = (): Harness => {
+    /* A corner whose two handles are also different lengths: [12,8] in and
+       [26,4] out, so the tangents are [-4,8] and [10,4]. Both properties are
+       needed. The first draft started symmetric, where Shift+S had nothing to
+       do and passed by doing it; the second was a corner with equal-length
+       handles, where making them collinear lands on symmetric and Shift+S
+       looked broken. `smooth` is only distinguishable from `symmetric` when the
+       lengths differ, because that is the only thing that tells them apart. */
+    const h = harness('M 0 0 C 4 8 12 8 16 0 C 26 4 28 8 32 0');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('corner');
+    return h;
+  };
+
+  it('Shift+S makes the selected node smooth', () => {
+    const h = scene();
+    h.key('S', { shiftKey: true });
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('smooth');
+  });
+
+  it('Shift+Y makes it symmetric, and Shift+C makes it a corner', () => {
+    const h = scene();
+    h.key('Y', { shiftKey: true });
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('symmetric');
+    h.key('C', { shiftKey: true });
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('corner');
+  });
+
+  it('does nothing without Shift, so typing c, s or y in a field is safe', () => {
+    // The tool shortcuts are lowercase and these are capitals for the same
+    // reason: a bare letter has to stay available.
+    const h = scene();
+    const before = continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1]);
+    h.key('c');
+    h.key('s');
+    h.key('y');
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe(before);
+  });
+
+  it('is refused mid-drag, like every other rewrite', () => {
+    /* §16's rule: an operation that rewrites the document while a drag holds
+       node indices into the array it is about to change folds into the drag's
+       batch, and Escape then rolls back both. */
+    const h = scene();
+    const id = h.store.state.doc.shapes[0].id;
+    const before = continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1]);
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    h.move([3, 3]);
+    h.key('S', { shiftKey: true });
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe(before);
+    h.up();
+  });
+});
+
+describe('the coarse nudge', () => {
+  const scene = (): Harness => {
+    const h = harness('M 10 10 L 20 10');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.gridStep = 2;
+    });
+    return h;
+  };
+
+  it('multiplies the grid step by the settable factor', () => {
+    const h = scene();
+    h.store.update((s) => (s.nudgeBig = 4));
+    h.key('ArrowRight', { shiftKey: true });
+    // 2 units of grid step, four times over.
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(18, 9);
+  });
+
+  it('still moves one grid step without Shift', () => {
+    // The control: without this, a factor applied to both tiers would pass the
+    // test above and be wrong.
+    const h = scene();
+    h.store.update((s) => (s.nudgeBig = 4));
+    h.key('ArrowRight');
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(12, 9);
+  });
+
+  it('treats a factor of zero as one rather than pinning the node', () => {
+    /* The input floors at 1, but the store is reachable from the source drawer
+       and from tests, and a Shift-arrow that moved nothing would read as a
+       broken key rather than as a setting. */
+    const h = scene();
+    h.store.update((s) => (s.nudgeBig = 0));
+    h.key('ArrowRight', { shiftKey: true });
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(12, 9);
+  });
+});

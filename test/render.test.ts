@@ -420,3 +420,34 @@ describe('the overlay under load', () => {
     expect(visible(h.canvas.overlay, '.anchor').length).toBe(2);
   });
 });
+
+describe('wireframe', () => {
+  it('marks every shape, and leaves its real fill and stroke on the element', () => {
+    /* The class is what CSS overrides; the attributes stay exactly as the
+       export will write them. Asserting both is the point: a wireframe
+       implemented by rewriting the attributes would look the same on screen and
+       would be a view switch quietly editing the drawing, which §18 separates.
+    */
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => {
+      s.doc.shapes[0].style.fill = '#ff0000';
+      s.doc.shapes[0].style.stroke = 'none';
+      s.wireframe = true;
+    });
+    h.controller.render();
+
+    const path = h.canvas.artwork.querySelector('path')!;
+    expect(path.getAttribute('class')).toBe('wire');
+    expect(path.getAttribute('fill')).toBe('#ff0000');
+    expect(path.getAttribute('stroke')).toBe('none');
+  });
+
+  it('takes the mark off again', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => (s.wireframe = true));
+    h.controller.render();
+    h.store.update((s) => (s.wireframe = false));
+    h.controller.render();
+    expect(h.canvas.artwork.querySelector('path')!.getAttribute('class')).toBe('');
+  });
+});

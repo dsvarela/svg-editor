@@ -743,3 +743,16 @@ kbd {
   *::before,
   *::after { transition: none !important; animation: none !important; }
 }
+
+/* --- wireframe -------------------------------------------------------- */
+
+/* Outlines only, at one screen pixel whatever the zoom, ignoring the shape's
+   own fill and stroke. `!important` is not needed: a class selector already
+   beats the presentation attributes the renderer writes, which is the point --
+   the real values stay on the element for the export to use. */
+.artwork path.wire {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}

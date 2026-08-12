@@ -1192,3 +1192,4 @@ export function nearestNode(doc: Doc, p: Pt, maxDist: number): NodeHit | null {
   }
   return best;
 }
+
