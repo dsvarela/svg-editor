@@ -13,6 +13,7 @@ import { cloneShape, continuityOf } from './core/types';
 import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
+import { keylinesFor } from './model/keylines';
 import { snapLabel } from './model/snapping';
 import { DEFAULT_TRACE, rasterFrom } from './model/trace';
 import type { Placement, TraceOptions, TraceResult } from './model/trace';
@@ -252,6 +253,7 @@ const bindCheck = (
   id: string,
   key:
     | 'showGrid'
+    | 'showKeylines'
     | 'snapToGrid'
     | 'snapToPoints'
     | 'snapToBoundary'
@@ -266,6 +268,7 @@ const bindCheck = (
   input.addEventListener('change', () => store.update((s) => ((s[key] as boolean) = input.checked)));
 };
 bindCheck('#showGrid', 'showGrid');
+bindCheck('#showKeylines', 'showKeylines');
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
 bindCheck('#snapBoundary', 'snapToBoundary');
@@ -1469,6 +1472,18 @@ store.subscribe((s) => {
         : s.showGrid
           ? 'drawn only'
           : 'off, step kept';
+  /* The keyline sizes, because someone drawing to them wants the numbers and
+     the numbers depend on the page. `on a 24 grid` rather than the ratios: the
+     published grid is what people know, and this says which one they have. */
+  const kl = keylinesFor(s.doc.viewBox);
+  const round2 = (v: number): string => String(Math.round(v * 100) / 100);
+  $('#keylineinfo').textContent = !s.showKeylines
+    ? 'off'
+    : !kl
+      ? 'no canvas'
+      : `on a ${round2(kl.grid)} grid · circle ${round2(kl.sizes.circle)} · ` +
+        `square ${round2(kl.sizes.square)} · rect ${round2(kl.sizes.short)}×${round2(kl.sizes.long)}`;
+
   /* Pixel fit shifts the lattice, so the readout has to say which one is in
      force -- a grid that says "1" while sitting on half-integers is the same
      lie §9 was written to stop. `mixed widths` is a real answer: two shapes half

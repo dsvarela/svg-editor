@@ -21,6 +21,7 @@
   --accent: #1f5ed0;
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
+  --keyline: #b0339b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -44,6 +45,7 @@
     --accent: #5f97ff;
     --accent-ink: #08111f;
     --measure: #dfa34e;
+    --keyline: #e07ac9;
     --warn: #e4685e;
     --grid: #1c2331;
     --grid-major: #2a3345;
@@ -68,6 +70,7 @@
   --accent: #1f5ed0;
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
+  --keyline: #b0339b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
@@ -90,6 +93,7 @@
   --accent: #5f97ff;
   --accent-ink: #08111f;
   --measure: #dfa34e;
+  --keyline: #e07ac9;
   --warn: #e4685e;
   --grid: #1c2331;
   --grid-major: #2a3345;
@@ -386,6 +390,28 @@ input[type='number']:disabled { opacity: 0.4; }
   fill: none;
   stroke: var(--axis);
   stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The keyline grid. Its own hue, because it is neither the drawing nor the
+   lattice and reading it as either would be a mistake worth avoiding. */
+.keyline,
+.keyline-live { pointer-events: none; }
+.keyline {
+  fill: none;
+  stroke: var(--keyline);
+  stroke-width: 1px;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+/* The live area is a limit rather than a proportion, so it is dashed: the four
+   keylines are shapes to draw like, this is a line to stay inside. */
+.keyline-live {
+  fill: none;
+  stroke: var(--keyline);
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
   vector-effect: non-scaling-stroke;
 }
 

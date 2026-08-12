@@ -58,6 +58,7 @@ import { simplifySubpath } from '../model/simplify';
 import { invisibleAt, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
+import { keylineGuides } from '../model/keylines';
 import type { SnapResult } from '../model/snapping';
 import { traceImage } from '../model/trace';
 import type { Placement, TraceOptions, TraceResult } from '../model/trace';
@@ -327,6 +328,9 @@ export class Controller {
       reach: Controller.REACH_PX * this.canvas.scale(s.camera),
       exclude,
       excludeShape,
+      // Only when they are on screen. A target you cannot see pulling the
+      // pointer off the grid would read as the editor misbehaving.
+      guides: s.showKeylines ? keylineGuides(s.doc.viewBox) : undefined,
     });
   }
 

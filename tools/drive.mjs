@@ -2444,6 +2444,138 @@ const scenarios = {
 
     return { nodesIn, added, after, redrawDisabled, status, unchanged: d === before };
   },
+
+  /**
+   * The keyline grid: drawn, measured, snapped to, and never exported.
+   *
+   * The arithmetic is unit-tested. What only a browser can show is that the
+   * lines reach the DOM at the coordinates the model computed, that the
+   * checkbox actually removes them, and that a pointer near a keyline lands on
+   * it -- which goes through the camera, the hit tolerance in screen pixels and
+   * the snapper, none of which jsdom exercises together.
+   */
+  async keylines(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`keylines: ${what}`);
+    };
+    const { toClient, click } = await mk(page);
+
+    /* A square page of 240, so the grid is the page and every keyline lands on
+       a whole number: live 200, square 180, circle 200, rectangles 160 by 200.
+       The starter document is 88 by 64, where the grid inscribes on 64 and the
+       readout fills with two-decimal numbers nobody can check by eye.
+
+       Applied through the source drawer with a frame drawn on the page edge,
+       rather than by typing into the Canvas fields, because the camera does not
+       follow the page -- resizing the canvas is deliberately not a request to
+       move the view -- and `Fit` fits the drawing. With nothing drawn out
+       there, the whole grid stays off screen and every pointer coordinate below
+       lands somewhere the overlay never sees. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">' +
+        '<path d="M0 0 H240 V240 H0 Z" fill="none" stroke="#888"/></svg>',
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await page.click('#fit');
+    await page.waitForTimeout(220);
+    await tab(page, 'doc');
+
+    const drawn = () =>
+      page.evaluate(() => {
+        const one = (sel) => {
+          const el = document.querySelector(sel);
+          const d = el.getAttribute('d') ?? '';
+          if (!d) return { d: '', box: null };
+          const b = el.getBBox();
+          return { d, box: { x: b.x, y: b.y, w: b.width, h: b.height } };
+        };
+        return { live: one('.keyline-live'), shapes: one('.keyline') };
+      });
+
+    const off = await drawn();
+    check(!off.live.d && !off.shapes.d, 'keylines were drawn before the checkbox was ticked');
+
+    await page.check('#showKeylines');
+    await page.waitForTimeout(200);
+    const on = await drawn();
+    check(!!on.live.d && !!on.shapes.d, 'ticking the box drew nothing');
+
+    /* The published numbers, measured off the DOM rather than recomputed. On a
+       240 grid: live 200, circle 200, square 180, rectangles 160 by 200 -- so
+       the four keylines together span the circle's 200 and sit centred. */
+    const near = (a, b, what) => check(Math.abs(a - b) < 0.02, `${what}: ${a}, wanted ${b}`);
+    near(on.live.box.w, 200, 'live width');
+    near(on.live.box.h, 200, 'live height');
+    near(on.live.box.x, 20, 'live left');
+    near(on.shapes.box.w, 200, 'keyline span');
+    near(on.shapes.box.x, 20, 'keyline left');
+
+    const info = (await page.textContent('#keylineinfo')).trim();
+    check(
+      /240 grid/.test(info) && /circle 200/.test(info) && /square 180/.test(info),
+      `the readout says "${info}"`,
+    );
+
+    /* Snapping. The square keyline's left edge is at x = 30, and the pointer
+       goes to 30.6, 120.9 -- which is nearer a gridline than the edge, so a
+       landing on 30 is the tier rule and not a coincidence. Drawn with the pen
+       so the placed node is the snapped point.
+
+       The status line is what reports it, and `on an outline` is the same
+       label a real path gets: keylines are not a fourth tier. */
+    await page.click('#tool button[data-v="pen"]');
+    const c = await toClient([30.6, 120.9]);
+    await page.mouse.move(c[0], c[1]);
+    await page.waitForTimeout(120);
+    const snapkind = (await page.textContent('#snapkind')).trim();
+    check(/outline/.test(snapkind), `hovering a keyline reported "${snapkind}"`);
+
+    await click([30.6, 120.9]);
+    await page.waitForTimeout(150);
+    /* A second node, well clear of every keyline. One node is not a path the
+       editor will keep, so with a single click Escape leaves nothing behind and
+       the check below reads the frame instead and fails on the wrong thing. */
+    await click([100, 235]);
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+
+    const placed = await page.evaluate(() => {
+      const path = document.querySelectorAll('.artwork path');
+      const m = /M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(path[path.length - 1].getAttribute('d'));
+      return m ? [+m[1], +m[2]] : null;
+    });
+    check(placed !== null, 'the pen placed nothing');
+    near(placed[0], 30, 'the placed node landed off the keyline');
+
+    /* And the guarantee that makes this safe: keylines come from the viewBox
+       and are never in the model, so the export cannot carry one. Checking the
+       source text is the honest version -- the renderer could be doing anything
+       and the file is what leaves the editor. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.waitForTimeout(150);
+    const svg = await page.inputValue('#src');
+    check(!/keyline/i.test(svg), 'the exported SVG mentions a keyline');
+    // Two paths: the frame and the pen's line. A keyline that had leaked into
+    // the model would be a third, and counting is what catches it.
+    const paths = (svg.match(/<path/g) ?? []).length;
+    check(paths === 2, `the export carries ${paths} paths, not the 2 that were drawn`);
+    await closeSource(page);
+
+    // Unticking takes them away again, which is the other half of a checkbox.
+    await page.uncheck('#showKeylines');
+    await page.waitForTimeout(200);
+    const gone = await drawn();
+    check(!gone.live.d && !gone.shapes.d, 'unticking left the keylines drawn');
+
+    return { info, live: on.live.box, shapes: on.shapes.box, snapkind, placed, paths };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

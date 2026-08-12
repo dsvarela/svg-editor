@@ -21,6 +21,8 @@ import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
+import { keylinesFor } from '../model/keylines';
+import { serialisePath } from '../core/serialise';
 import { CORNER_PARTS, TRANSFORM_PARTS, handlePoint } from '../model/transform';
 import type { TransformPart } from '../model/transform';
 import { cubicAt } from '../core/bezier';
@@ -98,6 +100,9 @@ export class Canvas {
   private docShade: SVGPathElement;
   /** The document's own edge: what the exported viewBox will be. */
   private docEdge: SVGRectElement;
+  /** The icon keyline grid. Derived from the viewBox; never in the export. */
+  private keylineLive: SVGPathElement;
+  private keylineShapes: SVGPathElement;
 
   /** Path data, rebuilt only for shapes whose geometry changed. */
   private paths = new PathCache();
@@ -148,6 +153,8 @@ export class Canvas {
     this.axes = svg('path', { class: 'grid-axis' });
     this.docShade = svg('path', { class: 'doc-shade' });
     this.docEdge = svg('rect', { class: 'doc-edge' });
+    this.keylineLive = svg('path', { class: 'keyline-live' });
+    this.keylineShapes = svg('path', { class: 'keyline' });
     const outlineLayer = svg('g', { class: 'outlines' });
     const handleLayer = svg('g', { class: 'handles' });
     const anchorLayer = svg('g', { class: 'anchors' });
@@ -161,6 +168,10 @@ export class Canvas {
       // lattice and on any artwork that has strayed off the page.
       this.docShade,
       this.docEdge,
+      // Over the page edge and under the artwork's outlines: a keyline is
+      // something to draw against, so it must never sit on top of the drawing.
+      this.keylineLive,
+      this.keylineShapes,
       outlineLayer,
       handleLayer,
       anchorLayer,
@@ -297,6 +308,7 @@ export class Canvas {
     const k = this.scale(state.camera);
     this.renderGrid(state, k);
     this.renderDocEdge(state);
+    this.renderKeylines(state);
     this.renderNodes(state, k);
     this.renderChrome(extras, k);
   }
@@ -326,6 +338,26 @@ export class Canvas {
     const outer = `M${cam.x - m} ${cam.y - m}H${cam.x + cam.w + m}V${cam.y + cam.h + m}H${cam.x - m}Z`;
     const hole = `M${vb.x} ${vb.y}H${vb.x + vb.w}V${vb.y + vb.h}H${vb.x}Z`;
     this.docShade.setAttribute('d', `${outer}${hole}`);
+  }
+
+  /**
+   * Draw the keyline grid, when it is on.
+   *
+   * Two elements rather than one, because the live area is a different claim
+   * from the keylines: it says where the drawing has to stay, and they say what
+   * proportions to draw it in. Drawn in document units with a non-scaling
+   * stroke, like everything else in the overlay, so the lines stay hairline at
+   * any zoom.
+   */
+  private renderKeylines(state: EditorState): void {
+    const k = state.showKeylines ? keylinesFor(state.doc.viewBox) : null;
+    if (!k) {
+      this.keylineLive.setAttribute('d', '');
+      this.keylineShapes.setAttribute('d', '');
+      return;
+    }
+    this.keylineLive.setAttribute('d', serialisePath([k.live]));
+    this.keylineShapes.setAttribute('d', serialisePath(k.shapes));
   }
 
   private renderGrid(state: EditorState, k: number): void {

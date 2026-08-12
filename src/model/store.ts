@@ -124,6 +124,15 @@ export interface EditorState {
    */
   pixelFit: boolean;
   showGrid: boolean;
+  /**
+   * Draw the icon keyline grid, and let the tools snap to it.
+   *
+   * A view-and-input preference like `showGrid`, and for the same reason not
+   * part of `Doc`: the keylines are derived from the viewBox every frame (see
+   * `model/keylines.ts`), so there is no geometry to keep in step and nothing
+   * that could reach a saved file.
+   */
+  showKeylines: boolean;
   showHandles: boolean;
   /**
    * The style a newly drawn shape gets.
@@ -206,6 +215,7 @@ export class Store {
       snapToBoundary: true,
       pixelFit: false,
       showGrid: true,
+      showKeylines: false,
       showHandles: true,
       style: defaultStyle(),
       filled: true,

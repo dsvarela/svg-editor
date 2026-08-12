@@ -425,6 +425,24 @@
             </p>
           </div>
           <div class="group">
+            <div class="glabel"><span>Keylines</span><span class="gval" id="keylineinfo"></span></div>
+            <div class="checks">
+              <label><input type="checkbox" id="showKeylines" title="Draw the icon keyline grid, and let the tools snap to it" /> Show keylines</label>
+            </div>
+            <p class="note">
+              The icon grid: a circle, a square and two rectangles sharing a centre, in Material's
+              proportions. A square reads heavier than a circle of the same width, so the circle is
+              drawn larger, and drawing every icon to these keeps a set at one optical weight. The
+              dashed square is the live area, which the drawing is meant to stay inside.
+            </p>
+            <p class="note">
+              They come from the canvas, so they are never in the export and there is nothing to
+              move. The grid is square even when the page is not, since a stretched circle would be
+              no use as a circle. While they are shown the tools snap to them, the same as to any
+              other outline.
+            </p>
+          </div>
+          <div class="group">
             <div class="glabel"><span>Grid</span><span class="gval" id="gridreadout"></span></div>
             <div class="row">
               <label for="gridStep">Step</label>

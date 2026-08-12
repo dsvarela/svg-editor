@@ -1068,11 +1068,18 @@ and some numbers, because a priority order is exactly the kind of thing worth
 testing and the controller is exactly the kind of thing that is not. The
 controller supplies what only it knows: the camera, and what is being dragged.
 
+**Keylines are not a fourth tier either.** They are outlines that happen not to
+be in the document, so a keyline corner is a vertex and a keyline edge is a
+boundary, and the rule above already decides them. Inside a tier the nearer one
+wins, which is what happens between two real shapes, so a keyline never beats a
+node you can see: the drawing is the work and the grid is scenery. They are
+handed in as `guides` and only while they are on screen, since a target nobody
+can see pulling the pointer reads as the editor misbehaving.
+
 The readout shows the snap target's own coordinates when a vertex or a boundary
 claims the pointer, and the raw position otherwise. Not for the grid: with a step
 of 1 the readout would lock to integers and stop being a pointer position at all,
 for a lattice that is already drawn on screen.
-
 
 ## 28. The tracer moved off the thread; the freeze mostly did not
 
@@ -1213,6 +1220,40 @@ resizes the canvas, which refits the camera, which notifies, which refreshes the
 box, so removing the explicit call changes nothing observable. It is kept
 because that chain is four unrelated components long and none of them is about
 the source box.
+
+## 30. The keyline grid is derived, not stored
+
+Icons in a set have to share their measurements or they will not sit at the same
+optical weight, and the standard set is Material's: a square reads heavier than a
+circle of the same width, so the circle is drawn larger. `model/keylines.ts`
+holds the ratios and nothing else.
+
+**They are computed from the viewBox on every frame, and are not in `Doc`.** The
+backdrop settled the same question the other way and for a reason that does not
+apply here: an image has a position someone chose, so it has to be stored and
+therefore has to be undoable. A keyline has no position anybody chose. It is a
+function of the page. Storing it would create two things that can disagree, and
+the disagreement would be silent, because a keyline is a reference and nobody
+measures a reference to check it.
+
+Deriving it also settles the export for free. There is no keyline in the model,
+so there is no path from a keyline to a file: not a rule anyone has to remember,
+just an absence.
+
+Three decisions worth recording:
+
+- **Ratios, not the published numbers.** Every one of Material's 24dp
+  measurements is exact in thirds and sixths (20/24 is 5/6, 18/24 is 3/4, 16/24
+  is 2/3), so a 24-unit canvas reproduces the grid to the unit and a 240-unit
+  one scales it by ten. Hard-coding 18 and 20 would have worked on exactly one
+  document size.
+- **The grid is square even when the page is not.** It inscribes on the shorter
+  side and centres on the page. Stretching the set to fit an 88 by 64 page would
+  put the circle out of round, and a circle that is not round is not the thing
+  the grid exists to give you.
+- **The live area is drawn differently from the four keylines**, dashed rather
+  than solid, because it is a different kind of claim. The keylines say what
+  proportions to draw in; the live area says where to stay.
 
 ## Known limitations
 

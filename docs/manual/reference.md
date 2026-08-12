@@ -311,6 +311,30 @@ The canvas never changes on its own. Drawing outside it is allowed and leaves it
 alone, and the panel header says `drawing goes outside` when something is out
 there. Every change here is undoable.
 
+### Keylines
+
+| Control | Does |
+|---|---|
+| **Show keylines** | Draw the icon grid, and let the tools snap to it |
+
+The icon grid is a circle, a square and two rectangles sharing a centre, in
+Material's proportions, with the live area dashed around them. A square reads
+heavier than a circle of the same width, so the circle is drawn larger; drawing
+every icon in a set to these keeps the set at one optical weight.
+
+They come from the canvas, so there is nothing to place and nothing to move. On
+a 24-unit page you get the published 24dp grid to the unit: live area 20, square
+18, circle 20, rectangles 16 by 20. On a page that is not square the grid is
+inscribed on the shorter side and centred, since a stretched circle would be no
+use as a circle.
+
+Keylines are never part of the export. They are worked out from the canvas each
+time it is drawn, so there is nothing in the file to leave behind.
+
+The panel header gives the sizes for your page. While the keylines are shown the
+tools snap to them, in the same tiers as anything else: a corner is a node, an
+edge is an outline, and the drawing wins where both are in reach.
+
 ### Grid
 
 | Control | Does |
