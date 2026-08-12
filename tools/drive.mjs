@@ -2997,6 +2997,78 @@ const scenarios = {
 
     return { fan, kind, placed, info };
   },
+
+  /**
+   * Snap where two outlines cross.
+   *
+   * The solver is unit-tested against curves. What a browser adds is that the
+   * crossing is found through the whole stack -- camera, reach in screen
+   * pixels, the tier order -- and that it beats the outline it sits on, which
+   * is the case the feature exists for.
+   */
+  async crossings(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`crossings: ${what}`);
+    };
+    const { toClient, click } = await mk(page);
+
+    /* Two straight runs crossing at (44.5, 32.5), deliberately off the grid:
+       on a whole number the lattice would land on the crossing by itself and
+       this scenario would pass with the feature removed. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64">' +
+        '<path d="M24.5 12.5 L64.5 52.5" fill="none" stroke="#888"/>' +
+        '<path d="M24.5 52.5 L64.5 12.5" fill="none" stroke="#888"/></svg>',
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await tab(page, 'doc');
+
+    // Off by default: it is the one target that is computed rather than looked
+    // up, so it is not something you pay for without asking.
+    /* Aimed 0.28 along the first diagonal from the crossing, so the pointer is
+       exactly ON that outline and 0.28 from the crossing. Distance alone would
+       give the outline every time; only the tier order gives the crossing. */
+    const near = await toClient([44.7, 32.7]);
+    await page.mouse.move(near[0], near[1]);
+    await page.waitForTimeout(150);
+    const before = (await page.textContent('#snapkind')).trim();
+    check(before !== 'where outlines cross', `crossings claimed the pointer while off: "${before}"`);
+
+    await page.check('#snapCross');
+    await page.waitForTimeout(150);
+    await page.mouse.move(near[0] + 1, near[1]);
+    await page.mouse.move(near[0], near[1]);
+    await page.waitForTimeout(150);
+    const after = (await page.textContent('#snapkind')).trim();
+    check(after === 'where outlines cross', `hovering the crossing reported "${after}"`);
+
+    // And the pointer lands on it.
+    await page.click('#tool button[data-v="pen"]');
+    await click([44.7, 32.7]);
+    await page.waitForTimeout(150);
+    await click([80, 60]);
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    const placed = await page.evaluate(() => {
+      const all = document.querySelectorAll('.artwork path');
+      const m = /M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(all[all.length - 1].getAttribute('d'));
+      return m ? [+m[1], +m[2]] : null;
+    });
+    check(placed !== null, 'the pen placed nothing');
+    check(
+      Math.abs(placed[0] - 44.5) < 0.01 && Math.abs(placed[1] - 32.5) < 0.01,
+      `the node landed at ${placed}, not on the crossing at 44.5, 32.5`,
+    );
+
+    return { before, after, placed };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

@@ -1403,6 +1403,53 @@ pointer sits on a 45-degree ray is a true statement about the tier and a false
 one about the drawing, and a status line naming a thing that is not there is
 worse than one that says nothing. Each of the six has its own words.
 
+## 34. Intersection snap, and why it is subdivision
+
+Two outlines crossing make a point, so it answers the vertex tier beside anchors
+and guide crossings. Getting the point is the whole problem.
+
+**By recursive subdivision on the control hulls, not algebraically.** A cubic
+against a cubic is a degree-9 system, and the closed forms for it are unstable
+near tangency -- which is exactly the case that matters, because two curves that
+nearly touch are two curves someone is trying to snap to. Subdivision has no
+such cliff: a Bezier lies inside the box of its control points, so two boxes
+that do not overlap contain no crossing, and halving until the boxes are under
+the tolerance converges at the same rate whatever the angle between the curves.
+
+The cost is that a tangency reports a cluster rather than a point, which is why
+the results are merged at the end.
+
+**Bounded by a work budget, not by depth.** Depth is the obvious choice and it
+is wrong: each level halves *one* of the two curves, so a depth of 24 gives each
+of them only twelve halvings, which on a ten-unit curve stops at 0.0024 -- twenty
+times coarser than the tolerance asked for. It stopped there silently and
+reported four points where there was one. Counting calls instead bounds the work
+whatever the geometry does, including two curves lying on top of each other,
+which overlap at every subdivision and would otherwise branch exponentially.
+
+**Pruned twice before any real work.** Only segments whose hull comes within
+reach of the pointer can hold a crossing near the pointer, so one linear scan
+collects those and only pairs from that short list are intersected. Measured on
+2 400 segments: a hover costs 0.24 ms with crossings off and 0.35 ms with them
+on, over the busiest part of the drawing. That is why it is affordable, and it
+is also why it has its own switch -- it is the one target computed rather than
+looked up, so it is off unless asked for.
+
+Two decisions that are not obvious:
+
+- **Segments sharing an endpoint are skipped.** Every pair of neighbours meets
+  at the node they share, and that node is already a vertex target. Reporting it
+  again would put a second, worse-named answer on top of a better one, at every
+  node of every closed path.
+- **The switch works on its own.** Crossings were first computed inside the
+  `toPoints` gate, which made `Snap to crossings` silently do nothing unless
+  `Snap to points` was also on: two switches where one quietly required the
+  other, which reads as a broken switch.
+
+The hull prune has no behavioural signature -- with it or without it the same
+crossings are found -- so nothing tests it. That is recorded rather than papered
+over with a timing assertion that would be flaky.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

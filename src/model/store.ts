@@ -117,6 +117,14 @@ export interface EditorState {
    */
   snapToBoundary: boolean;
   /**
+   * Snap where two outlines cross: a 0-D target like an anchor.
+   *
+   * Its own switch rather than riding on `snapToPoints`, because it is the one
+   * target that has to be computed instead of looked up. Off by default for
+   * the same reason.
+   */
+  snapToIntersections: boolean;
+  /**
    * Shift the snap lattice so strokes land on whole pixels rather than anchors.
    *
    * A view-and-input preference like `snapToGrid`, not part of the document: it
@@ -250,6 +258,7 @@ export class Store {
       snapToGrid: true,
       snapToPoints: true,
       snapToBoundary: true,
+      snapToIntersections: false,
       pixelFit: false,
       showGrid: true,
       showKeylines: false,

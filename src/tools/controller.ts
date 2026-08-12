@@ -417,6 +417,7 @@ export class Controller {
       toGrid: s.snapToGrid,
       toPoints: s.snapToPoints,
       toBoundary: s.snapToBoundary,
+      toIntersections: s.snapToIntersections,
       reach: Controller.REACH_PX * this.canvas.scale(s.camera),
       exclude,
       excludeShape,

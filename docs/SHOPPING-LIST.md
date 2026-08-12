@@ -16,14 +16,14 @@ are not ends**.
 
 Three tiers, resolved by one rule: the most specific target within eight screen
 pixels wins, so a vertex beats an outline beats the grid. Pixel fit is the grid's
-phase rather than a fourth tier. See ARCHITECTURE §27. Keylines and guides join
-the tiers their dimension puts them in rather than adding one. What is left below
-is intersections and angles.
+phase rather than a fourth tier. See ARCHITECTURE §27. Keylines, guides, rays and
+crossings all join the tier their dimension puts them in rather than adding one,
+so there are still three. Nothing is left here.
 
 | | Feature | Source | Size |
 |---|---|---|---|
 | `[x]` | **Boundary snap** — done, as **Snap to outlines**. The 1-D tier: a point anywhere along an existing curve, beaten by a vertex and beating the grid. `nearestOnPath` gained a segment filter, because a node being dragged lies on the two segments it joins and both report a distance of zero. See ARCHITECTURE §27. | IPE | — |
-| `[ ]` | **Intersection snap** — snap where two paths cross. Needs a cubic–cubic solver. | IPE | M |
+| `[x]` | **Intersection snap** — done, as **Snap to crossings**. A crossing is a point, so it answers the vertex tier. The solver is recursive subdivision on the control hulls rather than algebra: a cubic against a cubic is a degree-9 system whose closed forms are unstable near tangency, which is exactly the case worth snapping to. Bounded by a work budget rather than a depth, since each level halves only one of the two curves. Pruned to segments whose hull is within reach of the pointer, which is what makes it affordable: 0.35 ms per hover over 2 400 segments against 0.24 ms with it off. Its own switch, and off by default. See ARCHITECTURE §34. | IPE | — |
 | `[x]` | **Angular snap** — done, as the **Angles** group. Rays at multiples of a step from a base direction, drawn on the canvas and holding the pointer to the nearest one. A ray is 1-D so it answers the boundary tier: it beats the grid and loses to a node, with no new rule. The origin is implicit by default -- wherever the gesture started, which is the node being dragged or the pen's last point -- and **Origin here** pins it to the selection instead. IPE's `F3`, taking origin and direction from a nearby edge, is not done. See ARCHITECTURE §33. | IPE | — |
 | `[x]` | **Principled priority order** — done. The most specific target within reach wins: vertex (0-D) beats boundary (1-D) beats grid (2-D), and distance does not break ties between tiers. Pixel fit turned out not to be a fourth tier but the grid's phase, which is what settles how it interacts with the other two. The rule is a pure function in `model/snapping.ts` rather than an accident of statement order in the controller. See ARCHITECTURE §27. | IPE | — |
 | `[x]` | **Displayed grid ≠ snap grid (defect)** — fixed. `gridDisplayFor` draws `gridStep × m` with `m` a whole number off the 1-2-5 ladder, so every line on screen is a snap position; zooming out thins the lattice instead of switching to a different one, and the readout says which (`1 · every 5 drawn`). See ARCHITECTURE §9. | — | — |

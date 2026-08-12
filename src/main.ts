@@ -268,6 +268,7 @@ const bindCheck = (
     | 'snapToGrid'
     | 'snapToPoints'
     | 'snapToBoundary'
+    | 'snapToIntersections'
     | 'pixelFit'
     | 'showHandles'
     | 'filled'
@@ -313,6 +314,7 @@ on('#guideClear', () => controller.clearGuides());
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
 bindCheck('#snapBoundary', 'snapToBoundary');
+bindCheck('#snapCross', 'snapToIntersections');
 bindCheck('#pixelFit', 'pixelFit');
 bindCheck('#showHandles', 'showHandles');
 bindCheck('#filled', 'filled');
