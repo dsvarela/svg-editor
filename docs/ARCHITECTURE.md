@@ -344,7 +344,7 @@ and deleting in one shape must not sweep up another.
 What happens to the path *around* a deleted node is a setting, `state.deleteMode`,
 because the two readings suit different work and neither is wrong.
 
-**Fuse** joins the neighbours, so a pentagon becomes a quadrilateral. It is what
+**Heal** joins the neighbours, so a pentagon becomes a quadrilateral. It is what
 Illustrator, Inkscape and Figma all do on Delete, and what simplifying wants. It
 is also approximate: `deleteNode` rescales the surviving handles to cover the
 new span, which preserves the end tangents and nothing else.
@@ -355,14 +355,14 @@ subpath, so every segment that survives is *untouched* — bit-for-bit the one
 that was there. Runs of one node are dropped, because a lone node has no
 segments and the parser discards a bare `M` on the way back in.
 
-It is the default that was the mistake to argue about, not the choice: fuse is
+It is the default that was the mistake to argue about, not the choice: healing is
 the safer default because it is the one every other editor trained people to
 expect, and split is one click away in the Delete panel.
 
 `breakAt`, on `Shift+B`, is a third thing and the one worth not confusing with
 split-delete: it **keeps** the node and duplicates it.
 
-|  | Delete · fuse | Delete · split | Break |
+|  | Delete · heal | Delete · split | Break |
 |---|---|---|---|
 | Node count | −1 | −1 | **+1** |
 | Path | stays whole | two ends | two ends |
@@ -371,7 +371,7 @@ split-delete: it **keeps** the node and duplicates it.
 
 Deleting-and-fusing is lossy by nature and the deviation is measured (see Known
 limitations). The other two are exact by construction, and a test asserts the
-contrast directly: on an S-curve, break drifts under 1e-9 where fuse drifts over
+contrast directly: on an S-curve, break drifts under 1e-9 where healing drifts over
 1. Offering only the lossy one was the real gap.
 
 The mode is a preference rather than a modifier key, and it lives in its own
@@ -752,8 +752,8 @@ available afterwards on anything.
 defined by being tangent to two lines. Against a curve you can put an arc
 somewhere near the corner, but it will not meet the curve smoothly, and a corner
 operation that leaves a kink has not done its job. This is the opposite call from
-§13, where **Fuse** approximates rather than refusing, and the difference is
-what the user can tell: a fused segment that differs is visible and undoable
+§13, where **Heal** approximates rather than refusing, and the difference is
+what the user can tell: a healed segment that differs is visible and undoable
 straight away, while a fillet that is a fraction of a degree off tangent looks
 right and is wrong.
 
@@ -784,6 +784,160 @@ Two things the caller has to get right, and `roundSelection` does:
 The arc is the same cubic approximation used everywhere else. Measured on a
 quarter turn it sits 0.0272 % of the radius off a true circle, which is what
 "about 0.027 %" in §12 was covering.
+
+
+## 24. Fuse removes a segment, where every neighbour removes a node
+
+`fuseNodes` welds two **adjacent** nodes into one. It sounds like the harder
+relative of `mergeEnds` and it is the easier one, which is worth saying plainly
+because the reverse assumption is what kept it unwritten for a month.
+
+`mergeEnds` refuses anything but two free ends because welding ends is a topology
+change it has to reason about: two paths become one, or one becomes a ring, and
+either way something has to decide the direction each piece is travelled in. In
+the middle of a path there is no topology to change. The pair is already joined
+by a segment, and fusing them removes that segment. Nothing reverses, nothing
+concatenates, no subpath appears or disappears.
+
+**Adjacent only, and the refusal is the point.** Two nodes further apart have a
+run of segments between them, and welding those would pinch the path into two
+loops sharing a point -- a different operation, under a different name, that
+would have to decide what happens to everything in between. Guessing at it here
+would silently discard geometry, so `apart` comes back instead.
+
+The seam of a closed path is the case a plain index comparison gets backwards:
+the last node precedes the first. Fusing that pair keeps node 0 as node 0, so a
+ring is not re-rooted by a repair and every index held elsewhere still means what
+it meant.
+
+**The repair half is why this exists.** Two anchors on the same point export a
+zero-length command, and a path carrying one can never be simplified again: a
+zero chord leaves the fitter with no tangent to work from. §23 closed the route
+through `roundCorner`, and two remained. `rectSubpath` now names its four tangent
+coordinates once and emits a vanished side's two ends as one node, so a square
+rounded to its own limit is a four-node circle and a 40 by 20 rounded at 10 is a
+six-node stadium. `circulariseSubpath` runs `fuseDegenerate` afterwards and
+reports the count, because two nodes at the same angle about the centre land on
+the same point of the circle however faithfully each one was placed, and the node
+count changing is something the person watching should be told.
+
+`fuseDegenerate` is also offered directly: with a shape selected rather than a
+pair, **Fuse** sweeps it. A path can arrive carrying a zero-length segment from
+an import or a trace, and until now there was nothing that could take one out.
+
+One naming note, since it will look like churn otherwise. **Fuse** was already
+the name of a Delete mode, meaning "join the two neighbouring segments". Two
+controls with one name in one panel is worse than a rename, so that mode is now
+**Heal**, which is what it does and what Illustrator calls the same idea. Delete
+modes remove a node; Fuse removes a segment.
+
+
+## 25. Pixel fit is a phase, not a second kind of snapping
+
+A stroke is painted centred on its path. A one-unit stroke whose centreline sits
+at x = 10 covers 9.5 to 10.5: half of one pixel column and half of the next,
+which renders as two columns of grey rather than one of black. Snapping anchors
+to integers does not help. Integers are exactly the wrong place for an odd-width
+stroke to be, so the grid was actively working against the thing it was there
+for.
+
+The condition is one line. The painted edges sit at `x ± w/2`, so both are whole
+numbers exactly when
+
+    x ≡ w/2  (mod 1)
+
+which is the same lattice shifted by a phase: half a unit for width 1 or 3, zero
+for width 2 or 4. So `snap` grew one optional argument and nothing else changed.
+No second snapper, no per-shape lattice, no new interaction between snapping
+modes.
+
+**The phase is per shape, and the grid can only draw one.** That is the tension
+this section exists for. §9's rule is that every line drawn is a position the
+pointer can land on, and a grid drawn unshifted while the tools snapped shifted
+would break it in the least visible way possible: half a pixel, on a lattice
+nobody would think to check. So one phase is in force at a time, taken from the
+selection or from the pending style, and `phaseInForce` is called by the snapper
+and by the grid renderer both. They cannot disagree, because there is nothing to
+keep in sync.
+
+A selection whose shapes want different lattices returns `null` rather than
+picking one. Two shapes of width 1 and 2 are half a unit apart in phase and no
+third lattice serves them; the plain grid stands, and the readout says
+`mixed widths` instead of quietly fitting one of them.
+
+**A fractional stroke width can only have one edge aligned**, and this is a fact
+about the geometry rather than a shortcoming here: the two edges are `w` apart,
+so unless `w` is a whole number no position puts both on whole pixels from any
+lattice at all. The leading edge is the one aligned. The obvious test -- both
+edges whole, for every width -- is false and looks true, so it is written out as
+its own case rather than left to be discovered.
+
+Snapping only governs what you place next, so **Fit selection to pixels** applies
+the same lattice to what is already there, with the handles riding along so a
+curve keeps its shape. It is a button rather than something the switch does on
+being ticked: nothing here rewrites coordinates the user did not ask about.
+
+
+## 26. Auto-trace, and the half we already owned
+
+A tracer is four stages: quantise the raster to a palette, label the regions and
+walk their boundaries, fit curves through the polylines, write the result out.
+Stages three and four have been here since Simplify and the serialiser
+respectively, and they are the expensive ones.
+
+So the only thing to acquire was stages one and two, which are exact integer work
+on a pixel grid: no intersections, no tangent ordering, nothing that can be
+numerically wrong. **That is the opposite of the boolean decision**, where the
+maths is treacherous and "don't write it yourself" was the whole argument.
+
+Measured in this build rather than estimated:
+
+| | raw | gzipped |
+|---|---|---|
+| `@visioncortex/vtracer`, WASM | 668.0 kB | 278.3 kB |
+| auto-trace as built here | 5.6 kB | **2.0 kB** |
+
+139 times smaller, and the larger number would have arrived base64'd inside the
+single HTML file whether anyone traced anything or not. The full comparison, and
+the five other candidates, are in SHOPPING-LIST.
+
+**The walk is ported from ImageTracerJS** (András Jankovics, Unlicense), which is
+where the edge-node scheme and its 16-by-4 lookup table come from. The port was
+checked against the original on four fixtures -- a disc with a square hole, a
+ring, a field of stripes, and a diagonal -- and agreed point for point, hole
+nesting included. That check needed a copy of the reference in the repo to run,
+so it was run once and is recorded here rather than kept: two copies of one
+algorithm is a worse thing to own than a paragraph.
+
+**The quantiser is not ported.** Its k-means sampler, asked for three colours on
+an image with exactly three, returned white, red and red; at eight it spent five
+of them on red. Flat artwork is made of a handful of exact colours, so
+`censusPalette` counts them. Simpler, and exactly right for the thing this editor
+is for.
+
+Three smaller decisions:
+
+- **Coordinates are mapped into document space before fitting**, so the tolerance
+  a person types is in the units they are drawing in rather than in pixels of a
+  reference whose scale they never chose.
+- **A fully transparent palette entry is dropped**; an opaque background is not.
+  The first paints nothing and would put an invisible shape in the export. The
+  second is part of the image, and deciding otherwise on the user's behalf is the
+  kind of helpfulness that loses work.
+- **Holes are subpaths under `fill-rule: evenodd`.** The walk reports which rings
+  are holes and which outline each belongs to, but promises nothing about
+  winding, and even-odd is the rule that does not need the promise.
+
+**Nothing sweeps for zero-length segments, and that is deliberate.** One was the
+first thing guarded against, since a zero chord leaves the fitter with no tangent
+(§24). Then it was measured: the walk steps one lattice unit at a time and the
+midpoint pass halves that, so consecutive points are 0.5 or 1.0 apart and never
+0. Removing the guard changed nothing on any fixture. The test pins the spacing
+instead of defending against a case the spacing rules out.
+
+End to end, on a 64 by 64 icon of a disc with a square hole: three rings, **344
+boundary points fitted to 19 nodes**. Node soup was the reason Simplify had to
+come first, and it did.
 
 
 ## Known limitations

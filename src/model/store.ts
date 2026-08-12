@@ -92,6 +92,14 @@ export interface EditorState {
   gridStep: number;
   snapToGrid: boolean;
   snapToPoints: boolean;
+  /**
+   * Shift the snap lattice so strokes land on whole pixels rather than anchors.
+   *
+   * A view-and-input preference like `snapToGrid`, not part of the document: it
+   * changes where the next thing you place lands, and nothing already placed.
+   * See `model/pixelfit.ts` for what the shift is.
+   */
+  pixelFit: boolean;
   showGrid: boolean;
   showHandles: boolean;
   /**
@@ -170,6 +178,7 @@ export class Store {
       gridStep: 1,
       snapToGrid: true,
       snapToPoints: true,
+      pixelFit: false,
       showGrid: true,
       showHandles: true,
       style: defaultStyle(),

@@ -50,6 +50,7 @@ as the centre rather than a corner.
 | `Shift`+`B` | Break the path at the selected node |
 | `Shift`+`J` | Connect two selected free ends with a segment |
 | `Shift`+`M` | Merge two selected free ends into one node |
+| `Shift`+`F` | Fuse two adjacent nodes, or sweep a shape for zero-length segments |
 | `Escape` | Abandon the drag in progress, or finish the pen path and clear the selection |
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
@@ -154,6 +155,10 @@ to set it exactly.
 - **Break here** duplicates the node to cut the path there.
 - **Connect** draws the missing segment between two free ends. Nothing moves.
 - **Merge** welds two free ends into one node at their midpoint, the inverse of Break.
+- **Fuse** welds two adjacent nodes into one, anywhere along a path. With a shape
+  selected instead of a pair, it sweeps that shape for segments of zero length
+  and welds those. Two free ends are the one case it declines, because that is
+  Merge.
 - **Delete node** removes it, following the **Delete** panel's mode.
 
 ### Bend
@@ -177,7 +182,7 @@ How deleting a node treats the path around it.
 
 | Mode | Deleting the middle node of `M10 30 L25 15 L40 30 L55 15 L70 30` |
 |---|---|
-| **Fuse** (default) | `M10 30 L25 15 H55 L70 30`, still one path |
+| **Heal** (default) | `M10 30 L25 15 H55 L70 30`, still one path |
 | **Split** | `M10 30 L25 15 M55 15 L70 30`, two ends |
 
 **Break here** is neither. It keeps the node and duplicates it, so nothing moves.
@@ -210,6 +215,33 @@ resizing and removing an image are all ordinary edits that `Ctrl+Z` takes back.
 Opacity, **Show** and **Locked** are not: they say how you want to look at the
 reference, and undo leaves them alone. Nothing survives a reload.
 
+### Trace
+
+Turn the loaded backdrop into shapes, one per colour.
+
+| Control | Does |
+|---|---|
+| **Colours** | How many colours to keep. The commonest are kept and everything else is assigned to its nearest |
+| **Within** | How far a fitted curve may move, in document units. 0 keeps the raw polygons |
+| **Noise** | Regions with fewer boundary points than this are dropped |
+| **Trace** | Run it |
+
+Traced shapes land on top of the backdrop, which stays where it is so you can
+compare the two. Each shape is filled with its own colour and has no stroke;
+holes come back as extra subpaths under **Even-odd**. A fully transparent
+background is dropped, since it would export an invisible shape; an opaque one is
+kept, because it is part of the picture.
+
+The whole trace is one undo step. The status line reports how many boundary
+points went in and how many nodes came out, which is usually a factor of ten or
+more: a 64-pixel icon of a disc with a hole traces to 344 points and fits to 19
+nodes.
+
+The image is traced at its own pixel size, whatever you have scaled it to on
+screen, so shrinking a reference to line it up does not cost you detail. This is
+built for flat artwork: icons, logos, line drawings. A photograph will trace, and
+will give you thousands of nodes in a handful of flat colours.
+
 ### Canvas
 
 The page the drawing sits on, and the `viewBox` the exported file carries. It is
@@ -233,12 +265,25 @@ there. Every change here is undoable.
 | **Show grid** | Draw the lattice |
 | **Snap to grid** | Round positions to a multiple of Step |
 | **Snap to points** | Weld to an existing node within 8 pixels. Beats the grid |
+| **Pixel fit** | Shift the lattice by half the stroke width, so the stroke's edges land on whole pixels |
 | **Show handles** | Draw handles and their lines |
 | **Show fills** | Draw each shape's fill. Off draws everything as an outline |
 
 The `grid` readout in the status strip says what is drawn against what is
 snapped, for example `1 · every 5 drawn`. The group's own header says whether
 snapping is on.
+
+**Pixel fit** exists because a stroke is painted centred on its path. A 1-unit
+stroke on a whole coordinate covers half of one pixel and half of the next, which
+is grey where you wanted black. Ticking it shifts the grid by half the stroke
+width: half-pixels for a width of 1 or 3, whole pixels for 2 or 4. The drawn grid
+moves with it, so what you see is still what you snap to.
+
+The shift follows what is selected, or the width you are about to draw with. The
+header says which is in force: `half pixels`, `whole pixels`, or `mixed widths`
+when the selection holds shapes that want different lattices, in which case the
+plain grid stands. **Fit selection to pixels** applies the same lattice to a
+shape that already exists.
 
 ### Output
 
@@ -314,7 +359,7 @@ an exported file always re-opens.
 
 Named here rather than left for you to find.
 
-- **Fuse across an inflection.** Deleting a node whose two segments curve
+- **Healing across an inflection.** Deleting a node whose two segments curve
   opposite ways rebuilds them as one that visibly differs. Use **Split** or
   **Break here** when the curve matters.
 - **Arcs do not survive a round trip.** See above.
@@ -323,10 +368,9 @@ Named here rather than left for you to find.
   than restoring the original radius. The reported travel is how it tells you.
 - **A wide gap circularises loosely.** One curve cannot hold an arc much wider
   than a quarter turn tightly. The status line says when this applies.
-- **Coincident nodes.** A rectangle drawn at the maximum corner radius, and a
-  circularised path that had a node at its centre, can both end up with two
-  anchors in the same place. **Merge** only works on free ends, so there is no
-  way to fuse them yet.
+- **A fractional stroke width cannot be crisp.** Pixel fit aligns the leading
+  edge, and the two edges are a stroke width apart, so unless that width is a
+  whole number the other edge lands mid-pixel. Nothing can do better.
 - **The backdrop does not survive a reload.** Everything else about it is
   undoable; this is not, because nothing here is saved between sessions.
 - **Simplify checks the tolerance where it samples.** Sampling is dense, and

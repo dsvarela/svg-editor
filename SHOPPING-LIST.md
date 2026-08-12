@@ -13,8 +13,8 @@ they could not fail.
 
 The 2026-08-11 review of the primitives/rename/tooltips commit is in
 [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) — ten defect classes,
-nine now fixed. The tenth, coincident nodes mid-path, waits on **Fuse nodes that
-are not ends** below.
+all ten now fixed. The tenth, coincident nodes mid-path, closed on 2026-08-12
+with **Fuse nodes that are not ends** below.
 
 ---
 
@@ -30,7 +30,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[ ]` | **Angular snap** — constrain to rays at multiples of N° from a settable origin and base direction (IPE: `F1` origin, `F2` direction, `F3` takes both from a nearby edge). | IPE | M |
 | `[ ]` | **Principled priority order** — IPE resolves vertex/intersection → boundary → grid, and treats angular (1-D) as mutually exclusive with the 0-D modes. Ours is grid-then-point-override, which happens to land in the same place but isn't a rule. | IPE | S |
 | `[x]` | **Displayed grid ≠ snap grid (defect)** — fixed. `gridDisplayFor` draws `gridStep × m` with `m` a whole number off the 1-2-5 ladder, so every line on screen is a snap position; zooming out thins the lattice instead of switching to a different one, and the readout says which (`1 · every 5 drawn`). See ARCHITECTURE §9. | — | — |
-| `[ ]` | **Pixel-fit** — snap so *strokes* land on the pixel grid, not just anchors (a 1-unit stroke on an integer coordinate straddles two pixels; it wants a half-unit offset). The whole crisp-icon workflow depends on this. | icon-design practice | M |
+| `[x]` | **Pixel-fit** — done. A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate covers half of two pixels instead of all of one, and snapping anchors to integers made it worse rather than better. The fix is one line of arithmetic — the painted edges are whole exactly when `x ≡ w/2 (mod 1)` — so it is the same lattice shifted by a phase, not a second kind of snapping. The drawn grid shifts by the same phase from the same function, which is what keeps §9's contract. A selection whose shapes want different lattices reports `mixed widths` rather than fitting one of them. **Fit selection to pixels** applies it to what already exists. See ARCHITECTURE §25. | icon-design practice | — |
 | `[ ]` | **Rulers + draggable guides** — manual guides you place, distinct from the grid. | Boxy SVG, Method Draw | M |
 | `[ ]` | **Smart guides** — transient alignment lines when a drag lines up with another object's edge or centre. | Boxy SVG, Figma | M |
 | `[ ]` | **Keyline shapes** — circle/square/portrait/landscape templates on a non-exporting layer, the standard icon-grid starting point. | icon-design practice | S |
@@ -45,7 +45,7 @@ Currently: grid snap (`snapToGrid`, step `gridStep`, default 1) and point snap
 | `[x]` | **Connect ends** (`Shift+J`) — done. Draws the missing segment between two free ends. Both nodes stay, nothing moves, and the segment is straight for free. This is what "join" means to anyone who has not memorised Inkscape, so it got the obvious key. | Inkscape's `Shift+Ctrl+J` | — |
 | `[x]` | **Merge ends** (`Shift+M`) — done. Welds two free ends into one node at their midpoint, so ends already coincident do not move and it is the exact inverse of `Break path`. Each end keeps the handle facing away from the joint, since the one facing it governed nothing. Shipped first under the name `Join`, which was wrong: one name covered both readings and it did the destructive one. | Inkscape's `Shift+J`, TikZiT (`Ctrl+M`) | — |
 | `[x]` | **Resume a finished path** — done. The pen picks up either end of an existing open path and carries on, reversing it when you click the start. Without it a path put down and let go of could never be extended again, which is the gap that prompted both this and Join. | every editor | — |
-| `[ ]` | **Fuse nodes that are not ends** — merging two coincident nodes in the *middle* of a path, which `Join ends` deliberately refuses. Also the repair for the duplicate anchors `rectSubpath` at its radius clamp and `circulariseSubpath` at the centre can produce (review Class 9). | Inkscape | S |
+| `[x]` | **Fuse nodes that are not ends** — done, on `Shift+F`. Welds two adjacent nodes into one anywhere along a path, and with a shape selected sweeps it for zero-length segments instead. It sounds like the harder relative of Merge ends and is the easier one: in the middle of a path there is no topology to change, so nothing reverses and no subpath appears or disappears. Two nodes further apart are refused rather than guessed at. The generators were fixed at the same time: `rectSubpath` emits a vanished side's two tangent points as one node, so a square rounded to its own limit is a four-node circle, and `circulariseSubpath` sweeps afterwards and reports the count. The Delete mode that used to be called Fuse is now **Heal**. See ARCHITECTURE §24. | Inkscape | — |
 | `[x]` | **Break path** (`Shift+B`) — split at the selected node, leaving two ends; a closed path opens at that node instead. The node is duplicated, so nothing moves — this is the lossless counterpart to deleting a node, which cannot be. See ARCHITECTURE §13. | Inkscape | — |
 | `[ ]` | **Reverse direction** + optional direction arrows on the outline. Matters for fill-rule and for which end a marker lands on. | Boxy SVG, Inkscape | S |
 | `[ ]` | **Make path** — turn a selection into a single path. | TikZiT (`Ctrl+P`) | S |
@@ -136,43 +136,128 @@ until a finite result exists, and the operation is one undo step.
 
 ## Tracing an image
 
-Researched 2026-08-11 on request, not started. Two separate features that people
+Researched 2026-08-11, decided 2026-08-12. Two separate features that people
 usually ask for together.
 
 | | Feature | Source | Size |
 |---|---|---|---|
 | `[x]` | **Backdrop image** — done. Drop a raster on the canvas or load it from the Backdrop panel. Opacity, show, lock, X/Y/width and fit. Workspace state rather than document content, so it never exports and never appears in the Shapes list, but it *is* in the undo history: load, move, resize, fit and remove are ordinary edits, while opacity, show and lock are view switches undo leaves alone. The first version shipped with no undo at all, on a memory argument that turned out to be about data URLs and not the object URLs actually used. The only remaining trade is no survival across a reload. See ARCHITECTURE §18 and the manual's explanation page. | every editor | — |
-| `[ ]` | **Auto-trace** — convert a raster to paths in one step. Needs a library; see below. | Illustrator, Inkscape | L |
+| `[x]` | **Auto-trace** — done, in the Backdrop panel. One shape per colour, holes and all, mapped onto the backdrop's placement and fitted with the Schneider fitter Simplify already used. **Cost in this build: +5.6 kB raw, +2.0 kB gzipped**, against the +278 kB gzipped a WASM tracer would have added — 139 times smaller, because the expensive half of a tracer is curve fitting and we owned it. The estimate below said +1.8 kB; the extra is the panel and the shape building. See ARCHITECTURE §26. | Illustrator, Inkscape | — |
 
-### The auto-trace decision, if it is ever taken
+### The auto-trace decision — settled, and then built
 
-| Candidate | Licence | Colour | Ships to a browser | Note |
+Taken 2026-08-12, on the same terms as the boolean decision: measure in our own
+build, judge the interface against our own model, and ask what we would actually
+be buying. Built the same day; **the measured cost came in at 2.0 kB gzipped
+against the 1.8 kB predicted here.** What follows is the decision as it was
+taken, kept because the reasoning is the useful part.
+
+**VTracer fails on size, and not narrowly.**
+
+| | raw | gzipped |
+|---|---|---|
+| `vtracer_wasm_bg.wasm` | 668.0 kB | 278.3 kB |
+| This whole editor, as shipped | 170.7 kB | 53.7 kB |
+
+278 kB gzipped is 5.2× the entire application. Lazy-loading, the usual answer, is
+not open to us: `vite-plugin-singlefile` inlines everything into one HTML file
+with no external requests, so a WASM module would arrive base64'd in the document
+whether the user ever traces anything or not. It also emits an SVG string, so we
+would parse our way back into the model we started from.
+
+**The pipeline splits, and we already own the expensive half.** Every tracer is
+four stages:
+
+1. quantise the raster to a palette
+2. label the regions and walk their boundaries
+3. fit curves through the boundary polylines
+4. write the result out
+
+We have had 3 since Simplify shipped (`core/fit.ts`, Schneider's least-squares
+fit, with corner detection on top in `model/simplify.ts`) and 4 since the first
+commit (`core/serialise.ts`). Only 1 and 2 are missing, and they are exact
+integer work on a pixel grid: no intersections, no tangent ordering, no
+robustness problem to get wrong. **That is the reverse of booleans**, where the
+maths is treacherous and "don't write it yourself" was the entire argument.
+
+**Every candidate measured in our own bundler** (vite 8, minified, `gzip -9`),
+rather than read off an npm page:
+
+| Candidate | Licence | What it emits | raw | gzip |
 |---|---|---|---|---|
-| [VTracer](https://github.com/visioncortex/vtracer) | MIT | yes | WASM, `@visioncortex/vtracer` | Rust, a linear pipeline rather than Potrace's optimal-polygon search. The only candidate that is both permissive and colour-capable. |
-| [Potrace](https://potrace.sourceforge.net/) | **GPL-2.0-or-later** | no, bilevel | WASM builds exist | The best-known tracer and the reason to read licences. GPL would govern this whole editor. |
-| [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs) | public domain | yes | pure JS, no build step | Simplest to adopt, coarser output than VTracer. |
-| [EdgeSVG](https://github.com/raphaelmansuy/edgesvg) | check before use | yes | WASM, plus CLI and bindings | Newer, Rust, several surfaces. Unverified here beyond its README. |
+| `@visioncortex/vtracer` | MIT/Apache-2.0 | SVG string | 668.0 kB | 278.3 kB |
+| `@image-tracer-ts/core` | MIT | SVG string | 35.6 kB | 9.9 kB |
+| `imagetracerjs` | Unlicense | SVG string | 30.2 kB | 6.5 kB |
+| `imagetracer` (TS port) | MIT | **every stage separately** | 25.8 kB | 6.4 kB |
+| `contours.ts` | MIT | `{x, y}[]`, bilevel only | 7.1 kB | 2.5 kB |
+| **stages 1–2 alone, vendored** | see below | `{x, y}[]` with hole nesting | **7.4 kB** | **1.8 kB** |
 
-**Potrace is the trap.** It is what most tutorials reach for and it is GPL, so
-linking it would put this editor under the GPL too. The `potrace` npm package is
-a wrapper around the same GPL core. VTracer is the one to use if this is built.
+`potrace` and `esm-potrace-wasm` are GPL-2.0 and would govern this editor;
+`marchingsquares` is AGPL-3.0. All three are out on licence before size is even
+asked about. Potrace remains the trap it was: it is what most tutorials reach
+for, and the `potrace` npm package wraps the same GPL core.
 
-Two things to settle before writing any of it, neither about the library:
+**Importing three functions does not cost three functions' worth.** The TS port
+declares `sideEffects: false`, but importing only `layering`, `pathScan` and
+`interNodes` still produced 24.7 kB: the sixteen-entry option-presets table and
+the SVG writer's string literals both survive the shake (`posterized1`,
+`randomsampling1` and `viewBox` are all still in the output). The same three
+functions extracted by hand are 7.4 kB. A 3.3× difference, and the reason the
+last row of that table is not simply the fifth row with a narrower import.
 
-1. **Traced output is node soup.** A photograph traces to thousands of nodes.
-   Auto-trace without a way to thin them produces a document nobody can edit,
-   which is why Simplify was the prerequisite rather than a follow-up. It shipped
-   on 2026-08-11, so this one is settled.
-2. **Where the raster lives.** A backdrop is not part of the drawing and must not
-   reach the export. That was the model decision the backdrop settled: it lives
-   in `EditorState`, and in the history, but never in `Doc`. See ARCHITECTURE
-   §18.
+**Why vendoring wins here and lost for booleans.** The same question, the
+opposite answer, which is worth writing down so neither looks arbitrary later:
 
-The honest order was backdrop first, then Simplify, then auto-trace if it still
-looks worth it once tracing by hand over a backdrop is possible. The first two
-are done, so auto-trace is unblocked. The open question is now size: the build
-is one 170 kB file with no external requests, and a WASM tracer is several
-hundred kilobytes on its own.
+| | `path-bool` | the raster half |
+|---|---|---|
+| Size of the thing | 4 925 lines | 255 |
+| Upstream | published five days before we looked, ported into Graphite | last published 2022; the algorithm is finished |
+| Fraction we would use | nearly all of it | about a quarter of the module |
+| The hard part | numerical robustness at intersections | none: an integer walk over a 2×2 lookup |
+| Forfeited by vendoring | upstream fixes from an author still hunting failure cases | nothing |
+
+**What was verified rather than assumed:**
+
+- **The extraction is faithful.** `layering`, `pathScan`, `interNodes` and their
+  three helpers pulled out by brace matching (255 lines, 9.3 kB of source), then
+  run against the npm package on the same image. Output byte-identical, path for
+  path, point for point.
+- **Their quantiser is the weak stage, and we should not use it.** On a
+  three-colour test image at `numberofcolors: 3` it returned
+  `229,229,255 | 255,0,0 | 255,0,0`: blue lost entirely, red duplicated. At eight
+  colours it spent five of them on red. Only an explicitly supplied palette got
+  it right. Flat art wants an exact colour census, not k-means, and that is about
+  twenty lines of ours.
+- **The two halves join.** A 64×64 disc with a square hole, traced and then
+  handed straight to `simplifySubpath` at a tolerance of 1:
+
+  ```
+  disc outline   208 points ->  11 nodes, error 0.961, d is 360 chars
+  square hole     68 points ->   4 nodes, error 0.100, d is  24 chars
+  ```
+
+  Eleven nodes for a traced circle, from code we already had. Node soup was the
+  reason Simplify had to come first, and it did.
+- **Hole nesting arrives for free.** `pathScan` returns `holechildren` and
+  `isholepath`, which is exactly subpaths-within-a-shape plus the fill rule the
+  Style panel already sets.
+
+**Provenance.** The measured extraction came from
+[`imagetracer`](https://github.com/murongg/imagetracer), the MIT TypeScript port.
+The original, [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs),
+is Unlicense and so carries no obligation at all. Vendoring from the original is
+the cleaner route; either way a `NOTICE` entry goes in, as `path-bool` has one.
+
+**Still true, and not about the library:** a backdrop is not part of the drawing
+and must not reach the export. Tracing writes shapes into `Doc`; the raster stays
+in `EditorState`. See ARCHITECTURE §18.
+
+**Shape of the work, if it is taken:** `src/core/raster.ts` for the vendored walk
+and our palette census, `src/model/trace.ts` to turn its polylines into shapes
+(one per palette entry, outer plus holes, `fill-rule: evenodd`), and a Trace
+button in the Backdrop panel that runs on the loaded image as one undo step. The
+tolerance is the one Simplify already takes. Estimate M, not L: the L was the
+tracer, and we are not writing one.
 
 ## Explicitly not doing
 
@@ -196,7 +281,8 @@ hundred kilobytes on its own.
 - [quiver](https://q.uiver.app/)
 - [TikZiT](https://tikzit.github.io/)
 - [VTracer](https://github.com/visioncortex/vtracer) (MIT) and [Potrace](https://potrace.sourceforge.net/README) (GPL-2.0-or-later)
-- [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs) (public domain)
+- [ImageTracerJS](https://github.com/jankovicsandras/imagetracerjs) (Unlicense), and the TypeScript ports [`imagetracer`](https://github.com/murongg/imagetracer) and [`image-tracer-ts`](https://github.com/mringler/image-tracer-ts) (both MIT)
+- [contours.ts](https://www.npmjs.com/package/contours.ts) (MIT), Moore-neighbour tracing on a thresholded image
 - [image2svg-awesome](https://github.com/fromtheexchange/image2svg-awesome), a survey of tracers
 - [Icons8: guide to pixel-perfect icons](https://icons8.medium.com/a-guide-to-pixel-perfect-icons-390e2fa2820c)
 - [Helena Zhang: Icon grids & keylines demystified](https://minoraxis.medium.com/icon-grids-keylines-demystified-5a228fe08cfd)

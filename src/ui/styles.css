@@ -537,6 +537,8 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .row .seg button { min-width: 0; height: var(--h); padding: 0 6px; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+/* For the odd one out when a two-column group holds an odd number of buttons. */
+.grid2 .wide { grid-column: 1 / -1; }
 .row { display: flex; align-items: center; gap: 7px; }
 .row label { font-size: 12px; color: var(--ink-2); min-width: 50px; }
 .row input { flex: 1; }

@@ -137,9 +137,9 @@ with the select tool.
 
 ## Delete a node without breaking the path
 
-Set the **Delete** panel to **Fuse**, then select the node and press `Delete`.
+Set the **Delete** panel to **Heal**, then select the node and press `Delete`.
 
-Fuse rebuilds one segment from the two that met at the node, so the path stays
+Heal rebuilds one segment from the two that met at the node, so the path stays
 whole. The rebuilt segment is an approximation, and it is a good one when the two
 originals curved the same way. Across an inflection it will visibly differ.
 
@@ -240,6 +240,28 @@ never reaches the export. It is covered by undo, so `Ctrl+Z` takes back a nudge
 you did not mean and brings back an image you removed by accident. Opacity,
 **Show** and **Locked** stay as you left them, since undo is for taking back an
 edit rather than for restoring a checkbox. Nothing survives a page reload.
+
+## Trace an image automatically
+
+Load the image as a backdrop, then press **Trace** in the same panel.
+
+You get one shape per colour, filled with that colour, with holes already cut.
+The backdrop stays where it is, so switch **Show** off and on to compare.
+
+Three numbers control it. **Colours** caps the palette: an icon usually wants two
+or three, and asking for more finds antialiasing rather than detail. **Within**
+is how far a fitted curve may move, in document units, and it is the same idea as
+Simplify's tolerance; raise it for fewer, smoother nodes and lower it to keep the
+shape honest. **Noise** drops small regions, which is what removes the specks
+around a scanned line.
+
+If the result has more nodes than you want, select the shapes and run **Simplify**
+on them with a larger tolerance. Tracing and simplifying use the same fitter, so
+the second pass is not fighting the first.
+
+This is built for flat artwork. A photograph will trace and will give you
+thousands of nodes in a handful of flat colours, which is a poster effect rather
+than a vectorisation.
 
 ## Round off a corner
 

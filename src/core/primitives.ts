@@ -88,31 +88,58 @@ export function rectSubpath(x: number, y: number, w: number, h: number, r = 0): 
   }
 
   const k = rad * KAPPA;
+
+  /* Where the radius takes a whole side, the two tangent points on it land on
+     the same spot, and that side has ceased to exist. Naming the four tangent
+     coordinates once, rather than writing `x0 + rad` and `x1 - rad` in eight
+     places, is what makes the two ends of a vanished side bit-identical and so
+     safe to compare exactly below. */
+  const capW = bw <= rad * 2;
+  const capH = bh <= rad * 2;
+  const lx = capW ? x0 + bw / 2 : x0 + rad;
+  const rx = capW ? x0 + bw / 2 : x1 - rad;
+  const ty = capH ? y0 + bh / 2 : y0 + rad;
+  const by = capH ? y0 + bh / 2 : y1 - rad;
+
   // Two nodes per corner, in clockwise order from the top edge.
   const n: PathNode[] = [
-    makeNode([x0 + rad, y0]),
-    makeNode([x1 - rad, y0]),
-    makeNode([x1, y0 + rad]),
-    makeNode([x1, y1 - rad]),
-    makeNode([x1 - rad, y1]),
-    makeNode([x0 + rad, y1]),
-    makeNode([x0, y1 - rad]),
-    makeNode([x0, y0 + rad]),
+    makeNode([lx, y0]),
+    makeNode([rx, y0]),
+    makeNode([x1, ty]),
+    makeNode([x1, by]),
+    makeNode([rx, y1]),
+    makeNode([lx, y1]),
+    makeNode([x0, by]),
+    makeNode([x0, ty]),
   ];
 
-  n[1].hOut = [x1 - rad + k, y0];
-  n[2].hIn = [x1, y0 + rad - k];
+  n[1].hOut = [rx + k, y0];
+  n[2].hIn = [x1, ty - k];
 
-  n[3].hOut = [x1, y1 - rad + k];
-  n[4].hIn = [x1 - rad + k, y1];
+  n[3].hOut = [x1, by + k];
+  n[4].hIn = [rx + k, y1];
 
-  n[5].hOut = [x0 + rad - k, y1];
-  n[6].hIn = [x0, y1 - rad + k];
+  n[5].hOut = [lx - k, y1];
+  n[6].hIn = [x0, by + k];
 
-  n[7].hOut = [x0, y0 + rad - k];
-  n[0].hIn = [x0 + rad - k, y0];
+  n[7].hOut = [x0, ty - k];
+  n[0].hIn = [lx - k, y0];
 
-  return { nodes: n, closed: true };
+  /* Emit a vanished side's two tangent points as one node. Leaving both put two
+     anchors on the same point and a zero-length command in the exported path,
+     and a path carrying one can never be simplified again: a zero chord gives
+     the fitter no tangent. The pairs are the even-indexed sides, and the
+     survivor takes the arc handle from each direction, which is right
+     geometrically too -- the two arcs meet, so they share the point. */
+  const nodes: PathNode[] = [];
+  for (let i = 0; i < 8; i += 2) {
+    const a = n[i];
+    const b = n[i + 1];
+    if (a.pt[0] === b.pt[0] && a.pt[1] === b.pt[1]) nodes.push({ pt: a.pt, hIn: a.hIn, hOut: b.hOut });
+    else nodes.push(a, b);
+  }
+
+  return { nodes, closed: true };
 }
 
 /**

@@ -321,7 +321,8 @@
               <button class="btn" id="breakPath" title="Break the path at this node, keeping it (Shift+B)">Break here</button>
               <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>
               <button class="btn" id="mergePath" title="Weld two selected free ends into one node at their midpoint (Shift+M)">Merge</button>
-              <button class="btn" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
+              <button class="btn" id="fuseNodes" title="Weld two adjacent nodes into one, anywhere along a path. With a shape selected, sweeps away every zero-length segment (Shift+F)">Fuse</button>
+              <button class="btn wide" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
             </div>
 
             <div class="glabel sub"><span>Bend</span><span class="gval" id="bendinfo">no segment</span></div>
@@ -362,13 +363,14 @@
           <div class="group">
             <div class="glabel"><span>Delete</span><span class="gval" id="delmodeinfo"></span></div>
             <div class="seg spread" id="delmode" role="group" aria-label="What Delete does to the path">
-              <button type="button" data-dm="fuse" title="Join the two neighbouring segments; the path stays whole">Fuse</button>
+              <button type="button" data-dm="fuse" title="Join the two neighbouring segments; the path stays whole">Heal</button>
               <button type="button" data-dm="split" title="Leave the path open where the node was">Split</button>
             </div>
             <p class="note">
-              <b>Fuse</b> keeps the path whole, so a pentagon becomes a quadrilateral. It rebuilds one
+              <b>Heal</b> keeps the path whole, so a pentagon becomes a quadrilateral. It rebuilds one
               segment out of two, so it approximates. <b>Split</b> leaves two ends and touches no
-              surviving segment at all. Neither is <b>Break here</b>, which keeps the node.
+              surviving segment at all. Neither is <b>Break here</b>, which keeps the node, nor
+              <b>Fuse</b>, which removes a segment rather than a node.
             </p>
           </div>
           </div>
@@ -403,9 +405,17 @@
               <label><input type="checkbox" id="showGrid" checked /> Show grid</label>
               <label><input type="checkbox" id="snapGrid" checked /> Snap to grid</label>
               <label><input type="checkbox" id="snapPoints" checked /> Snap to points</label>
+              <label title="Shift the lattice so the stroke's edges land on whole pixels, not its centreline"><input type="checkbox" id="pixelFit" /> Pixel fit</label>
               <label><input type="checkbox" id="showHandles" checked /> Show handles</label>
               <label><input type="checkbox" id="filled" checked /> Show fills</label>
             </div>
+            <button class="btn wide" id="fitPixels" type="button" hidden title="Move the selected shape's nodes onto the pixel lattice shown">Fit selection to pixels</button>
+            <p class="note" id="pixelnote" hidden>
+              A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate
+              covers half of two pixels instead of all of one. Pixel fit shifts the grid by half the
+              stroke width to put the painted edges on whole pixels. The shift follows what you have
+              selected, or the width you are about to draw with.
+            </p>
           </div>
           <div class="group">
             <div class="glabel"><span>Backdrop</span><span class="gval" id="backinfo">none</span></div>
@@ -436,6 +446,25 @@
               Shapes list and never reaches the export. Unlock it to drag it about.
               Loading, moving and removing are all undoable; opacity, Show and Locked
               are not, because they say how you want to look at it.
+            </p>
+
+            <div class="glabel sub"><span>Trace</span><span class="gval" id="traceinfo">no image</span></div>
+            <div class="grid2">
+              <label for="traceColours">Colours</label>
+              <input type="number" id="traceColours" value="6" min="1" max="32" step="1" />
+              <label for="traceTol">Within</label>
+              <input type="number" id="traceTol" value="1" min="0" step="0.5" />
+            </div>
+            <div class="row">
+              <label for="traceNoise">Noise</label>
+              <input type="number" id="traceNoise" value="8" min="3" step="1" />
+              <button class="btn" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
+            </div>
+            <p class="note">
+              One shape per colour, holes and all. <b>Colours</b> caps the palette,
+              <b>Within</b> is how far a fitted curve may move in document units, and
+              <b>Noise</b> drops regions with fewer boundary points than that. The
+              backdrop stays where it is, so you can compare. Tracing is one undo step.
             </p>
           </div>
           <div class="group">

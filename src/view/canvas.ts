@@ -27,6 +27,7 @@ import type { TransformPart } from '../model/transform';
 import type { Box } from '../core/bezier';
 import { Pool, setAttrs, svg } from './dom';
 import { docPerPixel, gridDisplayFor, viewBoxAttr } from './viewport';
+import { phaseInForce } from '../model/pixelfit';
 
 /** Transient things the tools want drawn this frame. */
 export interface OverlayExtras {
@@ -319,19 +320,25 @@ export class Canvas {
     const majorD: string[] = [];
     const round = (v: number): number => Math.round(v * 1e10) / 1e10;
 
+    /* Pixel-fit shifts the lattice the tools snap to, so it has to shift the
+       one drawn here by the same amount, from the same function. Drawing an
+       unshifted grid while snapping to a shifted one would be §9's defect
+       again, half a pixel wide and much harder to see. */
+    const phase = state.pixelFit ? (phaseInForce(state.doc, state.selection, state.style) ?? 0) : 0;
+
     // Index lines by whole multiples of the step rather than accumulating a
     // float. Major-line selection is then exact integer arithmetic, and index 0
     // is the origin, so major lines cannot drift off the axes at odd zooms.
-    const ix0 = Math.ceil(cam.x / g.step);
-    const ix1 = Math.floor((cam.x + cam.w) / g.step);
+    const ix0 = Math.ceil((cam.x - phase) / g.step);
+    const ix1 = Math.floor((cam.x + cam.w - phase) / g.step);
     for (let i = ix0; i <= ix1; i++) {
-      const line = `M${round(i * g.step)} ${cam.y}V${cam.y + cam.h}`;
+      const line = `M${round(i * g.step + phase)} ${cam.y}V${cam.y + cam.h}`;
       (i % g.majorEvery === 0 ? majorD : minorD).push(line);
     }
-    const iy0 = Math.ceil(cam.y / g.step);
-    const iy1 = Math.floor((cam.y + cam.h) / g.step);
+    const iy0 = Math.ceil((cam.y - phase) / g.step);
+    const iy1 = Math.floor((cam.y + cam.h - phase) / g.step);
     for (let i = iy0; i <= iy1; i++) {
-      const line = `M${cam.x} ${round(i * g.step)}H${cam.x + cam.w}`;
+      const line = `M${cam.x} ${round(i * g.step + phase)}H${cam.x + cam.w}`;
       (i % g.majorEvery === 0 ? majorD : minorD).push(line);
     }
 

@@ -48,10 +48,17 @@ export function latentHandle(sp: Subpath, i: number, which: 'in' | 'out'): Pt | 
   return [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
 }
 
-/** Round to the grid. `step` of 0 disables snapping. */
-export function snap(p: Pt, step: number): Pt {
+/**
+ * Round to the grid. `step` of 0 disables snapping.
+ *
+ * `phase` shifts the lattice, for pixel-fitting: a one-unit stroke wants its
+ * centreline on half-integers, not integers. See `model/pixelfit.ts`. It is a
+ * shift and not a second lattice, so everything downstream is unaffected.
+ */
+export function snap(p: Pt, step: number, phase = 0): Pt {
   if (!step) return p;
-  return [Math.round(p[0] / step) * step, Math.round(p[1] / step) * step];
+  const one = (v: number): number => Math.round((v - phase) / step) * step + phase;
+  return [one(p[0]), one(p[1])];
 }
 
 /* ----------------------------------------------------------------- moving */
@@ -559,6 +566,120 @@ export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
   };
 }
 
+/**
+ * Why two nodes could not be fused, or `null` when they were.
+ *
+ * Same shape as `RoundRefusal`, and for the same reason: each of these is
+ * something the person who pressed the button can act on.
+ */
+export type FuseRefusal = 'same' | 'apart' | 'tiny';
+
+export interface FuseResult {
+  /** How far each of the two nodes travelled to meet. Zero when already coincident. */
+  moved: number;
+}
+
+/**
+ * Weld two ADJACENT nodes into one, anywhere along a path.
+ *
+ * `mergeEnds` deliberately refuses anything but two free ends, because welding
+ * two ends is a topology change it has to reason about: two paths become one, or
+ * one becomes a ring. In the middle of a path there is no topology to change.
+ * The pair is already joined by a segment, and fusing them just removes that
+ * segment, so this is the simpler operation of the two despite sounding like the
+ * harder one.
+ *
+ * The survivor sits at the midpoint and keeps the handle facing away from the
+ * joint on each side, exactly as `mergeEnds` does. Two nodes already on top of
+ * each other therefore do not move at all, which is the case that matters: this
+ * is the repair for a **zero-length segment**, and a path carrying one can never
+ * be simplified again, because a zero chord leaves the fitter with no tangent.
+ *
+ * **Adjacent only.** Two nodes further apart along the path have a run of
+ * segments between them, and welding them would pinch the path into two loops
+ * that no longer share an interior. That is a different operation with a
+ * different name, and guessing at it here would silently discard whatever ran
+ * between the pair.
+ */
+export function fuseNodes(sp: Subpath, i: number, j: number): FuseResult | FuseRefusal {
+  const n = sp.nodes.length;
+  if (!Number.isInteger(i) || !Number.isInteger(j)) return 'same';
+  if (i < 0 || j < 0 || i >= n || j >= n) return 'same';
+  if (i === j) return 'same';
+
+  /* Order the pair so `a` precedes `b` along the direction of travel. In a
+     closed subpath the last node also precedes the first, which is the pair the
+     ordinary comparison gets backwards. */
+  let a = Math.min(i, j);
+  let b = Math.max(i, j);
+  const wraps = sp.closed && a === 0 && b === n - 1 && n > 2;
+  if (wraps) [a, b] = [b, a];
+  else if (b - a !== 1) return 'apart';
+
+  // Two nodes is the least that draws anything, closed or open. Fusing a pair
+  // out of two would leave one, which draws nothing and which the parser drops
+  // on the way back in.
+  if (n <= 2) return 'tiny';
+
+  const first = sp.nodes[a];
+  const second = sp.nodes[b];
+  const moved = Math.hypot(second.pt[0] - first.pt[0], second.pt[1] - first.pt[1]) / 2;
+  const at: Pt = [(first.pt[0] + second.pt[0]) / 2, (first.pt[1] + second.pt[1]) / 2];
+
+  // Carry the handles with their nodes first, so an already-coincident pair
+  // keeps the curvature either side untouched down to the last bit.
+  shiftNodeTo(first, at);
+  shiftNodeTo(second, at);
+
+  /* The survivor keeps an index rather than being appended: the earlier node
+     normally, and node 0 across the seam, so repairing a ring does not re-root
+     it. Either way it takes the incoming handle from the node that arrives and
+     the outgoing one from the node that leaves, which is the pair of segments
+     that still exists. */
+  const keep = wraps ? second : first;
+  keep.pt = at;
+  keep.hIn = first.hIn;
+  keep.hOut = second.hOut;
+  sp.nodes.splice(wraps ? a : b, 1);
+
+  return { moved };
+}
+
+/**
+ * Distance below which two adjacent anchors count as the same point.
+ *
+ * Deliberately not an epsilon. The cases this repairs put the two anchors at
+ * *bit-identical* coordinates, so 1e-9 would do; the looser bound is for
+ * geometry that has been through a rotate and a scale since, where a segment
+ * that was born zero-length comes back a few ulps long. Anything a person could
+ * see is far above this.
+ */
+const DEGENERATE = 1e-7;
+
+/**
+ * Weld away every zero-length segment in a subpath. Returns how many went.
+ *
+ * The sweep behind the fillet generators. `roundCorner` reuses a neighbour when
+ * a tangent point lands on one, but the rectangle tool and `circulariseSubpath`
+ * build their nodes in one go and cannot check as they place them: a rectangle
+ * rounded to exactly half its shorter side has two anchors on each of the ends
+ * it just made into a semicircle. Running this afterwards is one rule in one
+ * place rather than a coincidence test threaded through three constructors.
+ */
+export function fuseDegenerate(sp: Subpath): number {
+  let gone = 0;
+  // Backwards, so a splice cannot move a pair that has not been looked at yet.
+  for (let i = segmentCount(sp) - 1; i >= 0; i--) {
+    if (sp.nodes.length <= 2) break;
+    const a = sp.nodes[i];
+    const b = sp.nodes[endNodeIndex(sp, i)];
+    if (Math.hypot(b.pt[0] - a.pt[0], b.pt[1] - a.pt[1]) > DEGENERATE) continue;
+    if (typeof fuseNodes(sp, i, endNodeIndex(sp, i)) === 'string') continue;
+    gone++;
+  }
+  return gone;
+}
+
 /** Flip drawing direction. Handles swap sides, and the ring is re-rooted. */
 export function reverseSubpath(sp: Subpath): void {
   sp.nodes.reverse();
@@ -580,6 +701,15 @@ export interface CirculariseResult {
   radius: number;
   /** How far the furthest node had to travel to reach the circle. */
   moved: number;
+  /**
+   * Nodes welded away because two of them shared an angle.
+   *
+   * Two nodes at the same angle about the centre land on the same point of the
+   * circle, which is a zero-length segment however faithfully each one was
+   * placed. Reported rather than silent, because the node count changing is
+   * something the person watching should be told.
+   */
+  fused: number;
   /**
    * The widest arc any one segment now spans, in radians. A cubic's radial
    * error climbs steeply with it, so this is the ceiling on how round the
@@ -697,7 +827,7 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
     b.hIn = [b.pt[0] + Math.sin(ang[j]) * L, b.pt[1] - Math.cos(ang[j]) * L];
   }
 
-  return { centre: fit.centre, radius: r, moved, widestSpan };
+  return { centre: fit.centre, radius: r, moved, widestSpan, fused: fuseDegenerate(sp) };
 }
 
 /**

@@ -42,3 +42,32 @@ used under the MIT License.
 
 No PathBool.js source is vendored into this repository; it is consumed as the
 npm package `path-bool`, and its licence text ships with that package.
+
+--
+
+The raster boundary walk is ported from ImageTracerJS by András Jankovics,
+released into the public domain.
+
+    ImageTracerJS
+    András Jankovics
+    https://github.com/jankovicsandras/imagetracerjs
+    Released into the public domain under the Unlicense
+    https://unlicense.org/
+
+The ported portions are:
+
+  src/core/raster.ts      `layerEdges`, `scanPaths`, `interpolate` and the
+                          16-by-4 walk table, from `layering`, `pathscan` and
+                          `internodes`. Rewritten in TypeScript against this
+                          project's own types, with the per-point direction
+                          codes dropped: they exist to feed ImageTracerJS's own
+                          curve fitter, and ours is Schneider's, in
+                          `src/core/fit.ts`.
+
+                          `censusPalette` and `indexRaster` are NOT ported. The
+                          original quantises by k-means sampling; these count
+                          the image's exact colours, which suits flat artwork
+                          and is what this editor is for.
+
+The Unlicense asks for nothing, including this notice. It is here because a
+reader deserves to know which lines were solved by someone else.

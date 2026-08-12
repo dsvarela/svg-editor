@@ -9,6 +9,7 @@
  */
 
 import { chromium } from 'playwright-core';
+import zlib from 'node:zlib';
 
 const EDGE = '/usr/bin/microsoft-edge';
 const URL = process.env.APP_URL ?? 'http://localhost:5173/';
@@ -159,6 +160,61 @@ async function mk(page) {
   };
 
   return { box, toClient, click, drag, showCanvas };
+}
+
+/**
+ * Write an RGBA raster as a PNG.
+ *
+ * Thirty lines beats a fixture file: a trace scenario needs a picture with a
+ * shape in it, and one checked into the repo would be a binary nobody can read
+ * in a diff and nobody can adjust without a paint program. `pixel(x, y)` returns
+ * `[r, g, b, a]`.
+ */
+function png(width, height, pixel) {
+  const raw = Buffer.alloc(height * (width * 4 + 1));
+  let o = 0;
+  for (let y = 0; y < height; y++) {
+    raw[o++] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const [r, g, b, a] = pixel(x, y);
+      raw[o++] = r;
+      raw[o++] = g;
+      raw[o++] = b;
+      raw[o++] = a;
+    }
+  }
+
+  const table = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = table[(c ^ byte) & 255] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, body) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(body.length);
+    const tagged = Buffer.concat([Buffer.from(type, 'ascii'), body]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(tagged));
+    return Buffer.concat([len, tagged, sum]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // colour type: RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 const scenarios = {
@@ -916,6 +972,281 @@ const scenarios = {
     check(/4 nodes/.test(await page.textContent('#stats')), 'undo did not restore the square');
 
     return { stats, status, d };
+  },
+
+  /**
+   * Fusing nodes, both readings of it.
+   *
+   * The defect this closes is invisible on screen: two anchors on the same point
+   * draw exactly like one. So every check here is against something that can be
+   * read back — the node count, the exported `d`, and whether Simplify will
+   * touch the path at all, which is what a zero-length segment used to prevent.
+   */
+  async fuse(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`fuse: ${what}`);
+    };
+    const { click, drag } = await mk(page);
+
+    // A square carrying a duplicate anchor at [64, 16], as an import would.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', 'M20 16 L64 16 L64 16 L64 48 L20 48 Z');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+
+    const before = await page.textContent('#stats');
+    check(/5 nodes/.test(before), `the duplicate anchor did not survive the parse: "${before}"`);
+
+    /* The sweep reading: more than two nodes selected, so Fuse looks for
+       zero-length segments rather than welding a chosen pair. Marquee from
+       outside the shape. */
+    await drag([8, 6], [76, 58]);
+    await page.waitForTimeout(120);
+    await tab(page, 'node');
+    await page.click('#fuseNodes');
+    await page.waitForTimeout(200);
+
+    const swept = await page.textContent('#stats');
+    const sweptStatus = await page.textContent('#status');
+    check(/4 nodes/.test(swept), `after the sweep: "${swept}"`);
+    check(/Fused 1 zero-length segment away/.test(sweptStatus), `status says "${sweptStatus}"`);
+
+    /* The point of the repair, and the half a node count cannot show: the path
+       is simplifiable again. A zero chord gives the fitter no tangent, so one
+       duplicate anchor used to make the whole path refuse. */
+    const d = await page.getAttribute('.artwork path', 'd');
+    check(!/64\s+16\s+L\s*64\s+16/.test(d), `the duplicate anchor is still exported: ${d}`);
+
+    await undo(page);
+    check(/5 nodes/.test(await page.textContent('#stats')), 'undo did not put the duplicate back');
+    await page.click('#fuseNodes');
+    await page.waitForTimeout(200);
+
+    // The pair reading: exactly two adjacent nodes, welded at their midpoint.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+    await click([20, 16]);
+    await click([64, 16], 'Shift');
+    await page.waitForTimeout(120);
+    await page.click('#fuseNodes');
+    await page.waitForTimeout(200);
+
+    const pairStatus = await page.textContent('#status');
+    check(/Fused the two nodes/.test(pairStatus), `pair status says "${pairStatus}"`);
+    check(/3 nodes/.test(await page.textContent('#stats')), 'the pair did not become one node');
+    const welded = await page.getAttribute('.artwork path', 'd');
+    check(/42\b/.test(welded), `the survivor is not at the midpoint x=42: ${welded}`);
+
+    /* Two free ends are the one case Fuse declines, because that is what Merge
+       is for, and declining has to leave the document alone. */
+    await openSource(page);
+    await page.fill('#src', 'M10 10 L30 10 L30 30');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await page.keyboard.press('Escape');
+    await click([10, 10]);
+    await click([30, 30], 'Shift');
+    await page.waitForTimeout(120);
+    const ends = await page.isDisabled('#fuseNodes');
+    check(ends, 'Fuse offered itself for two free ends, which is Merge');
+
+    return { before, swept, sweptStatus, pairStatus, d: welded };
+  },
+
+  /**
+   * Auto-trace, end to end from a real PNG.
+   *
+   * The unit tests feed `traceImage` a plain object and never touch a canvas.
+   * Everything between a file on disk and shapes in the document is only here:
+   * decoding, `getImageData`, the backdrop's placement, and the undo step.
+   */
+  async trace(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`trace: ${what}`);
+    };
+
+    await tab(page, 'doc');
+
+    /* A 64x64 picture with three flat colours and a hole: a red disc on a
+       transparent ground, with a blue square punched through the middle of it.
+       Transparent, so the background is a palette entry that paints nothing and
+       has to be dropped rather than exported. */
+    const buffer = png(64, 64, (x, y) => {
+      const d = Math.hypot(x - 31.5, y - 31.5);
+      if (x >= 24 && x < 40 && y >= 24 && y < 40) return [0, 0, 255, 255];
+      return d < 26 ? [255, 0, 0, 255] : [0, 0, 0, 0];
+    });
+    await page.setInputFiles('#backFile', { name: 'icon.png', mimeType: 'image/png', buffer });
+    await page.waitForTimeout(300);
+
+    const info = await page.textContent('#traceinfo');
+    check(info === '64 × 64 px', `trace readout says "${info}"`);
+
+    const before = await page.$$eval('.artwork path', (els) => els.length);
+    await page.click('#traceGo');
+    await page.waitForTimeout(600);
+
+    const status = await page.textContent('#status');
+    check(/^Traced 2 colours into 3 paths/.test(status), `status says "${status}"`);
+
+    const after = await page.$$eval('.artwork path', (els) => els.length);
+    check(after === before + 2, `${after - before} shapes added, want 2`);
+
+    /* The shapes carry the picture's own colours, and the transparent ground is
+       not among them. */
+    const fills = await page.$$eval('.artwork path', (els) =>
+      els.map((el) => el.getAttribute('fill')),
+    );
+    check(fills.includes('#ff0000'), `no red shape: ${fills}`);
+    check(fills.includes('#0000ff'), `no blue shape: ${fills}`);
+
+    // The disc keeps its hole, as a second subpath under even-odd.
+    const red = await page.$$eval('.artwork path', (els) => {
+      const el = els.find((e) => e.getAttribute('fill') === '#ff0000');
+      return { d: el.getAttribute('d'), rule: el.getAttribute('fill-rule') };
+    });
+    check((red.d.match(/M/g) ?? []).length === 2, `the disc has no hole: ${red.d}`);
+    check(red.rule === 'evenodd', `fill-rule is ${red.rule}`);
+
+    /* Traced onto the backdrop, not beside it. The disc fills most of a
+       reference that was fitted into the page, so its box should sit inside the
+       backdrop's and cover the bulk of it. */
+    const place = await page.$eval('.backdrop', (el) => ({
+      x: +el.getAttribute('x'),
+      y: +el.getAttribute('y'),
+      w: +el.getAttribute('width'),
+      h: +el.getAttribute('height'),
+    }));
+    const box = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('.artwork path')].find(
+        (e) => e.getAttribute('fill') === '#ff0000',
+      );
+      const b = el.getBBox();
+      return { x: b.x, y: b.y, w: b.width, h: b.height };
+    });
+    check(box.x >= place.x - 0.5 && box.y >= place.y - 0.5, `traced at [${box.x},${box.y}], backdrop at [${place.x},${place.y}]`);
+    check(box.w > place.w * 0.7, `traced disc is ${box.w} wide against a ${place.w} backdrop`);
+
+    // The reference survives the trace, which is what makes comparing possible.
+    const stillThere = await page.$eval('.backdrop', (el) => el.getAttribute('display') !== 'none');
+    check(stillThere, 'tracing consumed the backdrop');
+
+    // One undo step, however many shapes it added.
+    await undo(page);
+    const undone = await page.$$eval('.artwork path', (els) => els.length);
+    check(undone === before, `undo left ${undone} paths, want ${before}`);
+
+    return { status, fills, box, place, holes: (red.d.match(/M/g) ?? []).length };
+  },
+
+  /**
+   * Pixel fit, and the one thing only a browser can check.
+   *
+   * The arithmetic is unit-tested. What is not is whether the grid you *see* is
+   * the lattice you snap to: §9's defect, back at half a pixel and much harder
+   * to spot by eye. So this reads the drawn gridlines out of the overlay and
+   * compares them against where a dragged node actually landed.
+   */
+  async pixelFit(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`pixelFit: ${what}`);
+    };
+    const { drag } = await mk(page);
+
+    await tab(page, 'doc');
+    // Zoom in far enough that every snap position is drawn, or the comparison
+    // below is against a thinned lattice and proves less than it looks.
+    await page.fill('#gridStep', '1');
+    await page.waitForTimeout(120);
+
+    /* x of every vertical gridline, from the overlay's own `d`. Both paths:
+       every fifth line is major and lives in the other element, so reading only
+       `.grid-minor` reports a lattice with holes in it and the comparison below
+       fails for a node that landed correctly. */
+    const verticals = async () =>
+      page.evaluate(() =>
+        ['.grid-minor', '.grid-major']
+          .flatMap((sel) => [
+            ...(document.querySelector(sel)?.getAttribute('d') ?? '').matchAll(
+              /M(-?[\d.]+) [-\d.]+V/g,
+            ),
+          ])
+          .map((m) => +m[1])
+          .sort((a, b) => a - b),
+      );
+
+    const plain = await verticals();
+    check(plain.length > 3, `only ${plain.length} vertical gridlines to compare against`);
+    check(plain.every((x) => Math.abs(x - Math.round(x)) < 1e-6), `plain grid is off-integer: ${plain.slice(0, 4)}`);
+
+    // A one-unit stroke: the case where whole coordinates are the wrong answer.
+    await tab(page, 'shape');
+    await page.fill('#strokeWidth', '1');
+    await page.waitForTimeout(120);
+    await tab(page, 'doc');
+    await page.click('#pixelFit');
+    await page.waitForTimeout(150);
+
+    const shifted = await verticals();
+    check(
+      shifted.every((x) => Math.abs(Math.abs(x - Math.round(x)) - 0.5) < 1e-6),
+      `pixel fit did not move the drawn grid onto half-integers: ${shifted.slice(0, 4)}`,
+    );
+    const readout = await page.textContent('#gridreadout');
+    check(/half pixels/.test(readout), `grid readout says "${readout}"`);
+
+    /* And the half that matters: a node dragged with the switch on lands on the
+       lattice that is drawn, not the one that was drawn before. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', 'M20 20 L60 20 L60 44 Z');
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+
+    await drag([20, 20], [30.2, 28.4]);
+    await page.waitForTimeout(200);
+    const d = await page.getAttribute('.artwork path', 'd');
+    const first = d.match(/M\s*(-?[\d.]+)\s+(-?[\d.]+)/);
+    const landed = [+first[1], +first[2]];
+    check(
+      landed.every((v) => Math.abs(Math.abs(v - Math.round(v)) - 0.5) < 1e-6),
+      `the dragged node landed at [${landed}], which is not on the drawn lattice`,
+    );
+    /* Against the lattice drawn *now*: applying source re-fits the camera, so
+       the set captured before it names a different span of the same lattice. */
+    const onScreen = await verticals();
+    check(
+      onScreen.includes(landed[0]),
+      `x=${landed[0]} is not one of the drawn gridlines ${onScreen.slice(0, 6)}`,
+    );
+
+    // Fit selection moves what is already there onto the same lattice.
+    await page.keyboard.press('Control+a');
+    await page.waitForTimeout(120);
+    await page.click('#fitPixels');
+    await page.waitForTimeout(200);
+    const fitted = await page.getAttribute('.artwork path', 'd');
+    const nums = [...fitted.matchAll(/-?[\d.]+/g)].map((m) => +m[0]);
+    check(
+      nums.every((v) => Math.abs(Math.abs(v - Math.round(v)) - 0.5) < 1e-6),
+      `fit to pixels left coordinates off the lattice: ${fitted}`,
+    );
+
+    // Turning it off puts the drawn grid back where it was.
+    await page.click('#pixelFit');
+    await page.waitForTimeout(150);
+    const back = await verticals();
+    check(back.every((x) => Math.abs(x - Math.round(x)) < 1e-6), `grid stayed shifted: ${back.slice(0, 4)}`);
+
+    return { plain: plain.slice(0, 4), shifted: shifted.slice(0, 4), landed, fitted, readout };
   },
 
   /**

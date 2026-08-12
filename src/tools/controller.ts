@@ -32,6 +32,8 @@ import {
   deleteNodesSplitting,
   distributeNodes,
   connectEnds,
+  fuseDegenerate,
+  fuseNodes,
   isPathEnd,
   mergeEnds,
   latentHandle,
@@ -49,8 +51,12 @@ import {
   transformCaptured,
   transformShape,
 } from '../model/ops';
-import type { AlignMode, NodeSnapshot, RoundRefusal } from '../model/ops';
+import type { AlignMode, FuseRefusal, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
+import { phaseInForce, phaseLabel } from '../model/pixelfit';
+import { traceImage } from '../model/trace';
+import type { TraceOptions, TraceResult } from '../model/trace';
+import type { RasterLike } from '../core/raster';
 import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/transform';
 import type { TransformPart } from '../model/transform';
 import { ellipseSubpath, rectSubpath } from '../core/primitives';
@@ -209,6 +215,20 @@ export class Controller {
   }
 
   /**
+   * The lattice shift in force, or zero when pixel-fit is off or undecidable.
+   *
+   * Read fresh each time rather than cached: it follows the selection and the
+   * pending stroke width, both of which change under the user's hand. The canvas
+   * calls the same function for the grid it draws, so the lattice you aim at and
+   * the lattice you see cannot disagree.
+   */
+  phase(): number {
+    const s = this.store.state;
+    if (!s.pixelFit) return 0;
+    return phaseInForce(s.doc, s.selection, s.style) ?? 0;
+  }
+
+  /**
    * Apply snapping. Grid first, then points -- a nearby existing point beats
    * the grid, because welding to something the user can see matters more than
    * landing on an invisible lattice.
@@ -216,7 +236,7 @@ export class Controller {
   private snap(p: Pt, exclude?: NodeRef, excludeShape?: string): Pt {
     const s = this.store.state;
     let out = p;
-    if (s.snapToGrid && s.gridStep > 0) out = snapTo(p, s.gridStep);
+    if (s.snapToGrid && s.gridStep > 0) out = snapTo(p, s.gridStep, this.phase());
 
     if (s.snapToPoints) {
       const k = this.canvas.scale(s.camera);
@@ -1169,6 +1189,225 @@ export class Controller {
   }
 
   /**
+   * Turn the loaded backdrop into shapes.
+   *
+   * One undo step, and the raster is left exactly where it was: tracing does
+   * not consume the reference, because the first thing anyone does after a trace
+   * is compare it against the original. Hiding the backdrop afterwards would
+   * also be a view change smuggled into an edit, which §18 keeps apart.
+   *
+   * The traced shapes land on top of the backdrop in document space, so the two
+   * can be flicked between. Ids are assigned here rather than in the tracer,
+   * which knows nothing about the document it is going into.
+   */
+  traceBackdrop(raster: RasterLike, opts: TraceOptions): boolean {
+    const s = this.store.state;
+    const b = s.backdrop;
+    if (!b) {
+      this.onMessage?.('Load an image in the Backdrop panel first.', false);
+      return false;
+    }
+
+    let r: TraceResult;
+    try {
+      r = traceImage(raster, { x: b.x, y: b.y, w: b.w, h: b.h }, opts);
+    } catch {
+      // The walk is exact integer work and should not throw, but it runs over
+      // whatever a file decoded to. A failure here leaves the document alone.
+      this.onMessage?.('That image could not be traced.', false);
+      return false;
+    }
+
+    if (!r.shapes.length) {
+      this.onMessage?.('Nothing to trace. Every region was smaller than the noise floor.', false);
+      return false;
+    }
+
+    const ok = this.store.tryEdit((st) => {
+      for (const shape of r.shapes) {
+        shape.id = nextId('trace');
+        st.doc.shapes.push(shape);
+      }
+      st.selection = emptySelection();
+      for (const shape of r.shapes) st.selection.shapes.add(shape.id);
+      return true;
+    });
+    if (!ok) return false;
+
+    this.onMessage?.(
+      `Traced ${r.colours} colour${r.colours === 1 ? '' : 's'} into ${r.paths} path${r.paths === 1 ? '' : 's'}: ` +
+        `${r.nodesBefore} nodes fitted to ${r.nodesAfter}.`,
+      true,
+    );
+    return true;
+  }
+
+  /**
+   * Move the selection onto the pixel lattice it should already be on.
+   *
+   * The other half of pixel fit. Snapping only helps what you place next, and an
+   * icon that already exists -- imported, traced, or drawn before the switch was
+   * found -- needs the same lattice applied to what is there. Anchors move;
+   * handles ride along, so a curve keeps its shape rather than being flattened
+   * towards the grid.
+   *
+   * Deliberately not automatic. Nothing here rewrites coordinates the user did
+   * not ask about, and a preference that silently moved the drawing the moment
+   * it was ticked would be the worst version of this feature.
+   */
+  fitToPixels(): boolean {
+    const s = this.store.state;
+    const step = s.gridStep > 0 ? s.gridStep : 1;
+    const phase = phaseInForce(s.doc, s.selection, s.style);
+    if (phase === null) {
+      this.onMessage?.(
+        'Those shapes have different stroke widths, so no one lattice fits them all. Fit them one at a time.',
+        false,
+      );
+      return false;
+    }
+
+    const targets = this.selectedSubpaths();
+    if (!targets.size) {
+      this.onMessage?.('Select a shape, or some of its nodes, to fit.', false);
+      return false;
+    }
+
+    let moved = 0;
+    let count = 0;
+    this.store.tryEdit((st) => {
+      for (const [id, sps] of targets) {
+        const shape = findShape(st.doc, id);
+        for (const i of sps) {
+          const sp = shape?.subpaths[i];
+          if (!sp) continue;
+          sp.nodes.forEach((_, j) => {
+            const from = sp.nodes[j].pt;
+            const to = snapTo(from, step, phase);
+            const d = Math.hypot(to[0] - from[0], to[1] - from[1]);
+            if (d === 0) return;
+            moveAnchor(sp, j, to);
+            moved = Math.max(moved, d);
+            count++;
+          });
+        }
+      }
+      return count > 0;
+    });
+
+    if (!count) {
+      this.onMessage?.('Already on the pixel grid. Nothing to move.', true);
+      return false;
+    }
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    this.onMessage?.(
+      `Fitted ${count} node${count === 1 ? '' : 's'} to ${phaseLabel(phase)}. ` +
+        `The furthest moved ${dp(moved)}.`,
+      true,
+    );
+    return true;
+  }
+
+  /**
+   * Weld nodes together in the middle of a path.
+   *
+   * Two readings, and the selection says which one is meant. With exactly two
+   * nodes picked it welds that pair; with a shape or a run of nodes it sweeps
+   * for zero-length segments and welds those. The sweep is the repair half: a
+   * path can arrive carrying one from an import, and a path carrying one can
+   * never be simplified again, because a zero chord leaves the fitter with no
+   * tangent to work from.
+   *
+   * `Merge ends` covers the other case, two free ends, and is pointed at rather
+   * than quietly stood in for: welding the two ends of an open path is a
+   * topology change and deserves the keystroke that says so.
+   */
+  fuseSelection(): boolean {
+    const s = this.store.state;
+    const refs = [...s.selection.nodes].map(parseNodeKey);
+
+    if (refs.length === 2) return this.fusePair(refs[0], refs[1]);
+
+    const targets = this.selectedSubpaths();
+    if (!targets.size) {
+      this.onMessage?.('Select two adjacent nodes, or a shape to sweep.', false);
+      return false;
+    }
+
+    let gone = 0;
+    this.store.tryEdit((st) => {
+      for (const [id, sps] of targets) {
+        const shape = findShape(st.doc, id);
+        for (const i of sps) {
+          const sp = shape?.subpaths[i];
+          if (sp) gone += fuseDegenerate(sp);
+        }
+      }
+      if (gone) st.selection = emptySelection();
+      return gone > 0;
+    });
+
+    if (!gone) {
+      this.onMessage?.('No two nodes there sit on the same point.', false);
+      return false;
+    }
+    this.onMessage?.(`Fused ${gone} zero-length segment${gone === 1 ? '' : 's'} away.`, true);
+    return true;
+  }
+
+  /** The two-node half of `fuseSelection`, split out to keep both readable. */
+  private fusePair(ra: NodeRef, rb: NodeRef): boolean {
+    const s = this.store.state;
+    if (ra.shape !== rb.shape || ra.sp !== rb.sp) {
+      this.onMessage?.('Fuse works within one path. Those two nodes are on different ones.', false);
+      return false;
+    }
+    const sp = findShape(s.doc, ra.shape)?.subpaths[ra.sp];
+    if (!sp) return false;
+
+    if (isPathEnd(sp, ra.i) && isPathEnd(sp, rb.i)) {
+      this.onMessage?.('Those are the two ends of the path. Merge ends welds them.', false);
+      return false;
+    }
+
+    let moved = 0;
+    let why: FuseRefusal | null = null;
+    this.store.tryEdit((st) => {
+      const live = findShape(st.doc, ra.shape)?.subpaths[ra.sp];
+      if (!live) return false;
+      const r = fuseNodes(live, ra.i, rb.i);
+      if (typeof r === 'string') {
+        why = r;
+        return false;
+      }
+      moved = r.moved;
+      st.selection = emptySelection();
+      return true;
+    });
+
+    if (why) {
+      this.onMessage?.(
+        why === 'apart'
+          ? 'Fuse needs two nodes next to each other along the path.'
+          : why === 'tiny'
+            ? 'That path is too short to fuse. Two nodes is the least that draws.'
+            : 'Pick two different nodes.',
+        false,
+      );
+      return false;
+    }
+
+    const dp = (v: number): string => (+v.toFixed(3)).toString();
+    this.onMessage?.(
+      moved > 0
+        ? `Fused the two nodes. Each moved ${dp(moved)} to meet.`
+        : 'Fused the two nodes. They were already on the same point.',
+      true,
+    );
+    return true;
+  }
+
+  /**
    * Set fill, stroke, width or fill rule.
    *
    * With something selected this restyles it, one undo step. With nothing
@@ -1498,6 +1737,14 @@ export class Controller {
         if (!e.shiftKey) return;
         e.preventDefault();
         this.joinSelection('merge');
+        return;
+      }
+      // Shift+F welds two adjacent nodes anywhere along a path, where Shift+M
+      // only ever welds two free ends.
+      case 'F': {
+        if (!e.shiftKey) return;
+        e.preventDefault();
+        this.fuseSelection();
         return;
       }
       case 'v': {

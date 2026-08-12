@@ -31,12 +31,13 @@ npm run dev        # http://localhost:5173
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
-| `npm test` | Unit and DOM tests (406 across 12 files) |
+| `npm test` | Unit and DOM tests (463 across 15 files) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **170.7 kB, 53.7 kB
-gzipped**. Open `dist/index.html` from disk and it works.
+The production build is one file, no external requests: **182.9 kB, 57.7 kB
+gzipped**. Open `dist/index.html` from disk and it works. Auto-trace is 2.0 kB of
+that, against the 278 kB a WASM tracer would have cost; see ARCHITECTURE §26.
 
 ---
 
@@ -48,7 +49,7 @@ gzipped**. Open `dist/index.html` from disk and it works.
 | [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does |
 | [`docs/REVIEW-2026-08-12.md`](docs/REVIEW-2026-08-12.md) | The last review: nine defect classes, 17 doc claims, 6 tests that could not fail |
-| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The one before: ten defect classes, nine fixed |
+| [`docs/REVIEW-2026-08-11.md`](docs/REVIEW-2026-08-11.md) | The one before: ten defect classes, all ten now fixed |
 | [`SHOPPING-LIST.md`](SHOPPING-LIST.md) | What is deliberately not built yet, and why |
 
 ---
@@ -116,7 +117,7 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 406 tests over parsing, serialising,
+**Unit and DOM tests**, with `npm test`. 463 tests over parsing, serialising,
 geometry ops, rendering invariants, SVG import/export, bend, booleans, simplify,
 transforms, history, the grid and the primitives. The rendering tests run in jsdom against the real `Canvas`.
 
@@ -138,11 +139,16 @@ differs, and pass `--headed` to watch.
 Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
 `continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
 `marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
-`backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`.
+`backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`,
+`fuse`, `trace`, `pixelFit`.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be
-checked properly against a layout engine that has one. `chrome` is the other:
+checked properly against a layout engine that has one. `pixelFit` is the same
+idea half a pixel finer: it reads the drawn gridlines out of the overlay and
+checks a dragged node landed on one of them. `trace` needs a browser for a
+different reason -- it writes a PNG, loads it as a backdrop and traces it, so
+image decoding and `getImageData` are under test rather than mocked. `chrome` is the other:
 it asserts that the canvas grows when a panel closes and that the page has no
 scroll to speak of, neither of which means anything without real layout.
 

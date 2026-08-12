@@ -156,24 +156,24 @@ coordinate system, and no numbers that only make sense after a matrix you cannot
 see. The cost is that rotating by ten degrees and back is not exactly the
 identity. Undo is exact; arithmetic is not.
 
-## Rounding refuses where fusing approximates
+## Rounding refuses where healing approximates
 
 Two operations that both rebuild a corner, and they answer the same question
-differently. **Fuse** approximates: it rebuilds one segment from two and the
+differently. **Heal** approximates: it rebuilds one segment from two and the
 result can visibly differ. **Round** refuses outright if either side of the node
 is a curve.
 
-The difference is what you can tell. A fused segment that came out wrong is
+The difference is what you can tell. A healed segment that came out wrong is
 visible immediately and one keystroke away from being undone. A fillet that is a
 fraction of a degree off tangent looks correct at every zoom you are likely to
 check, and shows up later as a seam in the finished artwork. So one is allowed to
 be approximate and the other is not.
 
-## Delete never refuses, and fuse is approximate
+## Delete never refuses, and healing is approximate
 
 Deleting a node has two reasonable meanings and this editor lets you pick.
 
-**Fuse** keeps the path whole by rebuilding one segment from the two that met at
+**Heal** keeps the path whole by rebuilding one segment from the two that met at
 the node. Rebuilding is approximate by nature. When both original curves bowed
 the same way it is very close; across an inflection it visibly differs, because
 one cubic curve cannot reproduce an S made of two.

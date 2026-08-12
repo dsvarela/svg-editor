@@ -12,6 +12,8 @@ import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
 import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
+import { phaseInForce, phaseLabel } from './model/pixelfit';
+import { DEFAULT_TRACE, rasterFrom } from './model/trace';
 import { Store } from './model/store';
 import type { Backdrop, EditorState } from './model/store';
 import { Canvas } from './view/canvas';
@@ -235,7 +237,10 @@ on('#scaleGo', () => {
 
 /* ------------------------------------------------------------- checkboxes */
 
-const bindCheck = (id: string, key: 'showGrid' | 'snapToGrid' | 'snapToPoints' | 'showHandles' | 'filled' | 'minify'): void => {
+const bindCheck = (
+  id: string,
+  key: 'showGrid' | 'snapToGrid' | 'snapToPoints' | 'pixelFit' | 'showHandles' | 'filled' | 'minify',
+): void => {
   const input = $(id) as HTMLInputElement;
   input.checked = store.state[key];
   input.addEventListener('change', () => store.update((s) => ((s[key] as boolean) = input.checked)));
@@ -243,6 +248,7 @@ const bindCheck = (id: string, key: 'showGrid' | 'snapToGrid' | 'snapToPoints' |
 bindCheck('#showGrid', 'showGrid');
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
+bindCheck('#pixelFit', 'pixelFit');
 bindCheck('#showHandles', 'showHandles');
 bindCheck('#filled', 'filled');
 bindCheck('#minify', 'minify');
@@ -495,6 +501,8 @@ ntypeSeg.addEventListener('click', (e) => {
 on('#breakPath', () => controller.breakAtSelection());
 on('#joinPath', () => controller.joinSelection('connect'));
 on('#mergePath', () => controller.joinSelection('merge'));
+on('#fuseNodes', () => controller.fuseSelection());
+on('#fitPixels', () => controller.fitToPixels());
 on('#delNode', () => controller.deleteSelection());
 
 const delModeSeg = $('#delmode');
@@ -595,6 +603,12 @@ function refreshInspector(): void {
   const twoEnds = count === 2 && ends.length === 2;
   ($('#joinPath') as HTMLButtonElement).disabled = !twoEnds;
   ($('#mergePath') as HTMLButtonElement).disabled = !twoEnds;
+  /* Fuse takes either reading: two nodes to weld, or a wider selection to sweep
+     for zero-length segments. Two free ends is the one case it declines, since
+     that is Merge's, so the button goes with it rather than offering a press
+     that can only answer back. */
+  ($('#fuseNodes') as HTMLButtonElement).disabled =
+    twoEnds || (count === 0 && store.state.selection.shapes.size === 0);
 
   const dp = store.state.decimals;
   for (const f of coordFields) {
@@ -795,6 +809,48 @@ function loadBackdrop(file: File): void {
   };
   probe.src = src;
 }
+
+/**
+ * Trace the loaded backdrop.
+ *
+ * The image is re-decoded from its object URL rather than read off the
+ * `<image>` on the canvas: that element is scaled to the backdrop's placement,
+ * and tracing wants the pixels, which are the information, at their natural
+ * size. `decode()` rather than `onload` so a failure is a rejected promise
+ * instead of a callback nobody is holding.
+ */
+async function traceBackdrop(): Promise<void> {
+  const b = store.state.backdrop;
+  if (!b) {
+    status.textContent = 'Load an image in the Backdrop panel first.';
+    status.className = 'st err';
+    return;
+  }
+  const num = (sel: string, fallback: number): number => {
+    const v = Number(($(sel) as HTMLInputElement).value);
+    return Number.isFinite(v) ? v : fallback;
+  };
+
+  const btn = $('#traceGo') as HTMLButtonElement;
+  btn.disabled = true;
+  try {
+    const img = new Image();
+    img.src = b.src;
+    await img.decode();
+    const raster = rasterFrom(img, b.naturalW, b.naturalH);
+    controller.traceBackdrop(raster, {
+      colours: num('#traceColours', DEFAULT_TRACE.colours),
+      tolerance: num('#traceTol', DEFAULT_TRACE.tolerance),
+      minPoints: num('#traceNoise', DEFAULT_TRACE.minPoints),
+    });
+  } catch {
+    status.textContent = 'That image could not be read for tracing.';
+    status.className = 'st err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+on('#traceGo', () => void traceBackdrop());
 
 on('#backPick', () => backFile.click());
 backFile.addEventListener('change', () => {
@@ -1204,6 +1260,19 @@ store.subscribe((s) => {
         : s.showGrid
           ? 'drawn only'
           : 'off, step kept';
+  /* Pixel fit shifts the lattice, so the readout has to say which one is in
+     force -- a grid that says "1" while sitting on half-integers is the same
+     lie §9 was written to stop. `mixed widths` is a real answer: two shapes half
+     a unit apart in phase have no lattice that serves both, so the plain grid
+     stands and the readout says why. */
+  const pnote = $('#pixelnote') as HTMLElement;
+  const pfit = $('#fitPixels') as HTMLButtonElement;
+  pnote.hidden = !s.pixelFit;
+  pfit.hidden = !s.pixelFit;
+  pfit.disabled = s.selection.shapes.size === 0 && s.selection.nodes.size === 0;
+  if (s.pixelFit && s.gridStep) {
+    gridreadout.textContent += ` · ${phaseLabel(phaseInForce(s.doc, s.selection, s.style))}`;
+  }
   // Declared in the markup and never written to until now, so the Draw group
   // was the one panel whose header value was permanently blank.
   /* The style panel shows the first selected shape, or what the next new shape
@@ -1270,9 +1339,13 @@ store.subscribe((s) => {
 
   const b = s.backdrop;
   backinfo.textContent = !b ? 'none' : b.visible ? (b.locked ? b.name : `${b.name} · unlocked`) : 'hidden';
-  for (const id of ['#backOpacity', '#backX', '#backY', '#backScale', '#backFit', '#backClear', '#backShow', '#backLock']) {
+  for (const id of ['#backOpacity', '#backX', '#backY', '#backScale', '#backFit', '#backClear', '#backShow', '#backLock', '#traceColours', '#traceTol', '#traceNoise', '#traceGo']) {
     ($(id) as HTMLInputElement).disabled = !b;
   }
+  /* The size traced is the image's own, not the size it has been scaled to on
+     screen: the pixels are the information and the placement is not, so a
+     reference shrunk to line something up still traces at full detail. */
+  $('#traceinfo').textContent = b ? `${b.naturalW} × ${b.naturalH} px` : 'no image';
   if (b) {
     // Never clobber a field the pointer is in the middle of editing.
     const set = (id: string, v: number): void => {
