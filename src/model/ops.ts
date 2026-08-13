@@ -19,6 +19,7 @@ import {
   continuityOf,
   endNodeIndex,
   makeNode,
+  nextNodeId,
   segmentAsCubic,
   segmentCount,
   segmentIsLine,
@@ -539,7 +540,7 @@ export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
   return {
     nodes: [
       ...a.sp.nodes.slice(0, -1),
-      { pt: at, hIn: tail.hIn, hOut: head.hOut },
+      { id: tail.id, pt: at, hIn: tail.hIn, hOut: head.hOut },
       ...b.sp.nodes.slice(1),
     ],
     closed: false,
@@ -912,8 +913,18 @@ export function roundCorner(
   const startsAtPrev = Math.hypot(t1[0] - prev.pt[0], t1[1] - prev.pt[1]) <= MEET;
   const endsAtNext = Math.hypot(t2[0] - next.pt[0], t2[1] - next.pt[1]) <= MEET;
 
-  const first: PathNode = { pt: t1, hIn: null, hOut: [t1[0] - u[0] * h, t1[1] - u[1] * h] };
-  const second: PathNode = { pt: t2, hIn: [t2[0] - v[0] * h, t2[1] - v[1] * h], hOut: null };
+  const first: PathNode = {
+    id: nextNodeId(),
+    pt: t1,
+    hIn: null,
+    hOut: [t1[0] - u[0] * h, t1[1] - u[1] * h],
+  };
+  const second: PathNode = {
+    id: nextNodeId(),
+    pt: t2,
+    hIn: [t2[0] - v[0] * h, t2[1] - v[1] * h],
+    hOut: null,
+  };
 
   const insert: PathNode[] = [];
   if (startsAtPrev) prev.hOut = first.hOut;

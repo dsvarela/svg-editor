@@ -24,7 +24,7 @@
  * ever align one of its two edges.
  */
 
-import { findShape, parseNodeKey } from './doc';
+import { findShape, resolveNodes } from './doc';
 import type { Selection } from './doc';
 import type { Doc, Style } from '../core/types';
 
@@ -55,8 +55,8 @@ export function phaseInForce(doc: Doc, selection: Selection, pending: Style): nu
     const shape = findShape(doc, id);
     if (shape) styles.push(shape.style);
   }
-  for (const key of selection.nodes) {
-    const shape = findShape(doc, parseNodeKey(key).shape);
+  for (const { ref } of resolveNodes(doc, selection)) {
+    const shape = findShape(doc, ref.shape);
     if (shape) styles.push(shape.style);
   }
 

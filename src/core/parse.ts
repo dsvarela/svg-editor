@@ -25,6 +25,7 @@
 
 import { cubicIsLine, quadToCubic } from './bezier';
 import { arcToCubics } from './arc';
+import { nextNodeId } from './types';
 import type { Cubic, PathNode, Pt, Subpath } from './types';
 
 /* --------------------------------------------------------------- tokenize */
@@ -130,7 +131,7 @@ export function tokenize(path: string): Token[] {
 
 /* ------------------------------------------------------------------ parse */
 
-const node = (pt: Pt): PathNode => ({ pt, hIn: null, hOut: null });
+const node = (pt: Pt): PathNode => ({ id: nextNodeId(), pt, hIn: null, hOut: null });
 
 /**
  * Accumulates nodes for one subpath, welding each new segment onto the

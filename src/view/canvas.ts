@@ -16,10 +16,9 @@
  */
 
 import { STROKE_CAP, STROKE_JOIN, continuityOf, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Shape, ViewBox } from '../core/types';
+import type { Doc, Pt, ViewBox } from '../core/types';
 import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
-import { nodeKey } from '../model/doc';
 import { latentHandle } from '../model/ops';
 import { keylinesFor } from '../model/keylines';
 import type { Alignment } from '../model/smart';
@@ -556,8 +555,7 @@ export class Canvas {
 
       shape.subpaths.forEach((sp, spI) => {
         sp.nodes.forEach((n, i) => {
-          const key = nodeKey({ shape: shape.id, sp: spI, i });
-          const isSel = sel.nodes.has(key) || shapeSelected;
+          const isSel = sel.nodes.has(n.id) || shapeSelected;
           const near = markers && inView(n.pt);
 
           if (state.showHandles && isSel && markers) {
@@ -636,8 +634,7 @@ export class Canvas {
             const bI = (seg + 1) % sp.nodes.length;
             const both =
               shapeSelected ||
-              (sel.nodes.has(nodeKey({ shape: shape.id, sp: spI, i: aI })) &&
-                sel.nodes.has(nodeKey({ shape: shape.id, sp: spI, i: bI })));
+              (sel.nodes.has(sp.nodes[aI].id) && sel.nodes.has(sp.nodes[bI].id));
             if (!both) continue;
 
             /* The curve's own midpoint, taken from the segment and never from a
@@ -770,7 +767,3 @@ function padded(b: Box | null | undefined, d: number): Box | null {
   return { x0: b.x0 - d, y0: b.y0 - d, x1: b.x1 + d, y1: b.y1 + d };
 }
 
-export const shapeIsInBox = (shape: Shape, b: Box): boolean =>
-  shape.subpaths.some((sp) =>
-    sp.nodes.some((n) => n.pt[0] >= b.x0 && n.pt[0] <= b.x1 && n.pt[1] >= b.y0 && n.pt[1] <= b.y1),
-  );

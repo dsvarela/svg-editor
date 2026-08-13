@@ -5,7 +5,7 @@
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import { defaultStyle, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Shape, Style, Subpath } from '../core/types';
+import type { Doc, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import { parsePath } from '../core/parse';
 
 let idSeq = 0;
@@ -64,7 +64,13 @@ export function docBBox(doc: Doc): Box | null {
 
 /* --------------------------------------------------------------- selection */
 
-/** A single anchor, addressed stably enough to survive unrelated edits. */
+/**
+ * Where a node sits right now.
+ *
+ * A position, not an identity: correct at the moment it was resolved and wrong
+ * as soon as anything splices the array it indexes. Resolve one, use it, and
+ * throw it away. What persists between operations is `PathNode.id`.
+ */
 export interface NodeRef {
   shape: string;
   sp: number;
@@ -73,33 +79,71 @@ export interface NodeRef {
 
 export type HandlePart = 'anchor' | 'in' | 'out';
 
-export const nodeKey = (r: NodeRef): string => `${r.shape}/${r.sp}/${r.i}`;
+/**
+ * Find where a node is now, or learn that it has gone.
+ *
+ * Linear in the document. Every caller that wants more than one node should ask
+ * `resolveNodes` instead, which walks it once for the whole set.
+ */
+export function findNode(doc: Doc, id: string): NodeRef | null {
+  for (const shape of doc.shapes) {
+    for (let sp = 0; sp < shape.subpaths.length; sp++) {
+      const i = shape.subpaths[sp].nodes.findIndex((n) => n.id === id);
+      if (i >= 0) return { shape: shape.id, sp, i };
+    }
+  }
+  return null;
+}
 
-export function parseNodeKey(key: string): NodeRef {
-  const [shape, sp, i] = key.split('/');
-  return { shape, sp: +sp, i: +i };
+/** The node a ref points at, if it still points at one. */
+export function nodeAt(doc: Doc, r: NodeRef): PathNode | null {
+  return findShape(doc, r.shape)?.subpaths[r.sp]?.nodes[r.i] ?? null;
 }
 
 export interface Selection {
   /** Whole shapes, for transforms. */
   shapes: Set<string>;
-  /** Individual anchors, keyed by `nodeKey`. */
+  /** Individual anchors, by `PathNode.id`. */
   nodes: Set<string>;
 }
 
 export const emptySelection = (): Selection => ({ shapes: new Set(), nodes: new Set() });
 
-/** Resolve selected node keys to live nodes, dropping any that no longer exist. */
+/**
+ * Where the selected nodes are now, in document order, dropping any that have
+ * gone.
+ *
+ * One walk of the document rather than a lookup per id, and the only way any
+ * caller should turn a selection into positions. A selection holds identities;
+ * an index is only true at the instant it is read.
+ */
 export function resolveNodes(doc: Doc, sel: Selection): { ref: NodeRef; pt: Pt }[] {
   const out: { ref: NodeRef; pt: Pt }[] = [];
-  for (const key of sel.nodes) {
-    const ref = parseNodeKey(key);
-    const shape = findShape(doc, ref.shape);
-    const node = shape?.subpaths[ref.sp]?.nodes[ref.i];
-    if (node) out.push({ ref, pt: node.pt });
+  if (!sel.nodes.size) return out;
+  for (const shape of doc.shapes) {
+    for (let sp = 0; sp < shape.subpaths.length; sp++) {
+      const nodes = shape.subpaths[sp].nodes;
+      for (let i = 0; i < nodes.length; i++) {
+        if (sel.nodes.has(nodes[i].id)) out.push({ ref: { shape: shape.id, sp, i }, pt: nodes[i].pt });
+      }
+    }
   }
   return out;
 }
+
+/**
+ * The id of the node at a position, for the callers that have a position and
+ * need an identity: a hit test, a freshly split segment, a test fixture.
+ */
+export function nodeIdAt(doc: Doc, shape: string, sp: number, i: number): string {
+  const node = findShape(doc, shape)?.subpaths[sp]?.nodes[i];
+  if (!node) throw new Error(`no node at ${shape}/${sp}/${i}`);
+  return node.id;
+}
+
+/** The same, when only the positions are wanted. */
+export const selectedRefs = (doc: Doc, sel: Selection): NodeRef[] =>
+  resolveNodes(doc, sel).map((r) => r.ref);
 
 /** Bounding box of whatever is selected: whole shapes, or just the chosen nodes. */
 export function selectionBBox(doc: Doc, sel: Selection): Box | null {
@@ -121,6 +165,6 @@ export function selectionBBox(doc: Doc, sel: Selection): Box | null {
 /** Every shape touched by the selection, whether whole or by node. */
 export function selectedShapes(doc: Doc, sel: Selection): Shape[] {
   const ids = new Set(sel.shapes);
-  for (const key of sel.nodes) ids.add(parseNodeKey(key).shape);
+  for (const { ref } of resolveNodes(doc, sel)) ids.add(ref.shape);
   return doc.shapes.filter((s) => ids.has(s.id));
 }

@@ -10,14 +10,14 @@ import { describe, expect, it } from 'vitest';
 import { simplifySubpath } from '../src/model/simplify';
 import { parsePath } from '../src/core/parse';
 import { cubicAt, projectToCubic } from '../src/core/bezier';
-import { continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
+import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
 /** Closed polygon through `n` points on a circle: all corners, no handles. */
 const polygon = (n: number, r = 50): Subpath => ({
   nodes: Array.from({ length: n }, (_, i) => {
     const a = (i / n) * Math.PI * 2;
-    return { pt: [r * Math.cos(a), r * Math.sin(a)] as Pt, hIn: null, hOut: null };
+    return makeNode([r * Math.cos(a), r * Math.sin(a)] as Pt);
   }),
   closed: true,
 });
@@ -31,11 +31,11 @@ const smoothCircle = (n: number, r = 50): Subpath => {
       const a = i * step;
       const pt: Pt = [r * Math.cos(a), r * Math.sin(a)];
       const tan: Pt = [-Math.sin(a) * r * k, Math.cos(a) * r * k];
-      return {
+      return makeNode(
         pt,
-        hIn: [pt[0] - tan[0], pt[1] - tan[1]] as Pt,
-        hOut: [pt[0] + tan[0], pt[1] + tan[1]] as Pt,
-      };
+        [pt[0] - tan[0], pt[1] - tan[1]] as Pt,
+        [pt[0] + tan[0], pt[1] + tan[1]] as Pt,
+      );
     }),
     closed: true,
   };
@@ -124,10 +124,10 @@ describe('simplifySubpath', () => {
   it('leaves a square alone, because four nodes is already the answer', () => {
     const sp: Subpath = {
       nodes: [
-        { pt: [0, 0], hIn: null, hOut: null },
-        { pt: [10, 0], hIn: null, hOut: null },
-        { pt: [10, 10], hIn: null, hOut: null },
-        { pt: [0, 10], hIn: null, hOut: null },
+        makeNode([0, 0]),
+        makeNode([10, 0]),
+        makeNode([10, 10]),
+        makeNode([0, 10]),
       ],
       closed: true,
     };
@@ -137,11 +137,7 @@ describe('simplifySubpath', () => {
 
   it('collapses a run of collinear points to one straight segment', () => {
     const sp: Subpath = {
-      nodes: Array.from({ length: 11 }, (_, i) => ({
-        pt: [i, 0] as Pt,
-        hIn: null,
-        hOut: null,
-      })),
+      nodes: Array.from({ length: 11 }, (_, i) => (makeNode([i, 0] as Pt))),
       closed: false,
     };
     const r = simplifySubpath(sp, 0.5)!;
@@ -158,8 +154,8 @@ describe('simplifySubpath', () => {
     // join would round it off, which is the whole reason corners are found
     // first and fitted around.
     const nodes = [];
-    for (let i = 0; i <= 10; i++) nodes.push({ pt: [i, 0] as Pt, hIn: null, hOut: null });
-    for (let i = 1; i <= 10; i++) nodes.push({ pt: [10, i] as Pt, hIn: null, hOut: null });
+    for (let i = 0; i <= 10; i++) nodes.push(makeNode([i, 0] as Pt));
+    for (let i = 1; i <= 10; i++) nodes.push(makeNode([10, i] as Pt));
     const sp: Subpath = { nodes, closed: false };
 
     const r = simplifySubpath(sp, 0.5)!;
@@ -181,7 +177,7 @@ describe('simplifySubpath', () => {
   it('holds the ends of an open path still', () => {
     const nodes = Array.from({ length: 21 }, (_, i) => {
       const a = (i / 20) * Math.PI;
-      return { pt: [30 * Math.cos(a), 30 * Math.sin(a)] as Pt, hIn: null, hOut: null };
+      return makeNode([30 * Math.cos(a), 30 * Math.sin(a)] as Pt);
     });
     const sp: Subpath = { nodes, closed: false };
     const first = nodes[0].pt.slice();
@@ -219,8 +215,8 @@ it('reports a number that covers the whole deviation, not just the fit', () => {
   it('declines rather than mangling a path too small to fit', () => {
     const sp: Subpath = {
       nodes: [
-        { pt: [0, 0], hIn: null, hOut: null },
-        { pt: [10, 0], hIn: null, hOut: null },
+        makeNode([0, 0]),
+        makeNode([10, 0]),
       ],
       closed: false,
     };

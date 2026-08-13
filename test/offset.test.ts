@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { offsetSubpath, strokeOutline } from '../src/core/offset';
 import { parsePath } from '../src/core/parse';
 import { cubicAt } from '../src/core/bezier';
-import { segmentAsCubic, segmentCount } from '../src/core/types';
+import { makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
 const path = (d: string): Subpath => parsePath(d)[0];
@@ -119,7 +119,7 @@ describe('what it keeps and what it refuses', () => {
   });
 
   it('refuses a subpath with no segment to offset', () => {
-    expect(offsetSubpath({ nodes: [{ pt: [0, 0], hIn: null, hOut: null }], closed: false }, 5)).toBeNull();
+    expect(offsetSubpath({ nodes: [makeNode([0, 0])], closed: false }, 5)).toBeNull();
   });
 
   it('survives a segment of zero length, which has no tangent', () => {

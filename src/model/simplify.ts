@@ -27,7 +27,7 @@
 
 import { cubicAt, cubicDerivAt, splitCubic } from '../core/bezier';
 import { fitCurve } from '../core/fit';
-import { clonePt, segmentAsCubic, segmentCount } from '../core/types';
+import { clonePt, nextNodeId, segmentAsCubic, segmentCount } from '../core/types';
 import type { Cubic, PathNode, Pt, Subpath } from '../core/types';
 
 export interface SimplifyResult {
@@ -324,6 +324,7 @@ function nodesFrom(curves: Cubic[], closed: boolean, line: boolean[]): PathNode[
     const out = i < curves.length ? i : null;
     const inc = i > 0 ? i - 1 : closed ? curves.length - 1 : null;
     nodes.push({
+      id: nextNodeId(),
       pt: out !== null ? clonePt(curves[out][0]) : clonePt(curves[curves.length - 1][3]),
       hIn: inc === null || line[inc] ? null : clonePt(curves[inc][2]),
       hOut: out === null || line[out] ? null : clonePt(curves[out][1]),

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parsePath, tokenize, PathSyntaxError } from '../src/core/parse';
 import type { Mark } from '../src/core/serialise';
 import { serialisePath, formatNumber } from '../src/core/serialise';
-import { segmentAsCubic, segmentCount } from '../src/core/types';
+import { makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
 import type { Pt, Subpath } from '../src/core/types';
 
@@ -338,7 +338,7 @@ describe('marks: where each node landed in the text', () => {
     /* A subpath of one node emits nothing. Numbering by emitted order would
        shift every subpath after it, and the marks address the model. */
     const sub = parsePath('M0 0 L10 0');
-    sub.unshift({ nodes: [{ pt: [5, 5], hIn: null, hOut: null }], closed: false });
+    sub.unshift({ nodes: [makeNode([5, 5])], closed: false });
     const marks: Mark[] = [];
     serialisePath(sub, {}, marks);
     expect(marks.every((m) => m.sp === 1)).toBe(true);

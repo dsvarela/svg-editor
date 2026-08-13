@@ -32,7 +32,7 @@
 
 import { cubicAt, cubicDerivAt } from './bezier';
 import { fitCurve } from './fit';
-import { cloneNode, cloneSubpath, makeNode, segmentAsCubic, segmentCount } from './types';
+import { cloneNode, cloneSubpath, makeNode, nextNodeId, segmentAsCubic, segmentCount } from './types';
 import { reverseSubpath } from '../model/ops';
 import type { Cubic, PathNode, Pt, Subpath } from './types';
 
@@ -584,7 +584,12 @@ function capArc(
     const a = a0 + per * i;
     const p = at(a);
     const t = tan(a);
-    middles.push({ pt: p, hIn: [p[0] - t[0], p[1] - t[1]], hOut: [p[0] + t[0], p[1] + t[1]] });
+    middles.push({
+      id: nextNodeId(),
+      pt: p,
+      hIn: [p[0] - t[0], p[1] - t[1]],
+      hOut: [p[0] + t[0], p[1] + t[1]],
+    });
   }
 
   const t0 = tan(a0);

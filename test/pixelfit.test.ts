@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { phaseInForce, phaseLabel, phaseOf } from '../src/model/pixelfit';
 import { snap } from '../src/model/ops';
-import { emptyDoc, emptySelection, nodeKey, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, emptySelection, shapeFromPath } from '../src/model/doc';
 import { defaultStyle } from '../src/core/types';
 import type { Doc, Style } from '../src/core/types';
 
@@ -143,7 +143,7 @@ describe('phaseInForce', () => {
   it('follows a selected node to the shape that owns it', () => {
     const doc = docWith(1);
     const sel = emptySelection();
-    sel.nodes.add(nodeKey({ shape: doc.shapes[0].id, sp: 0, i: 0 }));
+    sel.nodes.add(doc.shapes[0].subpaths[0].nodes[0].id);
     expect(phaseInForce(doc, sel, style({ strokeWidth: 2 }))).toBe(0.5);
   });
 

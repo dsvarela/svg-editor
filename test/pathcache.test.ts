@@ -24,9 +24,9 @@ import type { Pt, Subpath } from '../src/core/types';
 const scene = (): Subpath[] => [
   {
     nodes: [
-      { pt: [3, 7] as Pt, hIn: null, hOut: [5, 11] as Pt },
-      { pt: [17, 23] as Pt, hIn: [13, 19] as Pt, hOut: null },
-      { pt: [31, 5] as Pt, hIn: null, hOut: null },
+      makeNode([3, 7] as Pt, null, [5, 11] as Pt),
+      makeNode([17, 23] as Pt, [13, 19] as Pt),
+      makeNode([31, 5] as Pt),
     ],
     closed: false,
   },

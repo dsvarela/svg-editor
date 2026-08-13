@@ -150,7 +150,7 @@ export function rectSubpath(x: number, y: number, w: number, h: number, r = 0): 
     const a = n[i];
     const b = n[i + 1];
     if (Math.hypot(b.pt[0] - a.pt[0], b.pt[1] - a.pt[1]) <= MEET) {
-      nodes.push({ pt: a.pt, hIn: a.hIn, hOut: b.hOut });
+      nodes.push({ id: a.id, pt: a.pt, hIn: a.hIn, hOut: b.hOut });
     } else {
       nodes.push(a, b);
     }

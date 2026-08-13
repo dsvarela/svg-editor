@@ -3,7 +3,7 @@ import { parsePath } from '../src/core/parse';
 import { serialisePath } from '../src/core/serialise';
 import { cubicAt, projectToCubic } from '../src/core/bezier';
 import { about, flipX, rotate, scale, translate } from '../src/core/affine';
-import { cloneNode, continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
+import { cloneNode, continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 import {
   breakAt,
@@ -1065,7 +1065,7 @@ describe('reverse', () => {
   });
 
   it('leaves a one-node subpath alone', () => {
-    const sp: Subpath = { nodes: [{ pt: [3, 4], hIn: null, hOut: null }], closed: false };
+    const sp: Subpath = { nodes: [makeNode([3, 4])], closed: false };
     reverseSubpath(sp);
     expect(sp.nodes.length).toBe(1);
     expect(sp.nodes[0].pt).toEqual([3, 4]);

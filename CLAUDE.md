@@ -46,6 +46,12 @@ way out of an edit. So object identity and revision counters are useless as
 cache keys, and anything that wants to know whether geometry changed has to
 compare the numbers. See `src/view/pathcache.ts`.
 
+**A node is named by `PathNode.id`, never by its index.** The selection holds
+ids; `resolveNodes` turns them into positions, and a `NodeRef` is only true at
+the instant it was read. Build a ref, use it, throw it away. `cloneNode` carries
+the id through a history snapshot, which is what makes a selection survive undo.
+Nothing writes it to a file. §43 of `docs/ARCHITECTURE.md` has the argument.
+
 **Touch is built but has never been held.** The desktop backlog finished first,
 which is what the three rules below were protecting, and the retrofit they were
 protecting happened on 2026-08-13. Nothing here has been tried on a real phone

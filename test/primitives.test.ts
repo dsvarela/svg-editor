@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { KAPPA, arcHandle, ellipseSubpath, fitCircle, rectSubpath } from '../src/core/primitives';
 import { circulariseSubpath } from '../src/model/ops';
-import { continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
+import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
 import { parsePath } from '../src/core/parse';
@@ -227,11 +227,7 @@ describe('circulariseSubpath', () => {
     // the per-arc handle length is what keeps this exact.
     const angles = [0, 0.4, 0.9, 2.6, 4.6];
     const sp: Subpath = {
-      nodes: angles.map((t) => ({
-        pt: [9 * Math.cos(t), 9 * Math.sin(t)] as Pt,
-        hIn: null,
-        hOut: null,
-      })),
+      nodes: angles.map((t) => (makeNode([9 * Math.cos(t), 9 * Math.sin(t)] as Pt))),
       closed: true,
     };
     const r = circulariseSubpath(sp)!;
@@ -281,11 +277,7 @@ describe('circulariseSubpath', () => {
      circle and the reported travel was zero, so it looked like a success. */
   describe('a closed contour is a ring', () => {
     const ringAt = (degrees: number[], r = 10): Subpath => ({
-      nodes: degrees.map((d) => ({
-        pt: [r * Math.cos((d * Math.PI) / 180), r * Math.sin((d * Math.PI) / 180)] as Pt,
-        hIn: null,
-        hOut: null,
-      })),
+      nodes: degrees.map((d) => (makeNode([r * Math.cos((d * Math.PI) / 180), r * Math.sin((d * Math.PI) / 180)] as Pt))),
       closed: true,
     });
 
@@ -342,7 +334,7 @@ describe('circulariseSubpath', () => {
       // atan2(0, 0) is 0, so a node on the centre would be placed at the
       // eastern point of the circle, on top of whatever is already there.
       const sp = ringAt([0, 90, 180, 270]);
-      sp.nodes.push({ pt: [0, 0], hIn: null, hOut: null });
+      sp.nodes.push(makeNode([0, 0]));
       expect(circulariseSubpath(sp)).toBeNull();
     });
 

@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
-import { docBBox, emptyDoc, emptySelection, makeShape, shapeBBox, shapeFromPath } from '../src/model/doc';
+import { docBBox, emptyDoc, emptySelection, makeShape, nodeIdAt, resolveNodes, shapeBBox, shapeFromPath } from '../src/model/doc';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
 import { segmentBend, splitSegment } from '../src/model/ops';
@@ -204,7 +204,7 @@ describe('select tool', () => {
     const h = harness('M0 0 L20 0 L20 20 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.down([0, 0], h.anchorEl(id, 0, 0));
-    expect([...h.store.state.selection.nodes]).toEqual([`${id}/0/0`]);
+    expect([...h.store.state.selection.nodes]).toEqual([nodeIdAt(h.store.state.doc, id, 0, 0)]);
     h.up();
   });
 
@@ -540,7 +540,7 @@ describe('deleting a selection', () => {
     h.store.update((s) => {
       for (const sh of s.doc.shapes) {
         sh.subpaths.forEach((sp, spI) =>
-          sp.nodes.forEach((_, i) => s.selection.nodes.add(`${sh.id}/${spI}/${i}`)),
+          sp.nodes.forEach((_, i) => s.selection.nodes.add(nodeIdAt(s.doc, sh.id, spI, i))),
         );
       }
     });
@@ -574,7 +574,7 @@ describe('deleting a selection', () => {
     const h = harness('M0 0 H20 V20 H0 Z M40 40 H60 V60 H40 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      for (let i = 0; i < 4; i++) s.selection.nodes.add(`${id}/1/${i}`);
+      for (let i = 0; i < 4; i++) s.selection.nodes.add(nodeIdAt(s.doc, id, 1, i));
     });
 
     h.controller.deleteSelection();
@@ -589,8 +589,8 @@ describe('deleting a selection', () => {
     const h = harness('M0 0 H20 V20 H0 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/1`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
     });
 
     const r = h.controller.deleteSelection();
@@ -609,7 +609,7 @@ describe('deleting a selection', () => {
     // so it could not be reduced at all.
     const h = harness('M0 0 L20 0 L10 20 Z');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/2`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2)));
 
     const r = h.controller.deleteSelection();
     expect(r).toEqual({ deleted: 1, blocked: 0 });
@@ -628,7 +628,7 @@ describe('deleting a selection', () => {
       for (let guard = 0; guard < 10 && h.store.state.doc.shapes.length; guard++) {
         h.store.update((s) => {
           s.selection.nodes.clear();
-          s.selection.nodes.add(`${id}/0/0`);
+          s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
         });
         expect(h.controller.deleteSelection().blocked).toBe(0);
       }
@@ -655,7 +655,7 @@ describe('deleting a selection', () => {
     h.store.state.doc.shapes.push(makeShape([{ nodes: [makeNode([50, 50])], closed: false }], 'pen'));
 
     h.store.update((s) => {
-      for (let i = 0; i < 4; i++) s.selection.nodes.add(`${square}/0/${i}`);
+      for (let i = 0; i < 4; i++) s.selection.nodes.add(nodeIdAt(s.doc, square, 0, i));
     });
     h.controller.deleteSelection();
 
@@ -677,7 +677,7 @@ describe('breaking a path', () => {
   const select = (h: Harness, i: number): void =>
     h.store.update((s) => {
       s.selection.nodes.clear();
-      s.selection.nodes.add(`${h.store.state.doc.shapes[0].id}/0/${i}`);
+      s.selection.nodes.add(nodeIdAt(s.doc, h.store.state.doc.shapes[0].id, 0, i));
     });
 
   it('splits an open path into two at an interior node', () => {
@@ -739,8 +739,8 @@ describe('breaking a path', () => {
     const h = harness('M0 0 L10 0 L20 0 L30 0');
     h.store.update((s) => {
       const id = s.doc.shapes[0].id;
-      s.selection.nodes.add(`${id}/0/1`);
-      s.selection.nodes.add(`${id}/0/2`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2));
     });
     expect(h.controller.breakAtSelection()).toBe(false);
   });
@@ -772,7 +772,7 @@ describe('delete mode: split', () => {
   const select = (h: Harness, ...idx: number[]): void =>
     h.store.update((s) => {
       const id = s.doc.shapes[0].id;
-      for (const i of idx) s.selection.nodes.add(`${id}/0/${i}`);
+      for (const i of idx) s.selection.nodes.add(nodeIdAt(s.doc, id, 0, i));
     });
 
   it('leaves two ends where a middle node was', () => {
@@ -846,7 +846,7 @@ describe('delete mode: split', () => {
     const h = splitHarness('M0 0 H20 V20 H0 Z');
     h.store.update((s) => {
       const id = s.doc.shapes[0].id;
-      for (let i = 0; i < 4; i++) s.selection.nodes.add(`${id}/0/${i}`);
+      for (let i = 0; i < 4; i++) s.selection.nodes.add(nodeIdAt(s.doc, id, 0, i));
     });
     h.controller.deleteSelection();
     expect(h.store.state.doc.shapes).toHaveLength(0);
@@ -1028,7 +1028,7 @@ describe('circularising', () => {
   it('works from a node selection, taking the whole contour with it', () => {
     const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
 
     expect(h.controller.circulariseSelection()).toBe(true);
     // Every node moved onto the circle, not just the selected one.
@@ -1128,10 +1128,10 @@ describe('rounding corners', () => {
     const h = square();
     const id = ids(h);
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/1`);
-      s.selection.nodes.add(`${id}/0/2`);
-      s.selection.nodes.add(`${id}/0/3`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 3));
     });
 
     expect(h.controller.roundSelection(8)).toBe(true);
@@ -1147,7 +1147,7 @@ describe('rounding corners', () => {
   it('is one undo step and drops the selection', () => {
     const h = square();
     const id = ids(h);
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
 
     h.controller.roundSelection(6);
     expect(h.store.state.selection.nodes.size).toBe(0);
@@ -1159,7 +1159,7 @@ describe('rounding corners', () => {
   it('explains a refusal instead of doing nothing quietly', () => {
     const h = harness('M0 0 L40 0 C50 10 50 30 40 40 L0 40 Z');
     const id = ids(h);
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
     const said: string[] = [];
     h.controller.onMessage = (m) => said.push(m);
 
@@ -1184,7 +1184,7 @@ describe('rounding corners', () => {
   it('says when the radius was cut down to fit', () => {
     const h = harness('M0 0 L40 0 L40 6 L0 6 Z');
     const id = ids(h);
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
     const said: string[] = [];
     h.controller.onMessage = (m) => said.push(m);
 
@@ -1215,7 +1215,7 @@ describe('style', () => {
     // thing a node selection could change.
     const h = harness('M0 0 L10 0 L10 10 Z');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
 
     h.controller.setStyle({ stroke: '#00ff00' });
     expect(h.store.state.doc.shapes[0].style.stroke).toBe('#00ff00');
@@ -1344,7 +1344,7 @@ describe('the transform box', () => {
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
       s.selection = emptySelection();
-      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
     });
     // One node has no extent, so there is nothing to scale it against.
     expect(() => h.gripEl('scale', 'se')).toThrow();
@@ -1472,8 +1472,8 @@ describe('the transform box', () => {
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
       s.selection = emptySelection();
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/1`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
     });
     const grip = h.gripEl('scale', 'e');
     h.down(grip.at, grip.el);
@@ -1523,7 +1523,7 @@ describe('simplify', () => {
   it('clears the selection, because node 7 is now somewhere else', () => {
     const h = harness(dense());
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/7`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 7)));
 
     h.controller.simplifySelection(1);
     expect(h.store.state.selection.nodes.size).toBe(0);
@@ -1628,7 +1628,7 @@ describe('dragging more than one shape', () => {
        every node and the two readings agree there. */
     const h = two();
     const a = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${a}/0/0`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, a, 0, 0)));
 
     h.down([5, 0], h.outlineEl(a));
     h.move([5, 20]);
@@ -1781,8 +1781,8 @@ describe('joining and resuming a path', () => {
     h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
     const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
     h.store.update((s) => {
-      s.selection.nodes.add(`${a}/0/1`);
-      s.selection.nodes.add(`${b}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, a, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, b, 0, 0));
     });
 
     expect(h.controller.joinSelection('merge')).toBe(true);
@@ -1800,8 +1800,8 @@ describe('joining and resuming a path', () => {
     const h = harness('M0 0 L10 0 L10 10');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/2`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2));
     });
 
     expect(h.controller.joinSelection('merge')).toBe(true);
@@ -1812,8 +1812,8 @@ describe('joining and resuming a path', () => {
     const h = harness('M0 0 L10 0 L10 10 L20 10');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/1`);
-      s.selection.nodes.add(`${id}/0/3`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 3));
     });
 
     expect(h.controller.joinSelection('merge')).toBe(false);
@@ -1826,8 +1826,8 @@ describe('joining and resuming a path', () => {
     h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
     const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
     h.store.update((s) => {
-      s.selection.nodes.add(`${a}/0/1`);
-      s.selection.nodes.add(`${b}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, a, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, b, 0, 0));
     });
 
     h.controller.joinSelection('merge');
@@ -1841,8 +1841,8 @@ describe('joining and resuming a path', () => {
     h.store.update((s) => s.doc.shapes.push(shapeFromPath('M20 0 L30 0')));
     const [a, b] = h.store.state.doc.shapes.map((s) => s.id);
     h.store.update((s) => {
-      s.selection.nodes.add(`${a}/0/1`);
-      s.selection.nodes.add(`${b}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, a, 0, 1));
+      s.selection.nodes.add(nodeIdAt(s.doc, b, 0, 0));
     });
 
     expect(h.controller.joinSelection('connect')).toBe(true);
@@ -1860,8 +1860,8 @@ describe('joining and resuming a path', () => {
     const h = harness('M0 0 L10 0 L10 10');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/2`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2));
     });
 
     h.controller.joinSelection();
@@ -2288,13 +2288,13 @@ describe('reverse', () => {
   it('carries a node selection across an open subpath', () => {
     const h = harness('M 0 0 L 10 0 L 20 0 L 30 0');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
 
     expect(h.controller.reverseSelection()).toBe(true);
     // Four nodes, so 1 becomes 3 - 1 = 2, and that node is the one that was at
     // [10, 0]. Both halves are asserted: an index alone could be right about a
     // different node.
-    expect([...h.store.state.selection.nodes]).toEqual([`${id}/0/2`]);
+    expect([...h.store.state.selection.nodes]).toEqual([nodeIdAt(h.store.state.doc, id, 0, 2)]);
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes[2].pt).toEqual([10, 0]);
   });
 
@@ -2302,16 +2302,21 @@ describe('reverse', () => {
     const h = harness('M 0 0 L 10 0 L 20 6 L 4 9 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
-      s.selection.nodes.add(`${id}/0/1`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1));
     });
 
     expect(h.controller.reverseSelection()).toBe(true);
     const nodes = h.store.state.doc.shapes[0].subpaths[0].nodes;
     expect(nodes[0].pt, 'a ring keeps its start node').toEqual([0, 0]);
-    // 0 stays 0 and 1 becomes 4 - 1 = 3.
-    expect([...h.store.state.selection.nodes].sort()).toEqual([`${id}/0/0`, `${id}/0/3`]);
-    expect(nodes[3].pt).toEqual([10, 0]);
+    expect(nodes[3].pt, 'and the second node is now the last').toEqual([10, 0]);
+
+    /* By where the selected nodes are, not by which indices hold them. The two
+       chosen anchors were at [0, 0] and [10, 0]; the reversal moved the second
+       from index 1 to index 3 and the selection is supposed to have followed
+       the node rather than the number. */
+    const at = resolveNodes(h.store.state.doc, h.store.state.selection).map((r) => r.pt);
+    expect(at.sort()).toEqual([[0, 0], [10, 0]]);
   });
 
   it('reverses every subpath of a selected shape exactly once', () => {
@@ -2322,7 +2327,7 @@ describe('reverse', () => {
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
       s.selection.shapes.add(id);
-      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
     });
 
     expect(h.controller.reverseSelection()).toBe(true);
@@ -2368,7 +2373,7 @@ describe('continuity shortcuts', () => {
        them. */
     const h = harness('M 0 0 C 4 8 12 8 16 0 C 26 4 28 8 32 0');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
     expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('corner');
     return h;
   };
@@ -2418,7 +2423,7 @@ describe('the coarse nudge', () => {
     const h = harness('M 10 10 L 20 10');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
       s.gridStep = 2;
     });
     return h;
@@ -2988,7 +2993,7 @@ describe('auto-smooth nodes through the controller', () => {
   it('re-derives when a neighbour is dragged', () => {
     const h = withRun();
     const shape = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${shape}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, shape, 0, 1)));
     h.controller.setSelectedAuto();
 
     const before = [...h.store.state.doc.shapes[0].subpaths[0].nodes[1].hOut!];
@@ -2996,7 +3001,7 @@ describe('auto-smooth nodes through the controller', () => {
     // Drag the far node down. The auto node in the middle should re-aim.
     h.store.update((s) => {
       s.selection.nodes.clear();
-      s.selection.nodes.add(`${shape}/0/2`);
+      s.selection.nodes.add(nodeIdAt(s.doc, shape, 0, 2));
     });
     h.down([50, 10], h.anchorEl(shape, 0, 2));
     h.move([50, 40]);
@@ -3014,7 +3019,7 @@ describe('auto-smooth nodes through the controller', () => {
   it('hands control back when its own handle is dragged', () => {
     const h = withRun();
     const shape = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${shape}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, shape, 0, 1)));
     h.controller.setSelectedAuto();
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes[1].auto).toBe(true);
 
@@ -3283,7 +3288,7 @@ describe('Shift and Alt without a keyboard', () => {
     const h = harness('M10 10 L30 10 L30 30 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
       s.gridStep = 1;
       s.nudgeBig = 10;
       s.heldShift = true;
@@ -3430,7 +3435,7 @@ describe('keyboard guard', () => {
       s.selection.shapes = new Set(s.doc.shapes.map((sh) => sh.id));
       s.selection.nodes = new Set(
         s.doc.shapes.flatMap((sh) =>
-          sh.subpaths.flatMap((sp, pi) => sp.nodes.map((_, ni) => `${sh.id}/${pi}/${ni}`)),
+          sh.subpaths.flatMap((sp, pi) => sp.nodes.map((_, ni) => nodeIdAt(s.doc, sh.id, pi, ni))),
         ),
       );
     });
@@ -3470,5 +3475,88 @@ describe('keyboard guard', () => {
     );
     expect(capitals.size).toBeGreaterThan(8);
     expect([...capitals].filter((k) => !listed.has(k)).sort()).toEqual([]);
+  });
+});
+
+/* Reported from use: dragging a box around two shapes and pressing Combine was
+   refused for want of two selected shapes, and clicking each shape in turn
+   worked. The marquee was adding every enclosed node and adding the shape only
+   when no node had been added -- a condition its own node loop had just
+   falsified. */
+describe('a marquee round whole shapes', () => {
+  const two = (): Harness => {
+    const h = harness('M10 10 L20 10 L20 20 Z');
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M40 40 L50 40 L50 50 Z')));
+    h.controller.render();
+    return h;
+  };
+  const sweep = (h: Harness, from: [number, number], to: [number, number]): void => {
+    h.down(from);
+    h.move(to);
+    h.up();
+  };
+
+  it('selects the shapes it swallowed whole, not only their nodes', () => {
+    const h = two();
+    sweep(h, [5, 5], [60, 60]);
+    expect(h.store.state.selection.shapes.size).toBe(2);
+    expect(h.store.state.selection.nodes.size).toBe(6);
+  });
+
+  it('lets Combine act on them, which is what was reported broken', () => {
+    const h = two();
+    sweep(h, [5, 5], [60, 60]);
+    expect(h.controller.makeOneShape().ok).toBe(true);
+    expect(h.store.state.doc.shapes).toHaveLength(1);
+    expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(2);
+  });
+
+  it('leaves a partly caught shape out of the shape selection', () => {
+    const h = two();
+    sweep(h, [5, 5], [15, 15]);
+    expect(h.store.state.selection.shapes.size).toBe(0);
+    expect(h.store.state.selection.nodes.size).toBe(1);
+  });
+});
+
+/* The point of `PathNode.id`. Under positional keys the selection named
+   `shape/sp/index`, so removing an earlier node slid a different node under the
+   same name and the next operation acted on it. Measured by where the selected
+   node IS, because an index that is still 2 proves nothing about which node
+   index 2 now holds. */
+describe('a selection survives an edit that moves indices', () => {
+  it('still names the same node after an earlier one is removed', () => {
+    const h = harness('M0 0 L10 0 L20 0 L30 0 L40 0');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 3)));
+    expect(resolveNodes(h.store.state.doc, h.store.state.selection).map((r) => r.pt)).toEqual([
+      [30, 0],
+    ]);
+
+    h.store.update((s) => s.doc.shapes[0].subpaths[0].nodes.splice(0, 1));
+
+    const after = resolveNodes(h.store.state.doc, h.store.state.selection);
+    expect(after.map((r) => r.pt), 'the selection followed the node').toEqual([[30, 0]]);
+    expect(after[0].ref.i, 'and its index moved under it').toBe(2);
+  });
+
+  it('resolves a deleted node to nothing rather than to its successor', () => {
+    const h = harness('M0 0 L10 0 L20 0 L30 0');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
+    h.store.update((s) => s.doc.shapes[0].subpaths[0].nodes.splice(1, 1));
+    expect(resolveNodes(h.store.state.doc, h.store.state.selection)).toEqual([]);
+  });
+
+  it('keeps naming the same node across an undo', () => {
+    const h = harness('M0 0 L10 0 L20 0');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 2)));
+    h.store.checkpoint();
+    h.store.edit((s) => (s.doc.shapes[0].subpaths[0].nodes[2].pt = [99, 99]));
+    h.store.undo();
+    expect(resolveNodes(h.store.state.doc, h.store.state.selection).map((r) => r.pt)).toEqual([
+      [20, 0],
+    ]);
   });
 });

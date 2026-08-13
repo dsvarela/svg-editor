@@ -6,7 +6,15 @@ import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { drawsSomething, exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import type { BooleanOp } from './io/boolean';
-import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, selectedShapes, shapeFromPath } from './model/doc';
+import {
+  docBBox,
+  emptyDoc,
+  findShape,
+  nextId,
+  selectedRefs,
+  selectedShapes,
+  shapeFromPath,
+} from './model/doc';
 import { isPathEnd, latentHandle, transformShape } from './model/ops';
 import { translate } from './core/affine';
 import { cloneShape, continuityOf } from './core/types';
@@ -848,7 +856,7 @@ function refreshInspector(): void {
   for (const b of ntypeSeg.querySelectorAll('button')) b.disabled = !sel;
 
   // Join is the inverse: exactly two nodes, each a free end of an open path.
-  const ends = [...store.state.selection.nodes].map(parseNodeKey).filter((r) => {
+  const ends = selectedRefs(store.state.doc, store.state.selection).filter((r) => {
     const sp = findShape(store.state.doc, r.shape)?.subpaths[r.sp];
     return !!sp && isPathEnd(sp, r.i);
   });
@@ -914,7 +922,7 @@ const srcHint = $('#srchint');
 function scopedShape(): Shape | null {
   const s = store.state;
   const ids = new Set(s.selection.shapes);
-  for (const key of s.selection.nodes) ids.add(parseNodeKey(key).shape);
+  for (const r of selectedRefs(s.doc, s.selection)) ids.add(r.shape);
   if (ids.size !== 1) return null;
   return s.doc.shapes.find((sh) => ids.has(sh.id)) ?? null;
 }
@@ -1979,13 +1987,12 @@ store.subscribe((s) => {
  * whose offsets it can trust and says so in the status line.
  */
 function findInSource(): void {
-  const key = [...store.state.selection.nodes][0];
-  if (!key) {
+  const ref = selectedRefs(store.state.doc, store.state.selection)[0];
+  if (!ref) {
     status.textContent = 'Select a node first.';
     status.className = 'st err';
     return;
   }
-  const ref = parseNodeKey(key);
   const shape = store.state.doc.shapes.find((sh) => sh.id === ref.shape);
   if (!shape) return;
 

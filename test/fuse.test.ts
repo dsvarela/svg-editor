@@ -14,11 +14,11 @@ import { simplifySubpath } from '../src/model/simplify';
 import { parsePath } from '../src/core/parse';
 import { serialisePath } from '../src/core/serialise';
 import { KAPPA } from '../src/core/primitives';
-import { continuityOf, segmentCount } from '../src/core/types';
+import { continuityOf, makeNode, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
 const open = (pts: Pt[]): Subpath => ({
-  nodes: pts.map((pt) => ({ pt, hIn: null, hOut: null })),
+  nodes: pts.map((pt) => makeNode(pt)),
   closed: false,
 });
 
@@ -72,10 +72,10 @@ describe('fuseNodes', () => {
     // second. Taking both from either node would flatten one of them.
     const sp: Subpath = {
       nodes: [
-        { pt: [0, 0], hIn: null, hOut: [3, 0] },
-        { pt: [10, 0], hIn: [7, 0], hOut: [11, 0] },
-        { pt: [12, 0], hIn: [11.5, 0], hOut: [13, 5] },
-        { pt: [20, 10], hIn: [15, 10], hOut: null },
+        makeNode([0, 0], null, [3, 0]),
+        makeNode([10, 0], [7, 0], [11, 0]),
+        makeNode([12, 0], [11.5, 0], [13, 5]),
+        makeNode([20, 10], [15, 10]),
       ],
       closed: false,
     };
@@ -99,10 +99,10 @@ describe('fuseNodes', () => {
         // Handles, deliberately. With `hIn`/`hOut` all null the two spellings of
         // "which node survives" produce identical output and the test cannot
         // tell them apart -- which is how it first shipped.
-        { pt: [0, 0], hIn: [-1, 0], hOut: [1, 0] },
-        { pt: [10, 0], hIn: [9, 0], hOut: [11, 0] },
-        { pt: [10, 10], hIn: [10, 9], hOut: [10, 11] },
-        { pt: [0, 0], hIn: [0, 2], hOut: [0, -2] },
+        makeNode([0, 0], [-1, 0], [1, 0]),
+        makeNode([10, 0], [9, 0], [11, 0]),
+        makeNode([10, 10], [10, 9], [10, 11]),
+        makeNode([0, 0], [0, 2], [0, -2]),
       ],
       closed: true,
     };

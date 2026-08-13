@@ -58,6 +58,22 @@ export type NodeContinuity = 'corner' | 'smooth' | 'symmetric';
  * render and transform, which are far more frequent.
  */
 export interface PathNode {
+  /**
+   * Identity that survives the array this node sits in.
+   *
+   * The selection used to name a node by `shape/subpath/index`, and every
+   * operation that splices a node out moved the meaning of every index after
+   * it. Each caller grew its own repair for that -- rebuild to the returned
+   * index, drop the whole selection, or re-walk and delete what dangles -- and
+   * the three did not agree. An id cannot go stale: a node that is gone
+   * resolves to nothing, which is a case worth handling, rather than to
+   * whichever node inherited its index, which is not.
+   *
+   * Preserved by `cloneNode`, so a selection still means the same nodes after
+   * an undo. Never written into a file: it is identity within one session, not
+   * a name for the geometry.
+   */
+  id: string;
   pt: Pt;
   /** Control point of the incoming segment. `null` means that segment is straight. */
   hIn: Pt | null;
@@ -129,14 +145,21 @@ export const clonePt = (p: Pt): Pt => [p[0], p[1]];
 export const clonePtOrNull = (p: Pt | null): Pt | null => (p ? [p[0], p[1]] : null);
 
 export const cloneNode = (n: PathNode): PathNode => ({
+  id: n.id,
   pt: clonePt(n.pt),
   hIn: clonePtOrNull(n.hIn),
   hOut: clonePtOrNull(n.hOut),
   ...(n.auto ? { auto: true } : {}),
 });
 
+let nodeSeq = 0;
+
+/** A fresh node identity. Unique within the session, and meaningless outside it. */
+export const nextNodeId = (): string => `n${++nodeSeq}`;
+
 /** Convenience constructor; most nodes are born with no handles. */
 export const makeNode = (pt: Pt, hIn: Pt | null = null, hOut: Pt | null = null): PathNode => ({
+  id: nextNodeId(),
   pt,
   hIn,
   hOut,

@@ -5,11 +5,11 @@ import { parsePath } from '../src/core/parse';
 import { serialisePath } from '../src/core/serialise';
 import { segmentAsCubic } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
+import { makeNode } from '../src/core/types';
 import type { PathNode, Pt } from '../src/core/types';
 
-const node = (pt: Pt, hIn: Pt | null = null, hOut: Pt | null = null): PathNode => ({
-  pt, hIn, hOut,
-});
+const node = (pt: Pt, hIn: Pt | null = null, hOut: Pt | null = null): PathNode =>
+  makeNode(pt, hIn, hOut);
 
 describe('bend <-> handles', () => {
   it('places controls on the thirds at angle 0, reproducing the line', () => {

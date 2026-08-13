@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas, MARKER_CAP } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
-import { emptyDoc, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, nodeIdAt, shapeFromPath } from '../src/model/doc';
 import { parsePath } from '../src/core/parse';
 import { exportSvg } from '../src/io/svg';
 
@@ -261,7 +261,7 @@ describe('latent handles', () => {
   it('offers pullable handles on a selected node of a straight segment', () => {
     const h = setup('M0 0 L20 0 L20 20 Z');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
     h.controller.render();
 
     const dots = visible(h.canvas.overlay, '.handle-dot');
@@ -273,7 +273,7 @@ describe('latent handles', () => {
   it('places the ghost a third of the way along the segment', () => {
     const h = setup('M0 0 L30 0 L30 30 Z');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/0`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0)));
     h.controller.render();
 
     const out = visible(h.canvas.overlay, '.handle-dot').find((d) => d.getAttribute('data-hit') === 'out');
@@ -285,7 +285,7 @@ describe('latent handles', () => {
     // Node 0 of an OPEN subpath has nothing arriving at it.
     const h = setup('M0 0 L20 0');
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/0`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0)));
     h.controller.render();
 
     const dots = visible(h.canvas.overlay, '.handle-dot');
@@ -297,7 +297,7 @@ describe('latent handles', () => {
     const h = setup('M0 0 L30 0 L30 30 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => {
-      s.selection.nodes.add(`${id}/0/0`);
+      s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0));
       s.snapToGrid = false;
       s.snapToPoints = false;
     });
@@ -357,7 +357,7 @@ describe('degenerate shapes', () => {
     h.store.update((s) => { s.tool = 'pen'; s.snapToGrid = false; });
     h.down([10, 10]); h.up();
     const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(`${id}/0/0`));
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0)));
     h.controller.finishPen();
     expect(h.store.state.selection.nodes.size).toBe(0);
   });

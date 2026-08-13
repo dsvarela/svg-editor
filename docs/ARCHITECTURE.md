@@ -1798,6 +1798,42 @@ pinned at the right of the toolbar and the held keys at the left of the strip,
 because those are the two things you reach for while something else is already
 happening on the canvas.
 
+## 43. A node is a thing, not a position in an array
+
+The selection used to name a node by `shape/subpath/index`. Every operation that
+removes a node moved the meaning of every index after it, so the name outlived
+what it named and started naming its neighbour.
+
+No caller could ignore that, and no two of them agreed on what to do about it.
+Splitting a segment rebuilt the selection to the index the split returned.
+Seventeen sites threw the whole selection away rather than work out which part
+of it had survived. One walked the selection and deleted whatever no longer
+resolved. `reverseSelection` carried a remap -- index `i` became `n - 1 - i` in
+an open subpath and `n - i` in a closed one -- purely so the highlight would not
+drift off the nodes it was on. Twelve `if (!n) continue` guards stood behind all
+of it, in `ops.ts` and `controller.ts`, catching whatever still got through.
+
+The model already held the argument against itself. `knots.ts` tracks the nodes
+it keeps as node objects, and says why in its own comment: "rather than
+re-deriving indices it would have to keep correcting".
+
+So `PathNode` carries an `id`. `cloneNode` preserves it, which is what makes a
+selection still mean the same nodes after an undo, and nothing writes it to a
+file: it is identity within one session, not a name for the geometry.
+
+What changes is the failure mode. A stale id resolves to nothing, and nothing is
+a case worth handling. A stale index resolved to whichever node had moved into
+its place, and that is not a case anybody wrote code for.
+
+`resolveNodes` walks the document once and returns positions in document order.
+A `NodeRef` is now explicitly a position -- true when it was read, wrong as soon
+as anything splices the array it indexes. Resolve one, use it, discard it.
+
+The remap in `reverseSelection` is gone, because reversing an array moves nodes
+about without changing which node is which. One sweep for dropped ids remains,
+where the pen discards subpaths too short to draw: `selection.nodes.size` is
+read directly as "how many are selected", and a ghost would be counted.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

@@ -16,8 +16,8 @@ import {
   findShape,
   makeShape,
   nextId,
-  nodeKey,
-  parseNodeKey,
+  nodeAt,
+  selectedRefs,
   selectedShapes,
   selectionBBox,
   shapeBBox,
@@ -77,7 +77,6 @@ import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
 import type { EditorState, Store } from '../model/store';
 import type { Canvas, OverlayExtras } from '../view/canvas';
-import { shapeIsInBox } from '../view/canvas';
 import { bendFromPoint } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { fitAspect, screenToDoc, zoomAt } from '../view/viewport';
@@ -642,7 +641,7 @@ export class Controller {
 
   private selectedNodeRefs(): NodeRef[] {
     const s = this.store.state;
-    const refs = [...s.selection.nodes].map(parseNodeKey);
+    const refs = selectedRefs(s.doc, s.selection);
     // A whole-shape selection implies all of its nodes for a drag.
     for (const id of s.selection.shapes) {
       const shape = findShape(s.doc, id);
@@ -650,9 +649,11 @@ export class Controller {
         sp.nodes.forEach((_, i) => refs.push({ shape: id, sp: spI, i })),
       );
     }
+    /* By position, not by identity: the shape branch above pushes refs the
+       node branch may already hold, and the two describe the same place. */
     const seen = new Set<string>();
     return refs.filter((r) => {
-      const k = nodeKey(r);
+      const k = `${r.shape}/${r.sp}/${r.i}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
@@ -946,7 +947,7 @@ export class Controller {
       }
       this.store.update((st) => {
         st.selection.nodes.clear();
-        st.selection.nodes.add(nodeKey({ shape: id, sp: 0, i: by > 0 ? 0 : sp.nodes.length - 1 }));
+        st.selection.nodes.add(sp.nodes[by > 0 ? 0 : sp.nodes.length - 1].id);
       });
       return true;
     }
@@ -969,7 +970,7 @@ export class Controller {
       return false;
     }
 
-    const key = nodeKey({ shape: from.shape, sp: from.sp, i: next });
+    const key = sp.nodes[next].id;
     this.store.update((st) => {
       if (!extend) st.selection.nodes.clear();
       // Re-adding moves it to the end of the set, so a run of presses keeps
@@ -1017,7 +1018,7 @@ export class Controller {
       at = splitSegment(live, seg, 0.5);
       if (at < 0) return false;
       st.selection.nodes.clear();
-      st.selection.nodes.add(nodeKey({ shape: refs[0].shape, sp: refs[0].sp, i: at }));
+      st.selection.nodes.add(live.nodes[at].id);
       return true;
     });
     this.onMessage?.(ok ? 'Node inserted, and the curve is unchanged.' : 'Nothing to insert into.', ok);
@@ -1233,7 +1234,8 @@ export class Controller {
     }
 
     if (hit?.kind === 'anchor' && hit.ref) {
-      const key = nodeKey(hit.ref);
+      const key = nodeAt(this.store.state.doc, hit.ref)?.id;
+      if (key === undefined) return;
       this.store.update((st) => {
         if (this.shift(e)) {
           if (st.selection.nodes.has(key)) st.selection.nodes.delete(key);
@@ -1299,7 +1301,7 @@ export class Controller {
          stayed put. What distinguishes the marquee is that it caught the WHOLE
          shape, so that is what to ask. */
       const shapeNodes = findShape(s.doc, id)?.subpaths.reduce((a, sp) => a + sp.nodes.length, 0) ?? 0;
-      const selectedHere = [...s.selection.nodes].filter((k) => parseNodeKey(k).shape === id).length;
+      const selectedHere = selectedRefs(s.doc, s.selection).filter((r) => r.shape === id).length;
       const wholeShapeSelected = shapeNodes > 0 && selectedHere === shapeNodes;
       this.store.update((st) => {
         if (!this.shift(e) && !st.selection.shapes.has(id) && !wholeShapeSelected) {
@@ -1623,17 +1625,32 @@ export class Controller {
       if (this.drag.kind === 'marquee' && this.extras.marquee) {
         const box: Box = this.extras.marquee;
         this.store.update((st) => {
+          const inBox = (p: Pt): boolean =>
+            p[0] >= box.x0 && p[0] <= box.x1 && p[1] >= box.y0 && p[1] <= box.y1;
           for (const shape of st.doc.shapes) {
-            shape.subpaths.forEach((sp, spI) => {
-              sp.nodes.forEach((n, i) => {
-                if (n.pt[0] >= box.x0 && n.pt[0] <= box.x1 && n.pt[1] >= box.y0 && n.pt[1] <= box.y1) {
-                  st.selection.nodes.add(nodeKey({ shape: shape.id, sp: spI, i }));
-                }
-              });
-            });
-            if (shapeIsInBox(shape, box) && st.selection.nodes.size === 0) {
-              st.selection.shapes.add(shape.id);
+            let caught = 0;
+            let total = 0;
+            for (const sp of shape.subpaths) {
+              for (const node of sp.nodes) {
+                total++;
+                if (!inBox(node.pt)) continue;
+                caught++;
+                st.selection.nodes.add(node.id);
+              }
             }
+            /* A shape the box swallowed whole is selected as a shape, not only
+               as a heap of its nodes -- otherwise Combine, Split and the
+               booleans, which all read `selection.shapes`, refuse a selection
+               that plainly holds two shapes. Reported from use.
+
+               The old test was `shapeIsInBox(shape, box) && !selection.nodes
+               .size`, which was wrong twice over: the node loop above had just
+               made the second half false for this very shape, and
+               `shapeIsInBox` asks whether ANY node is in the box, so without
+               that accident it would have selected every shape the box merely
+               grazed. Enclosure is counted here rather than asked of a helper
+               whose name says "in" and whose body says "touches". */
+            if (total > 0 && caught === total) st.selection.shapes.add(shape.id);
           }
         });
         this.extras.marquee = null;
@@ -1766,7 +1783,7 @@ export class Controller {
         if (!sp) return;
         const i = splitSegment(sp, near.seg, near.t);
         st.selection = emptySelection();
-        st.selection.nodes.add(nodeKey({ shape: near.shape, sp: near.sp, i }));
+        st.selection.nodes.add(sp.nodes[i].id);
       });
     }
   };
@@ -1890,10 +1907,7 @@ export class Controller {
       set.add(sp);
       targets.set(shape, set);
     };
-    for (const key of s.selection.nodes) {
-      const r = parseNodeKey(key);
-      add(r.shape, r.sp);
-    }
+    for (const r of selectedRefs(s.doc, s.selection)) add(r.shape, r.sp);
     for (const id of s.selection.shapes) {
       findShape(s.doc, id)?.subpaths.forEach((_, i) => add(id, i));
     }
@@ -2211,8 +2225,7 @@ export class Controller {
 
     const s = this.store.state;
     const byPath = new Map<string, number[]>();
-    for (const key of s.selection.nodes) {
-      const r = parseNodeKey(key);
+    for (const r of selectedRefs(s.doc, s.selection)) {
       const k = `${r.shape}/${r.sp}`;
       byPath.set(k, [...(byPath.get(k) ?? []), r.i]);
     }
@@ -2442,7 +2455,7 @@ export class Controller {
    */
   fuseSelection(): boolean {
     const s = this.store.state;
-    const refs = [...s.selection.nodes].map(parseNodeKey);
+    const refs = selectedRefs(s.doc, s.selection);
 
     if (refs.length === 2) return this.fusePair(refs[0], refs[1]);
 
@@ -2667,11 +2680,12 @@ export class Controller {
           // it and the NEXT click extends, which is what makes the gesture read
           // as "carry on from here" rather than "stamp another node on top".
           const i = target.nodes.length - 1;
+          const last = target.nodes[i];
           this.drag = { kind: 'pen', ref: { shape: resume.shape, sp: resume.sp, i } };
-          this.extras.penFrom = target.nodes[i].pt;
+          this.extras.penFrom = last.pt;
           this.store.update((st) => {
             st.selection = emptySelection();
-            st.selection.nodes.add(nodeKey({ shape: resume.shape, sp: resume.sp, i }));
+            st.selection.nodes.add(last.id);
           });
           return;
         }
@@ -2762,10 +2776,17 @@ export class Controller {
       const sh = findShape(st.doc, shapeId);
       if (sh) sh.subpaths = sh.subpaths.filter((sp) => sp.nodes.length >= 2);
       st.doc.shapes = st.doc.shapes.filter((s2) => s2.subpaths.length > 0);
-      // Selection may now point at nodes that are gone.
-      for (const key of [...st.selection.nodes]) {
-        const r = parseNodeKey(key);
-        if (!findShape(st.doc, r.shape)?.subpaths[r.sp]?.nodes[r.i]) st.selection.nodes.delete(key);
+      /* A dropped node's id resolves to nothing, so nothing downstream can act
+         on the wrong node -- but `selection.nodes.size` is read directly as
+         "how many are selected", and a ghost would be counted. Swept here
+         rather than on every edit: this is where nodes disappear without the
+         caller replacing the selection outright. */
+      const live = new Set<string>();
+      for (const sh2 of st.doc.shapes) {
+        for (const sp of sh2.subpaths) for (const n of sp.nodes) live.add(n.id);
+      }
+      for (const id of [...st.selection.nodes]) {
+        if (!live.has(id)) st.selection.nodes.delete(id);
       }
       for (const id of [...st.selection.shapes]) {
         if (!findShape(st.doc, id)) st.selection.shapes.delete(id);
@@ -3065,7 +3086,7 @@ export class Controller {
       return { deleted: n, blocked: 0 };
     }
 
-    const refs = [...s.selection.nodes].map(parseNodeKey);
+    const refs = selectedRefs(s.doc, s.selection);
     if (!refs.length) return { deleted: 0, blocked: 0 };
 
     // Grouped by subpath, because "all of them" and "some of them" mean
@@ -3180,7 +3201,7 @@ export class Controller {
    */
   joinSelection(mode: 'connect' | 'merge' = 'connect'): boolean {
     const s = this.store.state;
-    const refs = [...s.selection.nodes].map(parseNodeKey);
+    const refs = selectedRefs(s.doc, s.selection);
     const verb = mode === 'merge' ? 'Merge' : 'Connect';
     if (refs.length !== 2) {
       this.onMessage?.(`${verb} needs exactly two nodes selected.`, false);
@@ -3588,12 +3609,12 @@ export class Controller {
        looks at two segments. Building the Set costs 23 454 refs and 23 454
        strings before the first question is even asked, which measured 12.3 ms on
        every notification: most of what a pointermove costs. */
-    const picked = (id: string, spI: number, i: number): boolean =>
-      sel.shapes.has(id) || sel.nodes.has(nodeKey({ shape: id, sp: spI, i }));
+    const picked = (shape: Shape, spI: number, i: number): boolean =>
+      sel.shapes.has(shape.id) || sel.nodes.has(shape.subpaths[spI].nodes[i].id);
     // Shapes with nothing selected in them cannot contribute a segment, and
     // skipping them keeps this off the other 23 000 nodes entirely.
     const touched = new Set(sel.shapes);
-    for (const key of sel.nodes) touched.add(parseNodeKey(key).shape);
+    for (const r of selectedRefs(s.doc, sel)) touched.add(r.shape);
 
     let found: { shape: string; sp: number; seg: number; bend: Bend | null } | null = null;
     for (const shape of s.doc.shapes) {
@@ -3601,8 +3622,8 @@ export class Controller {
       for (let spI = 0; spI < shape.subpaths.length; spI++) {
         const sp = shape.subpaths[spI];
         for (let seg = 0; seg < segmentCount(sp); seg++) {
-          if (!picked(shape.id, spI, seg)) continue;
-          if (!picked(shape.id, spI, (seg + 1) % sp.nodes.length)) continue;
+          if (!picked(shape, spI, seg)) continue;
+          if (!picked(shape, spI, (seg + 1) % sp.nodes.length)) continue;
           if (found) return null; // ambiguous: more than one segment qualifies
           found = { shape: shape.id, sp: spI, seg, bend: segmentBend(sp, seg) };
         }
@@ -3658,26 +3679,23 @@ export class Controller {
    * subpaths they sit in. Both at once is a union, so selecting a shape and one
    * of its own nodes reverses each subpath once rather than twice.
    *
-   * The selection is carried across rather than cleared. Reversing renumbers
-   * every node -- `i` becomes `n - 1 - i` in an open subpath, and `n - i` in a
-   * closed one, which keeps node 0 where `reverseSubpath` leaves it -- so
-   * without remapping, the nodes you had selected would stay highlighted while
-   * pointing at different nodes, and the next nudge would move the wrong ones.
+   * The selection needs no repair. It names nodes, and reversing an array
+   * moves nodes about without changing which node is which. While it named
+   * positions this method carried a remap -- `i` became `n - 1 - i` in an open
+   * subpath and `n - i` in a closed one -- and without that remap the highlight
+   * stayed on the index while the node moved out from under it.
    */
   reverseSelection(): boolean {
     const s = this.store.state;
     const targets = new Set<string>();
-    // `nodeKey` already assumes an id holds no slash, so this can too.
+    // A shape id holds no slash, so this pair reads back unambiguously.
     const key = (shape: string, sp: number): string => `${shape}/${sp}`;
 
     for (const id of s.selection.shapes) {
       const shape = findShape(s.doc, id);
       shape?.subpaths.forEach((_, spI) => targets.add(key(id, spI)));
     }
-    for (const k of s.selection.nodes) {
-      const r = parseNodeKey(k);
-      if (findShape(s.doc, r.shape)?.subpaths[r.sp]) targets.add(key(r.shape, r.sp));
-    }
+    for (const r of selectedRefs(s.doc, s.selection)) targets.add(key(r.shape, r.sp));
 
     if (!targets.size) {
       this.onMessage?.('Select a shape or some nodes to reverse.', false);
@@ -3693,23 +3711,7 @@ export class Controller {
         reverseSubpath(sp);
         done++;
       }
-      if (!done) return false;
-
-      // Renumber the selection to follow the nodes it was pointing at.
-      const moved = new Set<string>();
-      for (const k of st.selection.nodes) {
-        const r = parseNodeKey(k);
-        const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
-        if (!sp || !targets.has(key(r.shape, r.sp))) {
-          moved.add(k);
-          continue;
-        }
-        const n = sp.nodes.length;
-        const i = sp.closed ? (n - r.i) % n : n - 1 - r.i;
-        moved.add(nodeKey({ shape: r.shape, sp: r.sp, i }));
-      }
-      st.selection.nodes = moved;
-      return true;
+      return done > 0;
     });
     if (!ok) return false;
 
@@ -3781,15 +3783,17 @@ export class Controller {
    */
   setSelectedSegmentsCurved(curved: boolean): void {
     const s = this.store.state;
-    const selected = new Set(this.selectedNodeRefs().map(nodeKey));
+    const selected = new Set(
+      this.selectedNodeRefs().map((r) => `${r.shape}/${r.sp}/${r.i}`),
+    );
     if (!selected.size) return;
 
     this.edit((st) => {
       for (const shape of st.doc.shapes) {
         shape.subpaths.forEach((sp, spI) => {
           for (let seg = 0; seg < segmentCount(sp); seg++) {
-            const a = nodeKey({ shape: shape.id, sp: spI, i: seg });
-            const b = nodeKey({ shape: shape.id, sp: spI, i: (seg + 1) % sp.nodes.length });
+            const a = `${shape.id}/${spI}/${seg}`;
+            const b = `${shape.id}/${spI}/${(seg + 1) % sp.nodes.length}`;
             if (selected.has(a) && selected.has(b)) setSegmentCurved(sp, seg, curved);
           }
         });
