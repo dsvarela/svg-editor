@@ -1508,9 +1508,21 @@ shapeList.addEventListener('keydown', (e) => {
     });
     return;
   }
-  if ((e.key === 'F2' || e.key === 'Enter') && at >= 0) {
+  if (e.key === 'F2' || e.key === 'Enter') {
     e.preventDefault();
-    startRename(shapes[at].id);
+    /* With nothing selected, take the first. The route existed and had a dead
+       first step: Tab reaches the list on the very first press, and F2 there
+       did nothing until an arrow key had chosen a row -- which reads as the
+       key not working rather than as a precondition. */
+    const target = at >= 0 ? shapes[at] : shapes[0];
+    if (at < 0) {
+      store.update((st) => {
+        st.selection.shapes.clear();
+        st.selection.nodes.clear();
+        st.selection.shapes.add(target.id);
+      });
+    }
+    startRename(target.id);
   }
 });
 

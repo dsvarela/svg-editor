@@ -1555,6 +1555,34 @@ inserts a node in the selected segment. Three details:
 All three have buttons as well, which is the touch rule in `CLAUDE.md` as much
 as the keyboard one.
 
+## 38. A focus tooltip follows a scroll; a hover tooltip does not
+
+**Correcting a finding from the review of 2026-08-13.** That review recorded the
+`chrome` scenario's local failure as "not a defect: the harness browser is not
+delivering the event to a 13 px target". That was wrong, and it was concluded
+twice from the same weak evidence -- a synthetic `pointerover` worked, so the
+handler was assumed sound. The review stays as written, per the rule in
+`docs/reviews/README.md`; this is the reversal.
+
+The defect: focusing a control that is below the fold scrolls the panel to bring
+it into view, and `scroll` was wired straight to `hide`. The scroll arrived
+before the tooltip's own timer fired, so tabbing through a panel described
+whatever was already on screen and nothing else -- which is most of it. A
+keyboard user got descriptions for the top of each panel and silence below.
+
+The fix is that the two kinds of tooltip want opposite things from a scroll:
+
+| | On a scroll |
+|---|---|
+| Shown by hover | Goes. The pointer was over something, and after a scroll it is over something else |
+| Shown by focus | Follows. The anchor is still focused and still where the description belongs |
+
+**Why CI passed and one machine did not.** Whether `#pixelFit` needs scrolling to
+reach depends on the window size, so the check passed or failed by luck. The
+scenario now blurs, scrolls the panel to the top, and focuses a control at the
+bottom of it, which forces the scroll on any window. With `scroll` wired back to
+`hide` it fails.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

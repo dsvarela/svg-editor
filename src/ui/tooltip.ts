@@ -21,6 +21,15 @@ const TIP_ID = 'tip-layer';
 let tip: HTMLDivElement | null = null;
 let timer = 0;
 let current: HTMLElement | null = null;
+/**
+ * Whether the thing showing is showing because of focus or because of a hover.
+ *
+ * They want opposite things when the page scrolls. A hover tooltip is anchored
+ * to something the pointer was over, and after a scroll the pointer is over
+ * something else, so it goes. A focus tooltip is anchored to the focused
+ * element, which is still focused and still correct, so it follows.
+ */
+let byFocus = false;
 /* Five of the six listeners below are named functions, which the DOM dedupes on
    a repeat call; the keydown one was an arrow and leaked one per call. Guarding
    the whole thing is simpler than remembering which is which. */
@@ -88,6 +97,12 @@ function show(el: HTMLElement): void {
   t.classList.add('on');
   t.setAttribute('aria-hidden', 'false');
   el.setAttribute('aria-describedby', TIP_ID);
+  place(el);
+}
+
+/** Put the tooltip beside its element. Split out so a scroll can redo it. */
+function place(el: HTMLElement): void {
+  const t = host();
   const r = el.getBoundingClientRect();
   const box = t.getBoundingClientRect();
   const below = r.top < window.innerHeight / 2;
@@ -129,6 +144,26 @@ function tipTarget(from: HTMLElement): HTMLElement | null {
   return from.closest<HTMLElement>('[title], [data-tip]');
 }
 
+/**
+ * A scroll moved the page under the tooltip.
+ *
+ * Hiding outright is what this used to do, and it broke the keyboard case
+ * outright: focusing a control that is below the fold scrolls the panel to
+ * bring it into view, and that scroll arrived before the tooltip's own timer
+ * fired -- so tabbing through a panel showed a tooltip for whatever happened to
+ * be on screen already and nothing for anything else. Which is most of it.
+ *
+ * A focus tooltip follows instead, because its anchor is still focused and
+ * still where the description belongs.
+ */
+function onScroll(): void {
+  if (byFocus && current && current === document.activeElement) {
+    if (tip?.classList.contains('on')) place(current);
+    return;
+  }
+  hide();
+}
+
 function over(e: Event): void {
   const from = e.target as HTMLElement | null;
   const el = from ? tipTarget(from) : null;
@@ -137,7 +172,8 @@ function over(e: Event): void {
   current = el;
   // Focus is deliberate, so it shows at once; a hover might just be the pointer
   // crossing the strip on its way somewhere else.
-  const wait = e.type === 'focusin' ? 0 : DELAY;
+  byFocus = e.type === 'focusin';
+  const wait = byFocus ? 0 : DELAY;
   timer = window.setTimeout(() => show(el), wait);
 }
 
@@ -163,7 +199,7 @@ export function installTooltips(): void {
   // Anything that moves the page or starts an interaction invalidates the
   // position, and a tooltip left hanging over the canvas is worse than none.
   document.addEventListener('pointerdown', hide, true);
-  window.addEventListener('scroll', hide, true);
+  window.addEventListener('scroll', onScroll, true);
   window.addEventListener('blur', hide);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') hide();

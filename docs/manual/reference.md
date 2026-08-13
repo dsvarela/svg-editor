@@ -109,7 +109,8 @@ The list of shapes, newest last, with a colour swatch and a node count.
 - Click a name to select it. `Shift`-click to add.
 - Double-click a name to rename it.
 - With the list focused, arrows move the selection (`Shift` extends it), and
-  `F2` or `Enter` starts a rename.
+  `F2` or `Enter` starts a rename. With nothing selected they take the first
+  shape, so the list works from the first press of `Tab`.
 - **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
 - **Delete** removes them.
 

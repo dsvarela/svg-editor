@@ -2103,6 +2103,31 @@ const scenarios = {
     await page.waitForTimeout(220);
     const onControl = await page.getAttribute('#pixelFit', 'aria-describedby');
     check(!!onControl, 'a focused checkbox is not described by its tooltip');
+
+    /* The same, for a control the panel has to scroll to reach. Focusing one
+       below the fold scrolls the rail, and the scroll handler used to hide the
+       tooltip that focus was about to show -- so tabbing through a panel
+       described whatever was already on screen and nothing else, which is most
+       of it. Whether `#pixelFit` above is on screen depends on the window, so
+       that check passed or failed by luck; this one forces the scroll. */
+    await page.evaluate(() => {
+      document.querySelector('#panel-doc').scrollTop = 0;
+      document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    });
+    await page.waitForTimeout(120);
+    const far = '#backPick';
+    const moved = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      const box = el.getBoundingClientRect();
+      return box.bottom > window.innerHeight || box.top < 0;
+    }, far);
+    await page.focus(far);
+    await page.waitForTimeout(280);
+    const afterScroll = await page.getAttribute(far, 'aria-describedby');
+    check(
+      !!afterScroll,
+      `focusing ${far} (off screen: ${moved}) left it undescribed: the scroll hid its tooltip`,
+    );
     const onLabel = await page.$eval('#pixelFit', (el) =>
       el.closest('label').hasAttribute('aria-describedby'),
     );
