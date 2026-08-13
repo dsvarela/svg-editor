@@ -60,7 +60,7 @@ every operation reachable only by key or hover is one more thing to retrofit:
 The input layer is already there: the controller listens to `pointer*` events
 and never to `mouse*`, and the overlay sets `touch-action: none`. What blocks a
 phone today is the rail covering the canvas below 860 px (`styles.css`, the
-`max-width: 860px` query), no pinch to zoom, and **71 of 72 controls under
+`max-width: 860px` query), no pinch to zoom, and **84 of 85 controls under
 44 px**.
 
 That last number is measured by `node tools/touch.mjs`, with the dev server up.

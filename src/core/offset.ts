@@ -279,24 +279,11 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
      feature the filter just uncovered. */
   const runsKept: Pt[][] = [];
   let run: Pt[] = [];
-  /* A run also breaks where two surviving samples are far apart in space.
-     Inside a corner the two offsets overlap, so the sample after the corner
-     sits back along the one before it -- and both can survive the filter while
-     the straight line between them cuts across the region the filter removed.
-     Nothing in the index sequence says so; only the distance does. This was
-     the last of the error, and it was inside a single fitted curve, which is
-     why filtering samples alone did not find it. */
-  const jump = Math.max(tol * 20, Math.abs(d) / 4);
   for (let i = 0; i < pts.length; i++) {
     if (!keep[i]) {
       if (run.length) runsKept.push(run);
       run = [];
       continue;
-    }
-    const last = run[run.length - 1];
-    if (last && Math.hypot(pts[i][0] - last[0], pts[i][1] - last[1]) > jump) {
-      runsKept.push(run);
-      run = [];
     }
     run.push(pts[i]);
   }
@@ -328,16 +315,18 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
     if (Math.abs(den) < 1e-12) return null;
     const u = ((q1[0] - p2[0]) * t[1] - (q1[1] - p2[1]) * t[0]) / den;
     const at: Pt = [p2[0] + r[0] * u, p2[1] + r[1] * u];
-    /* Two tests, and the second is the one that matters. Nearby, because two
-       runs meeting far away are not a corner. And *valid*: the corner is a
-       point on the proposed offset, so it has to satisfy the same distance
-       criterion as every sample. Without that check a break gets joined
-       whenever its two ends happen to fall within `|d|` of each other, and the
-       corner it invents cuts straight through the region the filter had just
-       removed -- which is where the last of the error was. */
+    /* Only if it is nearby: two runs meeting far away are not a corner, they
+       are two pieces of an offset that has come apart.
+
+       Nothing distinguishes this check -- removing it leaves every measurement
+       and every test where it was -- and it is kept because joining two runs
+       at an arbitrarily distant point is not something to leave unguarded. Two
+       further checks that lived here, on the corner's own validity and on the
+       distance between consecutive samples, were removed: they were written
+       while the error was being blamed on the geometry, and the error was in
+       `NearMap`. */
     const gap = Math.hypot(at[0] - p2[0], at[1] - p2[1]) + Math.hypot(at[0] - q1[0], at[1] - q1[1]);
-    if (gap >= Math.abs(d)) return null;
-    return near.anyNearer(at, limit) ? null : at;
+    return gap < Math.abs(d) ? at : null;
   };
 
   /* Which consecutive runs actually meet. Where they do, they are two sides of
