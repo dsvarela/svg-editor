@@ -1604,30 +1604,61 @@ being forced to break at every node, where the offset has no feature at all. And
 because a cusp has no tangent to take a normal from and the curve still has a
 direction of travel there.
 
-### What it does not do, measured rather than described
+### The overrun, and the rule that settles it
 
-On the **inside** of a corner the two neighbouring offsets overrun each other, so
-the sampled polyline doubles back -- and a curve fitted through a sequence that
-doubles back does not merely loop, **it leaves the offset altogether**. A 40-unit
-square offset inward by 4 departs from the offset distance by up to 4. The same
-square outward by 4 is within 0.05. Both numbers are in `test/offset.test.ts`, so
-the limitation is a failing property with a bound rather than a sentence.
+On the inside of a corner the two neighbouring offsets run past each other, so
+the raw offset doubles back. **Chen and McMains (2005) settle what to keep: the
+invalid parts of a raw offset bound regions of non-positive winding number.**
+The local form of the same statement is a distance, and that is what is
+implemented: a raw-offset point lies on the true offset exactly when it is `|d|`
+from the original, because anything nearer is inside the disc swept along the
+curve and so is not on the boundary of the swept region.
 
-"It loops" was the comfortable version and it is not what happens. Two routes to
-removing the overrun were tried and neither shipped:
+**The filter runs on the samples, before fitting.** Fitting first and trimming
+after was tried twice and neither worked, for a reason worth keeping: a curve
+fitted through a sequence that doubles back does not merely loop, it leaves the
+offset altogether, so by then there is nothing left worth trimming. What was
+tried, and why each failed:
 
-- **The boolean library.** `booleanShapes` needs two operands, and uniting a
-  self-crossing path with a copy of itself puts coincident edges everywhere,
-  which throws inside path-bool.
-- **Trimming with the editor's own solver.** Find the self-crossings with
-  `cubicIntersections` and splice out the run between them. The version written
-  skipped adjacent segments, which is exactly where a polygon's offset overruns;
+- **`booleanShapes`** needs two operands, and uniting a self-crossing path with
+  a copy of itself puts coincident edges everywhere, which throws inside
+  path-bool.
+- **Splicing out the self-crossings** with `cubicIntersections`. The version
+  written skipped adjacent segments, which is exactly where a polygon overruns;
   including them still left a stray piece at the original corner, six units out
-  on a six-unit offset. It was removed rather than shipped, because geometry
-  that is confidently wrong is worse than geometry that is visibly incomplete.
+  on a six-unit offset.
 
-**Stroke to path needs that answer before it can ship**, since the two offsets
-of a stroke always meet at the caps. That is why it is still open.
+Three things follow from filtering samples:
+
+- **Runs meet at a computed corner**, not at whichever sample survived. The
+  filter cuts up to one sample spacing short, and a corner short by that much is
+  a corner the path does not close through. Consecutive runs are put on the
+  crossing of the directions they arrive and leave at.
+- **The result is a list of subpaths.** Two runs that do not meet are not a
+  corner; the offset has come apart, which happens whenever a shape cannot hold
+  the distance asked of it. Returning one path with a segment across the gap was
+  what this did, and it measured 6.8 out on an 8-unit offset.
+- **The grid cell is the query radius.** `NearMap` answers "is anything nearer
+  than this", and sizing its cells by the tolerance instead made each query scan
+  eighty-one cells rather than nine: 700 ms an offset, against 6 ms.
+
+What this bought, measured:
+
+| | Before the filter | After |
+|---|---|---|
+| Square inward by 4 | 4.0 out | 0.0006 |
+| Notched shape inward by 8 | 6.8 out, one path | 1.14, two paths |
+| Square outward by 4 | 0.0195 | 0.0195 |
+| An offset that consumes the shape | a sliver | nothing, which is the answer |
+
+**What is left.** The filter removes invalid *samples*; a curve fitted between
+two valid ones can still pass through the space between them, and near a break
+that space is where the overrun was. On the notched shape it reaches 1.14 on an
+eight-unit offset. Closing it needs a validation pass over the fitted curves,
+refitting wherever the same distance criterion fails.
+
+**Stroke to path needs that pass**, because the two offsets of a stroke meet at
+every cap, so the case this still gets wrong is the case it would live in.
 
 ## Known limitations
 
@@ -1646,8 +1677,9 @@ that matters. See §9.
 
 **Arc round-trip is one-way.** See §2.
 
-**Offset path leaves the offset near a concave corner.** By as much as the
-offset distance, bounded and measured. See §39.
+**Offset path can bulge through invalid space near a break.** Up to 1.14 on an
+eight-unit offset of a notched shape, measured; exact on everything that does
+not come apart. See §39.
 
 **PathBool.js is early-stage** by its author's own description, who asks for
 failure cases. Treat returned geometry as untrusted: check it is non-empty and

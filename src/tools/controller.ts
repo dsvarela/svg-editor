@@ -797,9 +797,10 @@ export class Controller {
         /* Tolerance from the document's own precision: an offset fitted finer
            than the serialiser will write is work nobody can see. */
         const tol = Math.max(invisibleAt(st.decimals), 0.01);
-        const subpaths = live.subpaths
-          .map((sp) => offsetSubpath(sp, d, tol))
-          .filter((sp): sp is Subpath => sp !== null);
+        /* Flattened, because one subpath can offset into several: an inward
+           offset of a notched shape comes apart into pieces, and each is a
+           path of the same shape. */
+        const subpaths = live.subpaths.flatMap((sp) => offsetSubpath(sp, d, tol) ?? []);
         if (!subpaths.length) {
           refused++;
           continue;

@@ -14,18 +14,26 @@
  * also subdivides on its own when it cannot hit the tolerance, so the error
  * control is already written.
  *
- * **The loops a concave corner produces are left in.** Offsetting further than
- * the local radius of curvature sends the parallel curve past itself and back,
- * and every point of the resulting loop is the right distance from the original
- * -- so no measurement of distance can find it. Removing it is a topology
- * question, and two attempts are recorded in the shopping list under Stroke to
- * path, which needs the answer and cannot ship without it.
+ * **The overrun is removed before fitting, by the distance criterion.** Where a
+ * corner or a tight curve is offset further than its radius of curvature, the
+ * parallel curve runs past itself and doubles back. Chen and McMains (2005)
+ * settle what to keep: the invalid parts of a raw offset bound regions of
+ * non-positive winding number, and the local test that says the same thing is a
+ * distance. A raw-offset point lies on the true offset exactly when it is `|d|`
+ * from the original; anything nearer is inside the disc swept along the curve,
+ * so it is not on the boundary of the swept region and it is not on the offset.
+ *
+ * That is why the filtering happens to the *samples* and not to the fitted
+ * curves. Fitting first and trimming after was tried twice and neither worked:
+ * a curve fitted through a sequence that doubles back does not merely loop, it
+ * leaves the offset altogether, so by then there is nothing left to trim that
+ * is worth keeping.
  */
 
 import { cubicAt, cubicDerivAt } from './bezier';
 import { fitCurve } from './fit';
 import { makeNode, segmentAsCubic, segmentCount } from './types';
-import type { Cubic, Pt, Subpath } from './types';
+import type { Cubic, PathNode, Pt, Subpath } from './types';
 
 /** Below this, a derivative is treated as no direction at all. */
 const TINY = 1e-9;
@@ -124,13 +132,75 @@ function joinSamples(at: Pt, from: Pt, to: Pt, d: number, tol: number): Pt[] {
 }
 
 /**
+ * A lookup for "how far is this point from the original path".
+ *
+ * A dense polyline of the source in a uniform grid. The exact answer would be a
+ * projection onto every segment, which is what the snapper does and costs far
+ * too much here -- the filter asks this question once per sample, and there are
+ * thousands of samples. The grid makes each query a scan of the few cells
+ * around the point, and the polyline is fine enough that its error is well
+ * under the tolerance the offset is being fitted to.
+ */
+class NearMap {
+  private cells = new Map<string, Pt[]>();
+  private size: number;
+
+  constructor(sp: Subpath, step: number) {
+    this.size = Math.max(step, 1e-6);
+    const n = segmentCount(sp);
+    for (let s = 0; s < n; s++) {
+      const c = segmentAsCubic(sp, s);
+      let span = 0;
+      for (let i = 1; i < 4; i++) span += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
+      const steps = Math.max(4, Math.min(400, Math.ceil(span / this.size)));
+      for (let i = 0; i <= steps; i++) this.add(cubicAt(c, i / steps) as Pt);
+    }
+  }
+
+  private key(cx: number, cy: number): string {
+    return `${cx},${cy}`;
+  }
+
+  private add(p: Pt): void {
+    const k = this.key(Math.floor(p[0] / this.size), Math.floor(p[1] / this.size));
+    const cell = this.cells.get(k);
+    if (cell) cell.push(p);
+    else this.cells.set(k, [p]);
+  }
+
+  /**
+   * Whether anything on the source is nearer than `limit`.
+   *
+   * Asked rather than "how far", because that is the question the filter has
+   * and it lets the scan stop at the first point that answers it.
+   */
+  anyNearer(p: Pt, limit: number): boolean {
+    const r = Math.ceil(limit / this.size);
+    const cx = Math.floor(p[0] / this.size);
+    const cy = Math.floor(p[1] / this.size);
+    for (let i = cx - r; i <= cx + r; i++) {
+      for (let j = cy - r; j <= cy + r; j++) {
+        const cell = this.cells.get(this.key(i, j));
+        if (!cell) continue;
+        for (const q of cell) {
+          if (Math.hypot(q[0] - p[0], q[1] - p[1]) < limit) return true;
+        }
+      }
+    }
+    return false;
+  }
+}
+
+/**
  * Offset a subpath by `d`, positive to the left of its direction of travel.
  *
- * Returns null when there is nothing to offset: a subpath of fewer than two
- * nodes, a distance of zero, or geometry so degenerate that no tangent can be
- * found anywhere along it.
+ * Returns a **list**, because an offset can come apart: push a notched shape
+ * inward by more than the notch can hold and what is left is two pieces. Null
+ * when there is nothing at all -- fewer than two nodes, a distance of zero,
+ * geometry with no tangent anywhere, or an inward offset that consumed the
+ * whole shape.
  */
-export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath | null {
+export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | null {
   const nSeg = segmentCount(sp);
   if (nSeg < 1 || !Number.isFinite(d) || d === 0) return null;
 
@@ -170,35 +240,171 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath | nul
     pts.push(first.pts[0]);
   }
 
-  /* The end tangents are the original's, exactly. That is the whole reason the
-     fitter does well here: parallel curves share tangent directions, so the
-     ends need no guessing and only the middle is solved. On a closed path the
-     run has to leave at the angle it arrives, which is the first segment's
-     tangent at both ends. */
-  const leftTan = runs[0].t0;
-  const rightTan: Pt = sp.closed
-    ? [-runs[0].t0[0], -runs[0].t0[1]]
-    : [-runs[runs.length - 1].t1[0], -runs[runs.length - 1].t1[1]];
+  /* The distance criterion, applied to the samples. Anything nearer to the
+     original than `|d|` is inside the disc swept along it, so it is not on the
+     boundary of the swept region and not on the offset -- which is the local
+     form of Chen and McMains's rule that the invalid parts bound regions of
+     non-positive winding number.
 
-  const fit = fitCurve(pts, leftTan, rightTan, tol);
-  if (!fit.curves.length) return null;
+     The slack is the fit tolerance: a sample is allowed to be a hair inside,
+     because the sample itself and the polyline it is measured against are both
+     approximations, and rejecting the true corner of a concave offset would
+     open a gap exactly where the answer is sharpest. */
+  const limit = Math.abs(d) - Math.max(tol, Math.abs(d) * 1e-3);
+  /* Cells the size of the query radius, so every query scans a three by three
+     block and no more. Cells the size of the tolerance is the obvious choice
+     and is forty times worse: the radius is the distance being asked about, so
+     it is the radius that decides how far a query has to look. */
+  const near = new NearMap(sp, Math.max(limit, tol));
+  const keep = pts.map((p) => !near.anyNearer(p, limit));
 
-  const nodes = fit.curves.map((c, i) =>
-    makeNode([c[0][0], c[0][1]], i === 0 ? null : null, [c[1][0], c[1][1]]),
-  );
-  // Each fitted curve starts where the last ended, so one node per curve plus a
-  // last node closes the run; the incoming handles come from the curve before.
-  fit.curves.forEach((c, i) => {
-    const next = nodes[i + 1];
-    if (next) next.hIn = [c[2][0], c[2][1]];
-  });
-  const last = fit.curves[fit.curves.length - 1];
-  if (sp.closed) {
-    nodes[0].hIn = [last[2][0], last[2][1]];
-  } else {
-    nodes.push(makeNode([last[3][0], last[3][1]], [last[2][0], last[2][1]], null));
+  /* Contiguous survivors. A concave corner splits the offset into runs that
+     meet at a point, and each is fitted on its own so the corner between them
+     stays a corner -- fitting across the break would smooth over the very
+     feature the filter just uncovered. */
+  const runsKept: Pt[][] = [];
+  let run: Pt[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (keep[i]) run.push(pts[i]);
+    else if (run.length) {
+      runsKept.push(run);
+      run = [];
+    }
+  }
+  if (run.length) runsKept.push(run);
+
+  /* On a closed path the first and last runs are one run through the seam,
+     unless the filter cut there -- in which case they are two, and stay two. */
+  if (sp.closed && runsKept.length > 1 && keep[0] && keep[keep.length - 1]) {
+    const first = runsKept.shift()!;
+    runsKept[runsKept.length - 1].push(...first);
   }
 
-  return { nodes, closed: sp.closed };
+  const usable = runsKept.filter((r) => r.length >= 2);
+  if (!usable.length) return null;
+
+  /* Where two runs meet, put both ends on the crossing of the directions they
+     arrive and leave at. The filter cuts at whichever sample happened to
+     survive, which is up to one sample spacing short of the corner -- and a
+     corner that is short by that much is a corner the path does not close
+     through and a deviation the measurement reports as real. */
+  const meetAt = (a: Pt[], b: Pt[]): Pt | null => {
+    const p1 = a[a.length - 2];
+    const p2 = a[a.length - 1];
+    const q1 = b[0];
+    const q2 = b[Math.min(1, b.length - 1)];
+    const r: Pt = [p2[0] - p1[0], p2[1] - p1[1]];
+    const t: Pt = [q2[0] - q1[0], q2[1] - q1[1]];
+    const den = r[0] * t[1] - r[1] * t[0];
+    if (Math.abs(den) < 1e-12) return null;
+    const u = ((q1[0] - p2[0]) * t[1] - (q1[1] - p2[1]) * t[0]) / den;
+    const at: Pt = [p2[0] + r[0] * u, p2[1] + r[1] * u];
+    // Only if it is nearby: two runs that meet far away are not a corner, they
+    // are two pieces of an offset that genuinely comes apart.
+    const gap = Math.hypot(at[0] - p2[0], at[1] - p2[1]) + Math.hypot(at[0] - q1[0], at[1] - q1[1]);
+    return gap < Math.abs(d) ? at : null;
+  };
+
+  /* Which consecutive runs actually meet. Where they do, they are two sides of
+     one corner and belong to the same path; where they do not, the offset has
+     genuinely come apart and they are two paths.
+
+     That case is not exotic. Offsetting a notched shape inward by more than the
+     notch can hold separates it into pieces, and returning one path with a
+     segment drawn across the gap would be a shape nobody asked for -- which is
+     what this did, and it measured 6.8 out on an 8-unit offset. */
+  const joined: boolean[] = [];
+  const pairs = sp.closed ? usable.length : usable.length - 1;
+  for (let i = 0; i < pairs; i++) {
+    const a = usable[i];
+    const b = usable[(i + 1) % usable.length];
+    const at = a.length >= 2 && b.length >= 2 ? meetAt(a, b) : null;
+    joined[i] = at !== null;
+    if (!at) continue;
+    a[a.length - 1] = at;
+    b[0] = at;
+  }
+
+  // Runs strung together by the corners they share.
+  const groups: Pt[][][] = [];
+  let group: Pt[][] = [];
+  for (let i = 0; i < usable.length; i++) {
+    group.push(usable[i]);
+    const last = i === usable.length - 1;
+    if (!joined[i] || (last && !sp.closed)) {
+      groups.push(group);
+      group = [];
+    }
+  }
+  if (group.length) groups.push(group);
+  /* A closed offset whose seam joined has its first and last runs in different
+     groups, and they are one piece. */
+  if (sp.closed && groups.length > 1 && joined[usable.length - 1]) {
+    const head = groups.shift()!;
+    groups[groups.length - 1].push(...head);
+  }
+
+  /* Tangents from the samples themselves rather than from the original. After
+     filtering, a run can start and end anywhere -- at a corner the filter
+     uncovered, not at a node -- so the original's tangents no longer describe
+     its ends. Two samples apart is enough of a chord to take a direction from,
+     and the fitter normalises whatever it is given. */
+  const chord = (a: Pt, b: Pt): Pt => [b[0] - a[0], b[1] - a[1]];
+  const out: Subpath[] = [];
+
+  for (const g of groups) {
+    const nodes: PathNode[] = [];
+    const wholeThing = sp.closed && groups.length === 1 && usable.length === 1;
+
+    for (const r of g) {
+      /* Over several samples, not two. A two-sample chord at the end of a run
+         is one sample spacing long and takes its direction from whatever noise
+         the filter left there; averaging four steadies it without reaching far
+         enough to cut the corner. */
+      const span = Math.min(4, r.length - 1);
+      const leftTan = wholeThing ? runs[0].t0 : chord(r[0], r[span]);
+      const rightTan = wholeThing
+        ? ([-runs[0].t0[0], -runs[0].t0[1]] as Pt)
+        : chord(r[r.length - 1], r[r.length - 1 - span]);
+
+      const fit = fitCurve(r, leftTan, rightTan, tol);
+      for (const c of fit.curves) {
+        nodes.push(makeNode([c[0][0], c[0][1]], null, [c[1][0], c[1][1]]));
+        nodes.push(makeNode([c[3][0], c[3][1]], [c[2][0], c[2][1]], null));
+      }
+    }
+
+    /* Every interior node was emitted twice, once as the end of one curve and
+       once as the start of the next. Merging them is what turns a list of
+       curves back into a path. */
+    const merged: PathNode[] = [];
+    for (const n of nodes) {
+      const last = merged[merged.length - 1];
+      if (last && Math.hypot(last.pt[0] - n.pt[0], last.pt[1] - n.pt[1]) < 1e-9) {
+        last.hOut = n.hOut;
+        if (!last.hIn) last.hIn = n.hIn;
+        continue;
+      }
+      merged.push(n);
+    }
+    if (merged.length < 2) continue;
+
+    /* Closed only if it came back to where it started. A piece of a broken-up
+       offset is open however closed the original was, and claiming otherwise
+       draws a segment across the gap. */
+    const head = merged[0];
+    const tail = merged[merged.length - 1];
+    const rejoined =
+      Math.hypot(head.pt[0] - tail.pt[0], head.pt[1] - tail.pt[1]) < Math.max(tol, 1e-6);
+    if (sp.closed && rejoined && merged.length > 2) {
+      head.hIn = tail.hIn;
+      merged.pop();
+      out.push({ nodes: merged, closed: true });
+    } else {
+      out.push({ nodes: merged, closed: false });
+    }
+  }
+
+  return out.length ? out : null;
 }
 

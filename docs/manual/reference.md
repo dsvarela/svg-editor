@@ -180,9 +180,11 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 - **Circularise** fits a circle through the selected path's nodes and moves each
   onto it.
 - **Offset** with **Apply** draws a path parallel to each selected shape, as a new
-  shape beside it. A negative distance goes the other way. It is exact on convex
-  geometry; on the inside of a corner, where the offset would overrun itself, it
-  departs from the distance you asked for by as much as that distance.
+  shape beside it, or several if the shape cannot hold the distance and the
+  offset comes apart. A negative distance goes the other way, and one that would
+  consume the shape leaves nothing rather than a sliver. It is exact except where
+  a piece breaks off, and there it can stray by around a seventh of the distance
+  asked for.
 - **Within** is how far Simplify may move the drawing, in document units. It
   starts at about one screen pixel for the document you have open and stops
   following it once you type your own number.
