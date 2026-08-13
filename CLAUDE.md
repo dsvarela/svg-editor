@@ -102,19 +102,31 @@ deviation, booleans by enclosed area, rendering by the coordinates that reached
 the DOM. Before trusting a new test, break the code it covers and watch it go
 red.
 
-**Until 2026-08-15 `npm run drive` always exited 0.** A failed `check` threw,
-the top-level `try` in `tools/drive.mjs` turned the throw into a field of the
-JSON it printed, and nothing set `process.exitCode` -- so every scenario, every
-`check` in them, and the CI loop that reads their exit codes could only go red
-if the browser failed to launch. Any green recorded before that date means the
-browser started. It does not mean the scenario passed. Re-running the sweep
-after the fix put all 43 back at green, so nothing was hiding behind it, but no
+**No browser scenario could fail before 2026-08-14, and thirteen still could
+not afterwards.** Two separate holes, both closed on that date:
+
+- A failed `check` threw, the top-level `try` in `tools/drive.mjs` turned the
+  throw into a field of the JSON it printed, and nothing set `process.exitCode`.
+  Every scenario, every `check` in them, and the CI loop reading their exit
+  codes could only go red if the browser failed to launch.
+- Thirteen of the 43 never called `check` at all. They drove the editor, read
+  the page and returned what they found, so breaking what they exercised
+  changed the printed blob and nothing else. `node tools/drive.mjs --audit`
+  refuses that now and CI runs it before the scenarios.
+
+Any green recorded before 2026-08-14 means the browser started. Re-running the
+sweep after both fixes put all 43 back at green, so nothing was hiding, but no
 earlier figure is evidence of that.
 
 The exit code now also fails on a `d` attribute that reached the DOM holding
 `NaN`, `Infinity` or `undefined`, and on anything the page logged as an error.
 Both were already measured by the audit every scenario runs and neither was
 read by anything.
+
+**`node tools/mutate.mjs <path>` breaks the source on purpose** and reports what
+the unit suite still calls green. A survivor is a change to what the program
+does that no test disagreed with. It rewrites files in place while it runs, so
+it cannot share the tree with `npm run drive`.
 
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 

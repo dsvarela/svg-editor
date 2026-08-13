@@ -92,6 +92,34 @@ async function undo(page) {
   await page.waitForTimeout(150);
 }
 
+/**
+ * The document's own counters, as three numbers.
+ *
+ * Read out of the status strip because that is where the app publishes them,
+ * so a scenario asserting on these is asserting on something a person can see.
+ * The separators are non-breaking, which is why this matches digits and a word
+ * rather than splitting on punctuation.
+ */
+async function counts(page) {
+  const text = await page.textContent('#stats');
+  const read = (word) => {
+    const m = new RegExp(`(\\d+)\\s+${word}`).exec(text);
+    return m ? Number(m[1]) : null;
+  };
+  return { shapes: read('shapes?'), nodes: read('nodes?'), segments: read('segments?'), text };
+}
+
+/**
+ * The path data the canvas drew for a shape, by its position in the artwork.
+ *
+ * What reached the DOM, which is the thing a person is looking at. The source
+ * box is not that: it rewrites itself only while the drawer is open, so
+ * reading `#src` with the drawer shut returns the empty string for every
+ * document and an assertion on it holds no matter what the editor did.
+ */
+const drawnPath = (page, index = 0) =>
+  page.getAttribute(`.artwork path:nth-child(${index + 1})`, 'd');
+
 /** Canvas-relative click helper: takes document coords, converts via the page. */
 async function mk(page) {
   const box = await page.locator('#canvas').boundingBox();
@@ -235,15 +263,21 @@ function png(width, height, pixel) {
 
 const scenarios = {
   /** Load and report. */
-  async smoke(page) {
-    return { stats: await page.textContent('#stats') };
+  async smoke(page, check) {
+    const c = await counts(page);
+    /* The starting document, which every other scenario builds on. If this is
+       not what loaded then no reading taken after it means what it says. */
+    check(c.shapes === 1, `loaded ${c.shapes} shapes, expected 1`);
+    check(c.nodes === 8, `loaded ${c.nodes} nodes, expected 8`);
+    check(c.segments === 8, `${c.segments} segments across 8 nodes, so it is not closed`);
+    return c;
   },
 
   /**
    * The reported session: draw a polygon with the pen, close it by clicking the
    * first node, then keep clicking -- which starts a second shape.
    */
-  async penPolygon(page) {
+  async penPolygon(page, check) {
     const { click } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
 
@@ -258,11 +292,20 @@ const scenarios = {
     await click(pts[0]); // close
     await click([70, 15]); // starts shape 2
     await click([80, 25]);
-    return { stats: await page.textContent('#stats'), d: await page.inputValue('#src') };
+
+    const c = await counts(page);
+    /* Two shapes on top of the one that was loaded: the closed polygon, and
+       the one the click after the close began. Five nodes and two, and the
+       polygon closing rather than adding a sixth is the whole point -- a close
+       that stamped another node would read as 16 here. */
+    check(c.shapes === 3, `${c.shapes} shapes, expected the loaded one plus two`);
+    check(c.nodes === 15, `${c.nodes} nodes, expected 8 + 5 + 2`);
+    check(c.segments === 14, `${c.segments} segments: the polygon did not close`);
+    return c;
   },
 
   /** Same, but with small accidental drags on each click. */
-  async penWithDrags(page) {
+  async penWithDrags(page, check) {
     const { drag } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
     const pts = [
@@ -273,11 +316,18 @@ const scenarios = {
       [56, 30],
     ];
     for (const p of pts) await drag(p, [p[0] + 3, p[1] + 2]);
-    return { stats: await page.textContent('#stats'), d: await page.inputValue('#src') };
+
+    const c = await counts(page);
+    /* A small drag on a pen click pulls a handle; it does not place a second
+       node. Five clicks that each wobbled are still five nodes, and 18 here
+       would mean each drag had stamped one of its own. */
+    check(c.shapes === 2, `${c.shapes} shapes, expected the loaded one plus one`);
+    check(c.nodes === 13, `${c.nodes} nodes, expected 8 + 5`);
+    return c;
   },
 
   /** Select a node and pull a hollow ghost handle out into a curve. */
-  async latentHandle(page) {
+  async latentHandle(page, check) {
     const { click, drag } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
     for (const p of [
@@ -295,17 +345,19 @@ const scenarios = {
     const solid = await page.locator('.handle-dot:not(.latent)').count();
     await drag([46.67, 20], [46, 12]);
     await page.waitForTimeout(120);
-    return {
-      ghostsBefore: ghosts,
-      solidBefore: solid,
-      solidAfter: await page.locator('.handle-dot:not(.latent)').count(),
-      stats: await page.textContent('#stats'),
-      d: await page.inputValue('#src'),
-    };
+    const solidAfter = await page.locator('.handle-dot:not(.latent)').count();
+
+    /* A selected node on a straight run offers two hollow handles and no solid
+       ones: nothing to grab yet, and something to pull. Pulling one makes that
+       one real and leaves its partner hollow. */
+    check(ghosts === 2, `${ghosts} ghost handles offered, expected two`);
+    check(solid === 0, `${solid} solid handles before anything was pulled`);
+    check(solidAfter === 1, `${solidAfter} solid handles after pulling one`);
+    return { ghostsBefore: ghosts, solidBefore: solid, solidAfter, ...(await counts(page)) };
   },
 
   /** Undo past a pen shape then keep drawing -- the old crash. */
-  async penUndo(page) {
+  async penUndo(page, check) {
     const { click } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
     await click([20, 20]);
@@ -315,7 +367,15 @@ const scenarios = {
     await page.keyboard.press('Control+z');
     await click([30, 40]);
     await click([60, 40]);
-    return { stats: await page.textContent('#stats') };
+
+    const c = await counts(page);
+    /* Three undos take back more than the two clicks placed, so the shape they
+       started goes with them and the pair drawn afterwards is a new one. An
+       undo that stopped short would leave 3 shapes here, and one that ran on
+       into the loaded document would leave 1. */
+    check(c.shapes === 2, `${c.shapes} shapes, expected the loaded one plus one`);
+    check(c.nodes === 10, `${c.nodes} nodes, expected 8 + 2`);
+    return c;
   },
 
   /**
@@ -325,7 +385,7 @@ const scenarios = {
    * then Alt-drags it (the other should not), and reads the inspector's
    * continuity badge at each step.
    */
-  async continuity(page) {
+  async continuity(page, check) {
     const { click, drag } = await mk(page);
     const badge = async () =>
       page
@@ -358,11 +418,17 @@ const scenarios = {
     await page.waitForTimeout(120);
     const broken = { badge: await badge(), d: await page.inputValue('#src') };
 
+    /* The badge is derived from where the handles are and never stored, so
+       these three readings are the whole claim: a dragged handle carries its
+       partner until Alt says otherwise. */
+    check(asDrawn.badge === 'Symm', `drawn with mirrored handles, badge reads ${asDrawn.badge}`);
+    check(mirrored.badge === 'Symm', `after a plain drag the badge reads ${mirrored.badge}`);
+    check(broken.badge === 'Corner', `after an Alt drag the badge reads ${broken.badge}`);
     return { asDrawn, mirrored, broken };
   },
 
   /** Select two neighbouring nodes and bend the segment between them. */
-  async bend(page) {
+  async bend(page, check) {
     const { click, drag } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
     for (const p of [[20, 20], [60, 20], [60, 50]]) await click(p);
@@ -379,6 +445,11 @@ const scenarios = {
       angle: await page.inputValue('#bendAngle'),
       controls: await page.locator('.bend-dot').count(),
     };
+    /* Two adjacent anchors selected name one segment between them, so there is
+       exactly one control to aim at. Two would mean the segments trailing off
+       either end had been included. */
+    check(before.controls === 1, `${before.controls} bend controls for one segment`);
+    check(Number(before.angle) === 0, `a straight segment reports ${before.angle}° of bend`);
     // The bend control sits at the curve midpoint, which for a flat segment is
     // the chord midpoint.
     await drag([40, 20], [40, 8]);
@@ -386,22 +457,29 @@ const scenarios = {
     const dragged = {
       angle: await page.inputValue('#bendAngle'),
       loose: await page.inputValue('#bendLoose'),
-      d: await page.inputValue('#src'),
+      d: await drawnPath(page, 1),
     };
+    check(Number(dragged.angle) < -40, `dragging the control bent the segment to ${dragged.angle}°`);
+    check(/[CS]/.test(dragged.d), `the bent segment is still drawn straight: ${dragged.d}`);
 
     await tab(page, 'node');
     await page.fill('#bendAngle', '45');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(150);
-    const typed = { angle: await page.inputValue('#bendAngle'), d: await page.inputValue('#src') };
+    const typed = { angle: await page.inputValue('#bendAngle'), d: await drawnPath(page, 1) };
+    check(typed.angle === '45', `typing 45 left the field reading ${typed.angle}`);
+    check(typed.d !== dragged.d, 'typing an angle redrew nothing');
 
     await page.click('#bendFlat');
     await page.waitForTimeout(150);
-    return { before, dragged, typed, flattened: await page.inputValue('#src') };
+    const flattened = { angle: await page.inputValue('#bendAngle'), d: await drawnPath(page, 1) };
+    check(Number(flattened.angle) === 0, `flatten left the angle at ${flattened.angle}`);
+    check(!/[CS]/.test(flattened.d), `flatten left a curve behind: ${flattened.d}`);
+    return { before, dragged, typed, flattened };
   },
 
   /** Paste a real multi-element icon and Apply it. */
-  async pasteIcon(page) {
+  async pasteIcon(page, check) {
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
     await page.fill('#src', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -412,16 +490,25 @@ const scenarios = {
     await page.click('#apply');
     await page.waitForTimeout(200);
     const shapes = await page.locator('#shapelist li').allTextContents();
-    return {
-      stats: await page.textContent('#stats'),
-      status: await page.textContent('#status'),
-      shapes,
-      roundTrip: await page.inputValue('#src'),
-    };
+    const stats = await page.textContent('#stats');
+    const status = await page.textContent('#status');
+    const roundTrip = await page.inputValue('#src');
+
+    /* Three elements in, three shapes out, and the round trip writes three
+       paths back. Concatenating the elements into one `d` on the way in keeps
+       every curve and loses the boundaries, so the drawing looks right and the
+       Shapes list holds one entry -- which is why the count and the list are
+       both read here and the geometry is not. */
+    check(/3 shapes/.test(stats), `imported as "${stats}"`);
+    check(status === 'Imported 3 shapes.', `status reads "${status}"`);
+    check(shapes.length === 3, `the Shapes list holds ${shapes.length} entries`);
+    check((roundTrip.match(/<path /g) ?? []).length === 3, 'the export did not write three paths');
+    check(/viewBox="0 0 24 24"/.test(roundTrip), 'the icon viewBox did not survive the round trip');
+    return { stats, status, shapes, roundTrip };
   },
 
   /** Apply the source box with two shapes present. */
-  async applyTwoShapes(page) {
+  async applyTwoShapes(page, check) {
     const { click } = await mk(page);
     await page.click('#tool button[data-v="pen"]');
     for (const p of [
@@ -453,21 +540,37 @@ const scenarios = {
     await page.waitForTimeout(150);
     const scopedBefore = await page.textContent('#stats');
     const scopedHint = await page.textContent('#srchint');
-    const shown = await page.inputValue('#src');
+    /* After the drawer opens, not before. The box only rewrites itself while
+       it is showing, so reading it shut returns the empty string whatever is
+       selected, and an assertion on that would hold for every document. */
     await openSource(page);
+    const shown = await page.inputValue('#src');
     await page.fill('#src', 'M 20 20 L 45 20 L 45 45 L 20 45 Z');
     await page.click('#apply');
     await page.waitForTimeout(150);
+    const scopedAfter = await page.textContent('#stats');
+    const scopedStatus = await page.textContent('#status');
+
+    /* Apply means two different things and says which in the hint. With
+       nothing selected it replaces the document, so three shapes become the
+       one the box described. With a shape selected it rewrites that shape and
+       leaves the other alone, so the count does not move. */
+    check(/3 shapes/.test(before), `drew ${before}`);
+    check(/1 shape\b/.test(afterUnscoped), `an unscoped Apply left ${afterUnscoped}`);
+    check(hintUnscoped === 'Apply replaces the document.', `hint reads "${hintUnscoped}"`);
+    check(scopedHint === 'Apply updates shape-2 only.', `scoped hint reads "${scopedHint}"`);
+    check(shown === 'M 20 20 H 40 V 40', `the box showed "${shown}" for the selected shape`);
+    check(/2 shapes/.test(scopedAfter), `a scoped Apply left ${scopedAfter}`);
+    check(scopedStatus === 'Updated shape-2.', `status reads "${scopedStatus}"`);
     return {
       before, afterUnscoped, hintUnscoped,
       scopedBefore, scopedHint, shownForSelected: shown,
-      scopedAfter: await page.textContent('#stats'),
-      scopedStatus: await page.textContent('#status'),
+      scopedAfter, scopedStatus,
     };
   },
 
   /** Combine two overlapping squares, one operation at a time, undoing between. */
-  async combine(page) {
+  async combine(page, check) {
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
     await page.fill(
@@ -524,7 +627,7 @@ const scenarios = {
    * Three nodes survive if the per-node floor that stops a path degenerating
    * under single-node edits is also allowed to apply to "delete all of them".
    */
-  async marqueeDelete(page) {
+  async marqueeDelete(page, check) {
     const { drag } = await mk(page);
 
     /* The marquee's stroke must be the same thickness at every zoom. It was
@@ -576,12 +679,21 @@ const scenarios = {
     await page.keyboard.press('Delete');
     await page.waitForTimeout(150);
 
+    const afterKey = await page.textContent('#stats');
+
+    /* A sweep past the whole shape takes all eight of its anchors, and both
+       ways of asking then clear the document. The button and the key are
+       separate entry points, so a fix that reached one of them leaves the
+       other reading 1 shape here. */
+    check(anchorsSelected === 8, `${anchorsSelected} anchors caught by a sweep past the shape`);
+    check(/0 shapes/.test(afterButton), `the Delete button left ${afterButton}`);
+    check(/0 shapes/.test(afterKey), `the Delete key left ${afterKey}`);
     return {
       selected,
       anchorsSelected,
       marqueeStroke,
       afterButton,
-      afterKey: await page.textContent('#stats'),
+      afterKey,
       status: await page.textContent('#status'),
     };
   },
@@ -590,7 +702,7 @@ const scenarios = {
    * A three-node closed loop: the smallest case the old floor refused outright.
    * Deleting a node must reduce it, and breaking must open it.
    */
-  async smallClosedPath(page) {
+  async smallClosedPath(page, check) {
     const { click, showCanvas } = await mk(page);
     const load = async () => {
       await openSource(page);
@@ -628,16 +740,24 @@ const scenarios = {
     await page.click('#breakPath');
     await page.waitForTimeout(150);
 
-    return {
-      start,
-      afterDelete,
-      afterBreak: await page.getAttribute('.artwork path', 'd'),
-      breakStatus: await page.textContent('#status'),
-    };
+    const afterBreak = await page.getAttribute('.artwork path', 'd');
+    const breakStatus = await page.textContent('#status');
+
+    /* A closed triangle is the smallest thing delete can act on without
+       destroying it: three nodes go to two and the path stays closed, which is
+       the `Z`. Breaking at a node opens it, and an open path has no `Z` to
+       write -- if one survives here the break did nothing and the status line
+       is lying. */
+    check(/3 nodes/.test(start), `started from ${start}`);
+    check(/2 nodes/.test(afterDelete.stats), `delete left ${afterDelete.stats}`);
+    check(/Z\s*$/.test(afterDelete.d.trim()), `delete opened the path: ${afterDelete.d}`);
+    check(!/Z/.test(afterBreak), `break left the path closed: ${afterBreak}`);
+    check(breakStatus === 'Opened the path at that node.', `status reads "${breakStatus}"`);
+    return { start, afterDelete, afterBreak, breakStatus };
   },
 
   /** The same delete, both ways round, on the same path. */
-  async deleteModes(page) {
+  async deleteModes(page, check) {
     const { click, showCanvas } = await mk(page);
 
     const load = async () => {
@@ -676,7 +796,19 @@ const scenarios = {
       };
     };
 
-    return { fuse: await run('fuse'), split: await run('split') };
+    const fuse = await run('fuse');
+    const split = await run('split');
+
+    /* Both modes remove the same two nodes and disagree about what to leave
+       behind. Fuse keeps one run through the gap; Split leaves two, which is
+       the second `M`. The node counts match, so only the topology tells them
+       apart and only the drawn path shows it. */
+    check(fuse.selected === '0/2' && split.selected === '0/2', 'the two runs did not delete the same nodes');
+    check((fuse.d.match(/M/g) ?? []).length === 1, `fuse left ${fuse.d}`);
+    check((split.d.match(/M/g) ?? []).length === 2, `split left ${split.d}`);
+    check(/3 segments/.test(fuse.stats), `fuse left ${fuse.stats}`);
+    check(/2 segments/.test(split.stats), `split left ${split.stats}`);
+    return { fuse, split };
   },
 
   /**
@@ -686,7 +818,7 @@ const scenarios = {
    * the shape's size comes from a pointer drag through a real hit-tested
    * overlay, and the modifier keys are read off the live event.
    */
-  async primitives(page) {
+  async primitives(page, check) {
     const { drag } = await mk(page);
 
     /* Every value read off the page is compared against something here. A
@@ -695,9 +827,6 @@ const scenarios = {
        it still exits 0 while printing a plausible-looking blob. A scenario
        that cannot fail reports green while measuring nothing, which is worse
        than not having it. */
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`primitives: ${what}`);
-    };
     /* The drawn size of a path, asked of the browser rather than parsed out of
        the `d`. Splitting the numbers into x/y pairs looks obvious and is wrong
        the moment an `H` or a `V` appears, which is exactly what a rounded
@@ -834,10 +963,7 @@ const scenarios = {
    * proving is that it renders *under* the artwork and never reaches the
    * export.
    */
-  async backdrop(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`backdrop: ${what}`);
-    };
+  async backdrop(page, check) {
 
     await tab(page, 'doc');
 
@@ -950,10 +1076,7 @@ const scenarios = {
    * it only ever applied while drawing. This is the same arc, afterwards, on
    * anything with two straight sides.
    */
-  async roundCorners(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`roundCorners: ${what}`);
-    };
+  async roundCorners(page, check) {
     const { click } = await mk(page);
 
     await openSource(page);
@@ -991,7 +1114,6 @@ const scenarios = {
 
     await undo(page);
     check(/4 nodes/.test(await page.textContent('#stats')), 'undo did not restore the square');
-
     return { stats, status, d };
   },
 
@@ -1003,10 +1125,7 @@ const scenarios = {
    * read back — the node count, the exported `d`, and whether Simplify will
    * touch the path at all, which a zero-length segment prevents outright.
    */
-  async fuse(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`fuse: ${what}`);
-    };
+  async fuse(page, check) {
     const { click, drag } = await mk(page);
 
     // A square carrying a duplicate anchor at [64, 16], as an import would.
@@ -1086,10 +1205,7 @@ const scenarios = {
    * Everything between a file on disk and shapes in the document is only here:
    * decoding, `getImageData`, the backdrop's placement, and the undo step.
    */
-  async trace(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`trace: ${what}`);
-    };
+  async trace(page, check) {
 
     await tab(page, 'doc');
 
@@ -1172,10 +1288,7 @@ const scenarios = {
    * two entry points, button and key, and the one property a person would check
    * first: the drawing does not move.
    */
-  async reverse(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`reverse: ${what}`);
-    };
+  async reverse(page, check) {
 
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
@@ -1240,10 +1353,7 @@ const scenarios = {
    * removed, every existing scenario still passed, because they all open the
    * drawer before they edit.
    */
-  async sourceDeferred(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`sourceDeferred: ${what}`);
-    };
+  async sourceDeferred(page, check) {
     const { drag } = await mk(page);
 
     await openSource(page);
@@ -1321,10 +1431,7 @@ const scenarios = {
    * something: if the frame count were measuring anything other than the
    * worker, both runs would score alike.
    */
-  async traceWorker(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`traceWorker: ${what}`);
-    };
+  async traceWorker(page, check) {
 
     await tab(page, 'doc');
 
@@ -1450,10 +1557,7 @@ const scenarios = {
    * reach is measured in screen pixels, so it has to survive a real camera, and
    * that the readout names the tier that actually answered.
    */
-  async snapOrder(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`snapOrder: ${what}`);
-    };
+  async snapOrder(page, check) {
     const { drag, toClient } = await mk(page);
 
     await openSource(page);
@@ -1554,10 +1658,7 @@ const scenarios = {
    * to spot by eye. So this reads the drawn gridlines out of the overlay and
    * compares them against where a dragged node actually landed.
    */
-  async pixelFit(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`pixelFit: ${what}`);
-    };
+  async pixelFit(page, check) {
     const { drag } = await mk(page);
 
     await tab(page, 'doc');
@@ -1658,10 +1759,7 @@ const scenarios = {
    * worth testing against, and the tabs are the thing that decides whether a
    * control exists at all as far as a pointer is concerned.
    */
-  async style(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`style: ${what}`);
-    };
+  async style(page, check) {
     const { drag } = await mk(page);
 
     // Shape is the tab you land on, and the style controls are in it.
@@ -1744,10 +1842,7 @@ const scenarios = {
    * second was a symptom: nothing on screen said where the page was, so there
    * was no way to notice you were drawing in a corner of it.
    */
-  async canvasFrame(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`canvasFrame: ${what}`);
-    };
+  async canvasFrame(page, check) {
 
     await tab(page, 'doc');
 
@@ -1817,10 +1912,7 @@ const scenarios = {
    * clicking the corner of a rectangle still select the node, or does the
    * handle drawn near it swallow the click.
    */
-  async transform(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`transform: ${what}`);
-    };
+  async transform(page, check) {
     const { drag, click } = await mk(page);
 
     const bbox = () =>
@@ -1961,10 +2053,7 @@ const scenarios = {
    * is that the tolerance follows the document it is opened on, and that the
    * shape on screen after the refit is still the shape that was there.
    */
-  async simplify(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`simplify: ${what}`);
-    };
+  async simplify(page, check) {
 
     // A forty-sided ring: what a trace or an imported polyline looks like.
     const n = 40;
@@ -2033,15 +2122,12 @@ const scenarios = {
    * margin or a min-height turns the window into a scrolling document again,
    * and every click coordinate in every other scenario shifts with it.
    */
-  async chrome(page) {
+  async chrome(page, check) {
     const canvasBox = async () => {
       const b = await page.locator('#canvas').boundingBox();
       return { w: Math.round(b.width), h: Math.round(b.height) };
     };
     const settle = () => page.waitForTimeout(260);
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`chrome: ${what}`);
-    };
     /** Whether a collapsed panel can still be reached by Tab. */
     const reachable = (sel) =>
       page.$eval(sel, (el) => {
@@ -2187,9 +2273,11 @@ const scenarios = {
    * The grid contract, checked against a real layout engine: every line drawn
    * must sit on a snap position.
    */
-  async gridHonesty(page) {
+  async gridHonesty(page, check) {
     await tab(page, 'doc');
-    const check = async (step, zoomOuts) => {
+    /* Returns what the grid drew at a step and a zoom, so the assertions below
+       can compare readings taken at different ones. */
+    const atStep = async (step, zoomOuts) => {
       await page.fill('#gridStep', String(step));
       await page.dispatchEvent('#gridStep', 'input');
       for (let i = 0; i < zoomOuts; i++) await page.click('#zoomout');
@@ -2209,13 +2297,25 @@ const scenarios = {
     };
 
     const out = {};
-    out.step1 = await check(1, 0);
-    out.step1_zoomedOut = await check(1, 6);
+    out.step1 = await atStep(1, 0);
+    out.step1_zoomedOut = await atStep(1, 6);
     await page.click('#fit');
-    out.step0_3 = await check(0.3, 0);
-    out.step0_3_zoomedOut = await check(0.3, 5);
+    out.step0_3 = await atStep(0.3, 0);
+    out.step0_3_zoomedOut = await atStep(0.3, 5);
     await page.click('#fit');
-    out.step2_5 = await check(2.5, 2);
+    out.step2_5 = await atStep(2.5, 2);
+
+    /* Every drawn line is a snap position. `offLattice` was being measured at
+       each step and returned unread, which is the whole claim of this scenario
+       sitting in the output where nothing could disagree with it. Zooming out
+       is allowed to draw fewer lines and never a different lattice, so the
+       zoomed-out readings are held to the same rule as the others. */
+    for (const [when, r] of Object.entries(out)) {
+      check(r.lines > 0, `no grid lines drawn at ${when}`);
+      check(r.offLattice.length === 0, `${when} drew lines off the lattice at ${r.offLattice.join(', ')}`);
+      check(r.readout.length > 0, `the grid readout is empty at ${when}`);
+    }
+    check(out.step1_zoomedOut.lines <= out.step1.lines, 'zooming out drew more lines, not fewer');
     return out;
   },
 
@@ -2231,7 +2331,7 @@ const scenarios = {
    * Read mid-drag, which `mk`'s `drag` cannot do because it releases at the
    * end, so the press and the moves are spelled out here.
    */
-  async measureReadout(page) {
+  async measureReadout(page, check) {
     const { toClient } = await mk(page);
 
     /* Both the attribute and the computed style. Either alone is passable for
@@ -2290,6 +2390,24 @@ const scenarios = {
     await page.waitForTimeout(60);
     out.afterMove = await shown();
 
+    /* `display` as well as `hidden`, because `.rd` sets `display: flex` and
+       beats the attribute on specificity: the slot carried `hidden` correctly
+       the whole time it was on screen, so the attribute alone passes for a
+       document that shows the readout permanently.
+
+       The two live readings are the sizes named above: 40 by 20 rather than
+       the 44.7 diagonal, which is the box and vector cases being confused, and
+       15 at 0 degrees for a move straight to the right. */
+    for (const [when, r] of [['idle', out.idle], ['afterRelease', out.afterRelease], ['afterMove', out.afterMove]]) {
+      check(r.hidden === true, `the readout is not marked hidden when ${when}`);
+      check(r.display === 'none', `the readout still displays ${r.display} when ${when}`);
+    }
+    for (const [when, r] of [['duringCreate', out.duringCreate], ['duringMove', out.duringMove]]) {
+      check(r.hidden === false, `the readout is marked hidden during ${when}`);
+      check(r.display !== 'none', `the readout is not displayed during ${when}`);
+    }
+    check(/40\.000 . 20\.000/.test(out.duringCreate.text), `drawing read "${out.duringCreate.text}"`);
+    check(/15\.000 at 0/.test(out.duringMove.text), `moving read "${out.duringMove.text}"`);
     return out;
   },
 
@@ -2302,7 +2420,7 @@ const scenarios = {
    * browser's own answer to "is this point painted", fill rule included, so it
    * measures the thing rather than a proxy for it.
    */
-  async makeOneShape(page) {
+  async makeOneShape(page, check) {
     /* Set through the source drawer rather than drawn, for the reason
        `combine` does the same: the document boots with a starter shape and a
        camera fitted to it, so a drawn square lands in a scene that already has
@@ -2393,10 +2511,7 @@ const scenarios = {
    * Only a browser can run this. The insertion is a double-click at a client
    * pixel, and where that lands on the document is the camera's answer.
    */
-  async simplifyWithinZero(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`simplifyWithinZero: ${what}`);
-    };
+  async simplifyWithinZero(page, check) {
     const nodes = async () => +/(\d+) nodes/.exec(await page.textContent('#stats'))[1];
 
     // Read the starter as path data, then give the canvas its space back.
@@ -2488,10 +2603,7 @@ const scenarios = {
    * it -- which goes through the camera, the hit tolerance in screen pixels and
    * the snapper, none of which jsdom exercises together.
    */
-  async keylines(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`keylines: ${what}`);
-    };
+  async keylines(page, check) {
     const { toClient, click } = await mk(page);
 
     /* A square page of 240, so the grid is the page and every keyline lands on
@@ -2622,10 +2734,7 @@ const scenarios = {
    * The unit tests own the list and the priority order; this owns the parts
    * where the page itself has to be right.
    */
-  async guides(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`guides: ${what}`);
-    };
+  async guides(page, check) {
     const { toClient, click } = await mk(page);
     /* Counted on the `display` attribute, not with `:visible` and not by
        counting elements. Two traps, one after the other: the overlay pools its
@@ -2848,10 +2957,7 @@ const scenarios = {
    * every other shape's -- and that the line is drawn where the alignment says
    * and removed when the drag ends.
    */
-  async smartGuides(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`smartGuides: ${what}`);
-    };
+  async smartGuides(page, check) {
     const { toClient } = await mk(page);
 
     /* Two rectangles, one above the other. The upper one's left edge is at 10.5,
@@ -2951,10 +3057,7 @@ const scenarios = {
    * node -- and that the readout names what claimed the pointer rather than the
    * tier it belongs to.
    */
-  async angles(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`angles: ${what}`);
-    };
+  async angles(page, check) {
     const { toClient, click } = await mk(page);
     const rays = () =>
       page.evaluate(
@@ -3039,10 +3142,7 @@ const scenarios = {
    * pixels, the tier order -- and that it beats the outline it sits on, which
    * is the case the feature exists for.
    */
-  async crossings(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`crossings: ${what}`);
-    };
+  async crossings(page, check) {
     const { toClient, click } = await mk(page);
 
     /* Two straight runs crossing at (44.5, 32.5), deliberately off the grid:
@@ -3111,10 +3211,7 @@ const scenarios = {
    * that the fourth reading takes precedence over the smooth one it would
    * otherwise light up as, and that the export carries no trace of it.
    */
-  async autoSmooth(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`autoSmooth: ${what}`);
-    };
+  async autoSmooth(page, check) {
     const { toClient, click, drag } = await mk(page);
 
     await openSource(page);
@@ -3217,10 +3314,7 @@ const scenarios = {
    * checks is that the string in the box is that string and the range picks out
    * the right command.
    */
-  async findInSource(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`findInSource: ${what}`);
-    };
+  async findInSource(page, check) {
     const { click } = await mk(page);
 
     await openSource(page);
@@ -3283,10 +3377,7 @@ const scenarios = {
    * panel -- whether applying one actually reaches the selected shape, and
    * whether the highlight lets go when the style stops matching.
    */
-  async palette(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`palette: ${what}`);
-    };
+  async palette(page, check) {
     const { click } = await mk(page);
     const swatches = () => page.locator('#palette button').count();
     const lit = () =>
@@ -3359,10 +3450,7 @@ const scenarios = {
    * buttons are. So this drives the whole route: pick a shape from the list,
    * walk to a node, extend, insert, and check the drawing changed.
    */
-  async keyboardNodes(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`keyboardNodes: ${what}`);
-    };
+  async keyboardNodes(page, check) {
     const info = async () => (await page.textContent('#nodeinfo')).trim();
     const count = async () => +/(\d+) nodes/.exec(await page.textContent('#stats'))[1];
 
@@ -3442,10 +3530,7 @@ const scenarios = {
    * result reaches the document as a second shape with the first still there,
    * and that its size is what a parallel path of that distance should be.
    */
-  async offsetPath(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`offsetPath: ${what}`);
-    };
+  async offsetPath(page, check) {
 
     /* A circle, because its offset has a size you can check by eye and by
        arithmetic: radius 20 offset by 5 is radius 25. */
@@ -3526,10 +3611,7 @@ const scenarios = {
    * same route a paste does -- group transforms baked, viewBox adopted, one
    * undo step -- rather than a second import path that drifts from it.
    */
-  async importFile(page) {
-    const check = (ok, what) => {
-      if (!ok) throw new Error(`importFile: ${what}`);
-    };
+  async importFile(page, check) {
     const dir = process.env.SCRATCH ?? '/tmp';
     const { writeFileSync } = await import('node:fs');
 
@@ -3593,6 +3675,24 @@ if (args.includes('--list')) {
   process.exit(0);
 }
 
+/**
+ * Refuse a scenario that cannot fail.
+ *
+ * Thirteen of them read the page, returned what they found, and asserted
+ * nothing, so breaking what they exercised still exited 0 and printed a
+ * plausible blob. Calling `check` is not proof that a scenario measures the
+ * right thing, but never calling it is proof that it measures nothing, and
+ * that much a machine can settle. Run by CI ahead of the scenarios themselves.
+ */
+if (args.includes('--audit')) {
+  const silent = Object.entries(scenarios)
+    .filter(([, fn]) => !/\bcheck\(/.test(fn.toString()))
+    .map(([name]) => name);
+  for (const name of silent) console.error(`${name} never calls check, so it cannot fail`);
+  console.log(`${Object.keys(scenarios).length} scenarios, ${silent.length} of which assert nothing`);
+  process.exit(silent.length ? 1 : 0);
+}
+
 const scenario = scenarios[scenarioName];
 if (!scenario) {
   console.error(`unknown scenario '${scenarioName}'. have: ${Object.keys(scenarios).join(', ')}`);
@@ -3640,10 +3740,26 @@ await page.waitForTimeout(120);
    worth having on exactly that run, so the throw is caught rather than left to
    end the process. Catching it is not forgiving it: `failure` carries the
    reason to the exit code at the end of the file. */
+/**
+ * What a scenario asserts with.
+ *
+ * Built here because the runner is the only thing that knows which scenario is
+ * speaking, and every scenario used to rebuild this line for itself with its
+ * own name spelled into it by hand.
+ *
+ * A scenario that only reads the page and returns what it found is not a
+ * check: break the thing it exercises and it still exits 0, printing a
+ * plausible-looking blob. Every scenario is expected to call this at least
+ * once, and `--audit` below refuses the ones that do not.
+ */
+const check = (ok, what) => {
+  if (!ok) throw new Error(`${scenarioName}: ${what}`);
+};
+
 let result;
 let failure = null;
 try {
-  result = await scenario(page);
+  result = await scenario(page, check);
 } catch (err) {
   result = { error: err.message };
   failure = err.message;

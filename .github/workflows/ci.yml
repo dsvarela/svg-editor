@@ -105,6 +105,11 @@ jobs:
           done
           curl -sf -o /dev/null http://localhost:5173/ || { echo "dev server never came up"; exit 1; }
 
+          # Before running any of them: a scenario that never calls `check`
+          # reads the page, returns what it found and exits 0 whatever the
+          # editor did. Cheap to answer and pointless to discover afterwards.
+          node tools/drive.mjs --audit
+
           # Taken from drive.mjs itself, so adding a scenario there is enough.
           # The loop keeps going after a failure so one run reports every
           # broken scenario instead of only the first.
