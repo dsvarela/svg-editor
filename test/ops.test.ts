@@ -190,8 +190,8 @@ describe('forcing a continuity', () => {
   });
 
   it('gives a corner handles rather than declining', () => {
-    // The old behaviour was to leave a handle-less node alone, which read as a
-    // dead button: the node stayed a corner and nothing on screen moved.
+    // Leaving a handle-less node alone reads as a dead button: the node stays
+    // a corner and nothing on screen moves.
     const sp = parsePath('M0 0 L10 0 L20 10 L30 10')[0];
     expect(continuityOf(sp.nodes[1])).toBe('corner');
 
@@ -218,13 +218,12 @@ describe('forcing a continuity', () => {
   });
 
   it('declines at the end of an open path without touching it', () => {
-    /* The fixture matters. This used to start `M0 0 C5 0 10 5 10 10`, which
-       gives node 0 an outgoing handle already -- so the branch that
-       materialises one was never entered and the test could not fail on the
-       defect it named. With two straight segments the branch is reached, and
-       the assertion that hOut stays null is what goes red: the old code
-       assigned it and *then* declined, leaving a straight segment carrying a
-       handle and reporting that nothing had happened. */
+    /* The fixture matters. A path like `M0 0 C5 0 10 5 10 10` gives node 0 an
+       outgoing handle already, so the branch that materialises one is never
+       entered and the test cannot fail on the defect it names. Two straight
+       segments reach the branch, and the assertion that hOut stays null is what
+       goes red if the handle is assigned before the decline, which would leave
+       a straight segment carrying a handle while reporting no change. */
     const sp = parsePath('M0 0 L10 10 L20 0')[0];
     const before = serialisePath([sp]);
 
@@ -246,10 +245,10 @@ describe('forcing a continuity', () => {
   });
 
   it('moves the drawing when it materialises handles, and says so', () => {
-    /* The invariant record used to claim this did not move the drawing, on the
-       reasoning that a latent handle sits on its own chord. It does -- and is
-       then rotated to the averaged direction, which pulls it off. Pinning the
-       real figure means the claim cannot drift back. */
+    /* A latent handle sits on its own chord, which reads as leaving the drawing
+       alone, but it is then rotated to the averaged direction and that pulls it
+       off. Pinning the real figure is what stops the harmless-sounding version
+       being written down again. */
     const sp = parsePath('M0 0 L10 0 L10 10')[0];
     const before = segmentAsCubic(sp, 0);
     setContinuity(sp, 1, 'smooth');
@@ -362,9 +361,9 @@ describe('deleting', () => {
   });
 
   it('reduces a three-node ring to two, rather than refusing', () => {
-    // This used to return false. A ring of three was exactly at the old floor,
-    // so it could not be reduced at all -- and a floor that refuses is worse
-    // than the degenerate shapes it was protecting against, because a refusal
+    // A ring of three sits exactly at the floor any minimum-size rule would
+    // impose, so such a rule makes it irreducible. A floor that refuses is
+    // worse than the degenerate shapes it protects against, because a refusal
     // is invisible and the shapes are not.
     const sp = parsePath('M0 0 L10 0 L5 10 Z')[0];
     expect(deleteNode(sp, 0)).toBe(true);
@@ -890,9 +889,9 @@ describe('roundCorner', () => {
     expect(r.radius).toBeCloseTo(20, 9);
 
     /* The arc starts exactly where the previous node already is, so that node is
-       reused rather than duplicated. This test used to assert the duplicate --
-       `nodes[2].pt` equal to `[40, 0]` while `nodes[1]` was also `[40, 0]` --
-       which is how a defect gets a test written around it. */
+       reused rather than duplicated. Asserting the duplicate here -- `nodes[2]`
+       at `[40, 0]` while `nodes[1]` is also `[40, 0]` -- is how a defect gets a
+       test written around it. */
     expect(sp.nodes.length).toBe(4);
     expect(sp.nodes[1].pt).toEqual([40, 0]);
     expect(sp.nodes[1].hOut).not.toBeNull();
@@ -988,9 +987,9 @@ describe('reverse', () => {
    *
    * Inclusive because that is what makes the comparison exact. Sampling
    * `t = 0 .. (per-1)/per` leaves out the far end of every segment, and the
-   * reversed path then samples the far ends and misses the near ones -- so the
-   * two lists are each other's reverse shifted by one, and the first version of
-   * this helper failed on an off-by-one of its own making.
+   * reversed path then samples the far ends and misses the near ones, so the
+   * two lists come out as each other's reverse shifted by one and the helper
+   * fails on an off-by-one of its own making.
    */
   const walk = (sp: Subpath, per = 16): Pt[] => {
     const out: Pt[] = [];

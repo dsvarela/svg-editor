@@ -152,7 +152,7 @@ describe('rotateMatrix', () => {
 
   it('does nothing when the pointer reaches the centre', () => {
     // `atan2(0, 0)` is 0 rather than undefined, so sweeping the rotate pointer
-    // through the middle used to apply minus the grab angle in one jump.
+    // through the middle would apply minus the grab angle in one jump.
     expect(rotateMatrix(c, [10, 0], c).deg).toBe(0);
     expect(rotateMatrix(c, c, [10, 0]).deg).toBe(0);
   });

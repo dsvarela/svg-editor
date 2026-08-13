@@ -86,10 +86,9 @@ export interface PathNode {
  *
  * Segment `i` runs from `nodes[i]` to `nodes[i + 1]`. When `closed`, a final
  * segment wraps from the last node back to `nodes[0]` -- so a closed subpath
- * has `nodes.length` segments and an open one has `nodes.length - 1`. There is
- * no duplicated closing node, which is the bug the sigla prototype's
- * `setAnchor` had to hand-sync (`g[i][0]` and `g[i-1][3]` held the same point
- * in two places).
+ * has `nodes.length` segments and an open one has `nodes.length - 1`. **There
+ * is no duplicated closing node**, so nothing has to hand-sync one point held
+ * in two places, and there is no way for the two copies to disagree.
  */
 export interface Subpath {
   nodes: PathNode[];

@@ -1,24 +1,22 @@
 /**
  * Angular snap: rays from a point, at multiples of an angle.
  *
- * The grid gives you positions and this gives you directions, which is the
- * other half of drawing something to a specification. A 45-degree chamfer, an
- * isometric box, a star with twelve arms: all of them are easy with rays and
- * fiddly without, and none of them is expressible as a lattice.
- *
- * Taken from IPE, which sets an origin, a base direction and a step, and then
- * constrains the pointer to the rays that follow. Two differences here:
+ * The grid gives positions and this gives directions, which a lattice cannot
+ * express: a 45-degree chamfer, an isometric box, a star with twelve arms.
  *
  * **A ray is 1-D, so it answers the boundary tier** rather than becoming a mode
  * that overrides everything. That is `model/snapping.ts`'s rule applied, and it
- * has the property worth having: an angle you asked for still loses to a vertex
- * you can see, because welding to a node someone placed matters more than
- * landing on a direction they set once.
+ * is why an angle set once still loses to a vertex you can see.
  *
- * **The origin can be implicit.** IPE makes you place it. Most of the time the
- * origin you want is where the gesture started -- the node you are dragging from
- * or the last point the pen put down -- so the controller supplies that when no
- * origin has been set, and an explicit one takes over when it has.
+ * Two things here that look like details and are not. The nearest ray is found
+ * by rounding the point's own angle to the nearest multiple, which is also what
+ * keeps the projection in front of the origin instead of behind it. And
+ * `rayAngles` walks until it has gone round rather than computing `360 / step`,
+ * because a step that does not divide 360 is legal: 7 degrees gives 52 rays and
+ * a final gap of 4.
+ *
+ * `docs/ARCHITECTURE.md` §33 has where this came from and why the origin may be
+ * implicit.
  */
 
 import type { Pt } from '../core/types';

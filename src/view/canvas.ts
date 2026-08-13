@@ -6,9 +6,9 @@
  *
  * Keeping them apart is what makes dragging cheap. A handle drag rewrites only
  * overlay attributes plus the one `d` of the shape being edited; it never
- * rebuilds the document DOM. The sigla prototype conflated the two and
- * reconstructed the entire SVG on every pointermove, which is invisible at 40
- * nodes and hopeless at 2000.
+ * rebuilds the document DOM. Conflating the two means reconstructing the whole
+ * SVG on every pointermove, which is invisible at 40 nodes and hopeless at
+ * 2000.
  *
  * Hit-testing rides on the overlay: each interactive element carries `data-hit`
  * and its address, so `event.target` answers "what did I grab?" with no
@@ -77,12 +77,11 @@ const HANDLE_SIZE = 8;
  * Side of the invisible square that rotates, placed with its inner corner on
  * the box's corner so the whole of it lies outside.
  *
- * Outside, not centred. Centred was the first attempt and it took every click
- * aimed at a corner node: a 26 pixel square centred on the corner of a
- * rectangle covers that rectangle's corner anchor completely, so the shape
- * could be rotated and its corner could never be dragged again. Sitting the
- * zone diagonally outside leaves the anchor clear, and puts rotation where
- * every other editor puts it.
+ * Outside, not centred. A 26 pixel square centred on the corner of a rectangle
+ * covers that rectangle's corner anchor completely, so the shape would rotate
+ * and its corner could never be dragged again. Sitting the zone diagonally
+ * outside leaves the anchor clear, and puts rotation where every other editor
+ * puts it.
  */
 const ROTOR_SIZE = 22;
 
@@ -273,20 +272,18 @@ export class Canvas {
       // question about the numbers rather than answered by a flag.
       setAttrs(path, {
         d: this.paths.get(shape.id, shape.subpaths),
-        // The shape's own fill, or none. This used to substitute a grey for
-        // shapes whose fill is `none`, which made an unfilled shape and a grey
-        // one indistinguishable and left no way to see what the file would say.
+        // The shape's own fill, or none. Never a stand-in grey for a fill of
+        // `none`: that makes an unfilled shape and a grey one indistinguishable
+        // and leaves no way to see what the file would say.
         fill: state.filled ? shape.style.fill : 'none',
         'fill-rule': shape.style.fillRule,
         stroke: shape.style.stroke,
-        /* The shape's real width, in document units. It used to be multiplied
-           by `scale()`, which pinned every stroke to a constant number of screen
-           pixels: the drawing did not thicken as you zoomed in, and a shape set
-           to width 4 looked identical to one set to width 1. That was tolerable
-           while every shape was a hairline preview and nothing could change the
-           width; it stopped being tolerable the moment the Style panel could.
-           §17's rule is that overlay chrome holds its screen size and the
-           drawing scales -- this is the drawing. */
+        /* The shape's real width, in document units, and not multiplied by
+           `scale()`. Multiplying pins every stroke to a constant number of
+           screen pixels, so the drawing does not thicken as you zoom in and a
+           shape set to width 4 looks identical to one set to width 1. §17's
+           rule is that overlay chrome holds its screen size and the drawing
+           scales -- this is the drawing. */
         'stroke-width': shape.style.strokeWidth,
         'stroke-linejoin': 'round',
         'stroke-linecap': 'round',
@@ -343,11 +340,10 @@ export class Canvas {
   /**
    * Draw the document's own edge, and dim everything outside it.
    *
-   * This is the `viewBox` the export writes, and until it was drawn there was
-   * nothing on screen that said where it was. You could draw a shape in the
-   * corner of a 88 by 64 document, export it, and find the drawing occupying a
-   * fifth of the file with no clue as to why: the grid runs to the horizon and
-   * looks exactly the same inside the page and outside it.
+   * This is the `viewBox` the export writes, and nothing else on screen says
+   * where it is: the grid runs to the horizon and looks exactly the same inside
+   * the page and outside it. Undrawn, a shape in the corner of an 88 by 64
+   * document exports occupying a fifth of the file with no clue as to why.
    *
    * The shade is one path of two rectangles with `fill-rule: evenodd`, so the
    * document is a hole in a sheet covering the camera. Filled elements in the
@@ -644,13 +640,12 @@ export class Canvas {
                 sel.nodes.has(nodeKey({ shape: shape.id, sp: spI, i: bI })));
             if (!both) continue;
 
-            /* The curve's own midpoint, taken from the segment rather than
-               from a bend. It used to be drawn only where `bendOf` succeeded,
-               which hid the control on every segment whose handles were not
-               symmetric -- most of them, in any drawing that has been edited.
-               Both cases put the dot in the same place: `bendHandlePos` is the
-               cubic at t = 0.5 for a bend, and this is the cubic at t = 0.5
-               for anything. */
+            /* The curve's own midpoint, taken from the segment and never from a
+               bend. Gating this on `bendOf` succeeding hides the control on
+               every segment whose handles are not symmetric, which is most of
+               them in any drawing that has been edited. Both routes put the dot
+               in the same place: `bendHandlePos` is the cubic at t = 0.5 for a
+               bend, and this is the cubic at t = 0.5 for anything. */
             const at = cubicAt(segmentAsCubic(sp, seg), 0.5) as Pt;
             if (!inView(at)) continue;
             this.bendDots.next({

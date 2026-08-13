@@ -1,36 +1,27 @@
 /**
  * Where the snap lattice has to sit for a stroke to land on whole pixels.
  *
- * A stroke is painted centred on its path, so a one-unit stroke whose centreline
- * sits at x = 10 covers 9.5 to 10.5: half of one pixel column and half of the
- * next, which renders as two columns of grey rather than one of black. That is
- * the entire reason icon work is fiddly, and snapping anchors to integers makes
- * it worse rather than better, because integers are exactly the wrong place for
- * an odd-width stroke to be.
- *
- * The condition is one line. The painted edges sit at `x ± w/2`, so both are
- * whole numbers exactly when
+ * A stroke is painted centred on its path, so its painted edges sit at
+ * `x ± w/2` and both are whole numbers exactly when
  *
  *     x ≡ w/2  (mod 1)
  *
- * which for a width of 1 means half-integers, for a width of 2 means integers,
- * and for 3 means half-integers again. So this is not a different kind of
- * snapping: it is the same lattice, shifted by a **phase**.
+ * Half-integers for a width of 1 or 3, integers for 2 or 4, zero phase for a
+ * shape with no stroke at all. That is the ordinary lattice shifted by a
+ * **phase**, not a second kind of snapping, which is why `snap` takes one
+ * optional argument and nothing else had to change.
  *
- * A shape with no stroke has its edges at the path itself, so its phase is zero
- * and the ordinary grid was right all along.
+ * **One phase is in force at a time, and both callers read it from here.** The
+ * phase belongs to a shape's stroke width, so shapes of different widths want
+ * different lattices. §9's rule is that every drawn gridline is a position the
+ * pointer can land on, and a grid drawn unshifted while the tools snap shifted
+ * breaks that in the least visible way there is: half a pixel, on a lattice
+ * nobody would think to check. `phaseInForce` is called by the snapper and by
+ * the grid renderer, so there is nothing for them to keep in sync.
  *
- * **A fractional stroke width can only have one edge aligned.** The two edges
- * are `w` apart, so unless `w` is a whole number no position puts both on whole
- * pixels, from any lattice. The phase aligns the leading edge and the trailing
- * one falls where it falls. Nothing can do better, and a stroke of width 1.5 was
- * never going to be crisp.
- *
- * The phase depends on the shape's stroke width, which means different shapes
- * want different lattices and no single grid can serve them all. Rather than
- * inventing a per-shape lattice the drawn grid could not show — the exact defect
- * §9 exists to prevent — one phase is in force at a time, taken from what is
- * selected, and both the snapper and the grid renderer read it from here.
+ * `docs/ARCHITECTURE.md` §25 has the rest: why a mixed-width selection returns
+ * `null` instead of choosing a lattice, and why a fractional width can only
+ * ever align one of its two edges.
  */
 
 import { findShape, parseNodeKey } from './doc';
@@ -45,8 +36,8 @@ export function phaseOf(style: Style): number {
     return 0;
   }
   /* `half` is strictly positive by the guard above, so `half % 1` is already in
-     [0, 1) and never -0. An earlier version folded it through `((x % 1) + 1) % 1`
-     to avoid a negative zero that no reachable input can produce. */
+     [0, 1) and never -0. No need to fold it through `((x % 1) + 1) % 1`: that
+     guards a negative zero no reachable input here can produce. */
   return (style.strokeWidth / 2) % 1;
 }
 

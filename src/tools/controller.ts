@@ -173,11 +173,11 @@ export class Controller {
   /**
    * Whether this gesture opened a history batch.
    *
-   * `onUp` used to work this out by inspecting the drag it found, which is a
-   * different question and gave a different answer whenever the drag had been
-   * replaced or had changed shape mid-gesture. An unclosed batch disables
-   * checkpointing permanently and says nothing, so the fact is recorded when it
-   * happens rather than reconstructed afterwards.
+   * Recorded when the batch opens, never reconstructed in `onUp` by inspecting
+   * the drag. That is a different question: the drag can be replaced or change
+   * shape mid-gesture, and then the answer differs. An unclosed batch disables
+   * checkpointing permanently and says nothing on screen, so the cost of
+   * getting this wrong is every later undo point, not this gesture.
    */
   private batchOpen = false;
   private extras: OverlayExtras = {};
@@ -924,10 +924,10 @@ export class Controller {
   /**
    * Step the node selection along the path.
    *
-   * The gap the keyboard survey could not see. Every control in the Node panel
-   * is reachable by Tab and every one of them acts on the selected nodes -- and
-   * until now the only way to select a node was to click it, so the whole panel
-   * was pointer-only however tabbable its buttons were.
+   * The gap a keyboard survey cannot see. Every control in the Node panel is
+   * reachable by Tab and every one acts on the selected nodes, so without a way
+   * to select a node from the keyboard the whole panel is pointer-only however
+   * tabbable its buttons are. This is that way.
    *
    * With a shape selected and no nodes, it takes the first. With one node it
    * moves. `extend` adds instead of replacing, which is how you get the two
@@ -1168,12 +1168,10 @@ export class Controller {
          than depending on both. */
       if (this.touches.size > 2) return;
     }
-    // A second press while a drag is live used to overwrite `this.drag`, and
-    // since the matching `onUp` decided whether to close the batch by looking
-    // at whatever drag it found, the first one's batch was never closed --
-    // after which `checkpoint()` returns early forever and no undo point is
-    // ever recorded again, with nothing on screen to say so. Two fingers on a
-    // touchscreen were enough. One drag at a time.
+    // One drag at a time. A second press must not overwrite `this.drag`: the
+    // first drag's batch would never close, after which `checkpoint()` returns
+    // early forever and no undo point is ever recorded again, with nothing on
+    // screen to say so. Two fingers on a touchscreen are enough to do it.
     if (this.drag.kind !== 'none') return;
     const s = this.store.state;
     const p = this.pt(e);
@@ -1516,10 +1514,10 @@ export class Controller {
       case 'body': {
         const d = this.drag;
         /* Snap the TRANSLATION, not the positions.
-           Snapping each node's own position would drag every off-lattice node
-           onto the grid and destroy the shape's proportions -- which is why
-           moving a shape ignored the grid entirely until now. Rounding the
-           total displacement instead keeps every relative offset exactly, and
+           Snapping each node's own position drags every off-lattice node onto
+           the grid and destroys the shape's proportions, which is why there is
+           no sane way to do it that way. Rounding the total displacement keeps
+           every relative offset exactly, and
            has the property worth having: a shape whose nodes start on the grid
            ends on it, and one that starts off it stays off it by the same
            amount. Tracked from the press rather than accumulated per move, so
@@ -1688,10 +1686,10 @@ export class Controller {
 
       /* In a `finally` because everything above runs listeners: the marquee's
          `update` notifies every subscriber, which touches forty DOM nodes and
-         re-serialises the document. A throw anywhere in there used to leave the
-         batch open, and an open batch makes `checkpoint` return early for the rest
-         of the session. The ending of a gesture is not allowed to depend on the
-         rest of the application behaving. */
+         re-serialises the document. A throw anywhere in there would otherwise
+         leave the batch open, and an open batch makes `checkpoint` return early
+         for the rest of the session. The ending of a gesture is not allowed to
+         depend on the rest of the application behaving. */
     } finally {
       // A create drag that never grew past nothing opened no batch, so there is
       // none to close -- and the document is untouched, as it should be.
@@ -1777,11 +1775,10 @@ export class Controller {
   /**
    * Wheel, with the modifiers doing three different things.
    *
-   * All four combinations used to zoom, because none of them was bound: holding
-   * Shift, Ctrl or Alt changed nothing, which reads as the modifiers being
-   * broken rather than unassigned. Plain and Ctrl both zoom, since Ctrl+wheel is
-   * the page-zoom gesture everywhere and doing anything else with it would
-   * surprise; Shift and Alt pan along one axis each.
+   * Every combination is bound, because a modifier that changes nothing reads
+   * as broken rather than unassigned. Plain and Ctrl both zoom, since Ctrl+wheel
+   * is the page-zoom gesture everywhere and doing anything else with it would
+   * surprise. Shift and Alt pan along one axis each.
    */
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -1846,11 +1843,11 @@ export class Controller {
     const w = alt ? dx * 2 : dx;
     const h = alt ? dy * 2 : dy;
 
-    /* No area, nothing to draw -- and that holds after the shape exists too.
-       The guard used to be `!d.id &&`, so a drag that came back to zero width
-       rebuilt the shape flat and `onUp` committed an invisible degenerate path.
-       Skipping the rebuild leaves the last good size on screen; the pointer can
-       always grow it again. */
+    /* No area, nothing to draw, and that holds after the shape exists too. Do
+       not narrow this to `!d.id &&`: a drag that comes back to zero width would
+       then rebuild the shape flat, and `onUp` would commit an invisible
+       degenerate path. Skipping the rebuild leaves the last good size on screen,
+       and the pointer can always grow it again. */
     if (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9) return;
 
     const radius = this.store.state.cornerRadius;
@@ -2312,11 +2309,10 @@ export class Controller {
   /**
    * Commit a finished trace, wherever it was computed.
    *
-   * Split from `traceBackdrop` because the tracer now usually runs in a worker
-   * (`model/trace.worker.ts`), and the gap between asking for a trace and
-   * getting one back is no longer zero: the main thread stays live for those
-   * seconds, so the person can move the backdrop, delete it, or start a drag
-   * while the walk is still running. Every one of those makes the result wrong
+   * Split from `traceBackdrop` because the tracer usually runs in a worker
+   * (`model/trace.worker.ts`), so seconds pass between asking for a trace and
+   * getting one back. The main thread stays live throughout, and the person can
+   * move the backdrop, delete it, or start a drag while the walk is running. Every one of those makes the result wrong
    * rather than late, so this checks the world it was computed against is still
    * the world it is landing in.
    *
@@ -2751,11 +2747,11 @@ export class Controller {
    * Drop the pen's own stub: a subpath of fewer than two nodes, and the shape if
    * that was all it had.
    *
-   * Scoped to the shape the pen was drawing. It used to sweep the whole
-   * document, so finishing a path also silently deleted any one-node subpath
-   * that had arrived by import or by Apply -- and with no checkpoint, the only
-   * undo that brought it back also undid the drawing. Same rule as
-   * `deleteSelection`: prune what this operation touched, nothing else.
+   * Scoped to the shape the pen was drawing, and it must stay that way. A sweep
+   * of the whole document would also take one-node subpaths that arrived by
+   * import or by Apply, and with no checkpoint of their own, the only undo that
+   * brings one back also undoes the drawing. Same rule as `deleteSelection`:
+   * prune what this operation touched, nothing else.
    */
   private pruneDegenerate(shapeId: string): void {
     const shape = findShape(this.store.state.doc, shapeId);
@@ -2837,10 +2833,10 @@ export class Controller {
       }
       case 'Escape': {
         // Abandoning a drag rolls back to the checkpoint it opened, which is
-        // what genuinely leaves no trace of it in history. This used to call
-        // `undo`, which kept the abandoned shape on the redo stack, and it only
-        // covered `create` -- so Escape during any other drag cleared the
-        // selection and left the drag running.
+        // what genuinely leaves no trace of it in history. Not `undo`: that
+        // leaves the abandoned shape on the redo stack. Every drag kind comes
+        // through here, so Escape never falls past this into clearing the
+        // selection while a drag is still running.
         if (this.drag.kind !== 'none') {
           this.abortDrag();
           return;
@@ -2862,9 +2858,9 @@ export class Controller {
         return;
       }
       /* `[` and `]` walk the node selection along the path, with Shift to
-         extend. The one thing the keyboard could not do: every control in the
-         Node panel is reachable by Tab and every one of them acts on selected
-         nodes, and until now selecting a node meant clicking it. */
+         extend. Without them the Node panel is pointer-only: every control in it
+         is reachable by Tab and every one acts on selected nodes, so a selection
+         that only a click can make strands the whole panel. */
       case '[':
       case ']':
       // With Shift held the browser reports the shifted character, so the
@@ -3345,11 +3341,11 @@ export class Controller {
    * stays two rings and the fill rule decides whether the middle is a hole.
    * That is the only way to draw a hole here, and no boolean produces one.
    *
-   * Shipped as **Make one shape** rather than the shopping list's "Make path".
-   * `STYLE.md` reserves "path" for one continuous run of nodes and "shape" for
-   * one entry in the Shapes list, and this makes one of the latter out of
-   * several of the former. A button called Make path that produces a shape
-   * would teach the wrong noun in the one place the reader is paying attention.
+   * Labelled **Make one shape**, not "Make path". `STYLE.md` reserves "path"
+   * for one continuous run of nodes and "shape" for one entry in the Shapes
+   * list, and this makes one shape out of several paths. A button called Make
+   * path that produces a shape teaches the wrong noun in the one place the
+   * reader is paying attention.
    *
    * Same conventions as `booleanSelection`, deliberately: whole shapes only,
    * document order, the bottom-most survives with its id, name and style. A
@@ -3498,7 +3494,7 @@ export class Controller {
        this is called twice on every notification, and a traced document
        selects seven shapes holding 23 454 nodes: the general path builds 23 454
        ref objects and 23 454 dedupe keys to answer "how many", twice, on every
-       pointermove. Measured at 13.5 ms per notification before this. */
+       pointermove, at a measured 13.5 ms per notification. */
     if (s.selection.nodes.size === 0) {
       let n = 0;
       for (const id of s.selection.shapes) {
@@ -3581,9 +3577,9 @@ export class Controller {
     /* Membership is asked one node at a time rather than by materialising the
        whole selection into a Set of keys first. The answer here is `null` the
        moment a second segment qualifies, so with a whole shape selected this
-       looks at two segments -- while building the Set cost 23 454 refs and
-       23 454 strings before the first question was asked. It was 12.3 ms on
-       every notification, which is most of what a pointermove used to cost. */
+       looks at two segments. Building the Set costs 23 454 refs and 23 454
+       strings before the first question is even asked, which measured 12.3 ms on
+       every notification: most of what a pointermove costs. */
     const picked = (id: string, spI: number, i: number): boolean =>
       sel.shapes.has(id) || sel.nodes.has(nodeKey({ shape: id, sp: spI, i }));
     // Shapes with nothing selected in them cannot contribute a segment, and
@@ -3746,8 +3742,8 @@ export class Controller {
       return changed > 0;
     });
 
-    // A button that does nothing and says nothing reads as broken, and there
-    // are more of those cases than the two this used to cover.
+    // A button that does nothing and says nothing reads as broken, so every
+    // way of changing nothing below has to reach a message.
     if (changed) return;
     if (alreadySymmetric) {
       this.onMessage?.(

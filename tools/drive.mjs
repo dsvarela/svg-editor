@@ -521,8 +521,8 @@ const scenarios = {
   /**
    * The reported gesture: marquee everything, press Delete.
    *
-   * Three nodes used to survive, because the per-node floor that stops a path
-   * degenerating under single-node edits also applied to "delete all of them".
+   * Three nodes survive if the per-node floor that stops a path degenerating
+   * under single-node edits is also allowed to apply to "delete all of them".
    */
   async marqueeDelete(page) {
     const { drag } = await mk(page);
@@ -610,7 +610,7 @@ const scenarios = {
     await load();
     const start = await page.textContent('#stats');
 
-    // Delete one of the three, which the floor used to refuse.
+    // Delete one of the three, which a per-node floor would refuse.
     await click([20, 45]);
     await page.waitForTimeout(120);
     await page.click('#del');
@@ -658,8 +658,8 @@ const scenarios = {
       await load();
       // The Delete controls live in the Node tab, and a control in a tab you
       // cannot see is not there: `hidden` keeps it out of the hit test, so the
-      // click below waited thirty seconds for a visibility that never came.
-      // This scenario had been failing on that since the panels became tabs.
+      // click below would wait thirty seconds for a visibility that never
+      // comes, so the tab has to be switched first.
       await tab(page, 'node');
       await page.click(`#delmode button[data-dm="${mode}"]`);
       await page.waitForTimeout(80);
@@ -689,10 +689,10 @@ const scenarios = {
   async primitives(page) {
     const { drag } = await mk(page);
 
-    /* This scenario used to read every value off the page and return it, with
-       nothing compared against anything. That is not a check: break
+    /* Every value read off the page is compared against something here. A
+       scenario that only reads and returns is not a check: break
        Shift-constrain, the corner radius, the `e` shortcut or circularise, and
-       it still exited 0 while printing a plausible-looking blob. A scenario
+       it still exits 0 while printing a plausible-looking blob. A scenario
        that cannot fail reports green while measuring nothing, which is worse
        than not having it. */
     const check = (ok, what) => {
@@ -701,9 +701,9 @@ const scenarios = {
     /* The drawn size of a path, asked of the browser rather than parsed out of
        the `d`. Splitting the numbers into x/y pairs looks obvious and is wrong
        the moment an `H` or a `V` appears, which is exactly what a rounded
-       rectangle emits -- the first version of this check reported a 24x25 rect
-       as 65x65 and failed on its own arithmetic. `getBBox` is also the measure
-       that matters: it is the shape as drawn, curves included. */
+       rectangle emits: pairing the numbers reads a 24x25 rect as 65x65 and
+       fails on its own arithmetic. `getBBox` is also the measure that matters,
+       being the shape as drawn, curves included. */
     const extent = (selector) =>
       page.$eval(selector, (el) => {
         const b = el.getBBox();
@@ -752,7 +752,7 @@ const scenarios = {
     await page.keyboard.press('e');
     const toolAfterKey = await page.getAttribute('#tool button[data-v="ellipse"]', 'aria-pressed');
     check(toolAfterKey === 'true', 'pressing e did not select the ellipse tool');
-    // ...but Ctrl+E belongs to the source drawer, and used to switch the tool
+    // ...but Ctrl+E belongs to the source drawer, and must not switch the tool
     // as a silent side effect of opening it.
     await page.click('#tool button[data-v="select"]');
     await page.keyboard.press('Control+e');
@@ -1001,7 +1001,7 @@ const scenarios = {
    * The defect this closes is invisible on screen: two anchors on the same point
    * draw exactly like one. So every check here is against something that can be
    * read back — the node count, the exported `d`, and whether Simplify will
-   * touch the path at all, which is what a zero-length segment used to prevent.
+   * touch the path at all, which a zero-length segment prevents outright.
    */
   async fuse(page) {
     const check = (ok, what) => {
@@ -1037,8 +1037,8 @@ const scenarios = {
     check(/Fused 1 zero-length segment away/.test(sweptStatus), `status says "${sweptStatus}"`);
 
     /* The point of the repair, and the half a node count cannot show: the path
-       is simplifiable again. A zero chord gives the fitter no tangent, so one
-       duplicate anchor used to make the whole path refuse. */
+       is simplifiable again. A zero chord gives the fitter no tangent, so a
+       single duplicate anchor makes the whole path refuse. */
     const d = await page.getAttribute('.artwork path', 'd');
     check(!/64\s+16\s+L\s*64\s+16/.test(d), `the duplicate anchor is still exported: ${d}`);
 
@@ -1168,9 +1168,9 @@ const scenarios = {
   /**
    * Reverse, from the button and from the keyboard.
    *
-   * The model op has been in the codebase since Join needed it and had no way
-   * in until now. What is only checkable here is the two entry points and the
-   * one property a person would check first: the drawing does not move.
+   * The model op is covered by unit tests. What is only checkable here is the
+   * two entry points, button and key, and the one property a person would check
+   * first: the drawing does not move.
    */
   async reverse(page) {
     const check = (ok, what) => {
@@ -1232,11 +1232,11 @@ const scenarios = {
   /**
    * The source box catches up on everything that happened while it was shut.
    *
-   * Rewriting it is a full serialisation of the document, and it used to run on
-   * every notification whether or not anybody could see it -- 56 ms per
-   * pointermove on a traced document, to update a textarea of `height: 0`. It
-   * is skipped while the drawer is closed now, which is only correct if opening
-   * the drawer refreshes it. Nothing else checks that: with the catch-up
+   * Rewriting it is a full serialisation of the document. Running that on every
+   * notification whether or not anybody can see it costs 56 ms per pointermove
+   * on a traced document, to update a textarea of `height: 0`. It is skipped
+   * while the drawer is closed, which is only correct if opening the drawer
+   * refreshes it. Nothing else checks that: with the catch-up
    * removed, every existing scenario still passed, because they all open the
    * drawer before they edit.
    */
@@ -1276,14 +1276,14 @@ const scenarios = {
     check(said === `${after.length} chars`, `readout says "${said}" for ${after.length} characters`);
 
     /* Revert. A failed Apply changes nothing, and the box only rewrites itself
-       when the document changes, so unparseable text used to sit there with no
-       way back to what the document actually says. */
+       when the document changes, so without this unparseable text sits there
+       with no way back to what the document actually says. */
     const shapesNow = () => page.$$eval('.artwork path', (els) => els.map((e) => e.getAttribute('d')));
     const untouched = await shapesNow();
 
-    /* Two ways to fail, and neither may touch the drawing. `@` cannot be
-       parsed at all; `M 0 0` parses perfectly and draws nothing, which used to
-       empty the selected shape and report "Updated". */
+    /* Two ways to fail, and neither may touch the drawing. `@` cannot be parsed
+       at all. `M 0 0` parses perfectly and draws nothing, which is the one that
+       empties the selected shape and reports "Updated" if it gets through. */
     for (const bad of ['M 0 0 L @', 'M 0 0']) {
       await page.fill('#src', bad);
       await page.click('#apply');
@@ -1346,11 +1346,11 @@ const scenarios = {
     /**
      * Click Trace, and measure the longest the main thread was blocked.
      *
-     * `longtask` entries, not animation frames. Frames were the first attempt
-     * and they lie in headless Chromium: a run whose thread was demonstrably
-     * blocked for 1 152 ms reported a longest frame gap of 17 ms, because with
-     * no compositor the frame callbacks are not scheduled against real vsync.
-     * The long-task observer measures the thing being claimed directly.
+     * `longtask` entries, never animation frames. Frame gaps lie in headless
+     * Chromium: with no compositor the frame callbacks are not scheduled
+     * against real vsync, so a thread demonstrably blocked for 1 152 ms reports
+     * a longest gap of 17 ms. The long-task observer measures the thing being
+     * claimed, directly.
      *
      * Entries are filtered by start time because a `PerformanceObserver`
      * delivers in batches: tasks from decoding the PNG arrive after the
@@ -1496,11 +1496,11 @@ const scenarios = {
     const nowhere = await hover([76, 8]);
     check(!/on a/.test(nowhere), `empty-canvas readout says "${nowhere}"`);
 
-    /* And the coordinates stay put while all that changes. They used to be
-       right-aligned in a box that grew with its own contents, so every
-       pointermove that brought a tier into reach slid the digits sideways --
-       by up to 199 px, while somebody was reading them. Only a browser can
-       answer this: it is a question about layout. */
+    /* And the coordinates stay put while all that changes. Right-aligning them
+       in a box that grows with its own contents slides the digits sideways on
+       every pointermove that brings a tier into reach -- by up to 199 px, while
+       somebody is reading them. Only a browser can answer this: it is a
+       question about layout. */
     const digitsAt = () => page.$eval('#cursor', (el) => Math.round(el.getBoundingClientRect().left));
     const plainAt = await digitsAt();
     await hover([40, 16.7]);
@@ -1881,8 +1881,8 @@ const scenarios = {
     await page.keyboard.press('Control+z');
     await page.waitForTimeout(150);
 
-    // Shift keeps the ratio. Dragging inwards is the case that used to do
-    // nothing at all, when the constrained factor was the larger of the two.
+    // Shift keeps the ratio. Dragging inwards is the case that does nothing at
+    // all if the constrained factor is taken as the larger of the two.
     const ratio = start.w / start.h;
     await drag(await at('.thandle[data-part="se"]'), [se[0] - 12, se[1]], 8, 'Shift');
     await page.waitForTimeout(150);
@@ -2050,9 +2050,9 @@ const scenarios = {
         return !el.inert && focusable.length > 0;
       });
 
-    // Measured, not asserted from a literal. This used to be a hard-coded
-    // `{rail: true, source: false}` returned as though it were an observation,
-    // which no production change could ever contradict.
+    // Measured, not asserted from a literal. A hard-coded
+    // `{rail: true, source: false}` returned as though it were an observation
+    // is something no production change could ever contradict.
     const opened = {
       rail: (await page.getAttribute('#toggleRail', 'aria-pressed')) === 'true',
       source: (await page.getAttribute('#toggleSrc', 'aria-pressed')) === 'true',
@@ -2103,12 +2103,11 @@ const scenarios = {
       'the tooltip is hidden from the accessibility tree while shown',
     );
 
-    /* The same, for a checkbox inside a wrapping `<label>`. The description
-       used to be a `title` on the label, so the tooltip described the words and
-       the checkbox itself was announced with a name and nothing else: a person
-       using a screen reader could not find out what "Pixel fit" does. Focus,
-       not hover, because focus is the case that was broken and the case a
-       keyboard has. */
+    /* The same, for a checkbox inside a wrapping `<label>`. Put the description
+       on the label as a `title` and the tooltip describes the words while the
+       checkbox is announced with a name and nothing else, so a person using a
+       screen reader cannot find out what "Pixel fit" does. Focus rather than
+       hover, because focus is the case a keyboard has. */
     await tab(page, 'doc');
     await page.focus('#pixelFit');
     await page.waitForTimeout(220);
@@ -2116,11 +2115,11 @@ const scenarios = {
     check(!!onControl, 'a focused checkbox is not described by its tooltip');
 
     /* The same, for a control the panel has to scroll to reach. Focusing one
-       below the fold scrolls the rail, and the scroll handler used to hide the
-       tooltip that focus was about to show -- so tabbing through a panel
-       described whatever was already on screen and nothing else, which is most
-       of it. Whether `#pixelFit` above is on screen depends on the window, so
-       that check passed or failed by luck; this one forces the scroll. */
+       below the fold scrolls the rail, and a scroll handler that hides tooltips
+       kills the one focus is about to show, so tabbing through a panel describes
+       only what was already on screen. Whether `#pixelFit` above is on screen
+       depends on the window, so that check passes or fails by luck; this one
+       forces the scroll. */
     await page.evaluate(() => {
       document.querySelector('#panel-doc').scrollTop = 0;
       document.activeElement instanceof HTMLElement && document.activeElement.blur();
@@ -2269,9 +2268,8 @@ const scenarios = {
 
     /* Now a move, which is the other shape of measurement. On the top edge of
        the rectangle, not inside it: the shape has no fill, so a press in the
-       middle hits nothing and sweeps a marquee instead. The first version of
-       this scenario did exactly that and reported a 15 by 0 box, which is a
-       true reading of the wrong gesture.
+       middle hits nothing and sweeps a marquee instead, which reports a 15 by 0
+       box: a true reading of the wrong gesture.
 
        And at x = 30 rather than the middle of the edge, because the shape is
        selected and its scale handles sit at the corners and edge midpoints.
@@ -2856,10 +2854,9 @@ const scenarios = {
     };
     const { toClient } = await mk(page);
 
-    /* Two rectangles, one above the other. The upper one's left edge is at
-       10.5, deliberately off the grid: at 10 the grid would land the drag on
-       the alignment by itself, and this scenario would pass with the whole
-       feature removed. The first version did exactly that. */
+    /* Two rectangles, one above the other. The upper one's left edge is at 10.5,
+       deliberately off the grid. At 10 the grid lands the drag on the alignment
+       by itself, and the scenario then passes with the whole feature removed. */
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
     await page.fill(
@@ -3357,9 +3354,9 @@ const scenarios = {
    * Editing a node without ever using the pointer.
    *
    * `tools/keys.mjs` reports that every live control is reachable by Tab. What
-   * it cannot see is that until now they all acted on a selection only a click
-   * could make, so the whole Node panel was pointer-only however tabbable its
-   * buttons were. This drives the gap that closed: pick a shape from the list,
+   * it cannot see is whether those controls act on a selection only a click can
+   * make, which would leave the Node panel pointer-only however tabbable its
+   * buttons are. So this drives the whole route: pick a shape from the list,
    * walk to a node, extend, insert, and check the drawing changed.
    */
   async keyboardNodes(page) {
@@ -3390,8 +3387,8 @@ const scenarios = {
     check((await info()) === '0/1', `stepping back reached ${await info()}`);
 
     /* Shift extends. The browser reports the shifted character, so this arrives
-       as a brace and never as a bracket -- which is why the first version
-       stepped instead of extending and left one node selected. */
+       as a brace and never as a bracket. Bind the bracket alone and Shift steps
+       instead of extending, leaving one node selected. */
     await page.keyboard.press('Shift+BracketRight');
     await page.waitForTimeout(120);
     check((await info()) === '2 selected', `extending gave ${await info()}`);

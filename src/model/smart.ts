@@ -1,23 +1,23 @@
 /**
  * Smart guides: alignment you did not have to place.
  *
- * A guide is a line you put somewhere on purpose. This is the other half of the
- * same idea -- the line appears while you drag, because the thing you are
- * dragging has just lined up with something already on the page, and it goes
- * away when it stops being true.
- *
- * **This does not go through `resolveSnap`.** Every other snap maps a point to
- * a point: the pointer is near a target, so the pointer moves. An alignment is
- * not about the pointer at all. It is about the *bounding box of what is
- * moving* agreeing with the bounding box of something that is not, and the
- * pointer may be nowhere near either edge that matched. So it takes boxes and
- * returns an offset, and the priority rule in `model/snapping.ts` does not
- * apply because there is nothing here competing for the same thing.
+ * **This does not go through `resolveSnap`, and must not be made to.** Every
+ * other snap maps a point to a point: the pointer is near a target, so the
+ * pointer moves. An alignment is not about the pointer at all. It is about the
+ * *bounding box of what is moving* agreeing with the box of something that is
+ * not, and the pointer may be nowhere near either edge that matched. So this
+ * takes boxes and returns an offset, and the priority rule in
+ * `model/snapping.ts` has nothing here to arbitrate.
  *
  * Nine candidates per axis: each of the moving box's near edge, centre and far
- * edge against each of the static box's three. That is what "edge or centre"
- * means, and it is why a shape can line up with another shape's centre without
- * either of them being centred on anything.
+ * edge against each of the static box's three. Comparing only like with like
+ * would miss butting one shape's left against another's right, and it is why a
+ * shape can line up with another's centre without either being centred on
+ * anything.
+ *
+ * `docs/ARCHITECTURE.md` §32 has what this file cannot show: why the page counts
+ * as a static box, why the caller freezes the moving box at the press, and which
+ * gestures are not covered at all.
  */
 
 import type { Box } from '../core/bezier';
@@ -47,10 +47,10 @@ export interface Alignments {
  *
  * Not a tolerance on the geometry: a guard against ties being settled by binary
  * representation. A box at 0.2 whose far edge is at 10.2 is exactly 0.2 from a
- * static edge at 0 and 0.19999999999999929 from one at 10, so a strict `<` gave
- * the second one the line and the *drawn* alignment depended on which decimals
- * happened to be exact. Which one wins does not matter; that it is the same one
- * every time does.
+ * static edge at 0 and 0.19999999999999929 from one at 10, so a strict `<`
+ * hands the line to the second and makes the *drawn* alignment depend on which
+ * decimals happen to be exact. Which one wins does not matter; that it is the
+ * same one every time does.
  */
 const BETTER = 1e-9;
 

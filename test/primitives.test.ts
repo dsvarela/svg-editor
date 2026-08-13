@@ -307,8 +307,8 @@ describe('circulariseSubpath', () => {
     it('goes round exactly once when one gap is wider than half a turn', () => {
       const sp = ringAt([0, 20, 40, 60]);
       const r = circulariseSubpath(sp)!;
-      // The old code returned a path that came back to the start without ever
-      // going round: turning was ~0. This is the assertion that goes red.
+      // A path that closes back on the start without ever going round has a
+      // turning of ~0. This is the assertion that goes red when it does.
       expect(Math.abs(turning(sp, r.centre))).toBeCloseTo(2 * Math.PI, 6);
       // And the widest gap is reported, because one cubic cannot hold 300 well.
       expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(300, 4);
@@ -339,8 +339,8 @@ describe('circulariseSubpath', () => {
     });
 
     it('refuses a contour with a node on the fitted centre', () => {
-      // atan2(0, 0) is 0, which used to teleport that node to the eastern point
-      // of the circle, on top of whatever was already there.
+      // atan2(0, 0) is 0, so a node on the centre would be placed at the
+      // eastern point of the circle, on top of whatever is already there.
       const sp = ringAt([0, 90, 180, 270]);
       sp.nodes.push({ pt: [0, 0], hIn: null, hOut: null });
       expect(circulariseSubpath(sp)).toBeNull();

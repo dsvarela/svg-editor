@@ -1,10 +1,10 @@
 /**
  * How far the interface is from being usable by a finger.
  *
- * `CLAUDE.md` carries a rule that new controls are laid out at 44 px, the touch
- * target minimum in both Apple's and Google's guidance, and it quoted a count
- * as the evidence. The count could not be checked, because the method behind it
- * was never written down. This is the method.
+ * The target is 44 px, the touch target minimum in both Apple's and Google's
+ * guidance. A count of how many controls miss it is only evidence if the method
+ * behind it is written down and repeatable, so this is the method, and the
+ * number it prints is the only one worth quoting.
  *
  * What it counts: every control a person can press, in the toolbar, the status
  * strip and all three inspector tabs. A control is the element that takes the
@@ -12,22 +12,20 @@
  * the words toggles the box, and measuring the 13 px box would report a target
  * nobody has to hit.
  *
- * **Two corrections, 2026-08-13.** The count this reported had drifted away
- * from what it claimed to be:
+ * Three things a sweep like this gets wrong unless it is careful, all of which
+ * silently undercount rather than fail:
  *
- * - *Collapsed groups were invisible to it.* Since the rail redesign, every
- *   group except Style, Node and Shapes starts shut, and a shut group is
- *   `hidden`, so its controls have no box and were skipped. The tool reported
- *   37 controls where the markup holds 166. It now opens every group in every
- *   tab before measuring.
- * - *Disabled controls were skipped.* 55 of the 166 are disabled with nothing
- *   selected, and a disabled button is laid out at exactly the size it will
- *   have when it is enabled. Skipping them measured the state of the document
+ * - *Collapsed groups.* Every group except Style, Node and Shapes starts shut,
+ *   and a shut group is `hidden`, so its controls have no box at all. Open
+ *   every group in every tab before measuring, or the markup's 166 controls
+ *   report as 37.
+ * - *Disabled controls.* 55 of the 166 are disabled with nothing selected, and
+ *   a disabled button is laid out at exactly the size it will have when it is
+ *   enabled. Counting only the enabled ones measures the state of the document
  *   rather than the size of the interface. They are counted, and reported
  *   separately so the two numbers stay legible.
- *
- * Neither number is comparable with any figure recorded before this date. The
- * one in `CLAUDE.md` was replaced rather than adjusted.
+ * - *Colliding keys.* The sweep dedupes, so two controls that hash alike are
+ *   counted once. See the key below for what has to go into it.
  *
  * Run it with the dev server up: `node tools/touch.mjs`, or
  * `APP_URL=http://localhost:5177/ node tools/touch.mjs` when it is not on the
@@ -94,13 +92,12 @@ const sweep = async () => {
       const target = el.closest('label') ?? el;
       const r = target.getBoundingClientRect();
       if (!r.width || !r.height) continue;
-      /* Distinct per control, since the sweep dedupes on it. Two buttons with
-         no id, no class and neither of the two data attributes this used to
-         name produced the same key and were counted once: adding the pair of
-         held-key buttons to the status strip left the total at 138. What
-         separates them is what a person reads on them, so that is in the key.
-         Anything still colliding after that is genuinely two of the same
-         control in two places. */
+      /* Distinct per control, since the sweep dedupes on it. Id, class and data
+         attributes are not enough on their own: two buttons carrying none of
+         them hash alike and are counted once, which is how a pair of new
+         status-strip buttons can leave the total unmoved. What separates them
+         is what a person reads on them, so the label is in the key too.
+         Anything still colliding is genuinely one control in two places. */
       const label = (
         el.getAttribute('aria-label') ??
         el.getAttribute('title') ??

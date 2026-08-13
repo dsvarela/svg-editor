@@ -95,10 +95,10 @@ describe('the path cache', () => {
 
   it('forgets a shape even when as many arrived as left', () => {
     /* Two entries in, two ids kept, and one of them is new: the sizes match and
-       the contents do not. `keep` used to return early on matching sizes, which
-       left the departed shape's entry in the map for ever. Ids are not reused,
-       so this was memory rather than staleness -- but the shortcut was only
-       ever saving a walk over one entry per shape. */
+       the contents do not. `keep` returning early on matching sizes leaves the
+       departed shape's entry in the map for ever. Ids are not reused, so that is
+       memory rather than staleness, and the shortcut saves only a walk over one
+       entry per shape. */
     const c = new PathCache();
     c.get('a', scene());
     c.get('b', scene());

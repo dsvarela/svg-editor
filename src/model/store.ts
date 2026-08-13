@@ -179,9 +179,10 @@ export interface EditorState {
   /**
    * Show each shape's fill. Off draws everything as an outline.
    *
-   * A view switch, not a property of the drawing. It used to invent a colour for
-   * shapes whose fill is `none`, which made "is this shape filled?" unanswerable
-   * from the screen; now it only decides whether the fills that exist are drawn.
+   * A view switch, not a property of the drawing. It decides whether the fills
+   * that exist are drawn, and never invents one for a shape whose fill is
+   * `none`: that would make "is this shape filled?" unanswerable from the
+   * screen.
    */
   filled: boolean;
   decimals: number;
@@ -534,7 +535,8 @@ export class Store {
    * `undo` is for a user who may change their mind, so it keeps what it undid.
    * Cancelling a gesture is not that: the half-drawn thing was never wanted,
    * and leaving it one Ctrl+Shift+Z away means an abandoned shape can come back
-   * from a keystroke aimed at something else. Escape used to call `undo`.
+   * from a keystroke aimed at something else. So this discards rather than
+   * undoing, and Escape must route here and not to `undo`.
    */
   rollback(): void {
     const prev = this.undoStack.pop();

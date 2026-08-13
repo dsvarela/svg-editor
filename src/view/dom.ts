@@ -3,7 +3,7 @@
  *
  * The overlay redraws on every pointermove, so the cost that matters is not
  * setting attributes -- it is creating and destroying elements. `Pool` keeps
- * previously created elements around and hides the surplus instead, which turns
+ * the elements it has already made and hides the surplus instead, which turns
  * a redraw into a run of attribute writes on a stable set of nodes.
  */
 

@@ -16,9 +16,9 @@ import type { Doc, Pt } from '../src/core/types';
 /**
  * A square from (10, 10) to (30, 30), with straight sides.
  *
- * `shapeFromPath`'s second argument is the shape's NAME; ids are generated. An
- * earlier version of this file passed 'sq' and then used it as an id, so every
- * exclusion silently matched nothing and four tests failed for one reason.
+ * `shapeFromPath`'s second argument is the shape's NAME; ids are generated. Do
+ * not pass 'sq' here and then use it as an id: every exclusion silently matches
+ * nothing, and four tests fail for that one reason.
  */
 const square = (d = 'M10 10 L30 10 L30 30 L10 30 Z'): Doc => {
   const doc = emptyDoc();

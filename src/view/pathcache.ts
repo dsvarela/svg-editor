@@ -1,34 +1,24 @@
 /**
  * Path data, serialised only when the geometry behind it changed.
  *
- * Every render used to build a `d` string for every shape twice -- once for the
- * artwork and once for the overlay's hit target, which is the same string with
- * the same arguments -- and did it whether or not anything had moved. On a
- * traced document of 23 454 nodes that was 112 ms of the 131 ms a render cost,
- * so panning, hovering and reading the coordinates all paid for rebuilding
- * text that was already correct.
+ * A render asks for each shape's `d` string twice, once for the artwork and
+ * once for the overlay's hit target, and most renders follow something that
+ * moved nothing. Serialising on every ask costs 112 ms of the 131 ms a render
+ * takes on a traced document of 23 454 nodes, so panning, hovering and reading
+ * the coordinates would all pay for rebuilding text that is already correct.
  *
- * ## Why this compares geometry rather than trusting a flag
+ * **Compare the numbers. Never object identity, never a revision counter.**
+ * `Store.edit` and `Store.update` mutate the live document in place, so a
+ * dragged node is the same `PathNode` object carrying different numbers, and
+ * identity says nothing. A counter would depend on every call site that touches
+ * geometry remembering to bump it, which is a contract nobody enforces and
+ * whose failure mode is a canvas that silently stops matching its own model.
  *
- * The obvious cache key is "has the document changed since last time", and the
- * obvious way to answer it is a revision counter the store bumps. That does not
- * work here and the reason is worth stating: `Store.edit` and `Store.update`
- * mutate the live document **in place**. History clones on the way into a
- * snapshot, not on the way out of an edit, so a dragged node is the same
- * `PathNode` object with different numbers in it. Object identity therefore
- * says nothing, and a counter would have to be bumped by every call site that
- * touches geometry -- a contract enforced by nobody, whose failure mode is a
- * drawing that silently stops matching its own model.
+ * Comparing is affordable enough that it needs no help: about 0.5 ms across
+ * 23 454 nodes against 56 ms to serialise them, so it pays even when it fails.
  *
- * So this asks the only question that cannot go stale: are the numbers the same
- * as the numbers I serialised last time? The comparison is exact and allocates
- * nothing, it walks the same nodes the serialiser would have walked, and it
- * stops at the first difference. Measured at about 0.5 ms across 23 454 nodes
- * against 56 ms to serialise them, so it is worth doing even when it fails.
- *
- * A checksum would have been shorter. It would also have had collisions, and a
- * collision here means the canvas shows geometry the document does not have,
- * which is the one failure this editor's rendering tests exist to catch.
+ * `docs/ARCHITECTURE.md` §29 has the per-render measurements behind all of
+ * this, and why the comparison is exact rather than a checksum.
  */
 
 import { serialisePath } from '../core/serialise';
@@ -118,7 +108,7 @@ export class PathCache {
    *
    * Called twice per render for every shape -- the artwork and the overlay's
    * hit target want the identical string -- so the second call is a hit by
-   * construction, and the two were building it separately before this existed.
+   * construction, whatever the first one cost.
    */
   get(id: string, subpaths: Subpath[]): string {
     const hit = this.entries.get(id);

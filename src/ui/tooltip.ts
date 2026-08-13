@@ -147,14 +147,13 @@ function tipTarget(from: HTMLElement): HTMLElement | null {
 /**
  * A scroll moved the page under the tooltip.
  *
- * Hiding outright is what this used to do, and it broke the keyboard case
- * outright: focusing a control that is below the fold scrolls the panel to
- * bring it into view, and that scroll arrived before the tooltip's own timer
- * fired -- so tabbing through a panel showed a tooltip for whatever happened to
- * be on screen already and nothing for anything else. Which is most of it.
+ * A focus tooltip follows the scroll rather than hiding, because its anchor is
+ * still focused and still where the description belongs.
  *
- * A focus tooltip follows instead, because its anchor is still focused and
- * still where the description belongs.
+ * Do not hide it. Focusing a control below the fold scrolls the panel to bring
+ * it into view, and that scroll lands before the tooltip's own timer fires, so
+ * hiding on scroll means tabbing through a panel shows a tooltip only for the
+ * controls that were already on screen. Which is the minority of them.
  */
 function onScroll(): void {
   if (byFocus && current && current === document.activeElement) {

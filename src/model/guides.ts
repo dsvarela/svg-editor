@@ -1,26 +1,23 @@
 /**
  * Guides: straight lines you place, and then aim at.
  *
- * The grid is a lattice you are given and keylines are a set of proportions you
- * are given. A guide is neither: it is one line, at a position someone chose,
- * for a reason only they know. That difference is the whole design.
+ * **A guide is axis-aligned and infinite.** Not a segment with ends, and not
+ * angled: a ruler cannot produce an angled line, and one would want a placement
+ * interface of its own. `axis` names the coordinate the guide holds fixed,
+ * which is the reading that stays true said out loud -- an `x` guide fixes x,
+ * so it draws as a vertical line.
  *
- * **A guide is axis-aligned and infinite.** Not a segment with ends, because an
- * end is a decision nobody asked to make and a thing to have to line up later;
- * and not an angled line, because a ruler cannot produce one and an angled guide
- * wants a whole placement interface of its own. `axis` names the coordinate the
- * guide holds fixed, which is the reading that stays true when you say it out
- * loud: an `x` guide fixes x, and so it is drawn as a vertical line.
+ * **It is stored, and therefore undoable**, where a keyline is a function of the
+ * page and has nothing to undo. That puts guides in the history beside the
+ * backdrop rather than among the view switches beside the grid, and out of `Doc`
+ * for the two reasons the backdrop is: the export is built from the model, so a
+ * guide the model does not carry cannot reach a file; and Apply in the source
+ * box replaces the document wholesale, which would throw guides away as a side
+ * effect of editing path text.
  *
- * **It is stored, and therefore undoable.** This is where guides part company
- * with keylines: a keyline is a function of the page, so it is derived every
- * frame and there is nothing to undo. A guide is a decision. Storing it means
- * `Ctrl+Z` has to take it back, which is what puts guides in the history
- * alongside the backdrop rather than in the view switches alongside the grid.
- * They stay out of `Doc` for the two reasons the backdrop does: the export is
- * built from the model, so a guide the model does not carry cannot leak into a
- * file, and Apply in the source box replaces the document wholesale, which would
- * throw them away as a side effect of editing the path text.
+ * `docs/ARCHITECTURE.md` §31 has the rest: the two snap tiers a guide answers,
+ * why `moveGuide` leaves duplicates for `settleGuide` to merge on release, and
+ * why a dragged guide is kept out of its own snap targets.
  */
 
 import type { Pt } from '../core/types';

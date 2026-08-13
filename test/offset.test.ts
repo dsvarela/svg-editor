@@ -163,8 +163,8 @@ describe('the overrun, and what is left of it', () => {
 
   it('comes apart into pieces when the shape cannot hold the offset', () => {
     /* A rectangle with a deep notch. Eight units in, the two sides of the notch
-       stop being connected, and the answer is two paths. Returning one, with a
-       segment drawn across the gap, is what this used to do. */
+       stop being connected, and the answer is two paths. The wrong answer is one
+       path with a segment drawn across the gap. */
     const sp = path('M0 0 L20 30 L40 0 L40 40 L0 40 Z');
     const out = offsetSubpath(sp, -8, 0.02);
     expect(out).not.toBeNull();

@@ -115,9 +115,9 @@ describe('simplifySubpath', () => {
 
   it('refuses to redraw a polygon at a tolerance finer than its own corners', () => {
     // A 40-gon at a tolerance of 0.05 cannot be described by fewer than forty
-    // curves, because its flat sides and 9-degree corners are the shape. This
-    // used to succeed, and only because the fit was checked at the corners and
-    // nowhere along the sides it was bowing away from.
+    // curves, because its flat sides and 9-degree corners are the shape. It
+    // succeeds if the fit is checked only at the corners and nowhere along the
+    // sides the curve bows away from.
     expect(simplifySubpath(polygon(40), 0.05)).toBeNull();
   });
 

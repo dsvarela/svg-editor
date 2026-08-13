@@ -28,12 +28,12 @@ export const KAPPA = (4 / 3) * (Math.SQRT2 - 1);
  * Distance below which two tangent points count as the same point.
  *
  * The same bound `roundCorner` uses, and for the same reason. An exact `===`
- * was the first attempt and it looked safe, because when a side genuinely
- * vanishes `x0 + rad` and `x1 - rad` really are bit-identical. But a width one
- * ulp above twice the radius fails `capW`, leaves the two coordinates 4.4e-16
- * apart, and emits both -- a zero-length command in the exported path, and a
- * path that can never be simplified again. Exactness is the wrong test for a
- * predicate about geometry.
+ * looks safe here, because when a side genuinely vanishes `x0 + rad` and
+ * `x1 - rad` really are bit-identical. It is not: a width one ulp above twice
+ * the radius fails `capW`, leaves the two coordinates 4.4e-16 apart, and emits
+ * both -- a zero-length command in the exported path, and a path that can never
+ * be simplified again. Exactness is the wrong test for a predicate about
+ * geometry.
  */
 const MEET = 1e-9;
 

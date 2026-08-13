@@ -945,9 +945,9 @@ srcModeSeg.addEventListener('click', (e) => {
  * Replace the document from the source box.
  *
  * `importSvg` sniffs the input, so either a bare `d` string or a whole `<svg>`
- * works. Importing markup keeps one shape per element -- the previous version
- * concatenated everything into a single `d`, so pressing Apply silently fused
- * every shape into one.
+ * works. **Importing markup keeps one shape per element.** Concatenating them
+ * into a single `d` first makes Apply silently fuse every shape into one, and
+ * the geometry survives that while the shape boundaries do not.
  */
 /**
  * Replace the whole document from SVG or path-data text.
@@ -1072,9 +1072,9 @@ on('#apply', applySource);
 /**
  * Put the document's own text back in the box.
  *
- * A failed Apply used to leave the box holding text that parses to nothing and
- * no way back to what the document actually says: the box only rewrites itself
- * when the document changes, and a failed Apply changes nothing.
+ * The box rewrites itself only when the document changes, and a failed Apply
+ * changes nothing. Without this, text that parses to nothing has no way back to
+ * what the document actually says.
  *
  * A button rather than doing it automatically on failure. The error names an
  * offset into the text -- "unexpected 'q' (at 42)" -- so throwing that text
@@ -1271,8 +1271,8 @@ async function traceBackdrop(): Promise<void> {
 
     const job = traceOffThread({ raster, place, opts });
     if (!job) {
-      // No worker to be had. The old behaviour, freeze and all, which is still
-      // better than refusing to trace.
+      // No worker to be had, so trace on this thread. It freezes the page for
+      // the duration, which is still better than refusing to trace.
       controller.traceBackdrop(raster, opts);
       return;
     }
@@ -1548,7 +1548,7 @@ function startRename(id: string): void {
         safe === name ? `Renamed to ${name}.` : `Renamed to ${name}. Exports as id="${safe}".`;
       status.className = 'st ok';
     } else {
-      listSig = null; // the row was replaced by an input; force it back
+      listSig = null; // an input stands where the row was; force the row back
       refreshShapeList();
     }
   };
@@ -1809,8 +1809,8 @@ store.subscribe((s) => {
   if (s.pixelFit && s.gridStep) {
     gridreadout.textContent += ` · ${phaseLabel(phaseInForce(s.doc, s.selection, s.style))}`;
   }
-  // Declared in the markup and never written to until now, so the Draw group
-  // was the one panel whose header value was permanently blank.
+  // The Draw group's header value is declared in the markup and filled only
+  // here. Nothing else writes it, so dropping this line blanks it permanently.
   /* The style panel shows the first selected shape, or what the next new shape
      will get. The header says which, since "red" means two different things
      depending on whether anything is selected. */
@@ -1841,10 +1841,10 @@ store.subscribe((s) => {
 
   fillNone.checked = shown.fill === 'none';
   strokeNone.checked = shown.stroke === 'none';
-  /* The pickers stay live while `none` is ticked. Disabling them was the first
-     version and it made giving an unfilled shape a fill a two-step dance:
-     untick, which commits some arbitrary colour, then pick the one you wanted.
-     Reaching for the colour is the whole gesture, so it clears `none` itself. */
+  /* The pickers stay live while `none` is ticked. Disabling them turns giving an
+     unfilled shape a fill into a two-step dance: untick, which commits some
+     arbitrary colour, then pick the one you wanted. Reaching for the colour is
+     the whole gesture, so it clears `none` itself. */
   // Only ever written with something the picker can hold. A named colour or a
   // gradient reference would round to black, and reading that back on the next
   // interaction would quietly change the drawing.

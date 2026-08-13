@@ -222,8 +222,8 @@ describe('keylines as snap targets', () => {
 
 describe('the guide cache', () => {
   it('rebuilds when the canvas changes size', () => {
-    /* One cached entry keyed on the viewBox. A stale hit would leave the
-       keylines snapping to where the page used to be, which is invisible until
+    /* One cached entry keyed on the viewBox. A stale hit leaves the keylines
+       snapping to where the page was before the resize, which is invisible until
        something lands in the wrong place. */
     const a = keylineGuides(vb(24));
     const b = keylineGuides(vb(48));

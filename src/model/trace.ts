@@ -111,10 +111,9 @@ export function traceImage(
          `test/trace.test.ts` pins the floor, so if the walk ever stops
          guaranteeing it, something says so.
 
-         The first version of this comment said "0.5 or 1.0 apart". That is an
-         enumeration rather than a bound, and it is wrong: two midpoints across a
-         turn are √2/2 apart, and on a checkerboard every gap is. The floor is
-         what the argument actually needs. */
+         It is a floor and not an enumeration. "0.5 or 1.0 apart" is the
+         tempting way to say it and it is false: two midpoints across a turn are
+         √2/2 apart, and on a checkerboard every gap is. */
       if (sp.nodes.length < 3) continue;
 
       paths++;

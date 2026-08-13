@@ -125,29 +125,22 @@ export function moveHandle(
  * Force a node into a given continuity by MOVING ITS HANDLES.
  *
  * With no stored flag there is nothing else to set: to make a node smooth you
- * align its handles, and to make it a corner you take its handles away. That is
- * a real edit to the geometry, which is the honest version of what the old
- * type-switch pretended to do -- setting the flag to `corner` used to change
- * nothing visible at all, then silently altered how the next drag behaved.
+ * align its handles, and to make it a corner you take its handles away. Every
+ * call is therefore a real edit to the geometry or no edit at all.
  *
  * A corner has no handles to align, so smooth and symmetric first materialise
  * them where the hollow ghosts are drawn — a third along each neighbouring
- * segment. Asking a corner to be smooth used to do nothing at all, which read
- * as a dead button rather than as the model being strict.
+ * segment. This moves the drawing: both handles are placed on their chords and
+ * then rotated to the averaged direction, which pulls them off. A right-angle
+ * corner with 10-unit sides shifts by 1.48 units.
  *
- * The one case that still declines is an end of an open subpath: there is no
- * segment on the outside, so there is no handle to invent and nothing to align
- * against. Such a node stays a corner because it genuinely is one, and it is
- * left exactly as it was — see the candidate handles below.
- *
- * Note that materialising handles does move the drawing. Both are placed on
- * their chords and then rotated to the averaged direction, which pulls them
- * off: a right-angle corner with 10-unit sides shifts by about 1.5 units. An
- * earlier version of this comment claimed it did not, having reasoned about the
- * placement and stopped before the line that rotates them.
- *
- * Returns whether the node's handles actually changed, so a caller can decline
- * to record an undo entry for a click that did nothing.
+ * Returns whether the handles actually changed, so a caller can decline to
+ * record an undo entry for a click that did nothing. It is `false` in two
+ * situations. An end of an open subpath has no segment on the outside, so there
+ * is no handle to invent and nothing to align against. A node already in the
+ * requested state computes the handles it already has, which is why `smooth` on
+ * a symmetric node reports no change: symmetric *is* smooth. See
+ * `docs/ARCHITECTURE.md` §6 for why that case is not weakened into a change.
  */
 export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): boolean {
   const n = sp.nodes[i];
@@ -254,12 +247,10 @@ export function splitSegment(sp: Subpath, segIdx: number, t: number): number {
  * they are not. Below two nodes there is nothing left that draws or serialises,
  * so the caller prunes it.
  *
- * It used to refuse below three nodes closed, two open, on the reasoning that a
- * path being edited should not degenerate. Run in a loop over a selection that
- * turned "delete these four" into "delete one" and left survivors that looked
- * like a bug in the marquee. A three-node closed path could not be reduced at
- * all. Refusing was the worse half of the trade: the degenerate cases are
- * visible, reversible and rare, and the refusal was none of those.
+ * Do not add a minimum back. A floor makes deletion refuse partway through a
+ * loop over a selection, which turns "delete these four" into "delete one" and
+ * reads as a bug in the marquee. The degenerate results are visible, reversible
+ * and rare; a silent refusal is none of those. See `docs/ARCHITECTURE.md` §13.
  */
 export function deleteNode(sp: Subpath, i: number): boolean {
   const n = sp.nodes.length;
@@ -571,8 +562,8 @@ export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
  *
  * Same shape as `RoundRefusal`, and for the same reason: each of these is
  * something the person who pressed the button can act on. `fuseNodes` returns
- * one of these OR a `FuseResult`; there is no `null` in the union, whatever an
- * earlier version of this sentence said.
+ * one of these or a `FuseResult`. There is no `null` in the union, so a caller
+ * that tests for one is testing for a value that cannot arrive.
  */
 export type FuseRefusal = 'same' | 'apart' | 'tiny';
 
@@ -738,8 +729,8 @@ export interface CirculariseResult {
  * so the caller can say how round the result can possibly be.
  *
  * **A closed contour is a ring, and its spans must sum to a full turn.** Taking
- * each span the shorter way round — which this did until 2026-08-11 — is right
- * for spans under half a turn and silently destructive above it: four nodes at
+ * each span the shorter way round is right for spans under half a turn and
+ * silently destructive above it: four nodes at
  * 0°, 20°, 40° and 60° leave a 300° gap, the shorter way reads that as −60°,
  * and the closing segment retraces the other three instead of completing the
  * circle. Every node still lands exactly on the circle, so a radial measurement
@@ -1054,9 +1045,9 @@ export function segmentBend(sp: Subpath, segIdx: number): Bend | null {
  *
  * `setSegmentBend` is the constrained edit: two numbers, a symmetric result,
  * and no way to express a curve that leans. It is the better tool when the
- * segment is already symmetric, and it has nothing to say when it is not,
- * which is why the bend control used to disappear on two thirds of the curves
- * in a drawing. This is the unconstrained one.
+ * segment is already symmetric, and it has nothing to say when it is not.
+ * Most curves in a real drawing are not, so this unconstrained edit is what
+ * the bend control reaches for outside the symmetric case.
  *
  * A cubic's point at `t` is a weighted sum of its four control points, and the
  * endpoints are fixed here, so the displacement has to come out of the two

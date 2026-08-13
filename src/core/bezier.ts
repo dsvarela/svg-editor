@@ -141,11 +141,10 @@ export interface Projection {
 /**
  * Closest point on a cubic to `p`.
  *
- * Coarse sample to find the basin, then bisect to refine. The sigla prototype
- * sampled 24 points and stopped there, which quantises "click the outline to
- * insert a node" to 1/24 of a segment and makes inserted nodes visibly jump
- * away from the cursor. The refinement pass costs ~20 extra evaluations and
- * removes that entirely.
+ * Coarse sample to find the basin, then bisect to refine. Sampling alone
+ * quantises "click the outline to insert a node" to 1/24 of a segment, which
+ * makes an inserted node visibly jump away from the cursor. The refinement pass
+ * costs about 20 extra evaluations and removes that entirely.
  */
 export function projectToCubic(b: Cubic, p: Pt, coarse = 24, refine = 20): Projection {
   let bestT = 0;

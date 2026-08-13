@@ -128,11 +128,9 @@ function assertFaithful(canvas: Canvas, store: Store): void {
   }
 
   /* 3. Every node inside the camera has an anchor, and no node well outside it
-        has one. This used to be "one anchor per node in the document", which
-        stopped being true when the overlay started culling to the camera -- a
-        23 454-node trace was drawing 23 454 markers, all of them, every frame.
-        The per-node form is the stronger claim anyway: the old count would have
-        been satisfied by any 3 anchors, including three on the same node.
+        has one. Not "one anchor per node in the document": the overlay culls to
+        the camera, and a bare count is the weaker claim anyway, satisfied by any
+        3 anchors including three sitting on the same node.
 
         The band within `M` of the camera edge is asserted about in neither
         direction. The overlay's real margin is a marker's own width, which
@@ -396,9 +394,9 @@ describe('the overlay under load', () => {
        that distinguishable: a prefix would give exactly MARKER_CAP. */
     const h = setup();
     h.store.edit((s) => {
-      // Packed 0.05 apart so all 2 400 are inside the 80 by 60 camera: at one
-      // unit apart the culling would answer first and the cap would never be
-      // reached, which is what the first draft of this test actually measured.
+      // Packed 0.05 apart so all 2 400 are inside the 80 by 60 camera. At one
+      // unit apart the culling answers first, the cap is never reached, and the
+      // test measures culling while claiming to measure the cap.
       for (let k = 0; k < 3; k++) s.doc.shapes.push(shapeFromPath(row(800, 10, 10 + k, 0.05)));
     });
     h.controller.render();

@@ -1,63 +1,34 @@
 /**
  * Remove nodes that are not doing anything.
  *
- * Simplify resamples: it throws the path away and refits it from points, which
- * is the right thing to do to a traced raster boundary and the wrong thing to
- * do to curves somebody drew. It cannot recognise a redundant node, because the
- * algorithm it is built on (`core/fit.ts`, Schneider 1990) never sees a curve.
- * Its input is digitised points, so "this input already IS a cubic" is not a
- * question it can be asked. Measured: given 100 exact samples of one cubic and
- * its exact end tangents, at a tolerance of 0.001 it returns seven curves, and
- * the chord-length parameter guess is the whole reason.
+ * The removal half of Simplify, and the half that always runs. A path of cubic
+ * Beziers is a cubic B-spline whose interior knots all have multiplicity equal
+ * to the degree, so taking a node out is knot removal at `t = 3`. It is legal
+ * exactly when the path is `C3` across the node, which for a cubic means the
+ * two segments are pieces of one cubic.
  *
- * This file is the other operation. A path of cubic Beziers is a cubic B-spline
- * whose interior knots all have multiplicity equal to the degree, and taking a
- * node out is knot removal. That is not an analogy: it is the standard way to
- * convert piecewise Bezier data to a compact B-spline, and it is what Piegl and
- * Tiller's section 5.4 is for.
+ * That single test needs no special cases. A corner is `C0` and stays. A node
+ * from a double-click is `C3` and goes. A node nudged slightly off is nearly
+ * `C3`, and how nearly is its price. Collinear nodes fall out of it rather than
+ * needing a rule of their own.
  *
- * ## The condition, and why it needs no special cases
+ * **The knot vector comes from the handles.** Tiller assumes one is given, and a
+ * Bezier path carries none, so which nodes are removable depends on the
+ * parameterisation: a cubic split at 0.3 is `C3` under knots spaced 0.3 to 0.7
+ * and merely `C1` under uniform ones. Splitting at `t` scales the join handles
+ * by `t` on the left and `1 - t` on the right, so `t = a / (a + b)` recovers it
+ * exactly at any split position. Verified to 7e-15 on control points.
  *
- * A knot of multiplicity `s` in a degree `p` curve is removable `t` times if
- * and only if the curve is `C^(p-s+t)` continuous there. Here `p = 3` and
- * `s = 3`, and removing a node outright is `t = 3`, so a node is removable
- * exactly when the path is `C3` across it. A cubic that is `C3` across a knot
- * is one cubic.
+ * **Keep it local and closed-form.** A handful of arithmetic per node, no
+ * sampling, no projection, no iteration. Sampling each candidate and projecting
+ * the samples costs 156 ms on 2000 nodes, measured.
  *
- * So the rule is: a node goes if its two segments are pieces of the same cubic.
- * A corner is `C0` and stays. A node from a double-click is `C3` and goes. A
- * node nudged slightly off is nearly `C3`, and how nearly is its price. One
- * test covers all three, including the collinear-node case that would
- * otherwise need a rule of its own.
- *
- * ## The knot vector a Bezier path does not have
- *
- * Tiller assumes the knot vector is given. A Bezier path carries no
- * parameterisation, and which nodes are removable depends on the one you pick:
- * a cubic split at 0.3 is `C3` under knots spaced 0.3 to 0.7 and merely `C1`
- * under uniform ones. The geometry says what the spacing was. Splitting at `t`
- * scales the join handles by `t` on the left and `1 - t` on the right, so
- * `t = a / (a + b)` recovers it from the two handle lengths, exactly, at any
- * split position. Verified to 7e-15 on control points.
- *
- * ## Cost
- *
- * Local and closed-form: a handful of arithmetic per node, no sampling, no
- * projection, no iteration. An earlier prototype that sampled each candidate
- * and projected the samples took 156 ms on 2000 nodes. This does not sample.
- *
- * ## Sources
- *
- * - Piegl and Tiller, *The NURBS Book*, section 5.4, for the removability
- *   condition and the inward-from-both-ends reconstruction.
- * - Tiller, *Knot-removal algorithms for NURBS curves and surfaces*, CAD 24(8),
- *   1992, whose appendix proves that a control-point discrepancy below `TOL`
- *   bounds the curve's movement by `TOL` everywhere, and confines it to the
- *   span of one basis function.
- * - Lyche and Morken, *A Data-Reduction Strategy for Splines*, IMA J. Numer.
- *   Anal. 8(2), 1988, for the ranking: bucket the costs into `2^(i-2) * eps`
- *   and spread removals within a bucket rather than taking them in strict
- *   order, because strict order eats a circle from one end.
+ * `docs/ARCHITECTURE.md` §19 carries the rest: why a resampler cannot do this
+ * job, why the cost is the maximum of three disagreements rather than Tiller's
+ * bound alone, why removals are spread within a bucket instead of taken
+ * cheapest-first, and why the pass cap is 24. Piegl and Tiller, *The NURBS
+ * Book*, section 5.4 has the removability condition and the inward-from-both-
+ * ends reconstruction.
  */
 
 import { cubicAt } from '../core/bezier';

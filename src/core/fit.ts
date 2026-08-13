@@ -42,8 +42,8 @@ export interface Fit {
 /**
  * Recursion cap.
  *
- * Reachable, despite an earlier comment here claiming otherwise: a densely
- * sampled stroke with twenty oscillations reaches depth 24 and takes the cap.
+ * Reachable, not a theoretical bound: a densely sampled stroke with twenty
+ * oscillations reaches depth 24 and takes the cap.
  * When it does, the last fit is accepted as-is and `Fit.error` reports what that
  * actually achieved, which is how the caller learns the tolerance was not met.
  */

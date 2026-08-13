@@ -1,13 +1,8 @@
 /**
  * The icon keyline grid: a circle, a square and two rectangles, centred.
  *
- * Icons are not drawn to whatever size looks right. A set of shapes drawn to
- * the same optical weight has to share a set of measurements, and the standard
- * one is Material's keyline grid: a square icon reads heavier than a circle of
- * the same width, so the circle is drawn larger and the difference is fixed in
- * advance rather than judged per icon.
- *
- * The numbers here are Material's system-icon grid, which is the 24dp one:
+ * Material's 24dp system-icon grid, held as ratios because a document here is
+ * whatever size someone made it:
  *
  *   live area           20 of 24, so 2 of padding on every side
  *   square              18 x 18
@@ -15,20 +10,23 @@
  *   vertical rectangle  16 x 20
  *   horizontal          20 x 16
  *
- * Held as ratios rather than as those numbers, because a document here is
- * whatever size someone made it. Every ratio above is exact in thirds and
- * sixths -- 20/24 is 5/6, 18/24 is 3/4, 16/24 is 2/3 -- so a 24-unit canvas
- * reproduces the published grid to the unit, and a 48-unit one doubles it.
+ * Every one of those is exact in thirds and sixths -- 20/24 is 5/6, 18/24 is
+ * 3/4, 16/24 is 2/3 -- so a 24-unit canvas reproduces the published grid to the
+ * unit and a 48-unit one doubles it. Hard-coding 18 and 20 would work on one
+ * document size only.
  *
- * **The grid is a square even when the canvas is not.** It is inscribed on the
- * shorter side and centred, because a keyline set stretched to a 88 by 64 page
- * would put the circle out of round, and a circle that is not round is not the
- * thing the grid exists to give you.
+ * **The grid is square even when the canvas is not**, inscribed on the shorter
+ * side and centred. Stretching the set to an 88 by 64 page puts the circle out
+ * of round, and a circle that is not round is not the thing the grid exists to
+ * give you.
  *
- * Nothing here is part of `Doc`. The subpaths are built on demand from the
- * viewBox, so there is no state to keep in step with the canvas and no way for
- * a keyline to reach the exported file. They are real `Subpath`s all the same,
+ * **Nothing here is part of `Doc`.** The subpaths are built on demand from the
+ * viewBox, so there is no state to keep in step with the canvas and no path at
+ * all from a keyline to an exported file. They are real `Subpath`s even so,
  * which is what lets the snapper treat them as targets like any other outline.
+ *
+ * `docs/ARCHITECTURE.md` §30 has why this is derived where the backdrop, which
+ * looks like the same question, is stored.
  */
 
 import { ellipseSubpath, rectSubpath } from '../core/primitives';

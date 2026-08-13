@@ -107,10 +107,9 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
  *
  * **Every drawn line is a snap position.** That is the whole contract, and the
  * reason this takes `snapStep` rather than deriving a step from the camera
- * alone. The previous version drew an adaptive decade step while the tools
- * snapped to the user's fixed step, so at most zoom levels you were aiming at
- * a lattice that was not on screen — the one defect that undermined the premise
- * of a grid editor.
+ * alone. Draw an adaptive decade step while the tools snap to the user's fixed
+ * step and at most zoom levels you are aiming at a lattice that is not on
+ * screen, which undermines the premise of a grid editor.
  *
  * Zooming out therefore thins the grid to every 2nd, 5th, 10th … snap position
  * rather than switching to a different lattice: some snap positions stop being

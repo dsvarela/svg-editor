@@ -5,8 +5,9 @@
  *
  * `edit` checkpoints first and asks questions later, which is right for a drag
  * and wrong for a press that turns out to change nothing. Three of the four
- * ways a guide gesture can end change nothing, and each of them used to leave
- * an undo entry that undoes to the same state and throws the redo stack away.
+ * ways a guide gesture can end change nothing, and each of them will leave an
+ * undo entry that undoes to the same state and throws the redo stack away
+ * unless the gesture withdraws its checkpoint.
  * These are the cases; `test/controller.test.ts` explains the harness.
  */
 

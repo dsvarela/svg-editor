@@ -1,5 +1,5 @@
 /**
- * Fusing nodes, and the generators that used to need it.
+ * Fusing nodes, and the generators that must not need it.
  *
  * The defect being closed: two anchors on the same point export a zero-length
  * command, and a path carrying one can never be simplified again, because a zero
@@ -252,11 +252,11 @@ describe('the generators no longer produce coincident anchors', () => {
   });
 
   it('collapses a side that has vanished to within a rounding error', () => {
-    /* An exact `===` was the first spelling and it looked safe, because when a
-       side truly vanishes the two tangent coordinates are bit-identical. A width
-       one ulp above twice the radius fails the clamp, leaves them 4.4e-16 apart,
-       and emits both: a zero-length command in the export and a path that can
-       never be simplified again. */
+    /* An exact `===` looks safe here, because when a side truly vanishes the two
+       tangent coordinates are bit-identical. This width is one ulp above twice
+       the radius, so it fails the clamp, leaves them 4.4e-16 apart, and emits
+       both: a zero-length command in the export and a path that can never be
+       simplified again. */
     const sp = rectSubpath(0, 0, 2.1000000000000005, 20, 1.05);
     expect(sp.nodes).toHaveLength(6);
     expect(shortestSegment(sp)).toBeGreaterThan(0.01);

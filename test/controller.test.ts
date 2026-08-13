@@ -359,8 +359,8 @@ describe('pen tool', () => {
   });
 
   /* ------------------------------------------------------------------------
-   * Regression: the pen holds a shape id between events, and the shape can be
-   * removed underneath it. Each of these crashed with
+   * The pen holds a shape id between events, and the shape can be removed
+   * underneath it. Every route below reaches a dangling id, and the failure is
    * "Cannot read properties of undefined (reading 'subpaths')".
    * ---------------------------------------------------------------------- */
 
@@ -1067,11 +1067,11 @@ describe('circularising', () => {
 
 describe('a press that never becomes a drag', () => {
   it('leaves the redo stack alone', () => {
-    /* Every drag used to checkpoint on pointerdown, before it knew whether the
-       gesture would change anything, and `checkpoint` clears the redo stack. So
-       one stray click on a node threw away everything you could have redone.
-       This is the failure `tryEdit` was written to stop, applied to buttons and
-       never to drags. The checkpoint now happens on the first real mutation. */
+    /* Checkpointing on pointerdown, before the gesture knows whether it will
+       change anything, throws the redo stack away on every stray click: that is
+       what `checkpoint` does. The checkpoint therefore happens on the first
+       real mutation. Same failure `tryEdit` stops for buttons, applied here to
+       drags. */
     const h = harness('M10 10 L40 10 L40 30 Z');
     h.store.edit((s) => (s.doc.shapes[0].name = 'edited'));
     h.store.undo();
@@ -1540,9 +1540,9 @@ describe('simplify', () => {
     expect(said.join(' ')).toMatch(/nothing to simplify/i);
   });
 
-  /* Zero used to be refused. It is now the instruction to move nothing, and
-     what it removes is whatever cannot change the exported file. That is what
-     lets one number cover the whole range instead of a number plus a mode. */
+  /* Zero is the instruction to move nothing, not an invalid tolerance. What it
+     removes is whatever cannot change the exported file, which is what lets one
+     number cover the whole range instead of a number plus a mode. */
   it('treats a tolerance of zero as "move nothing" rather than refusing it', () => {
     const h = harness('M0 0 C 10 -10 20 -10 30 0 C 40 10 50 10 60 0');
     const sp = h.store.state.doc.shapes[0].subpaths[0];
@@ -1940,8 +1940,8 @@ describe('navigating the view', () => {
   });
 
   it('pans sideways on Shift and vertically on Alt, without zooming', () => {
-    /* All three modifiers used to zoom, because none was bound. Doing nothing
-       different reads as broken rather than unassigned. */
+    /* Each of the three is bound to something distinct. A modifier that does
+       nothing different reads as broken rather than unassigned. */
     const h = harness('M0 0 L20 0');
     const start = { ...h.store.state.camera };
 
@@ -2061,10 +2061,9 @@ describe('the backdrop', () => {
   });
 
   it('puts the whole drag on the undo stack as one entry', () => {
-    // It used to record nothing at all, on the theory that a backdrop is not
-    // part of the drawing. Which is true, and is a statement about the export
-    // rather than about whether nudging a reference off by 40 units should be
-    // recoverable.
+    // A backdrop is not part of the drawing, which is a statement about the
+    // export and not about whether nudging a reference off by 40 units should
+    // be recoverable. It is recorded.
     const h = harness('M0 0 L20 0 L20 20 Z');
     withBackdrop(h, { locked: false });
     h.store.update((s) => (s.snapToGrid = false));
@@ -2360,11 +2359,12 @@ describe('continuity shortcuts', () => {
   const scene = (): Harness => {
     /* A corner whose two handles are also different lengths: [12,8] in and
        [26,4] out, so the tangents are [-4,8] and [10,4]. Both properties are
-       needed. The first draft started symmetric, where Shift+S had nothing to
-       do and passed by doing it; the second was a corner with equal-length
-       handles, where making them collinear lands on symmetric and Shift+S
-       looked broken. `smooth` is only distinguishable from `symmetric` when the
-       lengths differ, because that is the only thing that tells them apart. */
+       needed, and two tempting fixtures are useless here. Starting symmetric
+       gives Shift+S nothing to do, so the test passes by doing nothing. A corner
+       with equal-length handles lands on symmetric when they are made collinear,
+       so Shift+S looks broken. `smooth` is distinguishable from `symmetric` only
+       when the lengths differ, because length is the only thing separating
+       them. */
     const h = harness('M 0 0 C 4 8 12 8 16 0 C 26 4 28 8 32 0');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => s.selection.nodes.add(`${id}/0/1`));
@@ -2854,9 +2854,9 @@ describe('split into shapes', () => {
 /**
  * Dragging the curve itself.
  *
- * The bend control used to be drawn only where the two handles were symmetric,
- * which is a minority of the segments in any drawing that has been edited. The
- * tests below are about the majority case that had no control at all.
+ * Drawing the bend control only where the two handles are symmetric covers a
+ * minority of the segments in any drawing that has been edited. The tests below
+ * are about the majority case.
  */
 describe('bend control on any segment', () => {
   /* Both bow downwards, into positive y. The harness camera starts at the
@@ -2890,8 +2890,8 @@ describe('bend control on any segment', () => {
 
   it('draws a control on an asymmetric segment', () => {
     const h = scene(SKEW);
-    // The regression this feature is: `bendOf` returns null here, and the dot
-    // used to be skipped on exactly that test.
+    // The heart of it: `bendOf` returns null here, so anything that gates the
+    // dot on a non-null bend draws nothing on exactly this segment.
     expect(segmentBend(h.store.state.doc.shapes[0].subpaths[0], 0)).toBeNull();
     expect(() => bendEl(h)).not.toThrow();
   });

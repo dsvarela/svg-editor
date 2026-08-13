@@ -39,9 +39,9 @@ describe('tryEdit', () => {
   });
 
   it('keeps a pending redo alive across a declined edit', () => {
-    // The sharp end of this: a dead button used to make Ctrl+Shift+Z stop
-    // working, because `checkpoint` clears the redo stack before the mutation
-    // gets a chance to say it has nothing to do.
+    // The sharp end of this: a dead button stops Ctrl+Shift+Z working if
+    // `checkpoint` clears the redo stack before the mutation gets a chance to
+    // say it has nothing to do.
     const s = store();
     s.edit((st) => (st.doc.shapes[0].name = 'first'));
     s.undo();
@@ -135,11 +135,11 @@ describe('the backdrop in history', () => {
   });
 
   it('holds the bytes for as long as any entry can reach them', () => {
-    /* The earlier version of this only got as far as loading and removing, at
-       which point `reap` returns before it looks at anything -- so deleting the
-       "is it still reachable?" guard passed the whole suite. The image has to be
-       on screen AND on a discarded redo entry at the moment something is freed,
-       which takes an undo and then a fresh edit. */
+    /* Loading and removing is not enough to reach the branch: `reap` returns
+       before it looks at anything, so the "is it still reachable?" guard can be
+       deleted and the whole suite still passes. The image has to be on screen
+       AND on a discarded redo entry at the moment something is freed, which
+       takes an undo and then a fresh edit. */
     const freed: string[] = [];
     const s = store();
     s.onOrphanImage = (src) => freed.push(src);

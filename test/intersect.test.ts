@@ -28,8 +28,8 @@ const line = (a: Pt, b: Pt): Cubic => [
  *
  * Coarse scan, then refine around the winner. A flat scan at 4000 samples has a
  * resolution of 0.0035 on a fourteen-unit curve, which is coarser than the
- * tolerance being tested -- so the first version of this reported the yardstick
- * and called it algorithm error.
+ * tolerance being tested: it would report the yardstick and call it algorithm
+ * error.
  */
 function distanceTo(c: Cubic, p: Pt): number {
   const at = (t: number): number => {
@@ -204,8 +204,8 @@ describe('a crossing in the priority order', () => {
 
   it('works on its own, without Snap to points also being on', () => {
     /* Two switches where one silently requires the other is a switch that
-       appears broken. Crossings used to be computed inside the `toPoints`
-       gate, so ticking only this one did nothing at all. */
+       appears broken. Computing crossings inside the `toPoints` gate does that:
+       ticking only this one then achieves nothing. */
     const r = resolveSnap([5.3, 5.3], setup({ toPoints: false, toBoundary: false }));
     expect(r.via).toBe('crossing');
   });

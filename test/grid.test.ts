@@ -3,11 +3,11 @@
  *
  * The grid you see must be the grid you snap to.
  *
- * These exist because it previously wasn't: the canvas drew an adaptive decade
- * step derived from zoom while the tools snapped to the user's fixed step, so
- * at most zoom levels the visible lattice and the reachable one were different.
- * The contract asserted here is one-directional and exact -- *every drawn line
- * is a snap position* -- so the failure mode cannot come back quietly.
+ * These exist because the two are computed by different code. If the canvas
+ * draws an adaptive decade step derived from zoom while the tools snap to the
+ * user's fixed step, the visible lattice and the reachable one differ at most
+ * zoom levels, and nothing announces it. The contract asserted here is
+ * one-directional and exact -- *every drawn line is a snap position*.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -207,9 +207,8 @@ describe('rulerTicksFor', () => {
 
   /* A snap step of 3, deliberately. On a step of 1 the grid's answer and the
      bare ladder's agree at every zoom, so a test written at 1 passes whether or
-     not the grid is consulted -- which is what the first version of this did.
-     Three is not on the 1-2-5 ladder, so the two disagree and the assertion has
-     something to say. */
+     not the grid is consulted at all. Three is not on the 1-2-5 ladder, so the
+     two disagree and the assertion has something to say. */
   it('borrows the grid, so ticks land on lines that are drawn', () => {
     const g = gridDisplayFor(3, cam(100), 1000);
     const t = rulerTicksFor(3, 100, 1000);

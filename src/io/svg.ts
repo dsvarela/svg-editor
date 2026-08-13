@@ -1,10 +1,10 @@
 /**
  * Whole-SVG import and export.
  *
- * Until now the source box held one concatenated `d` string, so pressing Apply
- * collapsed every shape into one -- the geometry survived but the shape
- * boundaries did not. This module makes the round trip shape-preserving, and
- * incidentally lets you paste a real icon in.
+ * This is what makes the source box round trip shape-preserving, and what lets
+ * you paste a real icon in. A box holding one concatenated `d` string collapses
+ * every shape into one on Apply: the geometry survives and the shape boundaries
+ * do not.
  *
  * Two decisions worth stating:
  *
@@ -191,9 +191,10 @@ function parseViewBox(el: Element): ViewBox | null {
  *
  * An import that parsed cleanly can still draw nothing. `M 0 0` and
  * `M 0 0 Q Q Q` both come back as a shape with no subpaths at all, since the
- * parser drops a subpath with nothing in it, and applying one over a selected
- * shape used to empty it, report "Updated Star." and leave a `<path d="">`
- * behind. Both import routes refuse text this returns false for.
+ * parser drops a subpath with nothing in it. Both import routes refuse text
+ * this returns false for, which is what stops an Apply over a selected shape
+ * from emptying it, reporting "Updated Star." and leaving a `<path d="">`
+ * behind.
  *
  * **Two nodes, not one, and the difference is not reachable from here.** No
  * input to `parsePath` produces a subpath holding a single node -- every
