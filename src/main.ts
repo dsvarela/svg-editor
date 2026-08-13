@@ -2108,6 +2108,40 @@ window.addEventListener('pointercancel', showMeasure);
 /* -------------------------------------------------------------------- boot */
 
 paintPalette();
+/* Collapsing groups.
+ *
+ * Independent toggles rather than an accordion. The snapping aids are used
+ * together -- that is the whole point of them being separate tiers of one rule
+ * -- so shutting Grid every time Guides opened would be the interface arguing
+ * with the feature.
+ *
+ * Session state, not document state: which groups are open is how you are
+ * working, so it is not in the store and not in the history, the same as which
+ * panels are open. It is not persisted across a reload either, because nothing
+ * in this editor is and one thing that was would be a surprise.
+ *
+ * Collapsing takes controls out of the tab order as well as off the screen,
+ * because `hidden` does both -- so a shut group costs one Tab stop instead of
+ * however many controls it holds. `tools/keys.mjs` is what checks that nothing
+ * becomes unreachable: it walks the order and reports any live control it never
+ * arrives at.
+ */
+for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')) {
+  const body = head.nextElementSibling as HTMLElement | null;
+  if (!body?.classList.contains('gbody')) continue;
+  /* Open where the group acts on what is selected, shut otherwise. Everything
+     shut is an empty rail and everything open is what we already had. */
+  const group = head.closest('.group');
+  const keepOpen = ['Style', 'Node', 'Shapes'].includes(head.querySelector('span')?.textContent ?? '');
+  const set = (open: boolean): void => {
+    head.setAttribute('aria-expanded', String(open));
+    body.hidden = !open;
+  };
+  set(keepOpen);
+  head.addEventListener('click', () => set(head.getAttribute('aria-expanded') !== 'true'));
+  void group;
+}
+
 installTooltips();
 
 requestAnimationFrame(() => {

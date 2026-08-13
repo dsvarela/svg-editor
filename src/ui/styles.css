@@ -588,7 +588,8 @@ input[type='number']:disabled { opacity: 0.4; }
 }
 /* Only the section's own header sticks; the sub-headings inside it scroll,
    or two of them would pile up at the same offset. */
-.group > .glabel:first-child {
+.group > .glabel:first-child,
+.group > button.glabel:first-child {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -596,7 +597,45 @@ input[type='number']:disabled { opacity: 0.4; }
   padding: 10px 13px 7px;
   background: var(--panel);
 }
+/* A header that is also a button: it keeps every one of the styles above and
+   adds only what a `<button>` needs taking off it, so a collapsed group looks
+   like the label it replaced rather than like a control. */
+button.glabel {
+  width: 100%;
+  font-family: var(--mono);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+button.glabel:hover { color: var(--ink-2); }
+/* The marker is the header's own state, drawn rather than written: a group with
+   nothing showing has to say so, and `expanded`/`collapsed` in words would be
+   two more words in a panel this is trying to take words out of. */
+button.glabel::after {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 1px 3px 0;
+  border-right: 1.2px solid currentColor;
+  border-bottom: 1.2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.12s ease;
+}
+button.glabel[aria-expanded='false']::after { transform: rotate(-45deg); }
+button.glabel[aria-expanded='false'] { color: var(--ink-3); }
+.gbody[hidden] { display: none; }
+/* Room between a shut group's header and the next one, which the body used to
+   provide. Without it a run of collapsed groups reads as one block of text. */
+.group:has(> .gbody[hidden]) { padding-bottom: 4px; }
+
 .glabel.sub { margin-top: 7px; }
+.hint {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
 .gval { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--measure); }
 .gval.warn { color: var(--warn); }
 

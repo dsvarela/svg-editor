@@ -69,6 +69,16 @@ const live = new Map();
 for (const which of ['tab-shape', 'tab-node', 'tab-doc']) {
   await page.click(`#${which}`);
   await page.waitForTimeout(120);
+  /* Groups collapse, and a shut one hides its controls from the tab order --
+     which is the feature, not a fault. A person reaches them by tabbing to the
+     header and pressing it, so the survey opens them the same way before
+     asking what it can reach. */
+  await page.evaluate(() => {
+    for (const h of document.querySelectorAll('button.glabel')) {
+      if (h.getAttribute('aria-expanded') !== 'true') h.click();
+    }
+  });
+  await page.waitForTimeout(120);
   for (const c of await snapshot()) {
     // A control counts as live if it was enabled in at least one pass.
     if (c.id && (!live.has(c.id) || live.get(c.id).disabled)) live.set(c.id, c);

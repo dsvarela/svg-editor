@@ -193,16 +193,20 @@
 
           <div class="tabpanel" id="panel-shape" role="tabpanel" aria-labelledby="tab-shape">
           <div class="group">
-            <div class="glabel"><span>Shapes</span><span class="gval" id="shapecount"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Shapes</span><span class="gval" id="shapecount"></span></button>
+              <div class="gbody">
             <ul class="shapelist" id="shapelist" role="listbox" aria-label="Shapes" tabindex="0"></ul>
             <div class="grid2">
               <button class="btn" id="dupShape">Duplicate</button>
               <button class="btn" id="delShape">Delete</button>
             </div>
-            <p class="note">Double-click a name to rename it. The name is what the exported <code>id</code> carries.</p>
-          </div>
+          
+              <p class="hint">Newest last. Double-click a name to rename it.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Style</span><span class="gval" id="styleinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Style</span><span class="gval" id="styleinfo"></span></button>
+              <div class="gbody">
             <div class="row">
               <label for="fillColour">Fill</label>
               <input type="color" id="fillColour" aria-label="Fill colour" />
@@ -230,22 +234,13 @@
               <button class="btn" id="paletteSave" type="button" title="Save the style shown above under a name">Save style</button>
               <button class="btn" id="paletteDrop" type="button" title="Forget the selected saved style">Forget</button>
             </div>
-            <p class="note">
-              A saved style is the four values above under a name. Click one to put it on the
-              selected shapes, or with nothing selected to set what you draw next. It is a way of
-              working rather than part of the drawing, so it is not in the file and not in the
-              history: what the export carries is the style on each shape, which is what applying
-              one puts there.
-            </p>
-            <p class="note">
-              Fill, stroke and width for the selected shapes. With nothing selected these set what
-              the next shape you draw will look like, which records no undo step. <b>Rule</b> decides
-              how overlapping subpaths fill: <b>Nonzero</b> fills them all, <b>Even-odd</b> punches
-              holes where they overlap.
-            </p>
-          </div>
+          
+              <p class="hint">With nothing selected, sets what you draw next.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Combine</span><span class="gval" id="boolinfo">needs 2+</span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Combine</span><span class="gval" id="boolinfo">needs 2+</span></button>
+              <div class="gbody">
             <div class="grid2">
               <button class="btn" data-bool="unite" title="Everything either shape covers">Unite</button>
               <button class="btn" data-bool="subtract" title="The first shape, minus the rest">Subtract</button>
@@ -256,21 +251,13 @@
               <button class="btn" id="makeone" title="Make one shape (Shift+P). Keeps every path exactly as it is">Make one shape</button>
               <button class="btn" id="splitshape" title="Split into shapes (Shift+K). Gives each path a shape of its own">Split into shapes</button>
             </div>
-            <p class="note">
-              Shift-click the list to select two or more. The first survives, keeping its name and
-              colour; <b>Subtract</b> takes the rest away from it.
-            </p>
-            <p class="note">
-              <b>Make one shape</b> changes no geometry. It puts the paths into one shape, where the
-              <b>Rule</b> above decides what fills: set it to <b>Even-odd</b> and a path inside
-              another becomes a hole. The booleans rebuild the outline instead, which is why none of
-              them can make one. <b>Split into shapes</b> undoes it, giving each path a shape of its
-              own. A hole does not survive the trip: it is a relationship between two paths in one
-              shape, so splitting them makes the inner one a filled shape again.
-            </p>
-          </div>
+          
+              <p class="hint">Booleans need two shapes. Make one shape keeps every node.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Draw</span><span class="gval" id="drawinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Draw</span><span class="gval" id="drawinfo"></span></button>
+              <div class="gbody">
             <div class="row">
               <label for="cornerRadius">Corner</label>
               <input type="number" id="cornerRadius" value="0" step="0.5" min="0" />
@@ -306,22 +293,13 @@
             <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
               <svg class="ico"><use href="#i-reverse" /></svg>Reverse
             </button>
-            <p class="note">
-              <b>Corner</b> is the radius the rectangle tool draws with, clamped to half the shorter
-              side. <b>Circularise</b> takes a hand-drawn or imported near-circle and makes it exact,
-              keeping every node and rebuilding its handles from the arc each one now spans.
-              <b>Within</b> is how far the drawing
-              may move. At <b>0</b> it removes only nodes that are doing nothing, which cannot
-              change the file you export, so it is safe on anything. Above 0 it also gives up nodes
-              that carry a little of the shape. <b>Redraw curves</b> lets it replace your curves
-              with fitted ones; left off, every node that survives is one you placed. Sharp corners
-              are kept whichever you choose. <b>Reverse</b> turns
-              a path round without moving it: the drawing is identical, and which way it runs
-              decides winding under <code>nonzero</code> and which end a marker lands on.
-            </p>
-          </div>
+          
+              <p class="hint">Within is how far Simplify may move things; Keep is how many nodes to leave.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Transform</span><span class="gval" id="selinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Transform</span><span class="gval" id="selinfo"></span></button>
+              <div class="gbody">
             <div class="grid2">
               <button class="btn" data-tr="rot-90">Rotate &minus;90°</button>
               <button class="btn" data-tr="rot90">Rotate +90°</button>
@@ -338,13 +316,16 @@
               <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
               <button class="btn" id="scaleGo">Apply</button>
             </div>
-            <p class="note">Applies to the selection, or to everything when nothing is selected.</p>
-          </div>
+          
+              <p class="hint">Applies to the selection, about its own centre.</p>
+              </div>
+            </div>
           </div>
 
           <div class="tabpanel" id="panel-node" role="tabpanel" aria-labelledby="tab-node" hidden>
           <div class="group" id="nodegroup">
-            <div class="glabel"><span>Node</span><span class="gval" id="nodeinfo">none</span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Node</span><span class="gval" id="nodeinfo">none</span></button>
+              <div class="gbody">
             <div class="coords">
               <label for="nx">pos</label>
               <input type="number" id="nx" step="0.5" aria-label="Node X" />
@@ -412,11 +393,6 @@
               <input type="number" id="bendLoose" step="0.1" min="0.05" aria-label="Looseness" />
               <button class="btn" id="bendFree" title="Release into free handles">Free</button>
             </div>
-            <p class="note">
-              Select two neighbouring nodes to bend the segment between them.
-              <kbd>Ctrl</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> bends,
-              <kbd>Ctrl</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd> loosens.
-            </p>
 
             <div class="glabel sub"><span>Align</span><span class="gval" id="aligninfo"></span></div>
             <div class="aligns">
@@ -431,41 +407,41 @@
               <button type="button" data-di="h" title="Distribute horizontally">Space H</button>
               <button type="button" data-di="v" title="Distribute vertically">Space V</button>
             </div>
-            <p class="note" id="nodenote">Click a node to edit it. Hollow handles can be pulled out to curve a straight segment.</p>
-          </div>
+          
+              <p class="hint">Corner, Smooth and Symm read the handles. Auto keeps re-deriving them.</p>
+              </div>
+            </div>
 
           <!-- Its own group, not part of Node: this is a standing preference, and
                the Node group is pointer-events:none whenever nothing is selected,
                which would make the setting unreachable exactly when you want to
                change it before deleting something. -->
           <div class="group">
-            <div class="glabel"><span>Delete</span><span class="gval" id="delmodeinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Delete</span><span class="gval" id="delmodeinfo"></span></button>
+              <div class="gbody">
             <div class="seg spread" id="delmode" role="group" aria-label="What Delete does to the path">
               <button type="button" data-dm="fuse" title="Join the two neighbouring segments; the path stays whole">Heal</button>
               <button type="button" data-dm="split" title="Leave the path open where the node was">Split</button>
             </div>
-            <p class="note">
-              <b>Heal</b> keeps the path whole, so a pentagon becomes a quadrilateral. It rebuilds one
-              segment out of two, so it approximates. <b>Split</b> leaves two ends and touches no
-              surviving segment at all. Neither is <b>Break here</b>, which keeps the node, nor
-              <b>Fuse</b>, which removes a segment rather than a node.
-            </p>
-          </div>
+          
+              <p class="hint">What happens to the path where a node is removed.</p>
+              </div>
+            </div>
           </div>
 
           <div class="tabpanel" id="panel-doc" role="tabpanel" aria-labelledby="tab-doc" hidden>
           <div class="group">
-            <div class="glabel"><span>File</span><span class="gval" id="fileinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>File</span><span class="gval" id="fileinfo"></span></button>
+              <div class="gbody">
             <button class="btn wide" id="importSvg" type="button" title="Open an SVG file and make it the document">Import SVG</button>
             <input type="file" id="importFile" accept=".svg,image/svg+xml" hidden />
-            <p class="note">
-              Reads the file the same way pasting it into the source drawer does: the same importer,
-              the same refusal of anything that draws nothing, and one undo step. It replaces the
-              document, so what is open now goes.
-            </p>
-          </div>
+          
+              <p class="hint">Replaces the document, in one undo step.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Canvas</span><span class="gval" id="canvasinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Canvas</span><span class="gval" id="canvasinfo"></span></button>
+              <div class="gbody">
             <div class="coords">
               <label for="vbx">origin</label>
               <input type="number" id="vbx" step="1" aria-label="Canvas X" />
@@ -477,14 +453,13 @@
             <button class="btn wide" id="vbFit" type="button" title="Shrink or grow the canvas to wrap the drawing">
               Fit canvas to drawing
             </button>
-            <p class="note">
-              The page the drawing sits on, and the <code>viewBox</code> the export writes. It is
-              drawn on the canvas with everything outside it dimmed. It never changes on its own, so
-              drawing outside it is allowed and stays outside it until you say otherwise.
-            </p>
-          </div>
+          
+              <p class="hint">The page the drawing sits on, and the viewBox the export writes.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Angles</span><span class="gval" id="angleinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Angles</span><span class="gval" id="angleinfo"></span></button>
+              <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="snapAngles" title="Hold the pointer to rays at a fixed angle" /> Snap to angles</label>
             </div>
@@ -500,19 +475,13 @@
               <button class="btn" id="angleFromSel" type="button" title="Radiate from the middle of what is selected">Origin here</button>
               <button class="btn" id="angleClear" type="button" title="Go back to radiating from wherever the gesture starts">Origin free</button>
             </div>
-            <p class="note">
-              The grid gives you positions; this gives you directions. With it on, the pointer is held
-              to the nearest ray, so a 45&deg; chamfer or a twelve-armed star is drawn rather than
-              nudged into place.
-            </p>
-            <p class="note">
-              With no origin set the rays come from wherever the gesture started: the node you are
-              dragging or the pen's last point. <b>Origin here</b> pins them to the middle of the
-              selection instead. A ray is a line, so it is beaten by a node and it beats the grid.
-            </p>
-          </div>
+          
+              <p class="hint">Rays to hold a direction on. Beaten by a node, beats the grid.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Guides</span><span class="gval" id="guideinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Guides</span><span class="gval" id="guideinfo"></span></button>
+              <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="showRulers" title="Show the rulers, which is where a guide is dragged from" /> Rulers</label>
               <label><input type="checkbox" id="showGuides" checked title="Draw the guides, and let the tools snap to them" /> Show guides</label>
@@ -529,38 +498,23 @@
               <button class="btn" id="guideAddH" type="button" title="Place a horizontal guide at that y">Horizontal</button>
             </div>
             <button class="btn wide" id="guideClear" type="button" title="Remove every guide">Clear guides</button>
-            <p class="note">
-              Lines you place and then aim at. Turn the rulers on and drag one out of either; drag it
-              off the canvas to put it away. Or type a number and press <b>Vertical</b> or
-              <b>Horizontal</b>, which is the exact route and the only one without a pointer.
-            </p>
-            <p class="note">
-              A guide reaches across the whole view rather than stopping at the page, and the tools snap to it the
-              way they snap to an outline. Where two of them cross they make a point, which beats
-              either line on its own. Guides are never part of the export, and placing, moving or
-              removing one is undoable.
-            </p>
-          </div>
+          
+              <p class="hint">Lines you place and aim at. Smart guides appear while you drag.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Keylines</span><span class="gval" id="keylineinfo"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Keylines</span><span class="gval" id="keylineinfo"></span></button>
+              <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="showKeylines" title="Draw the icon keyline grid, and let the tools snap to it" /> Show keylines</label>
             </div>
-            <p class="note">
-              The icon grid: a circle, a square and two rectangles sharing a centre, in Material's
-              proportions. A square reads heavier than a circle of the same width, so the circle is
-              drawn larger, and drawing every icon to these keeps a set at one optical weight. The
-              dashed square is the live area, which the drawing is meant to stay inside.
-            </p>
-            <p class="note">
-              They come from the canvas, so they are never in the export and there is nothing to
-              move. The grid is square even when the page is not, since a stretched circle would be
-              no use as a circle. While they are shown the tools snap to them, the same as to any
-              other outline.
-            </p>
-          </div>
+          
+              <p class="hint">The icon grid, worked out from the canvas. Never in the export.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Grid</span><span class="gval" id="gridreadout"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Grid</span><span class="gval" id="gridreadout"></span></button>
+              <div class="gbody">
             <div class="row">
               <label for="gridStep">Step</label>
               <input type="number" id="gridStep" value="1" step="0.1" min="0" />
@@ -581,15 +535,19 @@
               <label><input type="checkbox" id="wireframe" title="Draw every shape as a plain outline, ignoring its own fill and stroke" /> Wireframe</label>
             </div>
             <button class="btn wide" id="fitPixels" type="button" hidden title="Move the selected shape's nodes onto the pixel lattice shown">Fit selection to pixels</button>
-            <p class="note" id="pixelnote" hidden>
+          
+              <p class="hint">Every drawn line is a snap position.</p>
+              <p class="note" id="pixelnote" hidden>
               A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate
               covers half of two pixels instead of all of one. Pixel fit shifts the grid by half the
               stroke width to put the painted edges on whole pixels. The shift follows what you have
               selected, or the width you are about to draw with.
             </p>
-          </div>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Backdrop</span><span class="gval" id="backinfo">none</span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Backdrop</span><span class="gval" id="backinfo">none</span></button>
+              <div class="gbody">
             <button class="btn wide" id="backPick" type="button" title="Choose an image to trace over">Load image</button>
             <input type="file" id="backFile" accept="image/*" hidden />
             <div class="row">
@@ -612,12 +570,6 @@
               <button class="btn" id="backFit" type="button" title="Scale it to fill the document area">Fit</button>
               <button class="btn" id="backClear" type="button" title="Remove the backdrop">Remove</button>
             </div>
-            <p class="note">
-              A tracing reference, not part of the drawing. It never appears in the
-              Shapes list and never reaches the export. Unlock it to drag it about.
-              Loading, moving and removing are all undoable; opacity, Show and Locked
-              are not, because they say how you want to look at it.
-            </p>
 
             <div class="glabel sub"><span>Trace</span><span class="gval" id="traceinfo">no image</span></div>
             <div class="row">
@@ -633,15 +585,13 @@
               <input type="number" id="traceNoise" value="8" min="3" step="1" />
             </div>
             <button class="btn wide" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
-            <p class="note">
-              One shape per colour, holes and all. <b>Colours</b> caps the palette,
-              <b>Within</b> is how far a fitted curve may move in document units, and
-              <b>Noise</b> drops regions with fewer boundary points than that. The
-              backdrop stays where it is, so you can compare. Tracing is one undo step.
-            </p>
-          </div>
+          
+              <p class="hint">A reference to trace over. Never part of the export.</p>
+              </div>
+            </div>
           <div class="group">
-            <div class="glabel"><span>Output</span><span class="gval" id="outval"></span></div>
+              <button class="glabel" type="button" aria-expanded="true"><span>Output</span><span class="gval" id="outval"></span></button>
+              <div class="gbody">
             <div class="row">
               <label for="decimals">Decimals</label>
               <input type="number" id="decimals" value="3" min="0" max="9" step="1" />
@@ -649,7 +599,10 @@
             <div class="checks">
               <label><input type="checkbox" id="minify" /> Minify</label>
             </div>
-          </div>
+          
+              <p class="hint">How the exported path data is written.</p>
+              </div>
+            </div>
           </div>
         </aside>
       </main>

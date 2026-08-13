@@ -1693,6 +1693,53 @@ must be forced, and not which of the two ways of forcing it is correct. The
 direction of travel is the one with a reason behind it, so it is the one kept,
 and this paragraph is here so nobody reads the tests as saying more than they do.
 
+## 41. The inspector was heavy with prose, not with controls
+
+Measured before it was changed, because "feels busy" is not something to act on
+directly. The rail held **19 group headers, 131 controls and 1 014 words** of
+explanation in a 288 px column, and the Document tab alone held 9 groups and 543
+words.
+
+**The Node tab was the control in the experiment.** Four groups, 35 controls, 81
+words -- almost as many controls as Shape and a fifth of the prose -- and it did
+not feel busy. That is what said the problem was not control count.
+
+Two changes, and the second is the one that pays:
+
+- **One line per group instead of a paragraph.** Every note restated something
+  `docs/manual/reference.md` already says at length, read once and skipped
+  forever, in the space that made the controls look crowded. 1 014 words to 210.
+- **Groups collapse.** Independent toggles, not an accordion: the snapping aids
+  are used together -- that is the point of them being separate tiers of one
+  rule -- so shutting Grid every time Guides opened would be the interface
+  arguing with the feature.
+
+**Collapsing improves the keyboard rather than costing it.** A shut group uses
+`hidden`, which takes its controls out of the tab order as well as off the
+screen, so it costs one Tab stop instead of however many controls it holds.
+Reaching the Output group used to mean tabbing past all 58 Document controls.
+`tools/keys.mjs` opens every group before it walks, because a person reaches a
+shut group by tabbing to its header and pressing it, and it still reports no
+live control it cannot reach.
+
+Two details worth keeping:
+
+- **Defaults are the whole design.** Everything shut is an empty rail and
+  everything open is what was there before. The groups that act on the current
+  selection open -- Shapes, Style, Node -- and the rest are shut.
+- **A shut group has to say what it is doing.** The header readouts already did
+  that (`every 45° · origin free`), which is what makes collapsing safe rather
+  than a way to lose a control. They were the densest useful thing in the panel
+  before this and they are what carries it now.
+
+Which groups are open is session state: not in the store, not in the history,
+and not persisted across a reload, because nothing else in this editor is and
+one thing that was would be a surprise.
+
+The proposal this came from also suggested splitting the Document tab in two. It
+is not done, and on the evidence it may not be needed: nine collapsed groups
+occupy 454 px, which is a third of the rail.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.

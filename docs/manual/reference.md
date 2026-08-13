@@ -102,6 +102,13 @@ Three tabs, split by what a control acts on.
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
 focus.
 
+Every group collapses: press its header to open or shut it. Shapes, Style and
+Node start open and the rest start shut, and a shut group still shows its state
+beside its name. Groups are independent, so you can have Grid and Guides open
+together. A shut group's controls leave the keyboard's tab order as well as the
+screen, so tabbing reaches the group you want rather than every control before
+it.
+
 ### Shapes
 
 The list of shapes, newest last, with a colour swatch and a node count.

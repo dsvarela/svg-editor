@@ -64,6 +64,17 @@ async function closeSource(page) {
 async function tab(page, name) {
   await page.click(`#tab-${name}`);
   await page.waitForTimeout(80);
+  /* Open every group in the panel that just appeared. Groups collapse now, and
+     a control inside a shut one is genuinely not there -- `hidden` keeps it out
+     of the hit test and out of the tab order, which is the point. A person
+     opens the group they want; a scenario asking for a control by id has said
+     which group it wants by saying which control. */
+  await page.evaluate((id) => {
+    for (const h of document.querySelectorAll(`#panel-${id} button.glabel`)) {
+      if (h.getAttribute('aria-expanded') !== 'true') h.click();
+    }
+  }, name);
+  await page.waitForTimeout(60);
 }
 
 /**
@@ -3609,6 +3620,24 @@ page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(300);
+
+/* Every inspector group open, before any scenario runs.
+ *
+ * Groups collapse now, and a shut one keeps its controls out of the hit test
+ * and out of the tab order -- which is the feature. A scenario that names a
+ * control by id has already said which group it wants, and making each one open
+ * its own group first would be thirty edits that test the opening rather than
+ * the control. Opening them all here says once what every scenario means.
+ *
+ * `.click()` works on a hidden button, so the panels that are not showing are
+ * covered too. `tab()` opens whatever appeared after this, for anything added
+ * to the DOM later. */
+await page.evaluate(() => {
+  for (const h of document.querySelectorAll('button.glabel')) {
+    if (h.getAttribute('aria-expanded') !== 'true') h.click();
+  }
+});
+await page.waitForTimeout(120);
 
 let result;
 try {
