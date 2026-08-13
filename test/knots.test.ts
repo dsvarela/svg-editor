@@ -278,7 +278,15 @@ describe('removing nodes from a path', () => {
     expect(seam).toBeCloseTo(twin, 9);
   });
 
-  it('never moves the drawing further than the tolerance it was given', () => {
+  /* Given 30 seconds because it needs about 8. Twelve Hausdorff measurements,
+     each scanning 1 920 sampled points against a 7 700-point polyline, is 350
+     million distance calculations and there is no cheaper way to make the
+     claim: coarser sampling would report the sampling error as movement, at a
+     tolerance of 0.01 that is the same size as the thing being measured, and
+     precomputing the reference polyline was tried and saved 1%. Under the
+     5-second default it passed alone and failed whenever the suite ran it
+     alongside 25 other files. */
+  it('never moves the drawing further than the tolerance it was given', { timeout: 30_000 }, () => {
     /* The load-bearing claim. Tiller proves a control-point discrepancy below
        TOL bounds the curve's movement by TOL everywhere. If that is wrong here,
        every promise this operation makes is void. */

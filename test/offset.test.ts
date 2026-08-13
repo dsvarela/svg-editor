@@ -265,9 +265,22 @@ describe('stroke to path', () => {
     expect(strokeOutline(path(CIRCLE), Number.NaN)).toBeNull();
   });
 
-  it('refuses when a side comes apart, rather than guessing how to pair it', () => {
-    /* A stroke wider than the shape can hold offsets into pieces on the inner
-       side, and there is no single other side to pair each piece with. */
+  it('refuses a width the shape cannot hold at all', () => {
+    /* 60 on a 40-unit square: the inner offset does not come apart, it comes
+       back with nothing, and the refusal is the empty check rather than the
+       count. Written for the count check and never reaching it, which is what
+       the test below is for. */
+    expect(offsetSubpath(path('M0 0 H40 V40 H0 Z'), -30, 0.05)).toBeNull();
     expect(strokeOutline(path('M0 0 H40 V40 H0 Z'), 60, 'butt', 0.05)).toBeNull();
+  });
+
+  it('refuses when a side comes apart, rather than guessing how to pair it', () => {
+    /* The notched rectangle, whose inner offset at 8 separates into two pieces
+       while the outer stays one. There is no single other side to pair each
+       piece with, so the outline is refused. */
+    const NOTCH = 'M0 0 L20 30 L40 0 L40 40 L0 40 Z';
+    expect(offsetSubpath(path(NOTCH), -8, 0.02)).toHaveLength(2);
+    expect(offsetSubpath(path(NOTCH), 8, 0.02)).toHaveLength(1);
+    expect(strokeOutline(path(NOTCH), 16, 'butt', 0.02)).toBeNull();
   });
 });

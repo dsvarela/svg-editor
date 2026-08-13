@@ -1,7 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { describe, expect, it } from 'vitest';
-import { exportSvg, importSvg, parseTransform, primitiveToPath, xmlId } from '../src/io/svg';
+import {
+  drawsSomething,
+  exportSvg,
+  importSvg,
+  parseTransform,
+  primitiveToPath,
+  xmlId,
+} from '../src/io/svg';
 import { parsePath } from '../src/core/parse';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
@@ -122,6 +129,63 @@ describe('primitive conversion', () => {
 
   it('yields nothing for a zero-sized rect', () => {
     expect(primitiveToPath(el('<rect width="0" height="10"/>'))).toBe('');
+  });
+});
+
+describe('what an import is allowed to replace the document with', () => {
+  /* Both import routes -- the source box and the file picker -- refuse text
+     that draws nothing. Until this predicate moved out of `main.ts` the check
+     had a copy in each of them and neither had a unit test, so only the
+     `importFile` browser scenario covered it. Every case here parses without
+     complaint, which is what makes the refusal necessary. */
+
+  it('refuses a move with nothing after it, which arrives as a shape', () => {
+    /* The count is what makes this necessary: a bare move comes back as one
+       shape, so refusing on `shapes.length` would accept it. The subpath is
+       what the parser dropped. */
+    const r = importSvg('M 0 0');
+    expect(r.shapes).toHaveLength(1);
+    expect(r.shapes[0].subpaths).toHaveLength(0);
+    expect(drawsSomething(r.shapes)).toBe(false);
+    expect(drawsSomething(importSvg('M 12 -4').shapes)).toBe(false);
+  });
+
+  it('refuses commands the parser drops, leaving a bare move', () => {
+    // `Q Q Q` is not geometry, and what it leaves behind is the case above.
+    expect(drawsSomething(importSvg('M 0 0 Q Q Q').shapes)).toBe(false);
+  });
+
+  it('refuses empty text, and markup holding no shape', () => {
+    expect(drawsSomething(importSvg('').shapes)).toBe(false);
+    expect(drawsSomething(importSvg('<svg viewBox="0 0 20 20"></svg>').shapes)).toBe(false);
+  });
+
+  it('refuses a document whose every shape draws nothing', () => {
+    /* The markup route differs from the bare-`d` one: a `<path>` that draws
+       nothing is dropped rather than kept as an empty shape, so this document
+       arrives with no shapes at all. Refused either way. */
+    const r = importSvg(`<svg viewBox="0 0 20 20">
+      <path d="M0 0"/>
+      <path d="M10 10"/>
+    </svg>`);
+    expect(r.shapes).toHaveLength(0);
+    expect(drawsSomething(r.shapes)).toBe(false);
+  });
+
+  it('accepts a document where one shape draws and the rest do not', () => {
+    /* The rule is about the document, not about every shape in it. A stray
+       bare move alongside real geometry is not a reason to refuse the file. */
+    const r = importSvg(`<svg viewBox="0 0 20 20">
+      <path d="M0 0"/>
+      <path d="M0 0 L10 0"/>
+    </svg>`);
+    expect(drawsSomething(r.shapes)).toBe(true);
+  });
+
+  it('accepts the smallest thing that draws: two nodes', () => {
+    expect(drawsSomething(importSvg('M 0 0 L 1 0').shapes)).toBe(true);
+    // Including a line of zero length, which draws a dot under a round cap.
+    expect(drawsSomething(importSvg('M 0 0 L 0 0').shapes)).toBe(true);
   });
 });
 

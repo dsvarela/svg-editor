@@ -4,7 +4,7 @@
 
 import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
-import { exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
+import { drawsSomething, exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import type { BooleanOp } from './io/boolean';
 import { docBBox, emptyDoc, findShape, nextId, parseNodeKey, selectedShapes, shapeFromPath } from './model/doc';
 import { isPathEnd, latentHandle, transformShape } from './model/ops';
@@ -957,12 +957,8 @@ srcModeSeg.addEventListener('click', (e) => {
 function replaceDocumentFrom(text: string, what: string): boolean {
   try {
     const r = importSvg(text);
-    /* "Nothing to import" has to mean nothing *drawable*, not zero elements.
-       `M 0 0` and `M 0 0 Q Q Q` both parse without complaint to a shape holding
-       no segment, and applying one over a selected shape emptied it, reported
-       "Updated Star.", and left a `<path d="">` on the canvas. */
-    const draws = r.shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
-    if (!draws) {
+    // "Nothing to import" means nothing drawable, not zero elements.
+    if (!drawsSomething(r.shapes)) {
       status.textContent = `${what} draws nothing, so nothing was changed.`;
       status.className = 'st err';
       return false;
@@ -1003,8 +999,7 @@ function applySource(): void {
 
   try {
     const r = importSvg(src.value);
-    const draws = r.shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
-    if (!draws) {
+    if (!drawsSomething(r.shapes)) {
       status.textContent = 'That draws nothing, so nothing was changed.';
       status.className = 'st err';
       return;

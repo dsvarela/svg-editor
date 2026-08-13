@@ -187,6 +187,22 @@ function parseViewBox(el: Element): ViewBox | null {
 }
 
 /**
+ * Whether an import would put anything on the canvas.
+ *
+ * An import that parsed cleanly can still draw nothing: `M 0 0` and
+ * `M 0 0 Q Q Q` both come back as a shape holding a subpath with one node and
+ * no segment. Applying one over a selected shape used to empty it, report
+ * "Updated Star." and leave a `<path d="">` behind, so both import routes
+ * refuse text this returns false for.
+ *
+ * Lives here rather than in `main.ts` because it is the importer's own
+ * question, and because the two callers there each had their own copy of it.
+ */
+export function drawsSomething(shapes: Shape[]): boolean {
+  return shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
+}
+
+/**
  * Import SVG markup, or bare path data.
  *
  * Input that does not look like markup is treated as a `d` string, so pasting
