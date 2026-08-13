@@ -186,6 +186,16 @@ export class Controller {
   private penTarget: { shape: string; sp: number } | null = null;
   private spaceDown = false;
 
+  /**
+   * Fingers on the glass, in client coordinates, by pointer id.
+   *
+   * Only touches. A mouse has one pointer and a pen reports as its own type, so
+   * neither can start the two-finger gesture by accident.
+   */
+  private touches = new Map<number, Pt>();
+  /** The pinch in progress: how far apart the fingers were, and their midpoint. */
+  private pinch: { dist: number; mid: Pt } | null = null;
+
   constructor(
     private store: Store,
     private canvas: Canvas,
@@ -1062,8 +1072,68 @@ export class Controller {
 
   /* -------------------------------------------------------------- pointer */
 
+  /* ---------------------------------------------------------------- pinch */
+
+  /** How far apart two fingers are, and where the point between them is. */
+  private spread(): { dist: number; mid: Pt } | null {
+    const [a, b] = [...this.touches.values()];
+    if (!a || !b) return null;
+    return {
+      dist: Math.hypot(b[0] - a[0], b[1] - a[1]),
+      mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+    };
+  }
+
+  /**
+   * Zoom and pan from two fingers moving.
+   *
+   * Both at once, because they are one gesture: spreading the fingers zooms in
+   * about the point between them, and moving that point drags the drawing with
+   * it. Doing only the zoom would pin the view to wherever the pinch started,
+   * which on a screen the size of a hand is most of the way to unusable.
+   *
+   * The order matters. The zoom is taken about the document point under the old
+   * midpoint, which leaves that point exactly where it was on screen; the pan
+   * afterwards is then a screen distance in the new scale. Zooming about the
+   * new midpoint instead would move the drawing twice.
+   */
+  private pinchMove(): void {
+    const now = this.spread();
+    const was = this.pinch;
+    if (!now || !was) return;
+    if (now.dist < 1 || was.dist < 1) return;
+
+    const factor = was.dist / now.dist;
+    const anchor = screenToDoc(this.canvas.overlay, was.mid[0], was.mid[1]);
+    const dx = now.mid[0] - was.mid[0];
+    const dy = now.mid[1] - was.mid[1];
+
+    this.store.update((st) => {
+      const zoomed = zoomAt(st.camera, factor, anchor);
+      const k = this.canvas.scale(zoomed);
+      st.camera = { ...zoomed, x: zoomed.x - dx * k, y: zoomed.y - dy * k };
+    });
+    this.pinch = now;
+  }
+
   private onDown = (e: PointerEvent): void => {
     if (e.button === 2) return;
+
+    /* Recorded before the one-drag-at-a-time rule below, which returns early:
+       the second finger has to be seen even though it starts no drag. */
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.touches.size === 2) {
+        /* Whatever the first finger began, it was the start of this gesture
+           rather than a gesture of its own. Abandoning it rolls back an edit it
+           had already made -- a node the pen added, a handle it moved -- which
+           is what makes a two-finger zoom safe to do over the drawing. */
+        this.abortDrag();
+        this.pinch = this.spread();
+        return;
+      }
+      if (this.touches.size > 2) return;
+    }
     // A second press while a drag is live used to overwrite `this.drag`, and
     // since the matching `onUp` decided whether to close the batch by looking
     // at whatever drag it found, the first one's batch was never closed --
@@ -1252,6 +1322,17 @@ export class Controller {
   };
 
   private onMove = (e: PointerEvent): void => {
+    /* Membership, not pointer type: what counts as a finger is decided once, in
+       `onDown`, and asking the same question twice in two places is how the two
+       answers come to disagree. */
+    if (this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.pinch) {
+        this.pinchMove();
+        return;
+      }
+    }
+
     const p = this.pt(e);
     const s = this.store.state;
 
@@ -1495,6 +1576,18 @@ export class Controller {
   };
 
   private onUp = (e: PointerEvent): void => {
+    /* A finger coming off a pinch ends the pinch and starts nothing. The one
+       still down could be read as the beginning of a drag, but it is the middle
+       of a gesture the person has not finished making, and drawing a line with
+       it is not what they asked for. That falls out of the drag being abandoned
+       when the second finger landed: there is nothing left for the rest of this
+       to finish, so it runs and does nothing rather than being skipped. An
+       early return here was tried and no test could tell it apart. */
+    if (this.touches.has(e.pointerId)) {
+      this.touches.delete(e.pointerId);
+      this.pinch = this.touches.size >= 2 ? this.spread() : null;
+    }
+
     try {
       if (this.drag.kind === 'marquee' && this.extras.marquee) {
         const box: Box = this.extras.marquee;
@@ -1607,6 +1700,8 @@ export class Controller {
   };
 
   private onCancel = (e: PointerEvent): void => {
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinch = null;
     this.abortDrag();
     if (this.canvas.overlay.hasPointerCapture(e.pointerId)) {
       this.canvas.overlay.releasePointerCapture(e.pointerId);

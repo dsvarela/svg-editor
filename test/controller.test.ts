@@ -22,6 +22,7 @@ import { segmentBend, splitSegment } from '../src/model/ops';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
+import { screenToDoc } from '../src/view/viewport';
 
 /** Document units per screen pixel in the stubbed mapping. */
 const SCALE = 0.1;
@@ -92,6 +93,8 @@ interface Harness {
   down(doc: [number, number], target?: Element, opts?: PointerEventInit): void;
   move(doc: [number, number], opts?: PointerEventInit): void;
   up(): void;
+  /** One finger, by id, in client pixels. Two of them are a pinch. */
+  touch(type: 'down' | 'move' | 'up', id: number, client: [number, number]): void;
   key(key: string, opts?: KeyboardEventInit): void;
   anchorEl(shape: string, sp: number, i: number): Element;
   outlineEl(shape: string): Element;
@@ -133,6 +136,18 @@ function harness(pathData?: string): Harness {
     down: (p, target, opts) => ev('pointerdown', p, target ?? canvas.overlay, opts),
     move: (p, opts) => ev('pointermove', p, canvas.overlay, opts),
     up: () => ev('pointerup', [0, 0], canvas.overlay),
+    touch: (type, id, client) => {
+      const e = new MouseEvent(`pointer${type}`, {
+        clientX: client[0],
+        clientY: client[1],
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(e, 'pointerId', { value: id });
+      Object.defineProperty(e, 'pointerType', { value: 'touch' });
+      Object.defineProperty(e, 'button', { value: 0 });
+      canvas.overlay.dispatchEvent(e);
+    },
     key: (key, opts = {}) =>
       window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts })),
     outlineEl: (shape) => {
@@ -3013,5 +3028,182 @@ describe('auto-smooth nodes through the controller', () => {
     // And the drag actually took: the handle is where it was dragged to, not
     // back where the sweep would have put it.
     expect(n.hOut![1]).toBeGreaterThan(at[1] + 6);
+  });
+});
+
+describe('two fingers', () => {
+  /* The default stub maps client pixels to document units through a fixed
+     scale that knows nothing about the camera, which is enough for every test
+     above and useless for this one: a gesture whose whole job is to move the
+     camera cannot be measured against a mapping that ignores it. So the pinch
+     tests install a live one, and then ask the question the gesture exists to
+     answer -- is the point you put your fingers on still under them.
+
+     A pointer event carries one pointer, so two fingers moving arrive as two
+     events and never as one. Between them the fingers are briefly at a distance
+     neither started nor ended at, so the camera passes through a zoom that the
+     second event undoes. That is why what is asserted is the invariant per
+     gesture rather than an arithmetic identity per event: the second holds only
+     for fingers that move in perfect step, which no hand does. */
+  const liveCamera = (h: Harness): void => {
+    Object.defineProperty(SVGSVGElement.prototype, 'getScreenCTM', {
+      configurable: true,
+      value: () => {
+        const c = h.store.state.camera;
+        const k = WIDTH / c.w; // client pixels per document unit
+        return new FakeMatrix(k, 0, 0, k, -c.x * k, -c.y * k);
+      },
+    });
+  };
+
+  /** Where a client point lands in the document, at the camera as it is now. */
+  const docAt = (h: Harness, client: [number, number]): [number, number] =>
+    screenToDoc(h.canvas.overlay, client[0], client[1]) as [number, number];
+
+  it('zooms in when the fingers spread, about the point between them', () => {
+    const h = harness('M 10 10 L 30 10 L 30 30 Z');
+    liveCamera(h);
+    const before = h.store.state.camera.w;
+    const mid: [number, number] = [400, 300];
+    const under = docAt(h, mid);
+
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('move', 1, [100, 300]);
+    h.touch('move', 2, [700, 300]);
+
+    // 400 apart to 600 apart is two thirds of the width, which is zooming in.
+    expect(h.store.state.camera.w).toBeCloseTo((before * 2) / 3, 6);
+    expect(h.store.state.camera.w).toBeLessThan(before);
+    // The midpoint never moved, so what was under it is still under it.
+    expect(docAt(h, mid)[0]).toBeCloseTo(under[0], 9);
+    expect(docAt(h, mid)[1]).toBeCloseTo(under[1], 9);
+  });
+
+  it('zooms out when they close', () => {
+    const h = harness();
+    liveCamera(h);
+    const before = h.store.state.camera.w;
+    h.touch('down', 1, [100, 300]);
+    h.touch('down', 2, [700, 300]);
+    h.touch('move', 1, [200, 300]);
+    h.touch('move', 2, [600, 300]);
+    expect(h.store.state.camera.w).toBeCloseTo((before * 600) / 400, 6);
+  });
+
+  it('drags the drawing along when both fingers travel', () => {
+    const h = harness();
+    liveCamera(h);
+    const before = { ...h.store.state.camera };
+    const under = docAt(h, [400, 300]);
+
+    // Both right by 100 client pixels and down by 50, so they end as far apart
+    // as they began and the gesture is a pan.
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('move', 1, [300, 350]);
+    h.touch('move', 2, [700, 350]);
+
+    const c = h.store.state.camera;
+    expect(c.w).toBeCloseTo(before.w, 9);
+    // What was under the fingers travelled with them, all 100 and 50 of it.
+    expect(docAt(h, [500, 350])[0]).toBeCloseTo(under[0], 9);
+    expect(docAt(h, [500, 350])[1]).toBeCloseTo(under[1], 9);
+    // Which is the camera moving the other way, since the drawing did not move.
+    expect(c.x).toBeCloseTo(before.x - 100 * SCALE, 9);
+    expect(c.y).toBeCloseTo(before.y - 50 * SCALE, 9);
+  });
+
+  it('abandons the drag the first finger started, and closes its batch', () => {
+    /* The first finger lands before there is any way to know a second is
+       coming, so it starts a drag on whatever it hit, and by the time the
+       second arrives that drag may already have moved a node.
+
+       Two things have to happen to it. The edit is rolled back, which is
+       visible in the drawing. The batch is closed, which is not visible at all:
+       a batch left open makes `checkpoint` return early for the rest of the
+       session, so nothing is ever undoable again and nothing on screen says so.
+       The second is why the later edit below is part of this test. */
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => (s.snapToGrid = false));
+    const before = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 });
+
+    h.down([0, 0], h.anchorEl(id, 0, 0));
+    h.move([5, 5]); // the node is now somewhere it was not
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 })).not.toBe(before);
+
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('move', 1, [100, 300]);
+    h.touch('move', 2, [700, 300]);
+    h.touch('up', 1, [100, 300]);
+    h.touch('up', 2, [700, 300]);
+
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 })).toBe(before);
+    expect(h.store.state.camera.w).toBeLessThan(WIDTH * SCALE);
+
+    // History still works, which is the half of this that has no symptom.
+    h.store.edit((s) => (s.doc.shapes[0].name = 'later'));
+    expect(h.store.canUndo).toBe(true);
+    h.store.undo();
+    expect(h.store.state.doc.shapes[0].name).not.toBe('later');
+  });
+
+  it('stops zooming when a finger lifts, and does not draw with the other', () => {
+    const h = harness('M 10 10 L 30 10 L 30 30 Z');
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('move', 1, [100, 300]);
+    h.touch('move', 2, [700, 300]);
+    const after = { ...h.store.state.camera };
+    const shape = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 });
+
+    h.touch('up', 2, [700, 300]);
+    // The finger still down travels a long way. Nothing follows it.
+    h.touch('move', 1, [400, 100]);
+    h.touch('up', 1, [400, 100]);
+
+    expect(h.store.state.camera).toEqual(after);
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 })).toBe(shape);
+  });
+
+  it('is not started by one finger', () => {
+    const h = harness();
+    liveCamera(h);
+    const before = { ...h.store.state.camera };
+    h.touch('down', 1, [200, 300]);
+    h.touch('move', 1, [400, 100]);
+    expect(h.store.state.camera).toEqual(before);
+    h.touch('up', 1, [400, 100]);
+  });
+
+  it('is not started by two pointers that are not fingers', () => {
+    /* A drawing tablet reports the pen and the mouse as separate pointers with
+       separate ids, and a press from each is two live pointers that are not a
+       pinch. Counting every pointer type instead of touches would zoom the
+       canvas in the middle of drawing with the pen. */
+    const h = harness('M0 0 L10 0 L10 10 Z');
+    liveCamera(h);
+    const before = { ...h.store.state.camera };
+
+    const other = (type: string, id: number, kind: string, at: [number, number]): void => {
+      const e = new MouseEvent(`pointer${type}`, {
+        clientX: at[0],
+        clientY: at[1],
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(e, 'pointerId', { value: id });
+      Object.defineProperty(e, 'pointerType', { value: kind });
+      Object.defineProperty(e, 'button', { value: 0 });
+      h.canvas.overlay.dispatchEvent(e);
+    };
+
+    other('down', 7, 'pen', [200, 300]);
+    other('down', 8, 'mouse', [600, 300]);
+    other('move', 7, 'pen', [100, 300]);
+    other('move', 8, 'mouse', [700, 300]);
+    expect(h.store.state.camera).toEqual(before);
   });
 });

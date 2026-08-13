@@ -37,6 +37,7 @@ as the centre rather than a corner.
 | `Shift`+wheel | Pan sideways |
 | `Alt`+wheel | Pan up and down |
 | `Space`-drag, or middle-drag | Pan, from any tool |
+| Two fingers | Zoom about the point between them, and pan as that point moves |
 
 ## Keyboard
 

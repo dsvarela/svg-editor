@@ -58,16 +58,23 @@ every operation reachable only by key or hover is one more thing to retrofit:
   minimum in both Apple's and Google's guidance.
 
 The input layer is already there: the controller listens to `pointer*` events
-and never to `mouse*`, and the overlay sets `touch-action: none`. What blocks a
-phone today is the rail covering the canvas below 860 px (`styles.css`, the
-`max-width: 860px` query), no pinch to zoom, and **84 of 85 controls under
-44 px**.
+and never to `mouse*`, and the overlay sets `touch-action: none`. Sizing is
+there too, as of 2026-08-13: `src/ui/styles.css` ends with a
+`@media (pointer: coarse)` block that raises `--h` and the handful of controls
+that do not take their height from it, so **every one of the 138 controls is at
+least 44 px to a finger and none of them changed for a mouse**. Two fingers
+zoom and pan, in `Controller.pinchMove`. What blocks a phone today is a toolbar
+that scrolls sideways to reach the panel toggles, and that nothing beyond the
+zoom has been tried on a real one: the gesture tests drive synthetic touch
+events, which prove the arithmetic and say nothing about a hand.
 
-That last number is measured by `node tools/touch.mjs`, with the dev server up.
-Re-run it rather than trusting the figure written here: the previous one was
-quoted with no method recorded, so nobody could tell whether it had drifted or
-had been counting something else. The tool counts the element that takes the
-press, which for a checkbox is its label rather than the 13 px box.
+Both numbers come from `node tools/touch.mjs` with the dev server up, `--coarse`
+for the second. Re-run it rather than trusting a figure written here. Two
+corrections went into the tool on 2026-08-13 and neither number before that date
+means what it says: it skipped controls in collapsed groups, of which the rail
+redesign left it eleven, and it skipped disabled ones, which are laid out at the
+size they will have when they are enabled. It had been reporting 37 controls
+where the markup holds 166.
 
 ## Tests
 

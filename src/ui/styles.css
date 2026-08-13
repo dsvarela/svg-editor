@@ -965,6 +965,61 @@ kbd {
   .app.no-rail .rail { display: none; }
 }
 
+/* --- a finger, not a mouse -------------------------------------------- */
+
+/* 44 px is the touch target minimum in both Apple's and Google's guidance, and
+   `CLAUDE.md` has carried a rule about it for as long as the count has been
+   measured. Applying it to every pointer would cost the desktop half its rail:
+   138 controls at 44 px instead of 26 is 2 500 px of extra column. So it is
+   asked for by pointer instead, which is the one question that separates the
+   two cases -- `pointer: coarse` is the primary input being imprecise, which is
+   a finger or a stylus and is never a mouse.
+
+   Most of it is one variable. `--h` is where nearly every control gets its
+   height, so raising it moves buttons, number fields, colour wells and the
+   segmented rows together. What follows it is the controls that size
+   themselves: the ones built around a 13 px checkbox, the ones with a hard
+   pixel height of their own, and the readouts in the status strip. */
+@media (pointer: coarse) {
+  :root { --h: 44px; }
+
+  /* Two pixels of border are taken out of the height inside a `.seg`, which
+     would land every segmented button at 42. */
+  .seg button,
+  .row .seg button { min-height: 44px; }
+
+  /* Square, and 30 px wide before this. */
+  #tool button { width: 44px; }
+
+  /* Width as well as height, for a segmented button holding a short word:
+     "SVG" in the source header was 42.4 across. The rail's own rows keep the
+     `min-width: 0` they were given, since four segments at 44 in a 288 px
+     column is what that rule exists to prevent. */
+  .seg button { min-width: 44px; }
+
+  /* A row in the shape list is pressed to select the shape, so the row is a
+     control even though the list is one element. */
+  .shapelist li { min-height: 44px; }
+  .shapelist { max-height: none; }
+
+  /* A checkbox is 13 px and its label is what takes the press, so the label is
+     what has to be big enough. Written against the input rather than against a
+     class, because the labels holding one carry four different classes and two
+     carry none at all. */
+  label:has(> input[type='checkbox']),
+  .chk,
+  .tick { display: flex; align-items: center; min-height: 44px; }
+
+  /* Hard heights, set in pixels rather than from `--h`. */
+  .tab { height: 44px; }
+  .glabel { min-height: 44px; }
+
+  /* The status strip is a row of readouts, two of which are pressable. It
+     stops being 24 px tall so that they can be 44. */
+  .readout { height: auto; min-height: 44px; }
+  .readout button { min-height: 44px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
