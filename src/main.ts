@@ -399,14 +399,10 @@ const streamed = (input: HTMLElement, fn: () => void): void => {
 /**
  * Wire a numeric control to the state.
  *
- * A typed number fires `input` per keystroke and a dragged slider fires one per
- * pixel, which would be an undo entry each. A batch opens on the first of them
- * and closes when the control settles, so the whole adjustment is one step. It
- * closes on `change` as well as `blur`, because a range input never gets a blur
- * if you drag it and then reach straight for the canvas.
+ * Reads the field, and leaves the undo batching to `streamed`.
  *
  * `history: false` is for controls that change how something looks rather than
- * what it is. Those never enter the undo stack at all.
+ * what it is. Those never enter the undo stack at all, so they take no batch.
  */
 const liveNum = (
   id: string,
@@ -414,27 +410,24 @@ const liveNum = (
   history = true,
 ): void => {
   const input = $(id) as HTMLInputElement;
-  let open = false;
-  const close = (): void => {
-    if (!open) return;
-    open = false;
-    store.endBatch();
-  };
-  input.addEventListener('input', () => {
+  if (!history) {
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      if (Number.isFinite(v)) store.update((s) => apply(s, v));
+    });
+    return;
+  }
+  /* Through `streamed` rather than opening its own batch, so these controls
+     join `openStreams` and the pointerdown drain covers them. While this held
+     a second copy of the same open-and-close, the drain reached three controls
+     and these seven kept a batch open into the drag that followed. A value
+     that is mid-typing and not yet a number opens a batch that takes no
+     checkpoint, which costs nothing: an entry appears only when an edit does. */
+  streamed(input, () => {
     const v = Number(input.value);
     if (!Number.isFinite(v)) return;
-    if (!history) {
-      store.update((s) => apply(s, v));
-      return;
-    }
-    if (!open) {
-      open = true;
-      store.beginBatch();
-    }
     store.tryEdit((s) => apply(s, v));
   });
-  input.addEventListener('change', close);
-  input.addEventListener('blur', close);
 };
 
 /* ----------------------------------------------------------------- style */
@@ -586,7 +579,7 @@ on('#paletteSave', () => {
     paletteAt = already;
     paintPalette();
     status.textContent = `Already saved as ${store.state.palette[already].name}.`;
-    status.className = 'st warn';
+    status.className = 'st err';
     return;
   }
   store.update((st) => st.palette.push({ name: base, style: { ...shown } }));
@@ -942,14 +935,6 @@ srcModeSeg.addEventListener('click', (e) => {
 });
 
 /**
- * Replace the document from the source box.
- *
- * `importSvg` sniffs the input, so either a bare `d` string or a whole `<svg>`
- * works. **Importing markup keeps one shape per element.** Concatenating them
- * into a single `d` first makes Apply silently fuse every shape into one, and
- * the geometry survives that while the shape boundaries do not.
- */
-/**
  * Replace the whole document from SVG or path-data text.
  *
  * Split out of `applySource` when the file picker arrived, because the two
@@ -996,6 +981,14 @@ function replaceDocumentFrom(text: string, what: string): boolean {
   }
 }
 
+/**
+ * Replace the document from the source box.
+ *
+ * `importSvg` sniffs the input, so either a bare `d` string or a whole `<svg>`
+ * works. **Importing markup keeps one shape per element.** Concatenating them
+ * into a single `d` first makes Apply silently fuse every shape into one, and
+ * the geometry survives that while the shape boundaries do not.
+ */
 function applySource(): void {
   /* Editing one shape's path data writes back to that shape only, leaving the
      rest of the document alone. Anything else replaces the document, which is
@@ -1033,6 +1026,11 @@ function applySource(): void {
   }
 }
 
+/** What the document was last read from, for the panel header. */
+let loadedName: string | null = null;
+
+const importFile = $('#importFile') as HTMLInputElement;
+on('#importSvg', () => importFile.click());
 /**
  * Open an SVG file and make it the document.
  *
@@ -1041,11 +1039,6 @@ function applySource(): void {
  * the same importer, the same refusal to accept something that draws nothing,
  * and the same single undo step. What it adds is only the reading.
  */
-/** What the document was last read from, for the panel header. */
-let loadedName: string | null = null;
-
-const importFile = $('#importFile') as HTMLInputElement;
-on('#importSvg', () => importFile.click());
 importFile.addEventListener('change', () => {
   const f = importFile.files?.[0];
   // Reset first: choosing the same file twice fires no `change` otherwise, so
@@ -1973,18 +1966,6 @@ store.subscribe((s) => {
 });
 
 /**
- * Rewrite the source box, if anybody could be looking at it.
- *
- * This is a full serialisation of the document -- a third one per notification,
- * after the artwork and the overlay -- and it ran whether or not the drawer was
- * open. On a traced document that is 56 ms of work on every pointermove to
- * update a textarea of `height: 0`. The drawer is closed on load and stays
- * closed for most of a session, so the common case was paying the most.
- *
- * Deferred rather than dropped: `setPanel` calls this when the drawer opens, so
- * it catches up on everything skipped before anybody can see it.
- */
-/**
  * Open the source on the command that drew the selected node.
  *
  * The other direction is free -- the drawing is on screen and you can point at
@@ -2001,7 +1982,7 @@ function findInSource(): void {
   const key = [...store.state.selection.nodes][0];
   if (!key) {
     status.textContent = 'Select a node first.';
-    status.className = 'st warn';
+    status.className = 'st err';
     return;
   }
   const ref = parseNodeKey(key);
@@ -2022,7 +2003,7 @@ function findInSource(): void {
   const mark = marks.find((m) => m.sp === ref.sp && m.i === ref.i);
   if (!mark) {
     status.textContent = 'That node has no command of its own: the path closes onto it.';
-    status.className = 'st warn';
+    status.className = 'st err';
     return;
   }
   src.focus();
@@ -2037,6 +2018,18 @@ function findInSource(): void {
   status.className = 'st ok';
 }
 
+/**
+ * Rewrite the source box, if anybody could be looking at it.
+ *
+ * This is a full serialisation of the document -- a third one per notification,
+ * after the artwork and the overlay -- and it ran whether or not the drawer was
+ * open. On a traced document that is 56 ms of work on every pointermove to
+ * update a textarea of `height: 0`. The drawer is closed on load and stays
+ * closed for most of a session, so the common case was paying the most.
+ *
+ * Deferred rather than dropped: `setPanel` calls this when the drawer opens, so
+ * it catches up on everything skipped before anybody can see it.
+ */
 function refreshSource(): void {
   if (!isOpen('src')) return;
   const text = currentSource();

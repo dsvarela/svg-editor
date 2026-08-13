@@ -357,7 +357,6 @@ export class Controller {
     return this.snapWith(p);
   }
 
-  /** The same, keeping which tier answered, for the status line. */
   /**
    * The guides worth aiming at, which never includes the one being dragged.
    *
@@ -1997,14 +1996,6 @@ export class Controller {
   }
 
   /**
-   * Refit the selected subpaths with as few nodes as the tolerance allows.
-   *
-   * The selection is dropped afterwards. Node selections are keyed by index,
-   * and after a refit index 7 is a different point on the drawing than the one
-   * that was highlighted a moment ago; keeping them would leave the panel
-   * editing coordinates nobody chose.
-   */
-  /**
    * Reduce the selected paths to a node count.
    *
    * The other question the same machinery answers. `Within` asks what can go
@@ -2114,6 +2105,14 @@ export class Controller {
     return ok;
   }
 
+  /**
+   * Refit the selected subpaths with as few nodes as the tolerance allows.
+   *
+   * The selection is dropped afterwards. Node selections are keyed by index,
+   * and after a refit index 7 is a different point on the drawing than the one
+   * that was highlighted a moment ago; keeping them would leave the panel
+   * editing coordinates nobody chose.
+   */
   simplifySelection(tol: number, redraw = false): boolean {
     if (!(tol >= 0) || !Number.isFinite(tol)) {
       this.onMessage?.('Within has to be a number, and not a negative one.', false);
@@ -2816,8 +2815,17 @@ export class Controller {
        the drag's batch, and Escape then rolls back both with no redo. Delete
        had this hole from the beginning and Shift+F, Shift+B, Shift+J and
        Shift+M all widened it. Escape and Enter are deliberately still allowed
-       -- ending a gesture is exactly what they are for. */
-    const rewrites = ['Delete', 'Backspace', 'B', 'J', 'M', 'F', 'R', 'C', 'S', 'Y', 'A', 'I'];
+       -- ending a gesture is exactly what they are for.
+
+       Every document operation below is a Shift+letter and so arrives as a
+       capital, and every capital below is a document operation; the lower-case
+       keys switch tools and touch nothing the drag is holding. Shift+P and
+       Shift+K were added to the switch without joining this list, which is
+       what `keyboard guard` in `test/controller.test.ts` now watches for. */
+    const rewrites = [
+      'Delete', 'Backspace',
+      'A', 'B', 'C', 'F', 'I', 'J', 'K', 'M', 'P', 'R', 'S', 'Y',
+    ];
     if (this.drag.kind !== 'none' && rewrites.includes(e.key)) {
       e.preventDefault();
       this.onMessage?.('Finish the drag first.', false);

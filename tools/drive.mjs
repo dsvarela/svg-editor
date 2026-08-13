@@ -3636,11 +3636,17 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(120);
 
+/* A failed `check` throws, and the screenshot and the audit below are most
+   worth having on exactly that run, so the throw is caught rather than left to
+   end the process. Catching it is not forgiving it: `failure` carries the
+   reason to the exit code at the end of the file. */
 let result;
+let failure = null;
 try {
   result = await scenario(page);
 } catch (err) {
   result = { error: err.message };
+  failure = err.message;
 }
 
 await page.waitForTimeout(150);
@@ -3677,3 +3683,16 @@ console.log(JSON.stringify({ scenario: scenarioName, result, audit, logs }, null
 console.log(`\nscreenshot -> ${out}`);
 
 await browser.close();
+
+/* The audit runs on every scenario, so it is the one check no scenario has to
+   remember to write. A coordinate that reached the DOM as NaN draws nothing and
+   throws nothing, which is the failure a screenshot is worst at showing. */
+if (audit.badD > 0) failure ??= `${audit.badD} path(s) reached the DOM with NaN, Infinity or undefined in the d`;
+
+const errors = logs.filter((l) => l.startsWith('[pageerror]') || l.startsWith('[error]'));
+if (errors.length) failure ??= errors[0];
+
+if (failure) {
+  console.error(`\nFAIL ${scenarioName}: ${failure}`);
+  process.exitCode = 1;
+}

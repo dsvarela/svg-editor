@@ -89,11 +89,26 @@ been reporting 37 where the markup holds 166.
 
 ## Tests
 
-A test that cannot fail is worse than no test, and three reviews here found nine
-of them. Where an assertion could pass for the wrong reason, measure instead of
-comparing: curve equality by projected deviation, booleans by enclosed area,
-rendering by the coordinates that reached the DOM. Before trusting a new test,
-break the code it covers and watch it go red.
+A test that cannot fail is worse than no test, and four reviews here have found
+ten of them plus the whole browser suite. Where an assertion could pass for the
+wrong reason, measure instead of comparing: curve equality by projected
+deviation, booleans by enclosed area, rendering by the coordinates that reached
+the DOM. Before trusting a new test, break the code it covers and watch it go
+red.
+
+**Until 2026-08-15 `npm run drive` always exited 0.** A failed `check` threw,
+the top-level `try` in `tools/drive.mjs` turned the throw into a field of the
+JSON it printed, and nothing set `process.exitCode` -- so every scenario, every
+`check` in them, and the CI loop that reads their exit codes could only go red
+if the browser failed to launch. Any green recorded before that date means the
+browser started. It does not mean the scenario passed. Re-running the sweep
+after the fix put all 43 back at green, so nothing was hiding behind it, but no
+earlier figure is evidence of that.
+
+The exit code now also fails on a `d` attribute that reached the DOM holding
+`NaN`, `Infinity` or `undefined`, and on anything the page logged as an error.
+Both were already measured by the audit every scenario runs and neither was
+read by anything.
 
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 

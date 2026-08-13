@@ -15,6 +15,7 @@ import { Controller } from '../src/tools/controller';
 import { Store } from '../src/model/store';
 import { emptyDoc, shapeFromPath } from '../src/model/doc';
 import { parsePath } from '../src/core/parse';
+import { exportSvg } from '../src/io/svg';
 
 const SCALE = 0.1;
 
@@ -447,5 +448,36 @@ describe('wireframe', () => {
     h.store.update((s) => (s.wireframe = false));
     h.controller.render();
     expect(h.canvas.artwork.querySelector('path')!.getAttribute('class')).toBe('');
+  });
+});
+
+/* The canvas set `stroke-linejoin` and `stroke-linecap` to round and the
+   exporter wrote neither, so a stroke was round on screen and mitred in the
+   saved file. Asserting the constant twice would restate the fix rather than
+   test it: this reads what each side actually produced and compares them, so
+   the two can only agree by agreeing. */
+describe('the file says what the screen showed', () => {
+  it('exports the stroke joins and caps the canvas drew', () => {
+    const h = setup('M10 10 L40 10 L40 40');
+    h.store.update((s) => {
+      s.doc.shapes[0].style.stroke = '#123456';
+      s.doc.shapes[0].style.strokeWidth = 3;
+    });
+    h.controller.render();
+
+    const drawn = h.canvas.artwork.querySelector('path')!;
+    const out = exportSvg(h.store.state.doc);
+    for (const attr of ['stroke-linejoin', 'stroke-linecap']) {
+      const onScreen = drawn.getAttribute(attr);
+      expect(onScreen).toBeTruthy();
+      expect(out).toContain(`${attr}="${onScreen}"`);
+    }
+  });
+
+  it('writes no join or cap for a shape with no stroke, matching the canvas', () => {
+    const h = setup('M10 10 L40 10 L40 40');
+    h.store.update((s) => (s.doc.shapes[0].style.stroke = 'none'));
+    h.controller.render();
+    expect(exportSvg(h.store.state.doc)).not.toContain('stroke-linejoin');
   });
 });

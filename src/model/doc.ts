@@ -5,7 +5,7 @@
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import { defaultStyle, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Shape, Style, Subpath, ViewBox } from '../core/types';
+import type { Doc, Pt, Shape, Style, Subpath } from '../core/types';
 import { parsePath } from '../core/parse';
 
 let idSeq = 0;
@@ -62,13 +62,6 @@ export function docBBox(doc: Doc): Box | null {
   return box;
 }
 
-export function boxToViewBox(b: Box, pad = 0.1): ViewBox {
-  const w = Math.max(b.x1 - b.x0, 1e-6);
-  const h = Math.max(b.y1 - b.y0, 1e-6);
-  const m = Math.max(w, h) * pad;
-  return { x: b.x0 - m, y: b.y0 - m, w: w + 2 * m, h: h + 2 * m };
-}
-
 /* --------------------------------------------------------------- selection */
 
 /** A single anchor, addressed stably enough to survive unrelated edits. */
@@ -95,9 +88,6 @@ export interface Selection {
 }
 
 export const emptySelection = (): Selection => ({ shapes: new Set(), nodes: new Set() });
-
-export const selectionIsEmpty = (s: Selection): boolean =>
-  s.shapes.size === 0 && s.nodes.size === 0;
 
 /** Resolve selected node keys to live nodes, dropping any that no longer exist. */
 export function resolveNodes(doc: Doc, sel: Selection): { ref: NodeRef; pt: Pt }[] {

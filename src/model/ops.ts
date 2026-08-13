@@ -72,11 +72,6 @@ export function moveAnchor(sp: Subpath, i: number, to: Pt): void {
   if (n.hOut) n.hOut = add(n.hOut, d);
 }
 
-/** Translate an anchor by a delta, handles included. */
-export function nudgeAnchor(sp: Subpath, i: number, d: Pt): void {
-  moveAnchor(sp, i, add(sp.nodes[i].pt, d));
-}
-
 /**
  * Move one handle, preserving whatever relationship the two handles already had.
  *
@@ -420,12 +415,6 @@ export function setSegmentCurved(sp: Subpath, segIdx: number, curved: boolean): 
   }
   if (a.hOut === null) a.hOut = [a.pt[0] + (b.pt[0] - a.pt[0]) / 3, a.pt[1] + (b.pt[1] - a.pt[1]) / 3];
   if (b.hIn === null) b.hIn = [b.pt[0] - (b.pt[0] - a.pt[0]) / 3, b.pt[1] - (b.pt[1] - a.pt[1]) / 3];
-}
-
-/** Append a node to the end of an open subpath (the pen tool's basic move). */
-export function appendNode(sp: Subpath, pt: Pt, hIn: Pt | null = null): number {
-  sp.nodes.push(makeNode(pt, hIn));
-  return sp.nodes.length - 1;
 }
 
 export function closeSubpath(sp: Subpath): void {
@@ -996,17 +985,6 @@ export function transformCaptured(doc: Doc, saved: NodeSnapshot[], m: Mat): void
   }
 }
 
-export function transformNodes(doc: Doc, refs: NodeRef[], m: Mat): void {
-  for (const r of refs) {
-    const sp = doc.shapes.find((s) => s.id === r.shape)?.subpaths[r.sp];
-    const n = sp?.nodes[r.i];
-    if (!n) continue;
-    n.pt = applyMat(m, n.pt);
-    if (n.hIn) n.hIn = applyMat(m, n.hIn);
-    if (n.hOut) n.hOut = applyMat(m, n.hOut);
-  }
-}
-
 /* ------------------------------------------------------------------ bend */
 
 /**
@@ -1211,25 +1189,5 @@ export function nearestOnPath(
 export interface NodeHit extends NodeRef {
   part: HandlePart;
   d: number;
-}
-
-export function nearestNode(doc: Doc, p: Pt, maxDist: number): NodeHit | null {
-  let best: NodeHit | null = null;
-  const consider = (ref: NodeRef, part: HandlePart, at: Pt): void => {
-    const d = Math.hypot(at[0] - p[0], at[1] - p[1]);
-    if (d < (best?.d ?? maxDist)) best = { ...ref, part, d };
-  };
-  for (const shape of doc.shapes) {
-    shape.subpaths.forEach((sp, spI) => {
-      sp.nodes.forEach((n, i) => {
-        const ref = { shape: shape.id, sp: spI, i };
-        // Handles win ties: they sit on top and are harder to hit.
-        if (n.hIn) consider(ref, 'in', n.hIn);
-        if (n.hOut) consider(ref, 'out', n.hOut);
-        consider(ref, 'anchor', n.pt);
-      });
-    });
-  }
-  return best;
 }
 

@@ -221,6 +221,18 @@ export function segmentIsLine(s: Subpath, i: number): boolean {
   return s.nodes[i].hOut === null && s.nodes[endNodeIndex(s, i)].hIn === null;
 }
 
+/**
+ * The join and cap every stroke is drawn with.
+ *
+ * Not fields on `Style`, because no control writes them: a style field nothing
+ * can set drifts from what is drawn and gives the export a value to disagree
+ * with. They are named here rather than written inline because the canvas and
+ * the exporter both have to say them, and while only the canvas did, a stroke
+ * rendered round on screen and mitred in the saved file.
+ */
+export const STROKE_JOIN = 'round';
+export const STROKE_CAP = 'round';
+
 export const defaultStyle = (): Style => ({
   fill: 'none',
   stroke: '#2563d8',

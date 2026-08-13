@@ -103,27 +103,6 @@ function ladderAtLeast(x: number): number {
 const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
 
 /**
- * Choose what grid to draw, given the step the editor actually snaps to.
- *
- * **Every drawn line is a snap position.** That is the whole contract, and the
- * reason this takes `snapStep` rather than deriving a step from the camera
- * alone. Draw an adaptive decade step while the tools snap to the user's fixed
- * step and at most zoom levels you are aiming at a lattice that is not on
- * screen, which undermines the premise of a grid editor.
- *
- * Zooming out therefore thins the grid to every 2nd, 5th, 10th … snap position
- * rather than switching to a different lattice: some snap positions stop being
- * drawn, but nothing drawn is ever un-snappable. Zooming in stops at multiple
- * 1, because subdividing further would draw lines you cannot snap to, which is
- * the same lie in the other direction.
- *
- * Returns `null` when there is nothing honest to draw — no snap step, or no
- * measured width yet.
- *
- * The 1-2-5 ladder and the `minPx` idea come from svg-path-editor's
- * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
- */
-/**
  * What to tick and what to label on a ruler, along one axis.
  *
  * A ruler is a measurement scale, not a claim about snapping, so unlike the
@@ -163,6 +142,27 @@ export function rulerTicksFor(
   return { step, labelEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5 };
 }
 
+/**
+ * Choose what grid to draw, given the step the editor actually snaps to.
+ *
+ * **Every drawn line is a snap position.** That is the whole contract, and the
+ * reason this takes `snapStep` rather than deriving a step from the camera
+ * alone. Draw an adaptive decade step while the tools snap to the user's fixed
+ * step and at most zoom levels you are aiming at a lattice that is not on
+ * screen, which undermines the premise of a grid editor.
+ *
+ * Zooming out therefore thins the grid to every 2nd, 5th, 10th … snap position
+ * rather than switching to a different lattice: some snap positions stop being
+ * drawn, but nothing drawn is ever un-snappable. Zooming in stops at multiple
+ * 1, because subdividing further would draw lines you cannot snap to, which is
+ * the same lie in the other direction.
+ *
+ * Returns `null` when there is nothing honest to draw — no snap step, or no
+ * measured width yet.
+ *
+ * The 1-2-5 ladder and the `minPx` idea come from svg-path-editor's
+ * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
+ */
 export function gridDisplayFor(
   snapStep: number,
   camera: ViewBox,

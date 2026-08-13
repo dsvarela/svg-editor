@@ -15,8 +15,8 @@
  * geometry at all.
  */
 
-import { continuityOf, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Shape, Subpath, ViewBox } from '../core/types';
+import { STROKE_CAP, STROKE_JOIN, continuityOf, segmentAsCubic, segmentCount } from '../core/types';
+import type { Doc, Pt, Shape, ViewBox } from '../core/types';
 import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
 import { nodeKey } from '../model/doc';
@@ -285,8 +285,8 @@ export class Canvas {
            rule is that overlay chrome holds its screen size and the drawing
            scales -- this is the drawing. */
         'stroke-width': shape.style.strokeWidth,
-        'stroke-linejoin': 'round',
-        'stroke-linecap': 'round',
+        'stroke-linejoin': STROKE_JOIN,
+        'stroke-linecap': STROKE_CAP,
         /* Wireframe is done with a class rather than by rewriting the fill and
            stroke here, because CSS beats presentation attributes: the shape's
            own values stay on the element, exactly as the export will write
@@ -768,24 +768,6 @@ export class Canvas {
 function padded(b: Box | null | undefined, d: number): Box | null {
   if (!b) return null;
   return { x0: b.x0 - d, y0: b.y0 - d, x1: b.x1 + d, y1: b.y1 + d };
-}
-
-/** Sample a subpath's outline, used by marquee selection. */
-export function subpathPoints(sp: Subpath, per = 8): Pt[] {
-  const out: Pt[] = [];
-  const n = segmentCount(sp);
-  for (let i = 0; i < n; i++) {
-    const c = segmentAsCubic(sp, i);
-    for (let j = 0; j < per; j++) {
-      const t = j / per;
-      const m = 1 - t;
-      out.push([
-        m * m * m * c[0][0] + 3 * m * m * t * c[1][0] + 3 * m * t * t * c[2][0] + t * t * t * c[3][0],
-        m * m * m * c[0][1] + 3 * m * m * t * c[1][1] + 3 * m * t * t * c[2][1] + t * t * t * c[3][1],
-      ]);
-    }
-  }
-  return out;
 }
 
 export const shapeIsInBox = (shape: Shape, b: Box): boolean =>

@@ -111,11 +111,3 @@ export function alignmentsFor(moving: Box, statics: Box[], reach: number): Align
   }
   return out;
 }
-
-/**
- * Apply what was found to a translation, leaving each axis alone if nothing
- * matched on it.
- */
-export function alignDelta(delta: [number, number], a: Alignments): [number, number] {
-  return [delta[0] + (a.x?.shift ?? 0), delta[1] + (a.y?.shift ?? 0)];
-}

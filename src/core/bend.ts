@@ -27,7 +27,6 @@ export interface Bend {
   looseness: number;
 }
 
-const TAU = Math.PI * 2;
 
 /** Wrap to (-180, 180]. */
 function norm(deg: number): number {
@@ -139,4 +138,4 @@ export function bendFromPoint(a: Pt, b: Pt, p: Pt, looseness = 1, maxAngle = 80)
   return { angle: (Math.asin(Math.max(-1, Math.min(1, s))) * 180) / Math.PI, looseness: L };
 }
 
-export { norm as normaliseAngle, TAU };
+

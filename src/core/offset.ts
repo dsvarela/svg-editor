@@ -68,6 +68,19 @@ function tangentAt(c: Cubic, t: number): Pt | null {
 }
 
 /**
+ * The length of a cubic's control hull.
+ *
+ * An upper bound on the arc length, and the reason both samplers below can ask
+ * how big a segment is without integrating one. They want different numbers of
+ * samples out of it, which is why only this part is shared.
+ */
+function hullSpan(c: Cubic): number {
+  let span = 0;
+  for (let i = 1; i < 4; i++) span += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
+  return span;
+}
+
+/**
  * How many samples a segment gets.
  *
  * Off the control hull's size rather than the true arc length, which would cost
@@ -76,9 +89,7 @@ function tangentAt(c: Cubic, t: number): Pt | null {
  * collapses anyway. `tol` steers it because a tighter fit needs more evidence.
  */
 function sampleCount(c: Cubic, tol: number): number {
-  let span = 0;
-  for (let i = 1; i < 4; i++) span += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
-  return Math.max(8, Math.min(200, Math.ceil(span / Math.max(tol, 1e-4))));
+  return Math.max(8, Math.min(200, Math.ceil(hullSpan(c) / Math.max(tol, 1e-4))));
 }
 
 /** Points on the offset of one cubic, and the tangents at its two ends. */
@@ -165,9 +176,7 @@ class NearMap {
     const n = segmentCount(sp);
     for (let s = 0; s < n; s++) {
       const c = segmentAsCubic(sp, s);
-      let span = 0;
-      for (let i = 1; i < 4; i++) span += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
-      const steps = Math.max(8, Math.min(4000, Math.ceil(span / fine)));
+      const steps = Math.max(8, Math.min(4000, Math.ceil(hullSpan(c) / fine)));
       for (let i = 0; i <= steps; i++) this.add(cubicAt(c, i / steps) as Pt);
     }
   }

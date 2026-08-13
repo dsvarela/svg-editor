@@ -24,7 +24,7 @@ import type { Mat } from '../core/affine';
 import { parsePath } from '../core/parse';
 import { serialisePath } from '../core/serialise';
 import type { SerialiseOptions } from '../core/serialise';
-import { defaultStyle } from '../core/types';
+import { STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
 import type { Doc, Shape, Style, Subpath, ViewBox } from '../core/types';
 import { makeShape } from '../model/doc';
 import { transformShape } from '../model/ops';
@@ -308,6 +308,8 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
         s.style.fillRule === 'evenodd' ? 'fill-rule="evenodd"' : '',
         s.style.stroke === 'none' ? '' : `stroke="${xmlAttr(s.style.stroke)}"`,
         s.style.stroke === 'none' ? '' : `stroke-width="${xmlAttr(String(s.style.strokeWidth))}"`,
+        s.style.stroke === 'none' ? '' : `stroke-linejoin="${STROKE_JOIN}"`,
+        s.style.stroke === 'none' ? '' : `stroke-linecap="${STROKE_CAP}"`,
         s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
       ].filter(Boolean);
       return `${pad}<path ${attrs.join(' ')}/>`;

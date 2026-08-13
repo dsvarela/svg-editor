@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { alignDelta, alignmentsFor, shiftBox } from '../src/model/smart';
+import { alignmentsFor, shiftBox } from '../src/model/smart';
 import type { Box } from '../src/core/bezier';
 
 const box = (x0: number, y0: number, x1: number, y1: number): Box => ({ x0, y0, x1, y1 });
@@ -100,16 +100,6 @@ describe('the line that gets drawn', () => {
 });
 
 describe('applying it', () => {
-  it('adds the shift on each axis that found one', () => {
-    const a = alignmentsFor(box(0.4, 20.4, 10.4, 30.4), [STATIC, box(0, 20, 10, 30)], 1);
-    expect(alignDelta([5, 5], a)).toEqual([expect.closeTo(4.6, 10), expect.closeTo(4.6, 10)]);
-  });
-
-  it('leaves an axis alone when nothing matched', () => {
-    const a = alignmentsFor(box(40, 0.4, 50, 10.4), [STATIC], 1);
-    expect(alignDelta([5, 5], a)).toEqual([5, expect.closeTo(4.6, 10)]);
-  });
-
   it('moves a box by the shift it was given', () => {
     expect(shiftBox(box(1, 2, 3, 4), 10, 20)).toEqual(box(11, 22, 13, 24));
   });

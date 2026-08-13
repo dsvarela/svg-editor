@@ -23,6 +23,7 @@ import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import { screenToDoc } from '../src/view/viewport';
+import controllerSource from '../src/tools/controller.ts?raw';
 
 /** Document units per screen pixel in the stubbed mapping. */
 const SCALE = 0.1;
@@ -3388,5 +3389,86 @@ describe('two fingers, at the edges of the gesture', () => {
     expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 })).toBe(before);
     // The pinch still happened, so the third finger cost nothing either way.
     expect(h.store.state.camera.w).toBeLessThan(WIDTH * SCALE);
+  });
+});
+
+/* The mid-drag refusal had no test at all, and in that silence Shift+P and
+   Shift+K reached the switch without joining its key list. Both rewrite
+   `st.doc.shapes` outright, which is exactly what the guard exists to keep out
+   of a live drag. */
+describe('keyboard guard', () => {
+  /* Read out of the source rather than restated here. A list written twice is
+     a list that agrees with itself and with nothing else, and this file's job
+     is to disagree when the switch grows a case the guard has not heard of. */
+  const source = controllerSource;
+
+  /* The selection is made after the press, not before it. A marquee begins by
+     clearing the selection, so a document operation fired mid-marquee has
+     nothing to act on and leaves the document alone whether the guard runs or
+     not -- which passed with the guard deleted, and measured nothing. */
+  const TWO_SUBPATHS = 'M10 10 L40 10 L40 40 Z M50 50 L70 50 L70 70 Z';
+
+  /* Two shapes, not one shape of two subpaths -- `shapeFromPath` produces the
+     second, and Shift+P then refuses for want of a second shape rather than
+     because of the guard. A key that would refuse anyway measures nothing in
+     either direction, which is why Shift+J is not in the list below: it joins
+     open endpoints and every subpath here is closed. */
+  function twoShapes(): Harness {
+    const h = harness(TWO_SUBPATHS);
+    h.store.update((s) => s.doc.shapes.push(shapeFromPath('M90 90 L120 90 L120 120 Z')));
+    return h;
+  }
+
+  /* Selected by hand rather than by marquee, and always after the gesture that
+     precedes it. A marquee clears the selection when it starts and replaces it
+     when it ends, so a selection made on the wrong side of either is empty by
+     the time the key arrives -- and an operation with nothing to act on leaves
+     the document alone whether the guard runs or not. Written that way once,
+     it passed with the guard deleted. */
+  function selectEverything(h: Harness): void {
+    h.store.update((s) => {
+      s.selection.shapes = new Set(s.doc.shapes.map((sh) => sh.id));
+      s.selection.nodes = new Set(
+        s.doc.shapes.flatMap((sh) =>
+          sh.subpaths.flatMap((sp, pi) => sp.nodes.map((_, ni) => `${sh.id}/${pi}/${ni}`)),
+        ),
+      );
+    });
+  }
+
+  for (const key of ['Delete', 'P', 'K', 'R']) {
+    it(`refuses ${key} while a drag is live`, () => {
+      const h = twoShapes();
+      h.down([5, 5]);
+      h.move([8, 8]);
+      selectEverything(h);
+      const before = exportSvg(h.store.state.doc);
+      h.key(key, { shiftKey: true });
+      expect(exportSvg(h.store.state.doc)).toBe(before);
+      h.up();
+    });
+
+    it(`lets ${key} through once the drag is over`, () => {
+      const h = twoShapes();
+      h.down([5, 5]);
+      h.move([8, 8]);
+      h.up();
+      selectEverything(h);
+      const before = exportSvg(h.store.state.doc);
+      h.key(key, { shiftKey: true });
+      expect(exportSvg(h.store.state.doc)).not.toBe(before);
+    });
+  }
+
+  it('guards every capital the switch handles', () => {
+    const body = source.slice(source.indexOf('const rewrites = ['));
+    const listed = new Set(
+      [...body.slice(0, body.indexOf(']')).matchAll(/'([^']+)'/g)].map((m) => m[1]),
+    );
+    const capitals = new Set(
+      [...body.matchAll(/case '([A-Z])':/g)].map((m) => m[1]),
+    );
+    expect(capitals.size).toBeGreaterThan(8);
+    expect([...capitals].filter((k) => !listed.has(k)).sort()).toEqual([]);
   });
 });

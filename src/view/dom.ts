@@ -64,21 +64,5 @@ export class Pool<K extends keyof SVGElementTagNameMap> {
   }
 }
 
-export function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs?: Record<string, string>,
-  ...children: (Node | string)[]
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (attrs) {
-    for (const k in attrs) {
-      if (k === 'class') node.className = attrs[k];
-      else node.setAttribute(k, attrs[k]);
-    }
-  }
-  for (const c of children) node.append(c);
-  return node;
-}
-
 export const $ = <T extends HTMLElement = HTMLElement>(sel: string): T =>
   document.querySelector(sel) as T;
