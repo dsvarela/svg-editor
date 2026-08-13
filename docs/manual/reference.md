@@ -188,6 +188,11 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
   new fill is what the stroke was coloured. A closed path becomes two contours
   under **Even-odd**, which is what makes it read as a band. A stroke too wide for
   its shape is refused rather than guessed at.
+- **Keep** with **Apply** reduces each selected path to that many nodes, whatever
+  it costs, and says how far the drawing moved. **Within** asks the opposite
+  question: what can go for a given cost.
+- **Keep these nodes** removes everything except the nodes you have selected. A
+  closed path needs three kept and an open one two.
 - **Within** is how far Simplify may move the drawing, in document units. It
   starts at about one screen pixel for the document you have open and stops
   following it once you type your own number.

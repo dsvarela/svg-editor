@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parsePath } from '../src/core/parse';
+import { makeNode } from '../src/core/types';
 import { serialisePath } from '../src/core/serialise';
 import { splitSegment, moveAnchor } from '../src/model/ops';
 import {
@@ -23,6 +24,8 @@ import {
   nodeRemovalCost,
   removeInvisibleNodes,
   removeRedundantNodes,
+  keepOnly,
+  reduceToCount,
 } from '../src/model/knots';
 import { cubicAt, splitCubic } from '../src/core/bezier';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
@@ -418,5 +421,116 @@ describe('deep subdivision', () => {
     const r = removeRedundantNodes(dense, invisibleAt(3));
     expect(r.passes).toBeLessThan(12);
     expect(r.after).toBe(4);
+  });
+});
+
+describe('reducing to a count', () => {
+  /* The same machinery as `removeRedundantNodes` with the question turned
+     round: not "what can go for free" but "what goes first". What is worth
+     testing is that it lands on the number asked for, that it does not eat a
+     ring from one side, and that it reports what it cost. */
+
+  const ring = (n: number, r = 20): Subpath => {
+    const nodes = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return makeNode([Math.cos(a) * r, Math.sin(a) * r] as Pt);
+    });
+    return { nodes, closed: true };
+  };
+
+  it('lands on the count asked for, not near it', () => {
+    for (const target of [4, 7, 12]) {
+      const sp = ring(40);
+      const r = reduceToCount(sp, target);
+      expect(sp.nodes.length).toBe(target);
+      expect(r.after).toBe(target);
+    }
+  });
+
+  it('never goes below what a path can hold', () => {
+    const closed = ring(20);
+    reduceToCount(closed, 1);
+    expect(closed.nodes.length).toBe(3);
+
+    const open: Subpath = { nodes: ring(20).nodes, closed: false };
+    reduceToCount(open, 0);
+    expect(open.nodes.length).toBe(2);
+  });
+
+  it('leaves a path already at the count alone', () => {
+    const sp = ring(6);
+    const r = reduceToCount(sp, 10);
+    expect(r.before).toBe(6);
+    expect(r.after).toBe(6);
+    expect(r.cost).toBe(0);
+  });
+
+  it('takes from all round a ring rather than eating it from one side', () => {
+    /* The reason the bucketing is here at all. On a circle every node costs
+       about the same, so a run that took the cheapest and then its neighbour
+       would leave a dense arc and a bare one. */
+    const sp = ring(40);
+    reduceToCount(sp, 8);
+    const angles = sp.nodes.map((n) => Math.atan2(n.pt[1], n.pt[0])).sort((a, b) => a - b);
+    const gaps = angles.map((a, i) => (i ? a - angles[i - 1] : a + Math.PI * 2 - angles[angles.length - 1]));
+    /* Measured at 2.67, and the bound is 3 rather than something tighter
+       because evenness is not what the bucketing promises -- it promises the
+       ring is not eaten from one side, which shows up as a ratio in the tens.
+       Tuning this to whatever today's answer is would make it a record of the
+       implementation rather than a test of the property. */
+    expect(Math.max(...gaps) / Math.min(...gaps)).toBeLessThan(3);
+  });
+
+  it('reports what the worst removal cost', () => {
+    // Not a promise that nothing moved: at eight nodes on a forty-node ring
+    // something certainly did, and the number is what the caller reports.
+    const sp = ring(40);
+    const r = reduceToCount(sp, 8);
+    expect(r.cost).toBeGreaterThan(0);
+    expect(Number.isFinite(r.cost)).toBe(true);
+  });
+});
+
+describe('keeping named nodes', () => {
+  const ring = (n: number, r = 20): Subpath => ({
+    nodes: Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return makeNode([Math.cos(a) * r, Math.sin(a) * r] as Pt);
+    }),
+    closed: true,
+  });
+
+  it('leaves exactly the nodes named, and nothing else', () => {
+    const sp = ring(24);
+    const keep = [0, 6, 12, 18];
+    const wanted = keep.map((i) => sp.nodes[i]);
+    keepOnly(sp, new Set(keep));
+    expect(sp.nodes).toHaveLength(4);
+    // By identity, not by position: these are the same objects, so nothing was
+    // removed and re-created somewhere convenient.
+    expect(sp.nodes.every((n) => wanted.includes(n))).toBe(true);
+  });
+
+  it('tracks the kept nodes as indices shift under them', () => {
+    /* Removing node 3 renumbers everything after it. Keeping by index and
+       re-deriving would protect a different node each pass, which on a long
+       path drifts far enough to keep none of the ones asked for. */
+    const sp = ring(30);
+    const wanted = [1, 20].map((i) => sp.nodes[i]);
+    keepOnly(sp, new Set([1, 20, 25]));
+    expect(wanted.every((n) => sp.nodes.includes(n))).toBe(true);
+  });
+
+  it('stops at what a path can hold even if fewer are named', () => {
+    const sp = ring(12);
+    keepOnly(sp, new Set([0]));
+    expect(sp.nodes.length).toBe(3);
+  });
+
+  it('does nothing when everything is named', () => {
+    const sp = ring(8);
+    const r = keepOnly(sp, new Set([0, 1, 2, 3, 4, 5, 6, 7]));
+    expect(r.after).toBe(8);
+    expect(r.cost).toBe(0);
   });
 });

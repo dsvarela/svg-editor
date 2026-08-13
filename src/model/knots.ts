@@ -361,3 +361,140 @@ export const invisibleAt = (decimals: number): number =>
 export function removeInvisibleNodes(sp: Subpath, decimals: number): RemovalResult {
   return removeRedundantNodes(sp, invisibleAt(decimals));
 }
+
+/**
+ * Remove nodes until only `target` are left, whatever it costs.
+ *
+ * The same machinery as `removeRedundantNodes` with the question turned round.
+ * That one asks "what can go for free?" and stops when the answer is nothing;
+ * this asks "what goes first?" and stops when the count is right. Both price
+ * every node the same way, bucket by cost, and take a spread of non-adjacent
+ * ones per pass, because a run that ate the cheapest node and then its
+ * neighbour would eat a circle from one side.
+ *
+ * The bucket scale comes from the costs themselves rather than from a
+ * tolerance, since there is no tolerance here -- the caller has asked for a
+ * count and accepted whatever it costs. `cost` comes back as the worst removal
+ * accepted, which is what the caller has to report.
+ *
+ * A run of passes can only halve a run at a time, since no two adjacent nodes
+ * go together, so the last pass usually has more to remove than it needs. It
+ * takes the cheapest of what it picked, and no more.
+ */
+export function reduceToCount(sp: Subpath, target: number, maxPasses = 40): RemovalResult {
+  const before = sp.nodes.length;
+  const floor = sp.closed ? 3 : 2;
+  const want = Math.max(floor, Math.floor(target));
+  let worst = 0;
+  let passes = 0;
+
+  for (; passes < maxPasses && sp.nodes.length > want; passes++) {
+    const n = sp.nodes.length;
+    const priced: { i: number; cost: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const m = nodeRemovalCost(sp, i);
+      if (m.cubic) priced.push({ i, cost: m.cost });
+    }
+    if (!priced.length) break;
+
+    // The scale the buckets are cut on, taken from what is actually here.
+    const scale = Math.max(TINY, Math.min(...priced.map((p) => p.cost)) || TINY);
+    const buckets = new Map<number, number[]>();
+    for (const p of priced) {
+      const b = Math.max(0, Math.floor(Math.log2(Math.max(p.cost, TINY) / scale)));
+      const list = buckets.get(b);
+      if (list) list.push(p.i);
+      else buckets.set(b, [p.i]);
+    }
+
+    const doomed = new Set<number>();
+    for (const b of [...buckets.keys()].sort((x, y) => x - y)) {
+      for (const i of pickSpread(buckets.get(b) as number[])) {
+        const prev = (i - 1 + n) % n;
+        const next = (i + 1) % n;
+        if (doomed.has(prev) || doomed.has(next)) continue;
+        if (n - doomed.size <= want) break;
+        doomed.add(i);
+      }
+      if (n - doomed.size <= want) break;
+    }
+    if (!doomed.size) break;
+
+    /* Cheapest first, and only as many as are still wanted. Without the second
+       half a pass that picked six when four were needed would overshoot the
+       count the caller asked for, which is the one thing this promises. */
+    const order = [...doomed]
+      .map((i) => ({ i, cost: nodeRemovalCost(sp, i).cost }))
+      .sort((a, b) => a.cost - b.cost)
+      .slice(0, Math.max(0, n - want));
+    for (const { i } of order.sort((a, b) => b.i - a.i)) {
+      const m = nodeRemovalCost(sp, i);
+      if (!m.cubic) continue;
+      worst = Math.max(worst, m.cost);
+      applyMerge(sp, i, m.cubic);
+    }
+  }
+
+  return { before, after: sp.nodes.length, cost: worst, passes };
+}
+
+/**
+ * Remove every node except the ones named, whatever it costs.
+ *
+ * The count variant with the stopping condition replaced by a set: a node in
+ * `keep` is never a candidate, and the run ends when nothing else can go. No
+ * scale problem and no overshoot problem, because nothing is being counted.
+ *
+ * `keep` is by index into the subpath as it stands when the call is made.
+ * Indices shift as nodes go, so this tracks the kept nodes by identity -- the
+ * node objects themselves -- rather than re-deriving indices it would have to
+ * keep correcting.
+ */
+export function keepOnly(sp: Subpath, keep: Set<number>, maxPasses = 40): RemovalResult {
+  const before = sp.nodes.length;
+  const floor = sp.closed ? 3 : 2;
+  const protectedNodes = new Set([...keep].map((i) => sp.nodes[i]).filter(Boolean));
+  let worst = 0;
+  let passes = 0;
+
+  for (; passes < maxPasses && sp.nodes.length > floor; passes++) {
+    const n = sp.nodes.length;
+    const priced: { i: number; cost: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      if (protectedNodes.has(sp.nodes[i])) continue;
+      const m = nodeRemovalCost(sp, i);
+      if (m.cubic) priced.push({ i, cost: m.cost });
+    }
+    if (!priced.length) break;
+
+    const scale = Math.max(TINY, Math.min(...priced.map((p) => p.cost)) || TINY);
+    const buckets = new Map<number, number[]>();
+    for (const p of priced) {
+      const b = Math.max(0, Math.floor(Math.log2(Math.max(p.cost, TINY) / scale)));
+      const list = buckets.get(b);
+      if (list) list.push(p.i);
+      else buckets.set(b, [p.i]);
+    }
+
+    const doomed = new Set<number>();
+    for (const b of [...buckets.keys()].sort((x, y) => x - y)) {
+      for (const i of pickSpread(buckets.get(b) as number[])) {
+        const prev = (i - 1 + n) % n;
+        const next = (i + 1) % n;
+        if (doomed.has(prev) || doomed.has(next)) continue;
+        if (n - doomed.size <= floor) break;
+        doomed.add(i);
+      }
+    }
+    if (!doomed.size) break;
+
+    for (const i of [...doomed].sort((x, y) => y - x)) {
+      const m = nodeRemovalCost(sp, i);
+      if (!m.cubic) continue;
+      worst = Math.max(worst, m.cost);
+      applyMerge(sp, i, m.cubic);
+    }
+  }
+
+  return { before, after: sp.nodes.length, cost: worst, passes };
+}

@@ -294,6 +294,12 @@
               <button class="btn" id="strokeButt" type="button" title="Turn the stroke into a filled outline, cut square at the ends">Outline</button>
               <button class="btn" id="strokeRound" type="button" title="Turn the stroke into a filled outline, rounded at the ends">Outline round</button>
             </div>
+            <div class="row">
+              <label for="keepCount">Keep</label>
+              <input type="number" id="keepCount" step="1" min="2" value="8" title="How many nodes to leave on each selected path" />
+              <button class="btn" id="keepGo" type="button" title="Reduce each selected path to that many nodes">Apply</button>
+            </div>
+            <button class="btn wide" id="keepThese" type="button" title="Remove every node except the ones selected">Keep these nodes</button>
             <button class="btn wide" id="simplify" title="Remove nodes from the selected paths">
               <svg class="ico"><use href="#i-simplify" /></svg>Simplify
             </button>

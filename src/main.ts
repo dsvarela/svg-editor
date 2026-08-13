@@ -684,6 +684,8 @@ function paintRedraw(): void {
 simplifyTol.addEventListener('input', paintRedraw);
 paintRedraw();
 
+on('#keepGo', () => controller.simplifyToCount(Number(($('#keepCount') as HTMLInputElement).value)));
+on('#keepThese', () => controller.keepSelectedNodes());
 on('#strokeButt', () => controller.strokeToPath('butt'));
 on('#strokeRound', () => controller.strokeToPath('round'));
 on('#offsetGo', () => controller.offsetSelection(Number(($('#offsetBy') as HTMLInputElement).value)));

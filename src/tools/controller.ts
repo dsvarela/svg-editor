@@ -55,7 +55,7 @@ import {
 } from '../model/ops';
 import type { AlignMode, FuseRefusal, NodeSnapshot, RoundRefusal } from '../model/ops';
 import { simplifySubpath } from '../model/simplify';
-import { invisibleAt, removeRedundantNodes } from '../model/knots';
+import { invisibleAt, keepOnly, reduceToCount, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
@@ -1878,6 +1878,116 @@ export class Controller {
    * that was highlighted a moment ago; keeping them would leave the panel
    * editing coordinates nobody chose.
    */
+  /**
+   * Reduce the selected paths to a node count.
+   *
+   * The other question the same machinery answers. `Within` asks what can go
+   * for a given cost; this asks what goes first, and stops when the count is
+   * right. It reports how far the drawing moved rather than promising it did
+   * not, because at a low enough count it certainly did.
+   */
+  simplifyToCount(target: number): boolean {
+    if (!Number.isFinite(target) || target < 2) {
+      this.onMessage?.('Keep how many? Two is the fewest a path can have.', false);
+      return false;
+    }
+    const targets = this.selectedSubpaths();
+    if (!targets.size) {
+      this.onMessage?.('Select a shape, or some of its nodes, first.', false);
+      return false;
+    }
+
+    let paths = 0;
+    let before = 0;
+    let after = 0;
+    let moved = 0;
+    const ok = this.tryEdit((st) => {
+      for (const [id, sps] of targets) {
+        const shape = findShape(st.doc, id);
+        for (const i of sps) {
+          const sp = shape?.subpaths[i];
+          if (!sp) continue;
+          const r = reduceToCount(sp, target);
+          if (r.after === r.before) continue;
+          paths++;
+          before += r.before;
+          after += r.after;
+          moved = Math.max(moved, r.cost);
+        }
+      }
+      if (paths) st.selection.nodes.clear();
+      return paths > 0;
+    });
+
+    this.onMessage?.(
+      ok
+        ? `Kept ${after} of ${before} nodes across ${paths} ${paths === 1 ? 'path' : 'paths'}. Nothing moved further than ${fmt(moved)}.`
+        : 'Those paths are already at or below that many nodes.',
+      ok,
+    );
+    return ok;
+  }
+
+  /**
+   * Remove everything except the selected nodes.
+   *
+   * The same run again, with the stopping condition replaced by a set. A
+   * separate operation rather than a mode on Simplify: selecting nodes already
+   * means "work within these", and one gesture cannot also mean "keep these"
+   * without the other reading quietly changing under anyone who relied on it.
+   */
+  keepSelectedNodes(): boolean {
+    const refs = this.selectedNodeRefs();
+    if (refs.length < 2) {
+      this.onMessage?.('Select the nodes to keep. Two is the fewest a path can have.', false);
+      return false;
+    }
+
+    // Grouped by the subpath they belong to; a path with none selected is left
+    // alone rather than reduced to nothing.
+    const byPath = new Map<string, { shape: string; sp: number; keep: Set<number> }>();
+    for (const r of refs) {
+      const key = `${r.shape}/${r.sp}`;
+      const entry = byPath.get(key);
+      if (entry) entry.keep.add(r.i);
+      else byPath.set(key, { shape: r.shape, sp: r.sp, keep: new Set([r.i]) });
+    }
+
+    let paths = 0;
+    let before = 0;
+    let after = 0;
+    let moved = 0;
+    let tooFew = 0;
+    const ok = this.tryEdit((st) => {
+      for (const { shape, sp: spI, keep } of byPath.values()) {
+        const sp = findShape(st.doc, shape)?.subpaths[spI];
+        if (!sp) continue;
+        if (keep.size < (sp.closed ? 3 : 2)) {
+          tooFew++;
+          continue;
+        }
+        const r = keepOnly(sp, keep);
+        if (r.after === r.before) continue;
+        paths++;
+        before += r.before;
+        after += r.after;
+        moved = Math.max(moved, r.cost);
+      }
+      if (paths) st.selection.nodes.clear();
+      return paths > 0;
+    });
+
+    this.onMessage?.(
+      ok
+        ? `Kept ${after} of ${before} nodes across ${paths} ${paths === 1 ? 'path' : 'paths'}. Nothing moved further than ${fmt(moved)}.`
+        : tooFew
+          ? 'A closed path needs three nodes kept, and an open one two.'
+          : 'Nothing else could go.',
+      ok,
+    );
+    return ok;
+  }
+
   simplifySelection(tol: number, redraw = false): boolean {
     if (!(tol >= 0) || !Number.isFinite(tol)) {
       this.onMessage?.('Within has to be a number, and not a negative one.', false);
