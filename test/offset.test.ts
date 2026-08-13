@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { offsetSubpath } from '../src/core/offset';
+import { offsetSubpath, strokeOutline } from '../src/core/offset';
 import { parsePath } from '../src/core/parse';
 import { cubicAt } from '../src/core/bezier';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
@@ -175,21 +175,99 @@ describe('the overrun, and what is left of it', () => {
     expect(Math.abs(mid(out![0]) - mid(out![1]))).toBeGreaterThan(10);
   });
 
-  it('still bulges through invalid space between two valid samples', () => {
-    /* What is left. The filter removes invalid *samples*; a curve fitted
-       between two valid ones can still pass through the space between them,
-       and near a break that space is where the overrun was. On the notched
-       shape above it reaches 1.14 on an eight-unit offset -- down from 6.8
-       before the filter, and not zero.
-       
-       Closing it needs a validation pass over the fitted curves, refitting
-       wherever the same distance criterion fails. Stroke to path needs that,
-       because the two offsets of a stroke meet at every cap. */
+  it('holds the distance on the pieces too', () => {
+    /* This asserted a residual of 1.14 for a while, and the residual was in
+       the measurement: `NearMap` used one number for its grid cells and for its
+       polyline, so making queries cheap made the source coarse -- a forty-unit
+       edge got seven points along it. The deviation stayed at exactly 1.1349
+       through three attempts to fix the geometry, which is what eventually said
+       the geometry was not what was wrong. */
     const sp = path('M0 0 L20 30 L40 0 L40 40 L0 40 Z');
     const out = offsetSubpath(sp, -8, 0.02)!;
     let worst = 0;
     for (const o of out) worst = Math.max(worst, worstDeviation(sp, o, 8));
-    expect(worst).toBeGreaterThan(0.1);
-    expect(worst).toBeLessThan(1.5);
+    expect(worst).toBeLessThan(0.05);
+  });
+});
+
+describe('stroke to path', () => {
+  /* Two offsets joined up, so the geometry is the offset's and what is tested
+     here is the joining: which contours come back, which way they wind, and
+     where the caps go. Measured the same way -- every point of the outline is
+     half the width from the original, except across a butt cap, which is the
+     one part of the outline that is not an offset. */
+
+  const outline = (d: string, w: number, cap: 'butt' | 'round' = 'butt'): Subpath[] => {
+    const out = strokeOutline(path(d), w, cap, 0.02);
+    expect(out).not.toBeNull();
+    return out!;
+  };
+
+  it('gives a closed path two contours, which is what makes it a ring', () => {
+    /* One loop would be a filled disc. The band between two loops is what a
+       stroke looks like, and it needs them wound in opposite directions. */
+    const out = outline(CIRCLE, 6);
+    expect(out).toHaveLength(2);
+    expect(out.every((o) => o.closed)).toBe(true);
+
+    const area = (o: Subpath): number => {
+      const pts = dense(o, 200);
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        const q = pts[(i + 1) % pts.length];
+        a += p[0] * q[1] - q[0] * p[1];
+      }
+      return a / 2;
+    };
+    // Opposite signs: one clockwise, one anticlockwise.
+    expect(Math.sign(area(out[0]))).toBe(-Math.sign(area(out[1])));
+  });
+
+  it('holds half the width all the way round a closed path', () => {
+    const sp = path(CIRCLE);
+    for (const o of outline(CIRCLE, 6)) {
+      expect(worstDeviation(sp, o, 3)).toBeLessThan(0.05);
+    }
+  });
+
+  it('gives an open path one contour, closed', () => {
+    const out = outline('M10 20 L50 20', 6);
+    expect(out).toHaveLength(1);
+    expect(out[0].closed).toBe(true);
+  });
+
+  it('rounds the caps on the outside of the ends, not back over the stroke', () => {
+    /* The two ends of a cap are exactly opposite each other, so the sweep
+       between them is half a turn and its sign is a coin toss. The wrong toss
+       puts the cap back over the stroke, and the drawing still looks like a
+       stroke until you notice the ends are dented. */
+    const sp = path('M10 20 L50 20');
+    const out = outline('M10 20 L50 20', 6, 'round');
+    expect(worstDeviation(sp, out[0], 3)).toBeLessThan(0.05);
+    // It reaches past both ends, by half the width.
+    const xs = dense(out[0], 120).map((p) => p[0]);
+    expect(Math.min(...xs)).toBeCloseTo(7, 1);
+    expect(Math.max(...xs)).toBeCloseTo(53, 1);
+  });
+
+  it('cuts a butt cap straight across the end', () => {
+    // Which is the one part of the outline that is not at half the width: the
+    // middle of the cap sits on the path's own end.
+    const out = outline('M10 20 L50 20', 6, 'butt');
+    const xs = dense(out[0], 120).map((p) => p[0]);
+    expect(Math.min(...xs)).toBeCloseTo(10, 3);
+    expect(Math.max(...xs)).toBeCloseTo(50, 3);
+  });
+
+  it('refuses a width of zero, which has no outline', () => {
+    expect(strokeOutline(path(CIRCLE), 0)).toBeNull();
+    expect(strokeOutline(path(CIRCLE), Number.NaN)).toBeNull();
+  });
+
+  it('refuses when a side comes apart, rather than guessing how to pair it', () => {
+    /* A stroke wider than the shape can hold offsets into pieces on the inner
+       side, and there is no single other side to pair each piece with. */
+    expect(strokeOutline(path('M0 0 H40 V40 H0 Z'), 60, 'butt', 0.05)).toBeNull();
   });
 });

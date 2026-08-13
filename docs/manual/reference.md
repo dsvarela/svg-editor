@@ -180,11 +180,14 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 - **Circularise** fits a circle through the selected path's nodes and moves each
   onto it.
 - **Offset** with **Apply** draws a path parallel to each selected shape, as a new
-  shape beside it, or several if the shape cannot hold the distance and the
-  offset comes apart. A negative distance goes the other way, and one that would
-  consume the shape leaves nothing rather than a sliver. It is exact except where
-  a piece breaks off, and there it can stray by around a seventh of the distance
-  asked for.
+  shape beside it, or several if the shape cannot hold the distance and the offset
+  comes apart. A negative distance goes the other way, and one that would consume
+  the shape leaves nothing rather than a sliver.
+- **Outline** and **Outline round** turn the selected shapes' strokes into filled
+  paths, cut square or rounded at the ends. The width is the shape's own, and the
+  new fill is what the stroke was coloured. A closed path becomes two contours
+  under **Even-odd**, which is what makes it read as a band. A stroke too wide for
+  its shape is refused rather than guessed at.
 - **Within** is how far Simplify may move the drawing, in document units. It
   starts at about one screen pixel for the document you have open and stops
   following it once you type your own number.

@@ -684,6 +684,8 @@ function paintRedraw(): void {
 simplifyTol.addEventListener('input', paintRedraw);
 paintRedraw();
 
+on('#strokeButt', () => controller.strokeToPath('butt'));
+on('#strokeRound', () => controller.strokeToPath('round'));
 on('#offsetGo', () => controller.offsetSelection(Number(($('#offsetBy') as HTMLInputElement).value)));
 on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value), redrawEl.checked));
 on('#reverse', () => controller.reverseSelection());

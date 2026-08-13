@@ -32,7 +32,8 @@
 
 import { cubicAt, cubicDerivAt } from './bezier';
 import { fitCurve } from './fit';
-import { makeNode, segmentAsCubic, segmentCount } from './types';
+import { cloneNode, cloneSubpath, makeNode, segmentAsCubic, segmentCount } from './types';
+import { reverseSubpath } from '../model/ops';
 import type { Cubic, PathNode, Pt, Subpath } from './types';
 
 /** Below this, a derivative is treated as no direction at all. */
@@ -145,14 +146,28 @@ class NearMap {
   private cells = new Map<string, Pt[]>();
   private size: number;
 
-  constructor(sp: Subpath, step: number) {
-    this.size = Math.max(step, 1e-6);
+  /**
+   * `cell` and `step` are separate on purpose, and conflating them was a bug
+   * that survived three attempts to find it elsewhere.
+   *
+   * The cell size decides how many cells a query scans, so it wants to be the
+   * query radius. The polyline step decides how accurate the answer is, so it
+   * wants to be the tolerance. Using one number for both meant that making
+   * queries cheap made the polyline coarse: a forty-unit edge got seven points
+   * along it, and a point well inside the offset was reported as outside it
+   * because no sample happened to be near enough. The deviation stayed at
+   * exactly 1.1349 through every other change, which is what finally said the
+   * error was in the measurement rather than in the geometry.
+   */
+  constructor(sp: Subpath, cell: number, step: number) {
+    this.size = Math.max(cell, 1e-6);
+    const fine = Math.max(step, 1e-6);
     const n = segmentCount(sp);
     for (let s = 0; s < n; s++) {
       const c = segmentAsCubic(sp, s);
       let span = 0;
       for (let i = 1; i < 4; i++) span += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]);
-      const steps = Math.max(4, Math.min(400, Math.ceil(span / this.size)));
+      const steps = Math.max(8, Math.min(4000, Math.ceil(span / fine)));
       for (let i = 0; i <= steps; i++) this.add(cubicAt(c, i / steps) as Pt);
     }
   }
@@ -255,7 +270,7 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
      block and no more. Cells the size of the tolerance is the obvious choice
      and is forty times worse: the radius is the distance being asked about, so
      it is the radius that decides how far a query has to look. */
-  const near = new NearMap(sp, Math.max(limit, tol));
+  const near = new NearMap(sp, Math.max(limit, tol), tol);
   const keep = pts.map((p) => !near.anyNearer(p, limit));
 
   /* Contiguous survivors. A concave corner splits the offset into runs that
@@ -264,12 +279,26 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
      feature the filter just uncovered. */
   const runsKept: Pt[][] = [];
   let run: Pt[] = [];
+  /* A run also breaks where two surviving samples are far apart in space.
+     Inside a corner the two offsets overlap, so the sample after the corner
+     sits back along the one before it -- and both can survive the filter while
+     the straight line between them cuts across the region the filter removed.
+     Nothing in the index sequence says so; only the distance does. This was
+     the last of the error, and it was inside a single fitted curve, which is
+     why filtering samples alone did not find it. */
+  const jump = Math.max(tol * 20, Math.abs(d) / 4);
   for (let i = 0; i < pts.length; i++) {
-    if (keep[i]) run.push(pts[i]);
-    else if (run.length) {
+    if (!keep[i]) {
+      if (run.length) runsKept.push(run);
+      run = [];
+      continue;
+    }
+    const last = run[run.length - 1];
+    if (last && Math.hypot(pts[i][0] - last[0], pts[i][1] - last[1]) > jump) {
       runsKept.push(run);
       run = [];
     }
+    run.push(pts[i]);
   }
   if (run.length) runsKept.push(run);
 
@@ -299,10 +328,16 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
     if (Math.abs(den) < 1e-12) return null;
     const u = ((q1[0] - p2[0]) * t[1] - (q1[1] - p2[1]) * t[0]) / den;
     const at: Pt = [p2[0] + r[0] * u, p2[1] + r[1] * u];
-    // Only if it is nearby: two runs that meet far away are not a corner, they
-    // are two pieces of an offset that genuinely comes apart.
+    /* Two tests, and the second is the one that matters. Nearby, because two
+       runs meeting far away are not a corner. And *valid*: the corner is a
+       point on the proposed offset, so it has to satisfy the same distance
+       criterion as every sample. Without that check a break gets joined
+       whenever its two ends happen to fall within `|d|` of each other, and the
+       corner it invents cuts straight through the region the filter had just
+       removed -- which is where the last of the error was. */
     const gap = Math.hypot(at[0] - p2[0], at[1] - p2[1]) + Math.hypot(at[0] - q1[0], at[1] - q1[1]);
-    return gap < Math.abs(d) ? at : null;
+    if (gap >= Math.abs(d)) return null;
+    return near.anyNearer(at, limit) ? null : at;
   };
 
   /* Which consecutive runs actually meet. Where they do, they are two sides of
@@ -408,3 +443,157 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
   return out.length ? out : null;
 }
 
+
+/**
+ * The outline of a stroked path, as a shape that can be filled.
+ *
+ * Two offsets, one either side, joined up. Everything hard about it is in
+ * `offsetSubpath` -- this is the bookkeeping around it:
+ *
+ * **A closed path gives two contours**, not one. The outer offset and the inner
+ * one bound a ring, and a ring is two loops with opposite winding, which is why
+ * the inner one comes back reversed. Under `nonzero` that draws the band and
+ * leaves the middle empty, which is what a stroke looks like.
+ *
+ * **An open path gives one contour**: out along one side, across the end, back
+ * along the other, across the start. The two crossings are the caps.
+ *
+ * Returns null when either side comes apart. An offset that breaks into pieces
+ * has no single "other side" to pair each piece with, and guessing which piece
+ * answers which would produce a shape nobody could predict. Refusing says so;
+ * the caller reports it.
+ */
+export function strokeOutline(
+  sp: Subpath,
+  width: number,
+  cap: 'butt' | 'round' = 'butt',
+  tol = 0.05,
+): Subpath[] | null {
+  const half = width / 2;
+  if (!(half > 0) || !Number.isFinite(half)) return null;
+
+  const left = offsetSubpath(sp, half, tol);
+  const right = offsetSubpath(sp, -half, tol);
+  if (!left?.length || !right?.length) return null;
+
+  if (sp.closed) {
+    if (left.length !== 1 || right.length !== 1) return null;
+    const inner = cloneSubpath(right[0]);
+    reverseSubpath(inner);
+    return [left[0], inner];
+  }
+
+  if (left.length !== 1 || right.length !== 1) return null;
+  const back = cloneSubpath(right[0]);
+  reverseSubpath(back);
+
+  /* One loop: along one side, round the far end, back the other side, round the
+     start. Butt caps carry no handles -- a straight segment has none, which is
+     what keeps `segmentIsLine` recognising them and the serialiser writing `L`. */
+  const outward = left[0].nodes.map(cloneNode);
+  const homeward = back.nodes.map(cloneNode);
+  const nodes: PathNode[] = [];
+
+  const endOfPath = sp.nodes[sp.nodes.length - 1].pt;
+  const startOfPath = sp.nodes[0].pt;
+
+  nodes.push(...outward);
+  const lastOut = nodes[nodes.length - 1];
+  const firstHome = homeward[0];
+  if (cap === 'round') {
+    // Travelling the way the original ends, which is what the cap continues.
+    const along = tangentAt(segmentAsCubic(sp, segmentCount(sp) - 1), 1);
+    const arc = capArc(lastOut.pt, firstHome.pt, endOfPath, half, along);
+    lastOut.hOut = arc.fromOut;
+    firstHome.hIn = arc.toIn;
+    nodes.push(...arc.middles);
+  } else {
+    lastOut.hOut = null;
+    firstHome.hIn = null;
+  }
+
+  nodes.push(...homeward);
+  const lastHome = nodes[nodes.length - 1];
+  const firstOut = nodes[0];
+  if (cap === 'round') {
+    // Back at the start, travelling against the original's direction.
+    const t0 = tangentAt(segmentAsCubic(sp, 0), 0);
+    const arc = capArc(lastHome.pt, firstOut.pt, startOfPath, half, t0 ? [-t0[0], -t0[1]] : null);
+    lastHome.hOut = arc.fromOut;
+    firstOut.hIn = arc.toIn;
+    nodes.push(...arc.middles);
+  } else {
+    lastHome.hOut = null;
+    firstOut.hIn = null;
+  }
+
+  return [{ nodes, closed: true }];
+}
+
+/**
+ * A half turn round an end, from one offset side to the other.
+ *
+ * A semicircle centred on the path's own endpoint, which is what a round cap
+ * is. Two quarter turns rather than one half: a quarter is the arc a cubic
+ * reproduces to about a thousandth of its radius, and a half turn in one cubic
+ * is visibly not round.
+ *
+ * The two endpoints already exist -- they are the ends of the two offsets -- so
+ * what comes back is the handles they need and the nodes in between.
+ */
+function capArc(
+  from: Pt,
+  to: Pt,
+  centre: Pt,
+  r: number,
+  along: Pt | null,
+): { fromOut: Pt; toIn: Pt; middles: PathNode[] } {
+  const a0 = Math.atan2(from[1] - centre[1], from[0] - centre[0]);
+  const a1 = Math.atan2(to[1] - centre[1], to[0] - centre[0]);
+  let sweep = a1 - a0;
+  while (sweep > Math.PI) sweep -= 2 * Math.PI;
+  while (sweep < -Math.PI) sweep += 2 * Math.PI;
+
+  /* Which way round, decided by the direction of travel rather than by the
+     angles. The two ends of a cap are exactly opposite each other, so the sweep
+     between them is exactly half a turn and its sign is a coin toss -- and the
+     wrong toss puts the cap on the wrong side of the end, bulging back over the
+     stroke instead of past it. The arc leaves `from` tangentially, so the sense
+     that agrees with the way the outline arrived is the right one.
+
+     Honestly: taking `Math.abs(sweep)` and ignoring the direction passes every
+     test here too, and dropping both fails one. So what these fixtures pin down
+     is that the sweep must not be left as the raw normalised difference; which
+     of the two ways of fixing that is right is not something they distinguish.
+     The direction of travel is the one with a reason behind it, so it is the
+     one kept. */
+  if (along) {
+    const lead: Pt = [-Math.sin(a0), Math.cos(a0)];
+    const agrees = lead[0] * along[0] + lead[1] * along[1];
+    if (agrees < 0) sweep = -Math.abs(sweep);
+    else sweep = Math.abs(sweep);
+  }
+
+  const steps = 2;
+  const per = sweep / steps;
+  const k = ((4 / 3) * Math.tan(per / 4)) * r;
+  const at = (a: number): Pt => [centre[0] + Math.cos(a) * r, centre[1] + Math.sin(a) * r];
+  // The tangent of a circle at angle `a`, in the direction of travel.
+  const tan = (a: number): Pt => [-Math.sin(a) * k, Math.cos(a) * k];
+
+  const middles: PathNode[] = [];
+  for (let i = 1; i < steps; i++) {
+    const a = a0 + per * i;
+    const p = at(a);
+    const t = tan(a);
+    middles.push({ pt: p, hIn: [p[0] - t[0], p[1] - t[1]], hOut: [p[0] + t[0], p[1] + t[1]] });
+  }
+
+  const t0 = tan(a0);
+  const t1 = tan(a1);
+  return {
+    fromOut: [from[0] + t0[0], from[1] + t0[1]],
+    toIn: [to[0] - t1[0], to[1] - t1[1]],
+    middles,
+  };
+}

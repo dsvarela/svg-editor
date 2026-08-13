@@ -61,7 +61,7 @@ import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
 import { alignmentsFor, shiftBox } from '../model/smart';
 import { canBeAuto, reflowDoc, setAuto } from '../model/auto';
-import { offsetSubpath } from '../core/offset';
+import { offsetSubpath, strokeOutline } from '../core/offset';
 import { rayAngles } from '../model/angles';
 import type { AngleSetup } from '../model/angles';
 import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
@@ -823,6 +823,73 @@ export class Controller {
       );
     } else {
       this.onMessage?.('Nothing there could be offset.', false);
+    }
+    return ok;
+  }
+
+  /**
+   * Turn the selected shapes' strokes into filled outlines.
+   *
+   * The width comes from each shape's own style, because that is what is being
+   * converted -- asking for a number would let you convert a 1-unit stroke into
+   * a 4-unit outline and call it the same drawing.
+   *
+   * The result replaces the original and is filled with what the stroke was
+   * coloured, since the outline *is* the stroke. A shape with no stroke has
+   * nothing to convert and is refused rather than silently skipped.
+   */
+  strokeToPath(cap: 'butt' | 'round' = 'butt'): boolean {
+    const shapes = selectedShapes(this.store.state.doc, this.store.state.selection);
+    if (!shapes.length) {
+      this.onMessage?.('Select a shape to outline.', false);
+      return false;
+    }
+
+    let done = 0;
+    let noStroke = 0;
+    let refused = 0;
+    const ok = this.tryEdit((st) => {
+      for (const shape of shapes) {
+        const live = findShape(st.doc, shape.id);
+        if (!live) continue;
+        if (live.style.stroke === 'none' || !(live.style.strokeWidth > 0)) {
+          noStroke++;
+          continue;
+        }
+        const tol = Math.max(invisibleAt(st.decimals), 0.01);
+        const subpaths = live.subpaths.flatMap(
+          (sp) => strokeOutline(sp, live.style.strokeWidth, cap, tol) ?? [],
+        );
+        if (!subpaths.length) {
+          refused++;
+          continue;
+        }
+        live.subpaths = subpaths;
+        /* The outline is the stroke, so it is filled with the stroke's colour
+           and stops being stroked itself. `evenodd` is what makes a closed
+           path's two contours read as a band rather than a filled disc. */
+        live.style = {
+          ...live.style,
+          fill: live.style.stroke,
+          stroke: 'none',
+          fillRule: 'evenodd',
+        };
+        done++;
+      }
+      return done > 0;
+    });
+
+    if (ok) {
+      this.onMessage?.(
+        `Outlined ${done} ${done === 1 ? 'shape' : 'shapes'}.` +
+          (noStroke ? ` ${noStroke} had no stroke to outline.` : '') +
+          (refused ? ` ${refused} came apart and were left alone.` : ''),
+        true,
+      );
+    } else if (noStroke) {
+      this.onMessage?.('That shape has no stroke to turn into a path.', false);
+    } else {
+      this.onMessage?.('That outline comes apart; nothing was changed.', false);
     }
     return ok;
   }

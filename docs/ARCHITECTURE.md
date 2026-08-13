@@ -1651,14 +1651,47 @@ What this bought, measured:
 | Square outward by 4 | 0.0195 | 0.0195 |
 | An offset that consumes the shape | a sliver | nothing, which is the answer |
 
-**What is left.** The filter removes invalid *samples*; a curve fitted between
-two valid ones can still pass through the space between them, and near a break
-that space is where the overrun was. On the notched shape it reaches 1.14 on an
-eight-unit offset. Closing it needs a validation pass over the fitted curves,
-refitting wherever the same distance criterion fails.
+**The last of the error was in the measurement, not the geometry.** `NearMap`
+used one number for its grid cells and for its polyline: sizing cells by the
+query radius made queries cheap and, with it, made the source coarse -- a
+forty-unit edge got seven points along it, so a point well inside the offset was
+reported as outside because no sample happened to be near enough. The deviation
+sat at exactly 1.1349 through three attempts to fix the geometry, and that
+constancy is what finally said the geometry was not what was wrong. Cell size and
+sample step are separate arguments now.
 
-**Stroke to path needs that pass**, because the two offsets of a stroke meet at
-every cap, so the case this still gets wrong is the case it would live in.
+## 40. Stroke to path is two offsets and some bookkeeping
+
+Everything hard is in §39. What is left is which contours come back and how they
+are joined:
+
+- **A closed path gives two contours**, not one. The outer offset and the inner
+  one bound a ring, and a ring is two loops wound in opposite directions, so the
+  inner comes back reversed. One loop would be a filled disc.
+- **An open path gives one contour**: out along one side, round the far end, back
+  along the other, round the start. The two crossings are the caps.
+- **The result replaces the original** and is filled with what the stroke was
+  coloured, because the outline *is* the stroke. Under `evenodd` a closed path's
+  two contours read as a band.
+- **The width comes from the shape's own style**, not from a field. Asking for a
+  number would let you convert a 1-unit stroke into a 4-unit outline and call it
+  the same drawing.
+- **It refuses when either side comes apart.** An offset that breaks into pieces
+  has no single other side to pair each piece with, and guessing which piece
+  answers which produces a shape nobody could predict.
+
+The one subtlety is which way a round cap turns. The two ends of a cap are
+exactly opposite, so the sweep between them is half a turn and its sign is a coin
+toss; the wrong toss puts the cap back over the stroke, and the drawing still
+reads as a stroke until you notice the ends are dented. The sense that agrees
+with the direction the outline arrived in is the right one.
+
+**What the tests pin down, and what they do not.** Taking the sweep's absolute
+value and ignoring the direction passes every fixture here as well; leaving the
+raw normalised difference fails one. So these fixtures establish that the sign
+must be forced, and not which of the two ways of forcing it is correct. The
+direction of travel is the one with a reason behind it, so it is the one kept,
+and this paragraph is here so nobody reads the tests as saying more than they do.
 
 ## Known limitations
 
@@ -1677,9 +1710,8 @@ that matters. See §9.
 
 **Arc round-trip is one-way.** See §2.
 
-**Offset path can bulge through invalid space near a break.** Up to 1.14 on an
-eight-unit offset of a notched shape, measured; exact on everything that does
-not come apart. See §39.
+**Stroke to path refuses when an offset comes apart.** A stroke wider than the
+shape can hold has no single other side to pair each piece with. See §40.
 
 **PathBool.js is early-stage** by its author's own description, who asks for
 failure cases. Treat returned geometry as untrusted: check it is non-empty and
