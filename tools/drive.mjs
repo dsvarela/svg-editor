@@ -35,7 +35,7 @@ const out = outIdx >= 0 ? args[outIdx + 1] : `/tmp/drive-${scenarioName}.png`;
 async function openSource(page) {
   if ((await page.getAttribute('#toggleSrc', 'aria-pressed')) !== 'true') {
     await page.click('#toggleSrc');
-    await page.waitForTimeout(220); // the drawer animates, and the canvas re-fits
+    await laidOut(page); // the drawer animates, and the canvas re-fits
   }
 }
 
@@ -50,7 +50,7 @@ async function openSource(page) {
  */
 async function closeSource(page) {
   await page.click('#closeSrc');
-  await page.waitForTimeout(240);
+  await laidOut(page);
 }
 
 /**
@@ -63,7 +63,7 @@ async function closeSource(page) {
  */
 async function tab(page, name) {
   await page.click(`#tab-${name}`);
-  await page.waitForTimeout(80);
+  await settle(page);
   /* Open every group in the panel that just appeared. Groups collapse now, and
      a control inside a shut one is genuinely not there -- `hidden` keeps it out
      of the hit test and out of the tab order, which is the point. A person
@@ -74,7 +74,7 @@ async function tab(page, name) {
       if (h.getAttribute('aria-expanded') !== 'true') h.click();
     }
   }, name);
-  await page.waitForTimeout(60);
+  await settle(page);
 }
 
 /**
@@ -89,7 +89,7 @@ async function tab(page, name) {
 async function undo(page) {
   await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
   await page.keyboard.press('Control+z');
-  await page.waitForTimeout(150);
+  await settle(page);
 }
 
 /**
@@ -107,6 +107,75 @@ async function counts(page) {
     return m ? Number(m[1]) : null;
   };
   return { shapes: read('shapes?'), nodes: read('nodes?'), segments: read('segments?'), text };
+}
+
+/**
+ * Wait for the editor to have drawn whatever the last action asked for.
+ *
+ * The controller renders one `requestAnimationFrame` after a store
+ * notification, so two frames from here is past any render the event just
+ * scheduled: the first is the one the controller booked, the second cannot run
+ * until that one has finished. Playwright has already delivered the event and
+ * run its handler by the time it returns, so there is nothing earlier to wait
+ * for.
+ *
+ * This replaced most of a set of fixed sleeps. A sleep is a guess about how
+ * long a machine takes, so it is either slower than it needs to be or shorter
+ * than the thing it waits for, and the second one is a test that fails on a
+ * loaded machine and passes on a quiet one.
+ *
+ * It is not enough where the work continues off the event: a worker, a file
+ * read, an image decode. Those wait on their own result, not on a frame.
+ */
+/**
+ * Wait for a control to gain the tooltip that describes it, and return its id.
+ *
+ * The tooltip opens on a delay the app owns, so a frame is too early. Throws on
+ * timeout, which fails the scenario exactly as an assertion on the missing
+ * attribute would.
+ */
+const describedBy = async (page, selector) => {
+  await page.waitForFunction(
+    (sel) => !!document.querySelector(sel)?.getAttribute('aria-describedby'),
+    selector,
+  );
+  return page.getAttribute(selector, 'aria-describedby');
+};
+
+/** Wait until the backdrop's size is known, which is a decode, not a frame. */
+const backdropRead = (page) =>
+  page.waitForFunction(() => /\d+ . \d+ px/.test(document.querySelector('#traceinfo')?.textContent ?? ''));
+
+/** Wait until the tracer has finished, which is a worker, not a frame. */
+const traced = (page) =>
+  page.waitForFunction(() => !/^Tracing/.test(document.querySelector('#status')?.textContent ?? ''));
+
+const settle = (page) =>
+  page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+
+/**
+ * Wait for the canvas to stop resizing.
+ *
+ * The panels animate, so opening or closing one leaves the canvas moving for
+ * several frames after the render that started it. Anything converting document
+ * coordinates to client pixels reads that box, and a scenario that clicks
+ * mid-transition aims at where the canvas was.
+ *
+ * Polled rather than waiting for `transitionend`, which does not fire for a
+ * property whose value did not change -- and a panel toggle that leaves the
+ * canvas width alone is exactly the case that would hang.
+ */
+async function laidOut(page) {
+  const box = () => page.locator('#canvas').boundingBox();
+  let last = null;
+  for (let i = 0; i < 40; i++) {
+    const now = await box();
+    if (last && Math.round(now.width) === last.w && Math.round(now.height) === last.h) return;
+    last = { w: Math.round(now.width), h: Math.round(now.height) };
+    await page.waitForTimeout(25);
+  }
 }
 
 /**
@@ -171,7 +240,7 @@ async function mk(page) {
   /** Bring the canvas back into view after something scrolled the page. */
   const showCanvas = async () => {
     await page.evaluate(() => document.querySelector('#canvas').scrollIntoView({ block: 'center' }));
-    await page.waitForTimeout(60);
+    await settle(page);
   };
 
   const click = async (doc, modifier = null) => {
@@ -340,11 +409,11 @@ const scenarios = {
     await click([60, 20]);
     // Rendering is rAF-driven, so a query fired immediately after a click can
     // beat the frame that draws the result.
-    await page.waitForTimeout(120);
+    await settle(page);
     const ghosts = await page.locator('.handle-dot.latent').count();
     const solid = await page.locator('.handle-dot:not(.latent)').count();
     await drag([46.67, 20], [46, 12]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const solidAfter = await page.locator('.handle-dot:not(.latent)').count();
 
     /* A selected node on a straight run offers two hollow handles and no solid
@@ -405,17 +474,17 @@ const scenarios = {
 
     await page.click('#tool button[data-v="select"]');
     await click([50, 40]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const asDrawn = { badge: await badge(), d: await page.inputValue('#src') };
 
     // Plain drag of the outgoing handle: the incoming one should mirror it.
     await drag([50, 20], [62, 26]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const mirrored = { badge: await badge(), d: await page.inputValue('#src') };
 
     // Alt-drag the same handle: the far one should now stay where it is.
     await drag([62, 26], [64, 46], 8, 'Alt');
-    await page.waitForTimeout(120);
+    await settle(page);
     const broken = { badge: await badge(), d: await page.inputValue('#src') };
 
     /* The badge is derived from where the handles are and never stored, so
@@ -438,7 +507,7 @@ const scenarios = {
     await page.keyboard.down('Shift');
     await click([60, 20]);
     await page.keyboard.up('Shift');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const before = {
       info: await page.textContent('#bendinfo'),
@@ -453,7 +522,7 @@ const scenarios = {
     // The bend control sits at the curve midpoint, which for a flat segment is
     // the chord midpoint.
     await drag([40, 20], [40, 8]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const dragged = {
       angle: await page.inputValue('#bendAngle'),
       loose: await page.inputValue('#bendLoose'),
@@ -465,13 +534,13 @@ const scenarios = {
     await tab(page, 'node');
     await page.fill('#bendAngle', '45');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(150);
+    await settle(page);
     const typed = { angle: await page.inputValue('#bendAngle'), d: await drawnPath(page, 1) };
     check(typed.angle === '45', `typing 45 left the field reading ${typed.angle}`);
     check(typed.d !== dragged.d, 'typing an angle redrew nothing');
 
     await page.click('#bendFlat');
-    await page.waitForTimeout(150);
+    await settle(page);
     const flattened = { angle: await page.inputValue('#bendAngle'), d: await drawnPath(page, 1) };
     check(Number(flattened.angle) === 0, `flatten left the angle at ${flattened.angle}`);
     check(!/[CS]/.test(flattened.d), `flatten left a curve behind: ${flattened.d}`);
@@ -488,7 +557,7 @@ const scenarios = {
   <path d="M4 18 L10 12 L14 16 L17 13 L20 16" fill="none" stroke="#2563d8" stroke-width="1.5"/>
 </svg>`);
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     const shapes = await page.locator('#shapelist li').allTextContents();
     const stats = await page.textContent('#stats');
     const status = await page.textContent('#status');
@@ -526,7 +595,7 @@ const scenarios = {
     const before = await page.textContent('#stats');
     await openSource(page);
     await page.click('#apply');
-    await page.waitForTimeout(150);
+    await settle(page);
     const afterUnscoped = await page.textContent('#stats');
     const hintUnscoped = await page.textContent('#srchint');
 
@@ -537,7 +606,7 @@ const scenarios = {
     for (const p of [[20, 20], [40, 20], [40, 40]]) await mk2.click(p);
     await page.keyboard.press('Escape');
     await page.click('#shapelist li:nth-child(2)');
-    await page.waitForTimeout(150);
+    await settle(page);
     const scopedBefore = await page.textContent('#stats');
     const scopedHint = await page.textContent('#srchint');
     /* After the drawer opens, not before. The box only rewrites itself while
@@ -547,7 +616,7 @@ const scenarios = {
     const shown = await page.inputValue('#src');
     await page.fill('#src', 'M 20 20 L 45 20 L 45 45 L 20 45 Z');
     await page.click('#apply');
-    await page.waitForTimeout(150);
+    await settle(page);
     const scopedAfter = await page.textContent('#stats');
     const scopedStatus = await page.textContent('#status');
 
@@ -586,12 +655,12 @@ const scenarios = {
     await tab(page, 'doc');
     await page.check('#filled');
     await tab(page, 'shape');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const selectBoth = async () => {
       await page.click('#shapelist li:nth-child(1)');
       await page.click('#shapelist li:nth-child(2)', { modifiers: ['Shift'] });
-      await page.waitForTimeout(80);
+      await settle(page);
     };
 
     // With nothing selected the buttons must be unreachable, not merely inert.
@@ -603,7 +672,7 @@ const scenarios = {
     for (const op of ['unite', 'subtract', 'intersect', 'exclude']) {
       await selectBoth();
       await page.click(`[data-bool="${op}"]`);
-      await page.waitForTimeout(150);
+      await settle(page);
       runs[op] = {
         status: await page.textContent('#status'),
         stats: await page.textContent('#stats'),
@@ -614,7 +683,7 @@ const scenarios = {
         d: await page.getAttribute('.artwork path', 'd'),
       };
       await page.keyboard.press('Control+z');
-      await page.waitForTimeout(120);
+      await settle(page);
       runs[op].afterUndo = await page.textContent('#stats');
     }
 
@@ -651,33 +720,33 @@ const scenarios = {
 
     const near = await strokeMidDrag();
     for (let i = 0; i < 12; i++) await page.click('#zoomout');
-    await page.waitForTimeout(200);
+    await settle(page);
     const far = await strokeMidDrag();
     for (let i = 0; i < 12; i++) await page.click('#zoomin');
-    await page.waitForTimeout(200);
+    await settle(page);
     if (Math.abs(near - far) > 0.01) {
       throw new Error(`marquee stroke is ${near}px near and ${far}px far; it must not scale`);
     }
     await page.click('#fit');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     // The starter shape lives inside 20..68 x 12..52; sweep well past it.
     await drag([8, 9], [79, 55]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const selected = await page.textContent('#selinfo');
     const anchorsSelected = await page.locator('.anchor.selected').count();
     const marqueeStroke = { near, far };
 
     await page.click('#del');
-    await page.waitForTimeout(150);
+    await settle(page);
     const afterButton = await page.textContent('#stats');
 
     // And again through the key, which is a separate entry point.
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(120);
+    await settle(page);
     await drag([8, 9], [79, 55]);
     await page.keyboard.press('Delete');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const afterKey = await page.textContent('#stats');
 
@@ -714,7 +783,7 @@ const scenarios = {
 </svg>`,
       );
       await page.click('#apply');
-      await page.waitForTimeout(200);
+      await settle(page);
       // Filling the source box scrolled it into view and the canvas off screen.
       await showCanvas();
     };
@@ -724,9 +793,9 @@ const scenarios = {
 
     // Delete one of the three, which a per-node floor would refuse.
     await click([20, 45]);
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.click('#del');
-    await page.waitForTimeout(150);
+    await settle(page);
     const afterDelete = {
       stats: await page.textContent('#stats'),
       d: await page.getAttribute('.artwork path', 'd'),
@@ -735,10 +804,10 @@ const scenarios = {
     // Break the same loop open at a node instead of deleting one.
     await load();
     await click([45, 12]);
-    await page.waitForTimeout(120);
+    await settle(page);
     await tab(page, 'node');
     await page.click('#breakPath');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const afterBreak = await page.getAttribute('.artwork path', 'd');
     const breakStatus = await page.textContent('#status');
@@ -770,7 +839,7 @@ const scenarios = {
 </svg>`,
       );
       await page.click('#apply');
-      await page.waitForTimeout(200);
+      await settle(page);
       await showCanvas();
     };
 
@@ -782,12 +851,12 @@ const scenarios = {
       // comes, so the tab has to be switched first.
       await tab(page, 'node');
       await page.click(`#delmode button[data-dm="${mode}"]`);
-      await page.waitForTimeout(80);
+      await settle(page);
       await click([40, 30]);
-      await page.waitForTimeout(120);
+      await settle(page);
       const selected = await page.textContent('#nodeinfo');
       await page.click('#del');
-      await page.waitForTimeout(150);
+      await settle(page);
       return {
         pressed: await page.getAttribute(`#delmode button[data-dm="${mode}"]`, 'aria-pressed'),
         selected,
@@ -842,12 +911,12 @@ const scenarios = {
     // Clear the starter so the shape list is easy to talk about.
     await page.click('#shapelist li:nth-child(1)');
     await page.click('#delShape');
-    await page.waitForTimeout(80);
+    await settle(page);
 
     // A circle: Shift takes the smaller span of the drag.
     await page.click('#tool button[data-v="ellipse"]');
     await drag([20, 15], [50, 55], 10, 'Shift');
-    await page.waitForTimeout(120);
+    await settle(page);
     const circle = {
       stats: await page.textContent('#stats'),
       d: await page.getAttribute('.artwork path', 'd'),
@@ -863,7 +932,7 @@ const scenarios = {
     await page.dispatchEvent('#cornerRadius', 'input');
     await page.click('#tool button[data-v="rect"]');
     await drag([56, 15], [80, 40]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const rounded = {
       shapes: await page.locator('#shapelist li').allTextContents(),
       d: await page.getAttribute('.artwork path:nth-child(2)', 'd'),
@@ -885,21 +954,21 @@ const scenarios = {
     // as a silent side effect of opening it.
     await page.click('#tool button[data-v="select"]');
     await page.keyboard.press('Control+e');
-    await page.waitForTimeout(120);
+    await settle(page);
     const toolAfterCtrlE = await page.getAttribute('#tool button[data-v="select"]', 'aria-pressed');
     check(toolAfterCtrlE === 'true', 'Ctrl+E switched the tool as well as opening the drawer');
     await page.keyboard.press('Control+e');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     // Circularise: pull one node of the circle well off, then put it back.
     await page.click('#shapelist li:nth-child(1)');
-    await page.waitForTimeout(80);
+    await settle(page);
     await drag([50, 30], [57, 30]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const dented = await page.getAttribute('.artwork path', 'd');
     await page.click('#shapelist li:nth-child(1)');
     await page.click('#circularise');
-    await page.waitForTimeout(150);
+    await settle(page);
     const fixed = {
       status: await page.textContent('#status'),
       d: await page.getAttribute('.artwork path', 'd'),
@@ -915,10 +984,10 @@ const scenarios = {
     await page.dblclick('#shapelist li:nth-child(1) .nm');
     await page.fill('#shapelist .rename', 'outer ring');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(120);
+    await settle(page);
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(120);
+    await settle(page);
     const renamed = {
       status: await page.textContent('#status'),
       listed: await page.textContent('#shapelist li:nth-child(1)'),
@@ -930,7 +999,8 @@ const scenarios = {
 
     // Tooltips: the toolbar is icons, so the labels have to come from hovering.
     await page.hover('#fit');
-    await page.waitForTimeout(320);
+    // On the app's own delay, not on a frame.
+    await page.waitForSelector('.tip.on');
     const tip = {
       text: await page.textContent('.tip'),
       shown: await page.locator('.tip.on').count(),
@@ -944,7 +1014,7 @@ const scenarios = {
        hovering `#fit` -- whose title has no parenthesis -- never exercised it.
        Hover something that has one. */
     await page.hover('#tool button[data-v="ellipse"]');
-    await page.waitForTimeout(320);
+    await page.waitForSelector('.tip kbd');
     const cap = {
       kbd: await page.locator('.tip kbd').count(),
       key: await page.textContent('.tip kbd').catch(() => null),
@@ -976,7 +1046,7 @@ const scenarios = {
       mimeType: 'image/png',
       buffer: Buffer.from(png, 'base64'),
     });
-    await page.waitForTimeout(250);
+    await settle(page);
 
     const placed = await page.$eval('.backdrop', (el) => ({
       x: +el.getAttribute('x'),
@@ -998,7 +1068,7 @@ const scenarios = {
     const shapes = await page.locator('#shapelist li').count();
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const exported = await page.inputValue('#src');
     check(!/<image|base64|blob:/.test(exported), 'the backdrop leaked into the export');
     await closeSource(page);
@@ -1006,30 +1076,30 @@ const scenarios = {
     // Opacity and visibility are live.
     await page.fill('#backOpacity', '20');
     await page.dispatchEvent('#backOpacity', 'input');
-    await page.waitForTimeout(120);
+    await settle(page);
     const dimmed = await page.getAttribute('.backdrop', 'opacity');
     check(Math.abs(+dimmed - 0.2) < 1e-6, `opacity did not follow the field: ${dimmed}`);
 
     await page.uncheck('#backShow');
-    await page.waitForTimeout(120);
+    await settle(page);
     check((await page.getAttribute('.backdrop', 'display')) === 'none', 'hiding it did nothing');
     await page.check('#backShow');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     // Unlocked, a canvas drag moves it instead of marquee-selecting.
     const before = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
     await page.uncheck('#backLock');
-    await page.waitForTimeout(120);
+    await settle(page);
     const { drag } = await mk(page);
     // Left of the starter shape, which spans 20..68 x 12..52, and inside the view.
     await drag([8, 45], [18, 45]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const after = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
     check(after > before, `unlocked drag left x at ${after}`);
     check((await page.locator('.anchor.selected').count()) === 0, 'the unlocked drag also selected nodes');
 
     await page.click('#backClear');
-    await page.waitForTimeout(150);
+    await settle(page);
     const gone = await page.getAttribute('.backdrop', 'display');
     check(gone === 'none', 'Remove left the backdrop on screen');
 
@@ -1038,7 +1108,7 @@ const scenarios = {
        image left the screen would restore an <image> pointing at nothing, which
        looks identical to a working undo until you look at the canvas. */
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(200);
+    await settle(page);
     const restored = await page.$eval('.backdrop', (el) => ({
       display: el.getAttribute('display'),
       href: el.getAttribute('href') ?? el.getAttribute('xlink:href'),
@@ -1056,7 +1126,7 @@ const scenarios = {
     // One more takes back the drag, which was one entry however many moves it
     // was made of.
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(200);
+    await settle(page);
     const rewound = await page.$eval('.backdrop', (el) => +el.getAttribute('x'));
     check(Math.abs(rewound - before) < 1e-6, `undoing the drag left x at ${rewound}, want ${before}`);
 
@@ -1083,23 +1153,23 @@ const scenarios = {
     await page.click('#srcmode button[data-v="d"]');
     await page.fill('#src', 'M20 16 L64 16 L64 48 L20 48 Z');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     // Nothing selected, so no transform box stands between the pointer and the
     // corner nodes.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     // Two adjacent corners, selected on the canvas.
     await click([64, 16]);
     await click([64, 48], 'Shift');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     await tab(page, 'node');
     await page.fill('#roundR', '6');
     await page.click('#roundCorner');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const stats = await page.textContent('#stats');
     check(/6 nodes/.test(stats), `after rounding two corners: "${stats}"`);
@@ -1133,10 +1203,10 @@ const scenarios = {
     await page.click('#srcmode button[data-v="d"]');
     await page.fill('#src', 'M20 16 L64 16 L64 16 L64 48 L20 48 Z');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     const before = await page.textContent('#stats');
     check(/5 nodes/.test(before), `the duplicate anchor did not survive the parse: "${before}"`);
@@ -1145,10 +1215,10 @@ const scenarios = {
        zero-length segments rather than welding a chosen pair. Marquee from
        outside the shape. */
     await drag([8, 6], [76, 58]);
-    await page.waitForTimeout(120);
+    await settle(page);
     await tab(page, 'node');
     await page.click('#fuseNodes');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const swept = await page.textContent('#stats');
     const sweptStatus = await page.textContent('#status');
@@ -1164,16 +1234,16 @@ const scenarios = {
     await undo(page);
     check(/5 nodes/.test(await page.textContent('#stats')), 'undo did not put the duplicate back');
     await page.click('#fuseNodes');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     // The pair reading: exactly two adjacent nodes, welded at their midpoint.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(120);
+    await settle(page);
     await click([20, 16]);
     await click([64, 16], 'Shift');
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.click('#fuseNodes');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const pairStatus = await page.textContent('#status');
     check(/Fused the two nodes/.test(pairStatus), `pair status says "${pairStatus}"`);
@@ -1186,12 +1256,12 @@ const scenarios = {
     await openSource(page);
     await page.fill('#src', 'M10 10 L30 10 L30 30');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.keyboard.press('Escape');
     await click([10, 10]);
     await click([30, 30], 'Shift');
-    await page.waitForTimeout(120);
+    await settle(page);
     const ends = await page.isDisabled('#fuseNodes');
     check(ends, 'Fuse offered itself for two free ends, which is Merge');
 
@@ -1219,14 +1289,14 @@ const scenarios = {
       return d < 26 ? [255, 0, 0, 255] : [0, 0, 0, 0];
     });
     await page.setInputFiles('#backFile', { name: 'icon.png', mimeType: 'image/png', buffer });
-    await page.waitForTimeout(300);
+    await backdropRead(page);
 
     const info = await page.textContent('#traceinfo');
     check(info === '64 × 64 px', `trace readout says "${info}"`);
 
     const before = await page.$$eval('.artwork path', (els) => els.length);
     await page.click('#traceGo');
-    await page.waitForTimeout(600);
+    await traced(page);
 
     const status = await page.textContent('#status');
     check(/^Traced 2 colours into 3 paths/.test(status), `status says "${status}"`);
@@ -1299,7 +1369,7 @@ const scenarios = {
 </svg>`,
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     const shot = async () => {
@@ -1314,11 +1384,11 @@ const scenarios = {
     };
 
     await page.click('#shapelist li:nth-child(1)');
-    await page.waitForTimeout(120);
+    await settle(page);
     const before = await shot();
 
     await page.click('#reverse');
-    await page.waitForTimeout(150);
+    await settle(page);
     const after = await shot();
     check(after.d !== before.d, 'the path data did not change, so nothing was reversed');
     check(
@@ -1330,7 +1400,7 @@ const scenarios = {
 
     // Shift+R is the same operation, so it puts the path back exactly.
     await page.keyboard.press('Shift+R');
-    await page.waitForTimeout(150);
+    await settle(page);
     const back = await shot();
     check(back.d === before.d, `Shift+R gave "${back.d}", want "${before.d}"`);
 
@@ -1364,7 +1434,7 @@ const scenarios = {
     // An edit with nobody watching the box: a rectangle dragged on the canvas.
     await page.click('#tool button[data-v="rect"]');
     await drag([12, 12], [40, 34], 8);
-    await page.waitForTimeout(150);
+    await settle(page);
     const shapes = await page.$$eval('.artwork path', (els) => els.length);
     check(shapes >= 2, `the drag added no shape: ${shapes} paths`);
 
@@ -1397,7 +1467,7 @@ const scenarios = {
     for (const bad of ['M 0 0 L @', 'M 0 0']) {
       await page.fill('#src', bad);
       await page.click('#apply');
-      await page.waitForTimeout(150);
+      await settle(page);
       const cls = await page.getAttribute('#status', 'class');
       check(/err/.test(cls ?? ''), `"${bad}" was accepted: status is "${cls}"`);
       check(
@@ -1411,7 +1481,7 @@ const scenarios = {
     }
     const failed = await page.textContent('#status');
     await page.click('#revertSrc');
-    await page.waitForTimeout(150);
+    await settle(page);
     check(
       (await page.inputValue('#src')) === after,
       `Revert gave "${await page.inputValue('#src')}", want "${after}"`,
@@ -1448,7 +1518,7 @@ const scenarios = {
       255,
     ]);
     await page.setInputFiles('#backFile', { name: 'photo.png', mimeType: 'image/png', buffer });
-    await page.waitForTimeout(400);
+    await settle(page);
 
     /**
      * Click Trace, and measure the longest the main thread was blocked.
@@ -1487,7 +1557,7 @@ const scenarios = {
       const ms = Date.now() - started;
       // A moment for the observer's last batch, which arrives after the task
       // that produced it has ended.
-      await page.waitForTimeout(200);
+      await settle(page);
       const block = await page.evaluate(() =>
         Math.round(
           window.__tasks.filter((t) => t[0] >= window.__t0).reduce((a, t) => Math.max(a, t[1]), 0),
@@ -1568,10 +1638,10 @@ const scenarios = {
        whole 16 the final check below passed whichever tier had answered. */
     await page.fill('#src', 'M20 16.5 L60 16.5 L60 48 L20 48 Z M12 56 L16 60');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     /* Both halves of the readout, joined for these checks. The tier's name is a
        separate element from the coordinates now -- it sits to their left, so
@@ -1580,7 +1650,7 @@ const scenarios = {
     const hover = async (doc) => {
       const c = await toClient(doc);
       await page.mouse.move(c[0], c[1]);
-      await page.waitForTimeout(80);
+      await settle(page);
       const xy = await page.textContent('#cursor');
       const kind = await page.textContent('#snapkind');
       return kind ? `${xy} · ${kind}` : xy;
@@ -1628,7 +1698,7 @@ const scenarios = {
        the outline, not on the nearest gridline. The edge is at y = 16.5 and the
        nearest gridline is 17, so the two answers are a visible half unit apart. */
     await drag([12, 56], [40, 16.7]);
-    await page.waitForTimeout(200);
+    await settle(page);
     const d = await page.getAttribute('.artwork path', 'd');
     const moved = d.match(/M\s*([\d.]+)\s+([\d.]+)\s+L/);
     check(!!moved, `could not read the dragged node back: ${d}`);
@@ -1638,9 +1708,9 @@ const scenarios = {
     await undo(page);
     await tab(page, 'doc');
     await page.click('#snapBoundary');
-    await page.waitForTimeout(120);
+    await settle(page);
     await drag([12, 56], [40, 16.7]);
-    await page.waitForTimeout(200);
+    await settle(page);
     const d2 = await page.getAttribute('.artwork path', 'd');
     const g = d2.match(/M\s*([\d.]+)\s+([\d.]+)\s+L/);
     check(Math.abs(+g[2] - 17) < 1e-6, `off-boundary drag landed at y=${g[2]}, want the grid at 17`);
@@ -1665,7 +1735,7 @@ const scenarios = {
     // Zoom in far enough that every snap position is drawn, or the comparison
     // below is against a thinned lattice and proves less than it looks.
     await page.fill('#gridStep', '1');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     /* x of every vertical gridline, from the overlay's own `d`. Both paths:
        every fifth line is major and lives in the other element, so reading only
@@ -1690,10 +1760,10 @@ const scenarios = {
     // A one-unit stroke: the case where whole coordinates are the wrong answer.
     await tab(page, 'shape');
     await page.fill('#strokeWidth', '1');
-    await page.waitForTimeout(120);
+    await settle(page);
     await tab(page, 'doc');
     await page.click('#pixelFit');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const shifted = await verticals();
     check(
@@ -1709,13 +1779,13 @@ const scenarios = {
     await page.click('#srcmode button[data-v="d"]');
     await page.fill('#src', 'M20 20 L60 20 L60 44 Z');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(120);
+    await settle(page);
 
     await drag([20, 20], [30.2, 28.4]);
-    await page.waitForTimeout(200);
+    await settle(page);
     const d = await page.getAttribute('.artwork path', 'd');
     const first = d.match(/M\s*(-?[\d.]+)\s+(-?[\d.]+)/);
     const landed = [+first[1], +first[2]];
@@ -1733,9 +1803,9 @@ const scenarios = {
 
     // Fit selection moves what is already there onto the same lattice.
     await page.keyboard.press('Control+a');
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.click('#fitPixels');
-    await page.waitForTimeout(200);
+    await settle(page);
     const fitted = await page.getAttribute('.artwork path', 'd');
     const nums = [...fitted.matchAll(/-?[\d.]+/g)].map((m) => +m[0]);
     check(
@@ -1745,7 +1815,7 @@ const scenarios = {
 
     // Turning it off puts the drawn grid back where it was.
     await page.click('#pixelFit');
-    await page.waitForTimeout(150);
+    await settle(page);
     const back = await verticals();
     check(back.every((x) => Math.abs(x - Math.round(x)) < 1e-6), `grid stayed shifted: ${back.slice(0, 4)}`);
 
@@ -1773,14 +1843,14 @@ const scenarios = {
       `header says "${await page.textContent('#styleinfo')}"`,
     );
     await page.fill('#strokeWidth', '3');
-    await page.waitForTimeout(120);
+    await settle(page);
     const undoAfterDefault = await page.isDisabled('#undo');
     check(undoAfterDefault, 'choosing a colour for later landed on the undo stack');
 
     await page.click('#tool button[data-v="rect"]');
     await drag([10, 10], [40, 34]);
     await page.click('#tool button[data-v="select"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const drawnWidth = await page.evaluate(
       () => document.querySelectorAll('.artwork path')[1]?.getAttribute('stroke-width'),
     );
@@ -1792,28 +1862,28 @@ const scenarios = {
 
     // Restyle a selection: the canvas, the swatch and the file all follow.
     await page.click('#shapelist li:nth-child(1)');
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.fill('#fillColour', '#ff0000');
-    await page.waitForTimeout(150);
+    await settle(page);
     const painted = await page.getAttribute('.artwork path', 'fill');
     check(painted === '#ff0000', `the canvas painted ${painted}`);
 
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(200);
+    await settle(page);
     check(/fill="#ff0000"/.test(await page.inputValue('#src')), 'the export kept the old fill');
     await closeSource(page);
 
     // `none` is a value the picker cannot hold, so the tick box holds it.
     await page.check('#fillNone');
-    await page.waitForTimeout(150);
+    await settle(page);
     check((await page.getAttribute('.artwork path', 'fill')) === 'none', 'ticking none left a fill');
     /* The picker stays usable while none is ticked, and using it is what clears
        it. Disabling it meant filling an unfilled shape took two steps, the first
        of which committed a colour nobody chose. */
     check(!(await page.isDisabled('#fillColour')), 'the picker went dead with none ticked');
     await page.fill('#fillColour', '#00aa44');
-    await page.waitForTimeout(150);
+    await settle(page);
     check((await page.getAttribute('.artwork path', 'fill')) === '#00aa44', 'picking a colour did not clear none');
     check(!(await page.isChecked('#fillNone')), 'the none tick survived a colour being picked');
 
@@ -1869,7 +1939,7 @@ const scenarios = {
     check((await page.inputValue('#vbw')) === '88', 'the width field disagrees with the document');
     await page.fill('#vbw', '120');
     await page.dispatchEvent('#vbw', 'input');
-    await page.waitForTimeout(150);
+    await settle(page);
     check((await page.getAttribute('.doc-edge', 'width')) === '120', 'the frame ignored the field');
     await undo(page);
     check((await page.getAttribute('.doc-edge', 'width')) === '88', 'undo did not restore the canvas');
@@ -1877,7 +1947,7 @@ const scenarios = {
     /* Fit. The starter shape spans 20..68 by 12..52, so with a grid step of one
        the page should land on exactly that. */
     await page.click('#vbFit');
-    await page.waitForTimeout(200);
+    await settle(page);
     const fitted = await page.$eval('.doc-edge', (el) => [
       +el.getAttribute('x'), +el.getAttribute('y'),
       +el.getAttribute('width'), +el.getAttribute('height'),
@@ -1887,7 +1957,7 @@ const scenarios = {
     // And that is what the file says, which was the whole complaint.
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(200);
+    await settle(page);
     const svgText = await page.inputValue('#src');
     check(/viewBox="20 12 48 40"/.test(svgText), `export says ${svgText.slice(0, 90)}`);
     await closeSource(page);
@@ -1896,7 +1966,7 @@ const scenarios = {
     check((await page.textContent('#canvasinfo')) === '', 'it claims to spill before anything does');
     await page.fill('#vbw', '10');
     await page.dispatchEvent('#vbw', 'input');
-    await page.waitForTimeout(200);
+    await settle(page);
     const warn = await page.textContent('#canvasinfo');
     check(/outside/.test(warn), `no warning with the drawing outside: "${warn}"`);
 
@@ -1928,7 +1998,7 @@ const scenarios = {
       ]);
 
     await page.click('#shapelist li');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     check((await page.locator('.thandle:visible').count()) === 8, 'want eight scale handles');
     check((await page.locator('.rotor').count()) === 4, 'want four rotation zones');
@@ -1946,7 +2016,7 @@ const scenarios = {
     // Scale: drag the south-east handle 24 units left. The north-west corner is
     // the anchor, so it must not move, and the height must not either.
     await drag(se, [se[0] - 24, se[1]]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const scaled = await bbox();
     check(Math.abs(scaled.x - start.x) < 0.01, `x moved from ${start.x} to ${scaled.x}`);
     check(Math.abs(scaled.y - start.y) < 0.01, `y moved from ${start.y} to ${scaled.y}`);
@@ -1955,7 +2025,7 @@ const scenarios = {
 
     // One entry, however many moves the drag was made of.
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(150);
+    await settle(page);
     const back = await bbox();
     check(Math.abs(back.w - start.w) < 1e-6, `undo left the width at ${back.w}`);
     check((await page.evaluate(() => document.querySelector('.artwork path').getAttribute('d'))).length > 0, 'the shape survived');
@@ -1963,7 +2033,7 @@ const scenarios = {
     // Alt scales about the centre: both edges move, the middle does not.
     const centreBefore = start.x + start.w / 2;
     await drag(await at('.thandle[data-part="se"]'), [se[0] - 12, se[1]], 8, 'Alt');
-    await page.waitForTimeout(150);
+    await settle(page);
     const alt = await bbox();
     check(
       Math.abs(alt.x + alt.w / 2 - centreBefore) < 0.01,
@@ -1971,18 +2041,18 @@ const scenarios = {
     );
     check(alt.w < start.w, `Alt-drag did not shrink it: ${alt.w}`);
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     // Shift keeps the ratio. Dragging inwards is the case that does nothing at
     // all if the constrained factor is taken as the larger of the two.
     const ratio = start.w / start.h;
     await drag(await at('.thandle[data-part="se"]'), [se[0] - 12, se[1]], 8, 'Shift');
-    await page.waitForTimeout(150);
+    await settle(page);
     const kept = await bbox();
     check(Math.abs(kept.w / kept.h - ratio) < 0.01, `ratio went from ${ratio} to ${kept.w / kept.h}`);
     check(kept.w < start.w, `Shift-drag inwards did nothing: ${kept.w}`);
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     /* Rotate a quarter turn from the north-east corner's ring. Not from its
        centre: the scale handle sits there and is in front, which is the whole
@@ -1994,7 +2064,7 @@ const scenarios = {
        to bottom, and a quarter turn swings the corner a few pixels past the
        edge, where the harness rightly refuses to click. */
     await page.click('#zoomout');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const cx = start.x + start.w / 2;
     const cy = start.y + start.h / 2;
@@ -2008,14 +2078,14 @@ const scenarios = {
     // the canvas and the harness refuses to click what it cannot see.
     const to = [cx + r * Math.cos(a0 - Math.PI / 2), cy + r * Math.sin(a0 - Math.PI / 2)];
     await drag(ne, to, 10, 'Shift');
-    await page.waitForTimeout(150);
+    await settle(page);
     const turned = await bbox();
     const status = await page.textContent('#status');
     check(/Rotated -90°/.test(status), `status says "${status}"`);
     check(Math.abs(turned.w - start.h) < 0.02, `width is ${turned.w}, want the old height ${start.h}`);
     check(Math.abs(turned.h - start.w) < 0.02, `height is ${turned.h}, want the old width ${start.w}`);
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     /* The question the padding exists to answer. A rectangle's corner node sits
        exactly on the bounding box, so an unpadded handle would be on top of it
@@ -2024,13 +2094,13 @@ const scenarios = {
     await page.click('#srcmode button[data-v="d"]');
     await page.fill('#src', 'M20 20 L60 20 L60 50 L20 50 Z');
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.click('#shapelist li');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     await click([20, 20]);
-    await page.waitForTimeout(150);
+    await settle(page);
     // `:visible`, because the anchor pool keeps retired elements around with
     // whatever class they last had; counting those reports the node count of
     // the shape before this one.
@@ -2039,7 +2109,7 @@ const scenarios = {
 
     // And the box goes away entirely for a tool that owns the canvas.
     await page.keyboard.press('p');
-    await page.waitForTimeout(150);
+    await settle(page);
     const withPen = await page.locator('.thandle:visible').count();
     check(withPen === 0, `${withPen} handles still showing under the pen`);
 
@@ -2066,7 +2136,7 @@ const scenarios = {
     await page.click('#srcmode button[data-v="d"]');
     await page.fill('#src', `M${pts[0]} ${pts.slice(1).map((p) => `L${p}`).join(' ')} Z`);
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     const nodesIn = await page.textContent('#stats');
@@ -2085,13 +2155,13 @@ const scenarios = {
     const before = await box();
 
     await page.click('#shapelist li');
-    await page.waitForTimeout(120);
+    await settle(page);
     /* Redraw is off by default now, and this scenario is about the refit: a
        40-node ring holds real shape at every node, so removal alone leaves
        most of them. Ticking it is the whole point of the checkbox. */
     await page.check('#simplifyRedraw');
     await page.click('#simplify');
-    await page.waitForTimeout(250);
+    await settle(page);
 
     const status = await page.textContent('#status');
     const nodesOut = await page.textContent('#stats');
@@ -2108,7 +2178,7 @@ const scenarios = {
 
     // And it is one edit, not one per node.
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(200);
+    await settle(page);
     check(/40 nodes/.test(await page.textContent('#stats')), 'undo did not restore all forty nodes');
 
     return { tol, kept, status, before, after };
@@ -2127,7 +2197,6 @@ const scenarios = {
       const b = await page.locator('#canvas').boundingBox();
       return { w: Math.round(b.width), h: Math.round(b.height) };
     };
-    const settle = () => page.waitForTimeout(260);
     /** Whether a collapsed panel can still be reached by Tab. */
     const reachable = (sel) =>
       page.$eval(sel, (el) => {
@@ -2150,23 +2219,23 @@ const scenarios = {
     const both = await canvasBox();
 
     await page.click('#toggleSrc');
-    await settle();
+    await laidOut(page);
     const withSource = await canvasBox();
     check(await reachable('#sourcepanel'), 'the open drawer is not reachable by Tab');
 
     await page.click('#toggleRail');
-    await settle();
+    await laidOut(page);
     const noRail = await canvasBox();
     check(!(await reachable('#rail')), 'the collapsed inspector is still in the tab order');
 
     await page.click('#toggleSrc');
-    await settle();
+    await laidOut(page);
     const bare = await canvasBox();
 
     // Keyboard is the other way in, and must land in the same state.
     await page.keyboard.press('Control+b');
     await page.keyboard.press('Control+e');
-    await settle();
+    await laidOut(page);
     const viaKeys = await canvasBox();
 
     const scroll = await page.evaluate(() => ({
@@ -2181,8 +2250,7 @@ const scenarios = {
     // A tooltip has to describe the control it belongs to, or a screen reader
     // gets nothing: `adopt()` removes the title and this is what replaces it.
     await page.hover('#fit');
-    await page.waitForTimeout(320);
-    const described = await page.getAttribute('#fit', 'aria-describedby');
+    const described = await describedBy(page, '#fit');
     check(!!described, 'a shown tooltip does not describe its control');
     check(
       (await page.getAttribute(`#${described}`, 'aria-hidden')) === 'false',
@@ -2196,7 +2264,7 @@ const scenarios = {
        hover, because focus is the case a keyboard has. */
     await tab(page, 'doc');
     await page.focus('#pixelFit');
-    await page.waitForTimeout(220);
+    await settle(page);
     const onControl = await page.getAttribute('#pixelFit', 'aria-describedby');
     check(!!onControl, 'a focused checkbox is not described by its tooltip');
 
@@ -2210,7 +2278,7 @@ const scenarios = {
       document.querySelector('#panel-doc').scrollTop = 0;
       document.activeElement instanceof HTMLElement && document.activeElement.blur();
     });
-    await page.waitForTimeout(120);
+    await settle(page);
     const far = '#backPick';
     const moved = await page.evaluate((sel) => {
       const el = document.querySelector(sel);
@@ -2218,7 +2286,7 @@ const scenarios = {
       return box.bottom > window.innerHeight || box.top < 0;
     }, far);
     await page.focus(far);
-    await page.waitForTimeout(280);
+    await settle(page);
     const afterScroll = await page.getAttribute(far, 'aria-describedby');
     check(
       !!afterScroll,
@@ -2234,7 +2302,7 @@ const scenarios = {
        works because the tooltip resolves a label to its control. */
     await page.mouse.move(0, 0);
     await page.evaluate(() => document.activeElement?.blur());
-    await page.waitForTimeout(200);
+    await settle(page);
     /* Cleared first, and asserted cleared. Without this the check below passed
        on the description left behind by the focus above -- it was measuring
        nothing, and said so only when the code it was meant to guard was
@@ -2244,15 +2312,14 @@ const scenarios = {
       'the description outlives the focus that showed it',
     );
     await page.hover('label:has(#pixelFit)');
-    await page.waitForTimeout(300);
     check(
-      !!(await page.getAttribute('#pixelFit', 'aria-describedby')),
+      !!(await describedBy(page, '#pixelFit')),
       'hovering the label shows nothing, so the words are not part of the control',
     );
 
     // Leave it inverted, so the screenshot shows the other half of the palette.
     await page.click('#theme');
-    await settle();
+    await laidOut(page);
 
     return {
       opened,
@@ -2281,7 +2348,7 @@ const scenarios = {
       await page.fill('#gridStep', String(step));
       await page.dispatchEvent('#gridStep', 'input');
       for (let i = 0; i < zoomOuts; i++) await page.click('#zoomout');
-      await page.waitForTimeout(120);
+      await settle(page);
 
       const r = await page.evaluate((s) => {
         const xs = [];
@@ -2357,13 +2424,13 @@ const scenarios = {
     for (let i = 1; i <= 6; i++) {
       await page.mouse.move(a[0] + ((b[0] - a[0]) * i) / 6, a[1] + ((b[1] - a[1]) * i) / 6);
     }
-    await page.waitForTimeout(60);
+    await settle(page);
     // 40 wide and 20 tall. The diagonal is 44.7, and reading that here would
     // mean the box and vector cases had been confused.
     out.duringCreate = await shown();
 
     await page.mouse.up();
-    await page.waitForTimeout(60);
+    await settle(page);
     out.afterRelease = await shown();
 
     /* Now a move, which is the other shape of measurement. On the top edge of
@@ -2383,11 +2450,11 @@ const scenarios = {
     for (let i = 1; i <= 6; i++) {
       await page.mouse.move(c[0] + ((d[0] - c[0]) * i) / 6, c[1]);
     }
-    await page.waitForTimeout(60);
+    await settle(page);
     // Straight right: 15 units at 0 degrees.
     out.duringMove = await shown();
     await page.mouse.up();
-    await page.waitForTimeout(60);
+    await settle(page);
     out.afterMove = await shown();
 
     /* `display` as well as `hidden`, because `.rd` sets `display: flex` and
@@ -2438,7 +2505,7 @@ const scenarios = {
     await tab(page, 'doc');
     await page.check('#filled');
     await tab(page, 'shape');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     /* `isPointInFill` is the browser answering "is this point painted", with
        the fill rule applied. Counting subpaths would only prove the document,
@@ -2465,17 +2532,17 @@ const scenarios = {
 
     await page.click('#shapelist li:nth-child(1)');
     await page.click('#shapelist li:nth-child(2)', { modifiers: ['Shift'] });
-    await page.waitForTimeout(80);
+    await settle(page);
     out.enabledWithTwo = !(await page.isDisabled('#makeone'));
 
     await page.click('#makeone');
-    await page.waitForTimeout(200);
+    await settle(page);
     out.message = await page.textContent('#status');
     // One path element now, and no hole: nonzero fills both squares.
     out.nonzero = await painted();
 
     await page.click('button[data-fr="evenodd"]');
-    await page.waitForTimeout(200);
+    await settle(page);
     // Same geometry, same element. Only the middle changed.
     out.evenodd = await painted();
 
@@ -2486,7 +2553,7 @@ const scenarios = {
        follows whether anything selected holds more than one path. */
     out.splitEnabled = !(await page.isDisabled('#splitshape'));
     await page.click('#splitshape');
-    await page.waitForTimeout(200);
+    await settle(page);
     out.splitMessage = await page.textContent('#status');
     // Two elements again, and the hole is gone: an inner path in its own
     // shape is a filled shape, whatever the rule says.
@@ -2559,7 +2626,7 @@ const scenarios = {
     for (const [i, [x, y]] of spots.entries()) {
       const was = await nodes();
       await page.mouse.dblclick(x, y);
-      await page.waitForTimeout(140);
+      await settle(page);
       const now = await nodes();
       check(now === was + 1, `double-click ${i + 1} took the count from ${was} to ${now}`);
     }
@@ -2568,15 +2635,15 @@ const scenarios = {
     // Within 0 is a real setting, not a refusal, and Redraw has nothing to do
     // at it: nothing is being refitted, so the checkbox says so by greying out.
     await page.click('#shapelist li');
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.fill('#simplifyTol', '0');
     await page.dispatchEvent('#simplifyTol', 'input');
-    await page.waitForTimeout(100);
+    await settle(page);
     const redrawDisabled = await page.isDisabled('#simplifyRedraw');
     check(redrawDisabled, 'Redraw curves stayed enabled at Within 0');
 
     await page.click('#simplify');
-    await page.waitForTimeout(250);
+    await settle(page);
     const status = (await page.textContent('#status')).trim();
     const after = await nodes();
     check(after === nodesIn, `Within 0 left ${after} nodes, not the ${nodesIn} it started with`);
@@ -2625,10 +2692,10 @@ const scenarios = {
         '<path d="M0 0 H240 V240 H0 Z" fill="none" stroke="#888"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await page.click('#fit');
-    await page.waitForTimeout(220);
+    await settle(page);
     await tab(page, 'doc');
 
     const drawn = () =>
@@ -2647,7 +2714,7 @@ const scenarios = {
     check(!off.live.d && !off.shapes.d, 'keylines were drawn before the checkbox was ticked');
 
     await page.check('#showKeylines');
-    await page.waitForTimeout(200);
+    await settle(page);
     const on = await drawn();
     check(!!on.live.d && !!on.shapes.d, 'ticking the box drew nothing');
 
@@ -2679,19 +2746,19 @@ const scenarios = {
     await page.click('#tool button[data-v="pen"]');
     const c = await toClient([30.6, 120.9]);
     await page.mouse.move(c[0], c[1]);
-    await page.waitForTimeout(120);
+    await settle(page);
     const snapkind = (await page.textContent('#snapkind')).trim();
     check(snapkind === 'on a keyline', `hovering a keyline reported "${snapkind}"`);
 
     await click([30.6, 120.9]);
-    await page.waitForTimeout(150);
+    await settle(page);
     /* A second node, well clear of every keyline. One node is not a path the
        editor will keep, so with a single click Escape leaves nothing behind and
        the check below reads the frame instead and fails on the wrong thing. */
     await click([100, 235]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const placed = await page.evaluate(() => {
       const path = document.querySelectorAll('.artwork path');
@@ -2707,7 +2774,7 @@ const scenarios = {
        and the file is what leaves the editor. */
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const svg = await page.inputValue('#src');
     check(!/keyline/i.test(svg), 'the exported SVG mentions a keyline');
     // Two paths: the frame and the pen's line. A keyline that had leaked into
@@ -2718,7 +2785,7 @@ const scenarios = {
 
     // Unticking takes them away again, which is the other half of a checkbox.
     await page.uncheck('#showKeylines');
-    await page.waitForTimeout(200);
+    await settle(page);
     const gone = await drawn();
     check(!gone.live.d && !gone.shapes.d, 'unticking left the keylines drawn');
 
@@ -2762,7 +2829,7 @@ const scenarios = {
     check((await count()) === 0, 'the document started with guides');
 
     await page.check('#showRulers');
-    await page.waitForTimeout(250);
+    await settle(page);
 
     /* The layout, measured rather than assumed. An `<svg>` with a viewBox is a
        replaced element with an intrinsic aspect ratio, and `align-self:
@@ -2793,7 +2860,7 @@ const scenarios = {
       await page.mouse.move(boxes.h.x + boxes.h.w / 2, boxes.h.y + ((to[1] - boxes.h.y) * i) / 8);
     }
     await page.mouse.up();
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await count()) === 1, `dragging out of the ruler left ${await count()} guides`);
     const first = (await positions())[0];
     check(first[0] === 'y' && Math.abs(first[1] - 30) < 0.001, `it landed at ${first}`);
@@ -2807,7 +2874,7 @@ const scenarios = {
       await page.mouse.move(boxes.v.x + ((to2[0] - boxes.v.x) * i) / 8, boxes.v.y + boxes.v.h / 2);
     }
     await page.mouse.up();
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await count()) === 2, `the vertical drag left ${await count()} guides`);
 
     // The ruler is labelled, and both strips are.
@@ -2859,11 +2926,11 @@ const scenarios = {
       );
       zooms.push(hl);
       await page.click('#zoomout');
-      await page.waitForTimeout(160);
+      await settle(page);
     }
     for (let z = 0; z < 6; z++) {
       await page.click('#zoomin');
-      await page.waitForTimeout(160);
+      await settle(page);
     }
 
     /* The crossing. Aim a pen click a third of a unit off both guides, from
@@ -2873,16 +2940,16 @@ const scenarios = {
     await page.click('#tool button[data-v="pen"]');
     const near = await toClient([30.3, 30.3]);
     await page.mouse.move(near[0], near[1]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const snapkind = (await page.textContent('#snapkind')).trim();
     check(snapkind === 'where guides cross', `hovering the crossing reported "${snapkind}"`);
 
     await click([30.3, 30.3]);
-    await page.waitForTimeout(120);
+    await settle(page);
     await click([70, 55]);
-    await page.waitForTimeout(120);
+    await settle(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const placed = await page.evaluate(() => {
       const all = document.querySelectorAll('.artwork path');
@@ -2899,7 +2966,7 @@ const scenarios = {
        distinction the two checkboxes exist to make. */
     await page.click('#tool button[data-v="select"]');
     await page.check('#guidesLocked');
-    await page.waitForTimeout(150);
+    await settle(page);
     const lockedHits = await page.evaluate(
       () =>
         getComputedStyle(
@@ -2910,7 +2977,7 @@ const scenarios = {
     );
     check(lockedHits === 'none', `locked guides still take a press: ${lockedHits}`);
     await page.uncheck('#guidesLocked');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     // Drag one off the canvas, which is how you put a guide away.
     const on = await toClient([30, 40]);
@@ -2920,7 +2987,7 @@ const scenarios = {
       await page.mouse.move(on[0] - ((on[0] - (boxes.v.x + 2)) * i) / 6, on[1]);
     }
     await page.mouse.up();
-    await page.waitForTimeout(250);
+    await settle(page);
     const afterDrop = await count();
     check(afterDrop === 1, `dropping a guide on the ruler left ${afterDrop}`);
     const dropMsg = (await page.textContent('#status')).trim();
@@ -2931,7 +2998,7 @@ const scenarios = {
 
     // Clear takes the rest, in one step of its own.
     await page.click('#guideClear');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await count()) === 0, `Clear guides left ${await count()}`);
     const clearMsg = (await page.textContent('#status')).trim();
     await undo(page);
@@ -2941,7 +3008,7 @@ const scenarios = {
        the file. Checked on the text that leaves the editor. */
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const svg = await page.inputValue('#src');
     check(!/guide/i.test(svg), 'the exported SVG mentions a guide');
     await closeSource(page);
@@ -2972,7 +3039,7 @@ const scenarios = {
         '<path d="M50 40 H70 V52 H50 Z" fill="none" stroke="#2563d8"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     const lines = () =>
@@ -3004,7 +3071,7 @@ const scenarios = {
     for (let i = 1; i <= 10; i++) {
       await page.mouse.move(from[0] + ((to[0] - from[0]) * i) / 10, from[1]);
     }
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const live = await lines();
     check(live.length === 1, `${live.length} alignment lines, wanted 1`);
@@ -3017,7 +3084,7 @@ const scenarios = {
     check(l.y1 === 10 && l.y2 === 52, `the line spans ${l.y1} to ${l.y2}, not 10 to 52`);
 
     await page.mouse.up();
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await lines()).length === 0, 'the alignment line outlived the drag');
 
     /* The drag was held to the alignment, not merely decorated with it: the
@@ -3033,7 +3100,7 @@ const scenarios = {
     // And the switch turns it off, which is the other half of a checkbox.
     await tab(page, 'doc');
     await page.uncheck('#smartGuides');
-    await page.waitForTimeout(120);
+    await settle(page);
     const from2 = await toClient([20.5, 40]);
     const to2 = await toClient([40.7, 40]);
     await page.mouse.move(from2[0], from2[1]);
@@ -3041,7 +3108,7 @@ const scenarios = {
     for (let i = 1; i <= 6; i++) {
       await page.mouse.move(from2[0] + ((to2[0] - from2[0]) * i) / 6, from2[1]);
     }
-    await page.waitForTimeout(120);
+    await settle(page);
     const off = await lines();
     await page.mouse.up();
     check(off.length === 0, `${off.length} alignment lines with the switch off`);
@@ -3070,7 +3137,7 @@ const scenarios = {
     await tab(page, 'doc');
     check((await rays()) === 0, 'rays were drawn before angular snap was on');
     await page.check('#snapAngles');
-    await page.waitForTimeout(180);
+    await settle(page);
     /* Still none: the switch is on but nothing is being drawn and no origin has
        been set, so there is nothing to radiate from. Drawing a fan from a point
        nobody chose would be worse than drawing none. */
@@ -3079,7 +3146,7 @@ const scenarios = {
     // The pen's last node becomes the origin, which is the implicit case.
     await page.click('#tool button[data-v="pen"]');
     await click([30, 30]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const fan = await rays();
     check(fan === 8, `${fan} rays at 45 degrees, wanted 8`);
 
@@ -3088,14 +3155,14 @@ const scenarios = {
        being nearer. */
     const near = await toClient([50, 49.4]);
     await page.mouse.move(near[0], near[1]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const kind = (await page.textContent('#snapkind')).trim();
     check(kind === 'on an angle', `hovering a ray reported "${kind}"`);
 
     await click([50, 49.4]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const placed = await page.evaluate(() => {
       const all = document.querySelectorAll('.artwork path');
@@ -3118,17 +3185,17 @@ const scenarios = {
     // see is genuinely not there: `hidden` keeps it out of the hit test.
     await tab(page, 'shape');
     await page.click('#shapelist li');
-    await page.waitForTimeout(150);
+    await settle(page);
     await tab(page, 'doc');
     await page.click('#angleFromSel');
-    await page.waitForTimeout(180);
+    await settle(page);
     const pinned = await rays();
     check(pinned === 8, `${pinned} rays after pinning the origin`);
     const info = (await page.textContent('#angleinfo')).trim();
     check(/every 45° from/.test(info), `the readout says "${info}"`);
 
     await page.click('#angleClear');
-    await page.waitForTimeout(180);
+    await settle(page);
     check((await rays()) === 0, 'freeing the origin left the rays drawn');
 
     return { fan, kind, placed, info };
@@ -3157,7 +3224,7 @@ const scenarios = {
         '<path d="M24.5 52.5 L64.5 12.5" fill="none" stroke="#888"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
     await tab(page, 'doc');
 
@@ -3168,26 +3235,26 @@ const scenarios = {
        give the outline every time; only the tier order gives the crossing. */
     const near = await toClient([44.7, 32.7]);
     await page.mouse.move(near[0], near[1]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const before = (await page.textContent('#snapkind')).trim();
     check(before !== 'where outlines cross', `crossings claimed the pointer while off: "${before}"`);
 
     await page.check('#snapCross');
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.mouse.move(near[0] + 1, near[1]);
     await page.mouse.move(near[0], near[1]);
-    await page.waitForTimeout(150);
+    await settle(page);
     const after = (await page.textContent('#snapkind')).trim();
     check(after === 'where outlines cross', `hovering the crossing reported "${after}"`);
 
     // And the pointer lands on it.
     await page.click('#tool button[data-v="pen"]');
     await click([44.7, 32.7]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await click([80, 60]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await settle(page);
 
     const placed = await page.evaluate(() => {
       const all = document.querySelectorAll('.artwork path');
@@ -3222,11 +3289,11 @@ const scenarios = {
         '<path d="M20 40 L44 40 L68 40" fill="none" stroke="#2563d8"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     await click([44, 40]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await tab(page, 'node');
 
     const pressed = () =>
@@ -3238,7 +3305,7 @@ const scenarios = {
     check(JSON.stringify(await pressed()) === '["corner"]', `starts as ${await pressed()}`);
 
     await page.click('#ntype button[data-v="auto"]');
-    await page.waitForTimeout(200);
+    await settle(page);
     /* Exactly one button lit, and it is Auto. An auto node is collinear by
        construction, so a display reading the handles alone would light Smooth
        as well and leave two buttons pressed at once. */
@@ -3250,7 +3317,7 @@ const scenarios = {
     const dEl = () => page.$eval('.artwork path', (el) => el.getAttribute('d'));
     const before = await dEl();
     await drag([68, 40], [68, 26]);
-    await page.waitForTimeout(200);
+    await settle(page);
     const after = await dEl();
     check(before !== after, 'dragging the neighbour changed nothing');
 
@@ -3259,7 +3326,7 @@ const scenarios = {
        off the overlay rather than out of the path text, which the serialiser is
        free to spell with `S` and other shorthands. */
     await click([44, 40]);
-    await page.waitForTimeout(200);
+    await settle(page);
     const trio = await page.evaluate(() => {
       const at = (hit) => {
         const el = document.querySelector(`[data-hit="${hit}"][data-sp="0"][data-i="1"]`);
@@ -3292,14 +3359,14 @@ const scenarios = {
 
     await openSource(page);
     await page.click('#srcmode button[data-v="d"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const d = await page.inputValue('#src');
     check(!/auto/i.test(d), 'the export mentions auto');
     await closeSource(page);
 
     // And pressing it again hands control back without moving anything.
     await page.click('#ntype button[data-v="auto"]');
-    await page.waitForTimeout(200);
+    await settle(page);
     check(JSON.stringify(await pressed()) !== '["auto"]', 'Auto stayed pressed after a second press');
     check((await dEl()) === after, 'handing control back moved the drawing');
 
@@ -3325,15 +3392,15 @@ const scenarios = {
         '<path d="M10 10 H40 V30 L20 44 Z" fill="none" stroke="#2563d8"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     // The third node, at (40, 30): the one the `V` command draws to.
     await click([40, 30]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await tab(page, 'node');
     await page.click('#findSrc');
-    await page.waitForTimeout(250);
+    await settle(page);
 
     const got = await page.evaluate(() => {
       const el = document.querySelector('#src');
@@ -3358,9 +3425,9 @@ const scenarios = {
        command being selected whatever you click. The `H` draws to (40, 10). */
     await closeSource(page);
     await click([40, 10]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.click('#findSrc');
-    await page.waitForTimeout(250);
+    await settle(page);
     const second = await page.evaluate(() => {
       const el = document.querySelector('#src');
       return el.value.slice(el.selectionStart, el.selectionEnd);
@@ -3394,48 +3461,48 @@ const scenarios = {
     // Save the style the panel is showing, with a width nobody else has.
     await page.fill('#strokeWidth', '3');
     await page.dispatchEvent('#strokeWidth', 'input');
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.click('#paletteSave');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await swatches()) === 1, `${await swatches()} swatches after saving one`);
     check((await lit()) === 1, 'the saved swatch is not highlighted');
 
     /* Saving the same values twice keeps one swatch. Two identical entries
        under two names is a palette that cannot tell you anything. */
     await page.click('#paletteSave');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await swatches()) === 1, `saving twice left ${await swatches()} swatches`);
 
     // Change the style by hand: the highlight has to let go, or it would be
     // claiming the shape has a style it does not.
     await page.fill('#strokeWidth', '1');
     await page.dispatchEvent('#strokeWidth', 'input');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await lit()) === 0, 'the swatch stayed lit after the style changed');
 
     // Apply it to a real shape and check the export, not the panel.
     await click([44, 12]);
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.click('#palette button');
-    await page.waitForTimeout(200);
+    await settle(page);
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
-    await page.waitForTimeout(150);
+    await settle(page);
     const svg = await page.inputValue('#src');
     check(/stroke-width="3"/.test(svg), `the shape did not take the saved width: ${svg.slice(0, 240)}`);
     await closeSource(page);
 
     // Rename, which is what makes it a *named* style.
     await page.dblclick('#palette button');
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.fill('#palette .rename', 'outline');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
+    await settle(page);
     const name = (await page.textContent('#palette button')).trim();
     check(name === 'outline', `the swatch is called "${name}"`);
 
     await page.click('#paletteDrop');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await swatches()) === 0, `Forget left ${await swatches()} swatches`);
 
     return { name };
@@ -3459,30 +3526,30 @@ const scenarios = {
     await page.click('#shapelist li');
     // Blur it, so the keys below are the editor's and not the list's own.
     await page.evaluate(() => document.activeElement.blur());
-    await page.waitForTimeout(120);
+    await settle(page);
 
     await page.keyboard.press(']');
-    await page.waitForTimeout(120);
+    await settle(page);
     check((await info()) === '0/0', `the first press selected ${await info()}`);
 
     await page.keyboard.press(']');
     await page.keyboard.press(']');
-    await page.waitForTimeout(120);
+    await settle(page);
     check((await info()) === '0/2', `three presses reached ${await info()}`);
 
     await page.keyboard.press('[');
-    await page.waitForTimeout(120);
+    await settle(page);
     check((await info()) === '0/1', `stepping back reached ${await info()}`);
 
     /* Shift extends. The browser reports the shifted character, so this arrives
        as a brace and never as a bracket. Bind the bracket alone and Shift steps
        instead of extending, leaving one node selected. */
     await page.keyboard.press('Shift+BracketRight');
-    await page.waitForTimeout(120);
+    await settle(page);
     check((await info()) === '2 selected', `extending gave ${await info()}`);
 
     await page.keyboard.press('Shift+I');
-    await page.waitForTimeout(200);
+    await settle(page);
     check((await count()) === started + 1, `insert left ${await count()} nodes, not ${started + 1}`);
     const status = (await page.textContent('#status')).trim();
     check(/inserted/.test(status), `the status line says "${status}"`);
@@ -3511,7 +3578,7 @@ const scenarios = {
        after it there are still two nodes selected and Insert node is correctly
        live. Checking it there asserted the opposite of the truth. */
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(150);
+    await settle(page);
     const wired = await page.evaluate(() => ({
       step: !!document.querySelector('#nextNode'),
       insert: !!document.querySelector('#insertNode'),
@@ -3543,12 +3610,12 @@ const scenarios = {
         'C24 20.95 32.95 12 44 12 C55.05 12 64 20.95 64 32 Z" fill="none" stroke="#2563d8"/></svg>',
     );
     await page.click('#apply');
-    await page.waitForTimeout(200);
+    await settle(page);
     await closeSource(page);
 
     await tab(page, 'shape');
     await page.click('#shapelist li');
-    await page.waitForTimeout(150);
+    await settle(page);
 
     const boxes = () =>
       page.$$eval('.artwork path', (els) =>
@@ -3563,7 +3630,7 @@ const scenarios = {
     await page.fill('#offsetBy', '5');
     await page.dispatchEvent('#offsetBy', 'input');
     await page.click('#offsetGo');
-    await page.waitForTimeout(300);
+    await settle(page);
 
     const after = await boxes();
     check(after.length === 2, `${after.length} shapes after offsetting, wanted 2`);
@@ -3584,11 +3651,11 @@ const scenarios = {
     // Negative goes the other way, from the same original.
     await tab(page, 'shape');
     await page.click('#shapelist li');
-    await page.waitForTimeout(150);
+    await settle(page);
     await page.fill('#offsetBy', '-6');
     await page.dispatchEvent('#offsetBy', 'input');
     await page.click('#offsetGo');
-    await page.waitForTimeout(300);
+    await settle(page);
     const three = await boxes();
     check(three.length === 3, `${three.length} shapes after the second offset`);
     check(
@@ -3632,7 +3699,7 @@ const scenarios = {
     check(/1 shape/.test(started), `the starter document reads "${started}"`);
 
     await page.setInputFiles('#importFile', file);
-    await page.waitForTimeout(400);
+    await settle(page);
 
     const stats = (await page.textContent('#stats')).trim();
     check(/3 shapes/.test(stats), `after importing: "${stats}"`);
@@ -3659,7 +3726,7 @@ const scenarios = {
     const empty = `${dir}/drive-import-empty.svg`;
     writeFileSync(empty, '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0"/></svg>');
     await page.setInputFiles('#importFile', empty);
-    await page.waitForTimeout(300);
+    await settle(page);
     const refused = (await page.textContent('#status')).trim();
     check(/draws nothing/.test(refused), `the refusal reads "${refused}"`);
     check(/1 shape/.test(await page.textContent('#stats')), 'the refused import changed the document');
@@ -3716,7 +3783,7 @@ page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForTimeout(300);
+await settle(page);
 
 /* Every inspector group open, before any scenario runs.
  *
@@ -3734,7 +3801,7 @@ await page.evaluate(() => {
     if (h.getAttribute('aria-expanded') !== 'true') h.click();
   }
 });
-await page.waitForTimeout(120);
+await settle(page);
 
 /* A failed `check` throws, and the screenshot and the audit below are most
    worth having on exactly that run, so the throw is caught rather than left to
@@ -3765,7 +3832,7 @@ try {
   failure = err.message;
 }
 
-await page.waitForTimeout(150);
+await settle(page);
 await page.screenshot({ path: out });
 
 /* Structural check straight from the live DOM: does the canvas show exactly

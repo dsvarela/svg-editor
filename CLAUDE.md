@@ -123,6 +123,19 @@ The exit code now also fails on a `d` attribute that reached the DOM holding
 Both were already measured by the audit every scenario runs and neither was
 read by anything.
 
+**No browser scenario waits a fixed number of milliseconds.** There were 233
+such sleeps, each a guess about how long a machine takes, so each was either
+slower than it needed to be or shorter than the thing it waited for. Three waits
+replaced them, and which one a step needs is decided by what it is waiting for:
+
+| Waiting for | Use |
+|---|---|
+| A render | `settle(page)` -- two frames, because the controller renders one `requestAnimationFrame` after a store notification |
+| A panel animating and the canvas re-fitting | `laidOut(page)` -- polls until the canvas box stops moving |
+| Something the app owns a timer or a worker for | Its own condition: `page.waitForSelector`, `waitForFunction`, `describedBy`, `backdropRead`, `traced` |
+
+The one remaining `waitForTimeout` is the 25 ms poll interval inside `laidOut`.
+
 **`node tools/mutate.mjs <path>` breaks the source on purpose** and reports what
 the unit suite still calls green. A survivor is a change to what the program
 does that no test disagreed with. It rewrites files in place while it runs, so
