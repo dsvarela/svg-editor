@@ -1740,6 +1740,64 @@ The proposal this came from also suggested splitting the Document tab in two. It
 is not done, and on the evidence it may not be needed: nine collapsed groups
 occupy 454 px, which is a third of the rail.
 
+## 42. Touch is three answers, and the third is the awkward one
+
+The three questions a finger asks are: can I hit the control, can I move the
+view, and can I hold the key. The first two have clean answers. The third does
+not, and pretending otherwise would have hidden the compromise.
+
+**Size is one variable.** `--h` is where nearly every control takes its height,
+so a `@media (pointer: coarse)` block raises it, and after it a short list of
+controls that size themselves: labels holding a 13 px checkbox, segmented
+buttons that subtract two pixels of border, the tabs, the group headers, the
+status strip and the rows of the shape list. Asked by pointer rather than by
+width on purpose. A coarse pointer is a finger or a stylus and never a mouse,
+where a narrow window is often a mouse in a small window; and applying 44 px to
+every pointer would add roughly 2 500 px to a 288 px rail.
+
+**The pinch is one gesture, not two.** Spreading the fingers zooms about the
+point between them and moving that point drags the drawing with it, and the
+order is what makes it feel attached to the hand: the zoom is taken about the
+document point under the *old* midpoint, which leaves that point where it is on
+screen, and the pan is then a screen distance at the new scale. Taken about the
+new midpoint the drawing moves twice.
+
+A pointer event carries one pointer, so two fingers moving arrive as two events
+and never as one. Between them the fingers sit at a distance neither started nor
+ended at, and the camera passes through a zoom the next event undoes. The
+invariant that survives this is per event, not per gesture: whatever was under
+the midpoint is still under the midpoint. That is what the tests assert, and an
+arithmetic identity across the whole gesture would hold only for fingers moving
+in perfect step, which no hand does.
+
+**The second finger abandons what the first started**, which is not a nicety.
+The first press lands before there is any way to know a second is coming, so it
+starts a drag on whatever it hit and may already have moved a node. Rolling that
+back is visible. Closing its history batch is not, and it is the half that
+matters: a batch left open makes `checkpoint` return early for the rest of the
+session, so nothing is undoable again and nothing says so.
+
+**Modifiers are the compromise.** Seven pointer gestures change meaning under
+Shift or Alt: adding to the selection, keeping a scale's proportions, snapping a
+rotation to 15°, drawing a square or a circle, scaling from the centre, breaking
+a handle pair, and bending a segment freely. Three have equivalents in the rail
+already, as numbers rather than gestures, and four have nothing. Two latching
+buttons in the status strip stand in for the keys, read by `Controller.shift`
+and `Controller.alt` beside the real event rather than instead of it.
+
+They stop at the pointer deliberately. The keyboard handlers still read the
+event, because `Shift` there is the second half of a shortcut: a latch that
+reached them would turn every arrow key into the coarse nudge, ten times the
+fine step, for as long as it was on. A latch is a mode, and this is the argument
+for keeping the mode as small as it can be rather than for it being free.
+
+**Where they live is a measurement, not a taste.** At 390 px the toolbar holds
+858 px of controls and the status strip 729 px, so both scroll, and anything not
+pinned is a control that exists and cannot be pressed. The panel toggles are
+pinned at the right of the toolbar and the held keys at the left of the strip,
+because those are the two things you reach for while something else is already
+happening on the canvas.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.
@@ -1759,6 +1817,13 @@ that matters. See §9.
 
 **Stroke to path refuses when an offset comes apart.** A stroke wider than the
 shape can hold has no single other side to pair each piece with. See §40.
+
+**Touch has never been held.** Every claim in §42 was measured in a headless
+browser with synthetic touch events, which prove arithmetic and say nothing
+about a hand. Unknown: whether 44 px is enough at the rail's density, what the
+on-screen keyboard does to the layout when a number field takes focus, whether a
+one-finger drag on a node is precise enough to be worth having, and whether a
+latching modifier reads as obvious or as a mode you forget you are in.
 
 **PathBool.js is early-stage** by its author's own description, who asks for
 failure cases. Treat returned geometry as untrusted: check it is non-empty and

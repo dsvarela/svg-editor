@@ -3296,3 +3296,97 @@ describe('Shift and Alt without a keyboard', () => {
     expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(21, 9);
   });
 });
+
+describe('two fingers, at the edges of the gesture', () => {
+  /* Written after a mutation sweep: each of these three covers a guard that
+     survived being deleted, which means nothing was checking it. */
+
+  const liveCamera = (h: Harness): void => {
+    Object.defineProperty(SVGSVGElement.prototype, 'getScreenCTM', {
+      configurable: true,
+      value: () => {
+        const c = h.store.state.camera;
+        const k = WIDTH / c.w;
+        return new FakeMatrix(k, 0, 0, k, -c.x * k, -c.y * k);
+      },
+    });
+  };
+
+  const finite = (h: Harness): boolean =>
+    [h.store.state.camera.x, h.store.state.camera.y, h.store.state.camera.w, h.store.state.camera.h]
+      .every((n) => Number.isFinite(n) && Math.abs(n) < 1e9);
+
+  it('survives two fingers landing on the same spot', () => {
+    /* Distance zero is a division by zero, and the camera comes back `NaN`
+       from it: the view is gone and every later gesture works on a viewBox
+       that cannot be drawn. Two fingers touch down together often enough that
+       this is a real press, not a contrived one. */
+    const h = harness();
+    liveCamera(h);
+    const before = { ...h.store.state.camera };
+
+    h.touch('down', 1, [300, 300]);
+    h.touch('down', 2, [300, 300]);
+    h.touch('move', 1, [300.2, 300]);
+    h.touch('move', 2, [299.8, 300]);
+    expect(finite(h)).toBe(true);
+
+    // And once they are properly apart it zooms, rather than staying stuck.
+    h.touch('move', 1, [200, 300]);
+    h.touch('move', 2, [600, 300]);
+    expect(finite(h)).toBe(true);
+    expect(h.store.state.camera.w).not.toBeCloseTo(before.w, 6);
+  });
+
+  it('forgets a finger the browser takes away', () => {
+    /* `pointercancel` is the browser claiming the gesture. A finger left in the
+       map after one keeps the pinch alive, so the next single finger to move is
+       read as half of a two-finger gesture and zooms the canvas on its own. */
+    const h = harness();
+    liveCamera(h);
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('move', 1, [100, 300]);
+
+    const cancel = new MouseEvent('pointercancel', { bubbles: true, cancelable: true });
+    Object.defineProperty(cancel, 'pointerId', { value: 2 });
+    Object.defineProperty(cancel, 'pointerType', { value: 'touch' });
+    h.canvas.overlay.dispatchEvent(cancel);
+
+    const after = { ...h.store.state.camera };
+    h.touch('move', 1, [700, 100]);
+    expect(h.store.state.camera).toEqual(after);
+  });
+
+  it('ignores a third finger rather than starting a gesture with it', () => {
+    /* A palm, or a hand resting on the glass, costs nothing.
+       **This one passes without the guard it was written for**, and it is kept
+       as the statement of the promise rather than as a check on the guard. Two
+       mechanisms hold it up: a third press does start a marquee when the guard
+       is removed, but its moves are swallowed while the pinch is live, and the
+       first release afterwards resets the drag. The guard says the same thing
+       in one line and does not depend on either. */
+    const h = harness('M 10 10 L 30 10 L 30 30 Z');
+    liveCamera(h);
+    h.store.update((s) => (s.snapToGrid = false));
+    const before = serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 });
+
+    h.touch('down', 1, [200, 300]);
+    h.touch('down', 2, [600, 300]);
+    h.touch('down', 3, [50, 50]); // the palm, on empty canvas
+    h.touch('move', 1, [100, 300]);
+    h.touch('move', 2, [700, 300]);
+    h.touch('up', 1, [100, 300]);
+    h.touch('up', 2, [700, 300]);
+
+    // Only the palm is left, and it travels across the whole drawing.
+    h.touch('move', 3, [700, 500]);
+    h.touch('up', 3, [700, 500]);
+
+    expect(h.store.state.selection.nodes.size).toBe(0);
+    expect(h.store.state.selection.shapes.size).toBe(0);
+    expect(serialisePath(h.store.state.doc.shapes[0].subpaths, { decimals: 9 })).toBe(before);
+    // The pinch still happened, so the third finger cost nothing either way.
+    expect(h.store.state.camera.w).toBeLessThan(WIDTH * SCALE);
+  });
+});

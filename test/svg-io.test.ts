@@ -10,7 +10,7 @@ import {
   xmlId,
 } from '../src/io/svg';
 import { parsePath } from '../src/core/parse';
-import { segmentAsCubic, segmentCount } from '../src/core/types';
+import { makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
 import { emptyDoc } from '../src/model/doc';
 import type { Pt, Shape } from '../src/core/types';
@@ -180,6 +180,22 @@ describe('what an import is allowed to replace the document with', () => {
       <path d="M0 0 L10 0"/>
     </svg>`);
     expect(drawsSomething(r.shapes)).toBe(true);
+  });
+
+  it('refuses a lone node, which no parse produces and the rule still names', () => {
+    /* Built by hand, because `parsePath` drops a subpath with one node rather
+       than returning it: through `importSvg` this case cannot arise, and a
+       threshold of one node would pass every test above. The function takes
+       shapes, so it is answerable for shapes that did not come from the
+       parser -- and one node is not a drawing whoever made it. */
+    const lone: Shape = {
+      id: 'shape-1',
+      name: 'lone',
+      subpaths: [{ nodes: [makeNode([5, 5])], closed: false }],
+      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' },
+    };
+    expect(lone.subpaths[0].nodes).toHaveLength(1);
+    expect(drawsSomething([lone])).toBe(false);
   });
 
   it('accepts the smallest thing that draws: two nodes', () => {

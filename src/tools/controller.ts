@@ -1118,7 +1118,16 @@ export class Controller {
     const now = this.spread();
     const was = this.pinch;
     if (!now || !was) return;
-    if (now.dist < 1 || was.dist < 1) return;
+    /* Closer together than a pixel says nothing about scale, and dividing by it
+       says something absurd: the camera comes back `NaN` and the drawing is
+       gone. Two fingers landing on the same spot is an ordinary press, so this
+       takes the new positions as the baseline rather than returning outright --
+       returning left `was` at a distance of zero for the rest of the gesture,
+       and the pinch never zoomed again however far the fingers travelled. */
+    if (now.dist < 1 || was.dist < 1) {
+      this.pinch = now;
+      return;
+    }
 
     const factor = was.dist / now.dist;
     const anchor = screenToDoc(this.canvas.overlay, was.mid[0], was.mid[1]);
@@ -1149,6 +1158,14 @@ export class Controller {
         this.pinch = this.spread();
         return;
       }
+      /* A third finger, a palm, a hand resting: it starts nothing.
+         **Nothing distinguishes this line, and it is kept anyway.** Removing it
+         lets the third press start a drag -- a marquee, measured, not
+         supposed -- and that drag is never seen: its moves are swallowed while
+         the pinch is live, and the first of the other two fingers to lift runs
+         `onUp`, whose `finally` puts the drag back to none. Two accidents,
+         either of which could stop being true. Saying it once here is cheaper
+         than depending on both. */
       if (this.touches.size > 2) return;
     }
     // A second press while a drag is live used to overwrite `this.drag`, and

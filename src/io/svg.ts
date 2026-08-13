@@ -189,11 +189,19 @@ function parseViewBox(el: Element): ViewBox | null {
 /**
  * Whether an import would put anything on the canvas.
  *
- * An import that parsed cleanly can still draw nothing: `M 0 0` and
- * `M 0 0 Q Q Q` both come back as a shape holding a subpath with one node and
- * no segment. Applying one over a selected shape used to empty it, report
- * "Updated Star." and leave a `<path d="">` behind, so both import routes
- * refuse text this returns false for.
+ * An import that parsed cleanly can still draw nothing. `M 0 0` and
+ * `M 0 0 Q Q Q` both come back as a shape with no subpaths at all, since the
+ * parser drops a subpath with nothing in it, and applying one over a selected
+ * shape used to empty it, report "Updated Star." and leave a `<path d="">`
+ * behind. Both import routes refuse text this returns false for.
+ *
+ * **Two nodes, not one, and the difference is not reachable from here.** No
+ * input to `parsePath` produces a subpath holding a single node -- every
+ * degenerate case is dropped whole, which was measured rather than assumed --
+ * so `>= 2` and `>= 1` behave identically on anything `importSvg` can return.
+ * It is written as the geometric fact, that one node is not a drawing, and
+ * tested against a shape built by hand, because the argument is about the
+ * shape and not about which parser handed it over.
  *
  * Lives here rather than in `main.ts` because it is the importer's own
  * question, and because the two callers there each had their own copy of it.
