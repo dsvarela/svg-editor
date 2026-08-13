@@ -28,7 +28,8 @@
  * fails on it. Run one, then the other.
  */
 
-import { readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, readdirSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 
@@ -39,9 +40,33 @@ const flag = (name, fallback) => {
 };
 const from = flag('--from', 0);
 const limit = flag('--limit', Infinity);
-const targets = args.filter((a) => !a.startsWith('--') && !/^\d+$/.test(a));
+
+/**
+ * Which tests get to disagree with a mutation.
+ *
+ * By default the ones that import the mutated file, which is the honest
+ * question: would this project's suite notice? Naming test files instead asks
+ * a narrower one -- would THESE notice -- and a survivor then means only that
+ * they did not, which is worth knowing when the file under review has a suite
+ * of its own. It is also the difference between minutes and hours, because
+ * `related` pulls in every slow neighbour on every single mutation.
+ */
+const testsIdx = args.indexOf('--tests');
+const only = testsIdx >= 0 ? args[testsIdx + 1].split(',') : null;
+/* The value that follows a flag is not a target. Taken only where the flag is
+   actually present: `indexOf` returns -1 for a missing one, and reading the
+   element after that is the first argument, which is the target itself. */
+const flagValues = new Set(
+  ['--from', '--limit', '--tests']
+    .map((f) => args.indexOf(f))
+    .filter((i) => i >= 0)
+    .map((i) => args[i + 1]),
+);
+const targets = args.filter((a) => !a.startsWith('--') && !flagValues.has(a));
 if (!targets.length) {
-  console.error('usage: node tools/mutate.mjs <file or directory> [--from N] [--limit N]');
+  console.error(
+    'usage: node tools/mutate.mjs <file or directory> [--from N] [--limit N] [--tests a,b]',
+  );
   process.exit(1);
 }
 
@@ -111,14 +136,23 @@ for (const file of files) {
 }
 
 const chosen = sites.slice(from, from === 0 && limit === Infinity ? undefined : from + limit);
-console.log(`${sites.length} sites across ${files.length} files; running ${chosen.length}`);
+console.log(
+  `${sites.length} sites across ${files.length} files; running ${chosen.length}` +
+    (only ? `, against ${only.join(' ')} only` : ''),
+);
 
-/** Run the tests that import `file`. Returns the exit code and what was said. */
+/* `--limit 0` lists rather than runs, which is how a caller finds the index of
+   the region it wants and turns it into a `--from`. The order is stable, so an
+   index means the same thing on the next run. */
+if (!chosen.length) {
+  sites.forEach((s, i) => console.log(`${i}\t${s.file}:${s.line + 1}\t${s.was} -> ${s.now}`));
+  process.exit(0);
+}
+
+/** Run the tests that may disagree with a mutation in `file`. */
 function runSuite(file) {
-  const run = spawnSync('npx', ['vitest', 'related', '--run', relative(process.cwd(), file)], {
-    encoding: 'utf8',
-    timeout: 180_000,
-  });
+  const argv = only ? ['vitest', 'run', ...only] : ['vitest', 'related', '--run', relative(process.cwd(), file)];
+  const run = spawnSync('npx', argv, { encoding: 'utf8', timeout: 180_000 });
   return { status: run.status, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
 }
 
@@ -139,6 +173,44 @@ function suiteCatches(file) {
   const { status, output } = runSuite(file);
   return status !== 0 || !reported(output);
 }
+/**
+ * Put the file back even if this process never gets to.
+ *
+ * The mutation lives in the working tree while the tests run, so a sweep that
+ * dies mid-run leaves a broken source file behind, and the damage reads as
+ * something a person typed. A signal handler is not enough on its own: the
+ * test run is synchronous, so the event loop is blocked for all but a sliver
+ * of each iteration and a signal arriving during one is never delivered --
+ * which is how `offset.ts` came back from an interrupted sweep with a `-`
+ * turned into a `+`.
+ *
+ * So the original is on disk before the mutation is, and the next run restores
+ * from it. That survives a kill this process cannot catch at all.
+ */
+const PENDING = join(tmpdir(), 'svg-editor-mutate-pending.json');
+if (existsSync(PENDING)) {
+  const held = JSON.parse(readFileSync(PENDING, 'utf8'));
+  /* Still running means this is a second sweep, not a crashed one, and two of
+     them share one working tree: each would read the other's mutation as the
+     file it is about to restore, and the survivors of both would be nonsense.
+     `process.kill(pid, 0)` asks whether a process is there without signalling
+     it. */
+  let running = false;
+  try {
+    process.kill(held.pid, 0);
+    running = true;
+  } catch {
+    running = false;
+  }
+  if (running) {
+    console.error(`another sweep is running (pid ${held.pid}); one working tree, one sweep`);
+    process.exit(1);
+  }
+  writeFileSync(held.file, held.original);
+  rmSync(PENDING);
+  console.log(`put back ${held.file}, left mutated by an earlier run`);
+}
+
 
 /* An unmutated run first, which settles two things at once: that the command
    line is one vitest accepts, and that the tree is green. Either being false
@@ -159,12 +231,13 @@ if (chosen.length) {
 const survivors = [];
 let done = 0;
 
-/* The mutation lives in the working tree while the tests run, so an interrupt
-   between writing it and putting it back would leave a broken file behind and
-   the damage would look like something a person typed. */
+
 let live = null;
 const putBack = () => {
-  if (live) writeFileSync(live.file, live.original);
+  if (live) {
+    writeFileSync(live.file, live.original);
+    if (existsSync(PENDING)) rmSync(PENDING);
+  }
   live = null;
 };
 for (const sig of ['SIGINT', 'SIGTERM']) {
@@ -179,7 +252,8 @@ for (const site of chosen) {
   const lines = original.split('\n');
   const line = lines[site.line];
   lines[site.line] = line.slice(0, site.col) + site.now + line.slice(site.col + site.was.length);
-  live = { file: site.file, original };
+  live = { file: site.file, original, pid: process.pid };
+  writeFileSync(PENDING, JSON.stringify(live));
   writeFileSync(site.file, lines.join('\n'));
   let caught;
   try {

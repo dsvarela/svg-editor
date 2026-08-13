@@ -1902,3 +1902,50 @@ representative cases. The contract is exact — a line is either on the lattice 
 it isn't — so there is no tolerance to tune and no reason not to sweep. The same
 check runs against a real layout engine in the `gridHonesty` browser scenario,
 because the step depends on a measured element width that jsdom does not have.
+
+### What a suite passing does not tell you
+
+Everything above is about a single test being able to pass for the wrong reason.
+Two failures found on 2026-08-14 were a level up from that: whole layers that
+could not report a failure at all.
+
+`tools/drive.mjs` caught every scenario error into a field of the JSON it
+printed and never set an exit code, so the browser job could only go red if the
+browser failed to launch. Underneath that, thirteen of the 43 scenarios never
+asserted anything — they drove the editor, read the page and returned what they
+found. Fixing the exit code made the suite able to fail; it took the second pass
+to make it measure. `node tools/drive.mjs --audit` refuses a scenario that never
+calls `check`, and CI runs it first.
+
+That check is deliberately weak. Calling `check` does not show that a scenario
+measures the right thing, and no machine can settle that. Never calling it shows
+the scenario measures nothing, and a machine can settle that, so it does.
+
+`tools/mutate.mjs` answers the same question for the unit suite by experiment
+rather than by inspection. It changes one operator in the source — a `<` for a
+`<=`, an `&&` for an `||` — runs the tests that import the file, and puts it
+back. A mutation the suite catches says nothing. A survivor is a change to what
+the program does that no test disagreed with.
+
+Not every survivor is a missing test. A guard the caller already makes true, or
+a bound nothing can reach, is an equivalent mutant: the program's behaviour did
+not change, so no test could have noticed. Reading them is the work; the tool
+only finds the candidates.
+
+Its own first version could not report a finding. `--silent` swallowed the
+filename, vitest exited 1 on a command line it could not parse, and every
+mutation scored as caught, so it reported a clean sweep having measured nothing —
+the exact failure it exists to detect. An unmutated baseline run now settles both
+halves of that before any result is believed: that the invocation is one vitest
+accepts, and that the tree was green to begin with.
+
+`offsetSubpath` is the measured example. A third of its operators survive every
+test that imports the file, and the survivors are almost all in the part that
+decides where an offset comes apart and how the pieces are rejoined across the
+seam -- which is the part §39's successor would have to rewrite. A first attempt
+at closing that gap swept a family of concave shapes and asserted the one-sided
+property that no point of an offset may lie nearer the original than the
+distance asked for. It killed none of them and cost eighteen seconds, so it was
+taken back out. The mutations there do not move points nearer the original; they
+change which pieces come out, and a test that does not read the piece count
+cannot see them.
