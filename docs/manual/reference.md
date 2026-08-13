@@ -337,6 +337,18 @@ screen, so shrinking a reference to line it up does not cost you detail. This is
 built for flat artwork: icons, logos, line drawings. A photograph will trace, and
 will give you thousands of nodes in a handful of flat colours.
 
+### File
+
+| Control | Does |
+|---|---|
+| **Import SVG** | Open an SVG file and make it the document |
+
+It reads the file the way pasting it into the source drawer does: the same
+importer, the same refusal of anything that draws nothing, and one undo step.
+Group transforms are baked into the points, primitives become paths, and the
+file's own `viewBox` becomes the canvas. It replaces what is open, so what is
+open goes.
+
 ### Canvas
 
 The page the drawing sits on, and the `viewBox` the exported file carries. It is

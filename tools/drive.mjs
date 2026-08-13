@@ -3509,6 +3509,73 @@ const scenarios = {
 
     return { before: before[0], after, status };
   },
+
+  /**
+   * Import an SVG file.
+   *
+   * The importer is unit-tested against text. What only a browser has is a file
+   * input, and what only this can show is that the file's contents reach the
+   * same route a paste does -- group transforms baked, viewBox adopted, one
+   * undo step -- rather than a second import path that drifts from it.
+   */
+  async importFile(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`importFile: ${what}`);
+    };
+    const dir = process.env.SCRATCH ?? '/tmp';
+    const { writeFileSync } = await import('node:fs');
+
+    /* A file with the things a hand-typed path does not have: a nested
+       transform, a primitive that is not a path, and a viewBox of its own. */
+    const file = `${dir}/drive-import.svg`;
+    writeFileSync(
+      file,
+      '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">' +
+        '<g transform="translate(10 5) scale(2)">' +
+        '<rect x="0" y="0" width="20" height="10" fill="#e04" stroke="none"/>' +
+        '<path d="M0 15 q10 -10 20 0" fill="none" stroke="#08a" stroke-width="2"/>' +
+        '</g><circle cx="80" cy="40" r="6" fill="#0a5"/></svg>',
+    );
+
+    await tab(page, 'doc');
+    const started = (await page.textContent('#stats')).trim();
+    check(/1 shape/.test(started), `the starter document reads "${started}"`);
+
+    await page.setInputFiles('#importFile', file);
+    await page.waitForTimeout(400);
+
+    const stats = (await page.textContent('#stats')).trim();
+    check(/3 shapes/.test(stats), `after importing: "${stats}"`);
+    // The file's own viewBox, not the one that was open.
+    check(/100 × 50/.test(stats), `the canvas reads "${stats}"`);
+    const info = (await page.textContent('#fileinfo')).trim();
+    check(/drive-import\.svg/.test(info), `the panel header says "${info}"`);
+
+    /* The group transform is baked, which is the thing that separates reading a
+       file from displaying one: the rect is 20 wide inside a scale(2) inside a
+       translate(10 5), so it arrives 40 wide at x = 10. */
+    const first = await page.$eval('.artwork path', (el) => el.getAttribute('d'));
+    check(/^M 10 5 H 50 V 25/.test(first), `the rect came in as "${first}"`);
+    // And a primitive that was never a path is one now.
+    const all = await page.$$eval('.artwork path', (els) => els.length);
+    check(all === 3, `${all} paths drawn`);
+
+    // One undo step, not one per shape.
+    await undo(page);
+    check(/1 shape/.test(await page.textContent('#stats')), 'undo did not take the whole import back');
+
+    // A file that draws nothing is refused, and says so rather than emptying
+    // the document.
+    const empty = `${dir}/drive-import-empty.svg`;
+    writeFileSync(empty, '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0"/></svg>');
+    await page.setInputFiles('#importFile', empty);
+    await page.waitForTimeout(300);
+    const refused = (await page.textContent('#status')).trim();
+    check(/draws nothing/.test(refused), `the refusal reads "${refused}"`);
+    check(/1 shape/.test(await page.textContent('#stats')), 'the refused import changed the document');
+
+    return { stats, info, first };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

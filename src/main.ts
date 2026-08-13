@@ -938,34 +938,32 @@ srcModeSeg.addEventListener('click', (e) => {
  * concatenated everything into a single `d`, so pressing Apply silently fused
  * every shape into one.
  */
-function applySource(): void {
+/**
+ * Replace the whole document from SVG or path-data text.
+ *
+ * Split out of `applySource` when the file picker arrived, because the two
+ * routes differ only in where the text came from and in what to call it when
+ * something is wrong with it. Everything after that -- refusing text that draws
+ * nothing, replacing the document, reporting what came in, re-fitting the view
+ * -- is one behaviour, and having it in one place is what stops the two drifting
+ * apart the first time either is changed.
+ *
+ * `what` names the source in the message, since "that draws nothing" is a
+ * different sentence when it is a file you chose than when it is a box you
+ * typed into.
+ */
+function replaceDocumentFrom(text: string, what: string): boolean {
   try {
-    const r = importSvg(src.value);
+    const r = importSvg(text);
     /* "Nothing to import" has to mean nothing *drawable*, not zero elements.
        `M 0 0` and `M 0 0 Q Q Q` both parse without complaint to a shape holding
        no segment, and applying one over a selected shape emptied it, reported
-       "Updated Star.", and left a `<path d="">` on the canvas. Text that draws
-       nothing cannot have been what anybody meant to replace a drawing with. */
+       "Updated Star.", and left a `<path d="">` on the canvas. */
     const draws = r.shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
     if (!draws) {
-      status.textContent = 'That draws nothing, so nothing was changed.';
+      status.textContent = `${what} draws nothing, so nothing was changed.`;
       status.className = 'st err';
-      return;
-    }
-
-    // Editing one shape's path data writes back to that shape only, leaving
-    // the rest of the document alone.
-    const target = store.state.sourceMode === 'd' ? scopedShape() : null;
-    if (target && r.shapes.length === 1) {
-      const id = target.id;
-      store.edit((s) => {
-        const sh = s.doc.shapes.find((x) => x.id === id);
-        if (sh) sh.subpaths = r.shapes[0].subpaths;
-        s.selection.nodes.clear();
-      });
-      status.textContent = `Updated ${target.name}.`;
-      status.className = 'st ok';
-      return;
+      return false;
     }
 
     store.edit((s) => {
@@ -977,16 +975,91 @@ function applySource(): void {
     });
     const n = r.shapes.length;
     status.textContent =
-      `Imported ${n} shape${n === 1 ? '' : 's'}.` +
+      `Imported ${n} shape${n === 1 ? '' : 's'}` +
       (r.warnings.length ? `. ${r.warnings.join('; ')}` : '.');
     status.className = r.warnings.length ? 'st err' : 'st ok';
     fit();
+    return true;
   } catch (err) {
-    const msg = err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    const msg =
+      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    status.textContent = msg;
+    status.className = 'st err';
+    return false;
+  }
+}
+
+function applySource(): void {
+  /* Editing one shape's path data writes back to that shape only, leaving the
+     rest of the document alone. Anything else replaces the document, which is
+     the shared route. */
+  const target = store.state.sourceMode === 'd' ? scopedShape() : null;
+  if (!target) {
+    replaceDocumentFrom(src.value, 'That');
+    return;
+  }
+
+  try {
+    const r = importSvg(src.value);
+    const draws = r.shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
+    if (!draws) {
+      status.textContent = 'That draws nothing, so nothing was changed.';
+      status.className = 'st err';
+      return;
+    }
+    if (r.shapes.length !== 1) {
+      replaceDocumentFrom(src.value, 'That');
+      return;
+    }
+    const id = target.id;
+    store.edit((s) => {
+      const sh = s.doc.shapes.find((x) => x.id === id);
+      if (sh) sh.subpaths = r.shapes[0].subpaths;
+      s.selection.nodes.clear();
+    });
+    status.textContent = `Updated ${target.name}.`;
+    status.className = 'st ok';
+  } catch (err) {
+    const msg =
+      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
     status.textContent = msg;
     status.className = 'st err';
   }
 }
+
+/**
+ * Open an SVG file and make it the document.
+ *
+ * The same route as pasting one into the source box, which is deliberate: a
+ * file has no more claim on the document than text does, and it goes through
+ * the same importer, the same refusal to accept something that draws nothing,
+ * and the same single undo step. What it adds is only the reading.
+ */
+/** What the document was last read from, for the panel header. */
+let loadedName: string | null = null;
+
+const importFile = $('#importFile') as HTMLInputElement;
+on('#importSvg', () => importFile.click());
+importFile.addEventListener('change', () => {
+  const f = importFile.files?.[0];
+  // Reset first: choosing the same file twice fires no `change` otherwise, so
+  // a failed import could not be retried by picking the same file again.
+  importFile.value = '';
+  if (!f) return;
+  f.text()
+    .then((text) => {
+      /* Named before the import, not after. `replaceDocumentFrom` notifies the
+         store, which repaints the panel -- so setting it afterwards left the
+         header saying `none opened` beside a document that had just been read
+         from a file. Cleared again if the import refused. */
+      loadedName = f.name;
+      if (!replaceDocumentFrom(text, f.name)) loadedName = null;
+    })
+    .catch(() => {
+      status.textContent = `Could not read ${f.name}.`;
+      status.className = 'st err';
+    });
+});
 
 on('#apply', applySource);
 
@@ -1848,6 +1921,7 @@ store.subscribe((s) => {
 
   /* What the rays are doing, and where from. `free` is a real answer: the
      origin follows the gesture, which is different from having none. */
+  $('#fileinfo').textContent = loadedName ?? 'none opened';
   $('#angleinfo').textContent = !s.snapToAngles
     ? 'off'
     : !(s.angleStep > 0)

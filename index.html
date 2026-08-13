@@ -449,6 +449,16 @@
 
           <div class="tabpanel" id="panel-doc" role="tabpanel" aria-labelledby="tab-doc" hidden>
           <div class="group">
+            <div class="glabel"><span>File</span><span class="gval" id="fileinfo"></span></div>
+            <button class="btn wide" id="importSvg" type="button" title="Open an SVG file and make it the document">Import SVG</button>
+            <input type="file" id="importFile" accept=".svg,image/svg+xml" hidden />
+            <p class="note">
+              Reads the file the same way pasting it into the source drawer does: the same importer,
+              the same refusal of anything that draws nothing, and one undo step. It replaces the
+              document, so what is open now goes.
+            </p>
+          </div>
+          <div class="group">
             <div class="glabel"><span>Canvas</span><span class="gval" id="canvasinfo"></span></div>
             <div class="coords">
               <label for="vbx">origin</label>
