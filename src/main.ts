@@ -750,6 +750,15 @@ delModeSeg.addEventListener('click', (e) => {
   if (v === 'fuse' || v === 'split') store.update((s) => (s.deleteMode = v));
 });
 
+/* The two held keys. `update` rather than `edit`: which keys are held is input
+   state, so it belongs in no undo step. */
+const modSeg = $('#mods');
+modSeg.addEventListener('click', (e) => {
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-mod');
+  if (v === 'shift') store.update((s) => (s.heldShift = !s.heldShift));
+  if (v === 'alt') store.update((s) => (s.heldAlt = !s.heldAlt));
+});
+
 document.querySelectorAll<HTMLButtonElement>('[data-al]').forEach((b) =>
   b.addEventListener('click', () => controller.alignSelection(b.getAttribute('data-al') as AlignMode)),
 );
@@ -1729,6 +1738,10 @@ store.subscribe((s) => {
   }
   for (const b of delModeSeg.querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-dm') === s.deleteMode));
+  }
+  for (const b of modSeg.querySelectorAll('button')) {
+    const on = b.getAttribute('data-mod') === 'shift' ? s.heldShift : s.heldAlt;
+    b.setAttribute('aria-pressed', String(on));
   }
   $('#delmodeinfo').textContent = s.deleteMode === 'split' ? 'leaves two ends' : 'keeps it whole';
   undoBtn.disabled = !store.canUndo;

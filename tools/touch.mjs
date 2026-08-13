@@ -94,9 +94,26 @@ const sweep = async () => {
       const target = el.closest('label') ?? el;
       const r = target.getBoundingClientRect();
       if (!r.width || !r.height) continue;
-      const key =
-        el.id ||
-        `${el.tagName}.${el.className}:${el.getAttribute('data-v') ?? el.getAttribute('data-al') ?? ''}`;
+      /* Distinct per control, since the sweep dedupes on it. Two buttons with
+         no id, no class and neither of the two data attributes this used to
+         name produced the same key and were counted once: adding the pair of
+         held-key buttons to the status strip left the total at 138. What
+         separates them is what a person reads on them, so that is in the key.
+         Anything still colliding after that is genuinely two of the same
+         control in two places. */
+      const label = (
+        el.getAttribute('aria-label') ??
+        el.getAttribute('title') ??
+        el.textContent ??
+        ''
+      )
+        .trim()
+        .slice(0, 24);
+      const data = [...el.attributes]
+        .filter((a) => a.name.startsWith('data-'))
+        .map((a) => a.value)
+        .join('/');
+      const key = el.id || `${el.tagName}.${el.className}:${data}:${label}`;
       out.push({
         key,
         w: +r.width.toFixed(1),

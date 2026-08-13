@@ -161,15 +161,23 @@
         <span class="hint" id="hint">Drag a node or handle. Double-click the outline to insert.</span>
         <span class="grow"></span>
 
-        <button class="ib wide" id="toggleSrc" type="button" aria-pressed="false" title="Source (Ctrl+E)">
-          <svg class="ico"><use href="#i-source" /></svg><span>Source</span>
-        </button>
-        <button class="ib" id="toggleRail" type="button" aria-pressed="true" title="Inspector (Ctrl+B)" aria-label="Inspector">
-          <svg class="ico"><use href="#i-panel" /></svg>
-        </button>
-        <button class="ib" id="theme" type="button" title="Invert the theme" aria-label="Invert the theme">
-          <svg class="ico"><use href="#i-theme" /></svg>
-        </button>
+        <!-- Grouped so that a narrow window can hold these three still while the
+             rest of the bar scrolls under them. Below 860px the bar is 916px of
+             controls in a 390px window, and the button that gets the inspector
+             off the canvas was the second-furthest from the edge: the one
+             control you need before any of the others was the one you had to go
+             looking for. -->
+        <div class="panels">
+          <button class="ib wide" id="toggleSrc" type="button" aria-pressed="false" title="Source (Ctrl+E)">
+            <svg class="ico"><use href="#i-source" /></svg><span>Source</span>
+          </button>
+          <button class="ib" id="toggleRail" type="button" aria-pressed="true" title="Inspector (Ctrl+B)" aria-label="Inspector">
+            <svg class="ico"><use href="#i-panel" /></svg>
+          </button>
+          <button class="ib" id="theme" type="button" title="Invert the theme" aria-label="Invert the theme">
+            <svg class="ico"><use href="#i-theme" /></svg>
+          </button>
+        </div>
       </header>
 
       <main class="work">
@@ -630,6 +638,17 @@
       </section>
 
       <footer class="readout">
+        <!-- Shift and Alt, for a hand with no keyboard under it. In this strip
+             because it is the only one still on screen while a drag is
+             happening: the toolbar scrolls sideways on a phone and the
+             inspector covers the canvas. First in it, and pinned there below
+             860px, because the strip overflows too and anything after the
+             readouts was pushed off the end. They latch, and the button says
+             which way it is latched. -->
+        <div class="seg" id="mods" role="group" aria-label="Held keys">
+          <button type="button" data-mod="shift" aria-pressed="false" title="Hold Shift: adds to the selection, keeps a scale's proportions, snaps a rotation to 15°, draws a square or a circle">Shift</button>
+          <button type="button" data-mod="alt" aria-pressed="false" title="Hold Alt: scales from the centre, moves a handle without its pair, bends a segment freely">Alt</button>
+        </div>
         <span class="rd"><i>doc</i><span id="stats"></span></span>
         <span class="rd"><i>grid</i><span id="gridval"></span></span>
         <button type="button" class="rd zoomrd" id="zoomval" title="Zoom. Click to return to 1:1"><i>zoom</i><span class="mono" id="zoomnum"></span></button>

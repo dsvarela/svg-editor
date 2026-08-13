@@ -3207,3 +3207,92 @@ describe('two fingers', () => {
     expect(h.store.state.camera).toEqual(before);
   });
 });
+
+describe('Shift and Alt without a keyboard', () => {
+  /* Seven pointer gestures change meaning under a modifier, and a phone has no
+     key to hold. Two buttons in the status strip latch them instead, and the
+     controller asks for the latch beside the real key rather than instead of
+     it. What these check is that the two routes arrive at the same place, and
+     that the latch stops at the pointer: a Shift left on for a drag must not
+     turn every later key press into its Shift variant. */
+
+  it('constrains a drawn shape the same way the key does', () => {
+    const held = harness();
+    held.store.update((s) => {
+      s.tool = 'ellipse';
+      s.heldShift = true;
+    });
+    held.down([0, 0]);
+    held.move([30, 10]);
+    held.up();
+
+    const keyed = harness();
+    keyed.store.update((s) => (s.tool = 'ellipse'));
+    keyed.down([0, 0]);
+    keyed.move([30, 10], { shiftKey: true });
+    keyed.up();
+
+    const pts = (h: Harness): number[][] =>
+      h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt);
+    // A circle of radius 5, from the smaller span, and not a 15 by 5 ellipse.
+    expect(pts(held)).toEqual([
+      [10, 5],
+      [5, 10],
+      [0, 5],
+      [5, 0],
+    ]);
+    expect(pts(held)).toEqual(pts(keyed));
+  });
+
+  it('scales from the centre with the latch, as Alt does', () => {
+    const h = harness('M10 5 L50 5 L50 25 L10 25 Z');
+    h.store.update((s) => {
+      s.selection.shapes.add(s.doc.shapes[0].id);
+      s.snapToGrid = false;
+      s.heldAlt = true;
+    });
+    const grip = h.gripEl('scale', 'se');
+    h.down(grip.at, grip.el);
+    h.move([grip.at[0] - 10, grip.at[1]]);
+    h.up();
+
+    const xs = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[0]);
+    // The centre held at 30 rather than the west edge holding at 10.
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(30, 6);
+  });
+
+  it('adds to the selection with the latch, as Shift-click does', () => {
+    const h = harness('M10 10 L30 10 L30 30 Z');
+    const id = h.store.state.doc.shapes[0].id;
+
+    h.down([10, 10], h.anchorEl(id, 0, 0));
+    h.up();
+    expect(h.store.state.selection.nodes.size).toBe(1);
+
+    h.store.update((s) => (s.heldShift = true));
+    h.down([30, 10], h.anchorEl(id, 0, 1));
+    h.up();
+    expect(h.store.state.selection.nodes.size).toBe(2);
+  });
+
+  it('stops at the pointer: a latched Shift does not reach the keyboard', () => {
+    /* `Shift` on an arrow key is the coarse nudge, ten times the fine one. If
+       the latch were read there too, turning it on to draw a square would
+       silently make every arrow key move ten times as far. */
+    const h = harness('M10 10 L30 10 L30 30 Z');
+    const id = h.store.state.doc.shapes[0].id;
+    h.store.update((s) => {
+      s.selection.nodes.add(`${id}/0/0`);
+      s.gridStep = 1;
+      s.nudgeBig = 10;
+      s.heldShift = true;
+    });
+
+    h.key('ArrowRight');
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(11, 9);
+
+    // And the key itself still does what it always did.
+    h.key('ArrowRight', { shiftKey: true });
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBeCloseTo(21, 9);
+  });
+});

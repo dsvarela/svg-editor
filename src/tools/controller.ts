@@ -280,6 +280,23 @@ export class Controller {
   }
 
   /**
+   * Shift and Alt, from the keyboard or from the two buttons in the status
+   * strip.
+   *
+   * Every pointer gesture asks these rather than the event, so a finger and a
+   * keyboard reach the same seven behaviours. The keyboard handlers are not
+   * routed through them: `Shift` there means the second half of a shortcut, and
+   * a latched Shift turning `Tab` into `Shift+Tab` would be a trap.
+   */
+  private shift(e: { shiftKey: boolean }): boolean {
+    return e.shiftKey || this.store.state.heldShift;
+  }
+
+  private alt(e: { altKey: boolean }): boolean {
+    return e.altKey || this.store.state.heldAlt;
+  }
+
+  /**
    * The lattice shift in force, or zero when pixel-fit is off or undecidable.
    *
    * **A drawing tool asks the pending style, not the selection.** That one line
@@ -1204,7 +1221,7 @@ export class Controller {
     if (hit?.kind === 'anchor' && hit.ref) {
       const key = nodeKey(hit.ref);
       this.store.update((st) => {
-        if (e.shiftKey) {
+        if (this.shift(e)) {
           if (st.selection.nodes.has(key)) st.selection.nodes.delete(key);
           else st.selection.nodes.add(key);
         } else if (!st.selection.nodes.has(key)) {
@@ -1241,7 +1258,7 @@ export class Controller {
            pointer. `cur` is null exactly when the handles are not symmetric,
            and Alt asks for the free edit regardless -- the same key that
            breaks a handle pair, doing the same thing. */
-        free: cur === null || e.altKey,
+        free: cur === null || this.alt(e),
       };
       return;
     }
@@ -1251,7 +1268,7 @@ export class Controller {
       // Alt held at the moment of grabbing breaks the pair for the whole drag.
       // Sampling it once, rather than per move, means letting go of Alt midway
       // does not suddenly snap the far handle back into line.
-      this.drag = { kind: 'handle', ref: hit.ref, which: hit.kind, breakPair: e.altKey };
+      this.drag = { kind: 'handle', ref: hit.ref, which: hit.kind, breakPair: this.alt(e) };
       return;
     }
 
@@ -1271,7 +1288,7 @@ export class Controller {
       const selectedHere = [...s.selection.nodes].filter((k) => parseNodeKey(k).shape === id).length;
       const wholeShapeSelected = shapeNodes > 0 && selectedHere === shapeNodes;
       this.store.update((st) => {
-        if (!e.shiftKey && !st.selection.shapes.has(id) && !wholeShapeSelected) {
+        if (!this.shift(e) && !st.selection.shapes.has(id) && !wholeShapeSelected) {
           st.selection = emptySelection();
         }
         st.selection.shapes.add(id);
@@ -1317,7 +1334,7 @@ export class Controller {
       return;
     }
 
-    if (!e.shiftKey) this.store.update((st) => (st.selection = emptySelection()));
+    if (!this.shift(e)) this.store.update((st) => (st.selection = emptySelection()));
     this.drag = { kind: 'marquee', from: p };
   };
 
@@ -1429,7 +1446,7 @@ export class Controller {
         if (d.mode === 'rotate') {
           // Shift snaps to fifteen degrees, the interval every editor uses:
           // it divides the right angle and the eighth turn both.
-          const r = rotateMatrix(boxCentre(d.box), d.grab, p, e.shiftKey ? 15 : 0);
+          const r = rotateMatrix(boxCentre(d.box), d.grab, p, this.shift(e) ? 15 : 0);
           m = r.m;
           this.onMessage?.(`Rotate ${fmt(r.deg)}°`, true);
         } else {
@@ -1443,8 +1460,8 @@ export class Controller {
           m = scaleMatrix(d.box, d.part, to, {
             // Read every frame rather than sampled at the press, because both
             // are things people reach for once a drag is already under way.
-            fromCentre: e.altKey,
-            keepAspect: e.shiftKey,
+            fromCentre: this.alt(e),
+            keepAspect: this.shift(e),
           });
           this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
         }
@@ -1533,7 +1550,7 @@ export class Controller {
       }
 
       case 'create': {
-        this.createDrag(p, e.shiftKey, e.altKey);
+        this.createDrag(p, this.shift(e), this.alt(e));
         return;
       }
 
@@ -1642,7 +1659,7 @@ export class Controller {
         const d = this.drag;
         const now = selectionBBox(this.store.state.doc, this.store.state.selection);
         if (d.mode === 'rotate') {
-          const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), e.shiftKey ? 15 : 0);
+          const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), this.shift(e) ? 15 : 0);
           this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
         } else if (now) {
           this.onMessage?.(

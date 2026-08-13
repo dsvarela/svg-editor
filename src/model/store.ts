@@ -115,6 +115,23 @@ export interface EditorState {
    */
   wireframe: boolean;
   snapToGrid: boolean;
+  /**
+   * Shift and Alt, held down without a keyboard.
+   *
+   * Seven pointer gestures change what they mean under a modifier: adding to
+   * the selection, keeping a scale's proportions, snapping a rotation to 15°,
+   * drawing a square or a circle, scaling from the centre, breaking a handle
+   * pair, and bending a segment without keeping it symmetric. On a phone there
+   * is no key to hold, so all seven were unreachable. These latch instead: they
+   * stay on until pressed again, which is visible in the button, rather than
+   * clearing after one gesture, which would not be.
+   *
+   * Input state and nothing else. It never reaches the document, the history or
+   * the export, and the controller reads it beside the real key rather than
+   * instead of it, so holding Shift still works and does the same thing.
+   */
+  heldShift: boolean;
+  heldAlt: boolean;
   /** Snap to an anchor already in the drawing: the 0-D tier. */
   snapToPoints: boolean;
   /**
@@ -272,6 +289,8 @@ export class Store {
       nudgeBig: 10,
       wireframe: false,
       snapToGrid: true,
+      heldShift: false,
+      heldAlt: false,
       snapToPoints: true,
       snapToBoundary: true,
       snapToIntersections: false,

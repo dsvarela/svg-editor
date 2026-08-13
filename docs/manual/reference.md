@@ -38,6 +38,7 @@ as the centre rather than a corner.
 | `Alt`+wheel | Pan up and down |
 | `Space`-drag, or middle-drag | Pan, from any tool |
 | Two fingers | Zoom about the point between them, and pan as that point moves |
+| **Shift** and **Alt** in the status strip | Hold the key without a keyboard. They stay held until pressed again, and apply to every gesture in this table |
 
 ## Keyboard
 

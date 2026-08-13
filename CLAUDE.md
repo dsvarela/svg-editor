@@ -46,10 +46,11 @@ way out of an edit. So object identity and revision counters are useless as
 cache keys, and anything that wants to know whether geometry changed has to
 compare the numbers. See `src/view/pathcache.ts`.
 
-**Touch is not supported yet, and new work must not make it harder.** The
-decision is to finish the desktop backlog first, so nothing here is asked to
-work on a phone today. What is asked is that the gap stops widening, because
-every operation reachable only by key or hover is one more thing to retrofit:
+**Touch is built but has never been held.** The desktop backlog finished first,
+which is what the three rules below were protecting, and the retrofit they were
+protecting happened on 2026-08-13. Nothing here has been tried on a real phone
+or tablet, so treat every claim about touch as measured in a headless browser
+and unconfirmed by a hand. The rules still hold for new work:
 
 - Every operation gets a button, not only a shortcut. Shortcuts stay as the
   fast path.
@@ -57,24 +58,34 @@ every operation reachable only by key or hover is one more thing to retrofit:
 - New controls are laid out at 44 px minimum, which is the touch target
   minimum in both Apple's and Google's guidance.
 
-The input layer is already there: the controller listens to `pointer*` events
-and never to `mouse*`, and the overlay sets `touch-action: none`. Sizing is
-there too, as of 2026-08-13: `src/ui/styles.css` ends with a
-`@media (pointer: coarse)` block that raises `--h` and the handful of controls
-that do not take their height from it, so **every one of the 138 controls is at
-least 44 px to a finger and none of them changed for a mouse**. Two fingers
-zoom and pan, in `Controller.pinchMove`. What blocks a phone today is a toolbar
-that scrolls sideways to reach the panel toggles, and that nothing beyond the
-zoom has been tried on a real one: the gesture tests drive synthetic touch
-events, which prove the arithmetic and say nothing about a hand.
+Four pieces are in place, all from 2026-08-13:
 
-Both numbers come from `node tools/touch.mjs` with the dev server up, `--coarse`
-for the second. Re-run it rather than trusting a figure written here. Two
-corrections went into the tool on 2026-08-13 and neither number before that date
-means what it says: it skipped controls in collapsed groups, of which the rail
-redesign left it eleven, and it skipped disabled ones, which are laid out at the
-size they will have when they are enabled. It had been reporting 37 controls
-where the markup holds 166.
+- **Input.** The controller listens to `pointer*` and never to `mouse*`, and
+  the overlay sets `touch-action: none`.
+- **Size.** A `@media (pointer: coarse)` block at the end of
+  `src/ui/styles.css` raises `--h` and the handful of controls that do not take
+  their height from it, so **every one of the 166 controls is at least 44 px to
+  a finger, and none of them changed for a mouse**.
+- **Zoom.** Two fingers zoom about the point between them and pan as that point
+  moves: `Controller.pinchMove`.
+- **Modifiers.** Seven pointer gestures change meaning under Shift or Alt, and
+  a phone has no key to hold. Two latching buttons at the head of the status
+  strip stand in, read by `Controller.shift` and `Controller.alt` beside the
+  real key. They stop at the pointer on purpose: a latched Shift must not turn
+  every later key press into its Shift variant.
+
+Both strips overflow at 390 px and both now scroll, with the controls you need
+mid-gesture pinned: the panel toggles at the right of the toolbar, the held
+keys at the left of the status strip.
+
+Both counts come from `node tools/touch.mjs` with the dev server up, `--coarse`
+for the second. Re-run it rather than trusting a figure written here. **Three
+corrections went into the tool on 2026-08-13, so no count recorded before that
+date means what it says.** It skipped controls in collapsed groups, of which
+the rail redesign left it eleven; it skipped disabled ones, which are laid out
+at the size they will have when they are enabled; and its key for a control
+with no id collided, which quietly merged 28 of them into other rows. It had
+been reporting 37 where the markup holds 166.
 
 ## Tests
 

@@ -175,6 +175,10 @@ input[type='number'],
 }
 .bar::-webkit-scrollbar { display: none; }
 .bar .sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--line); }
+/* The three panel toggles, as one thing. They sit at the end of the bar and are
+   spaced exactly as they were when they were three loose children; the group
+   exists so that a narrow window can pin them, which it does further down. */
+.panels { display: flex; align-items: center; gap: 4px; flex: none; }
 
 .brand {
   display: flex;
@@ -872,8 +876,21 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
   font-size: 11px;
   color: var(--ink-2);
   white-space: nowrap;
-  overflow: hidden;
+  /* Scrolls rather than clips. `overflow: hidden` meant that in a window too
+     narrow to hold the strip, everything past the cut -- the coordinates, the
+     snap kind -- was not merely off screen but unreachable. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.readout::-webkit-scrollbar { display: none; }
+/* The held keys sit at the head of the strip and are not part of the readout's
+   spacing rhythm: they are a control among measurements. Shorter than a `.seg`
+   elsewhere, because the strip is 24 px and the default 26 hung two pixels past
+   its bottom edge. `min-height` in the coarse block beats this, so a finger
+   still gets 44. */
+.readout #mods { flex: none; margin-right: -6px; align-self: center; }
+.readout #mods button { height: 20px; padding: 0 8px; font-size: 11px; }
 .rd { display: flex; align-items: baseline; gap: 6px; }
 .rd i {
   font-style: normal;
@@ -952,7 +969,42 @@ kbd {
   .bar .hint { display: none; }
 }
 @media (max-width: 860px) {
-  .brand span { display: none; }
+  /* The whole brand, not only its subtitle. It is 60 px of a bar that has more
+     controls than room, and the name of the application is the one thing on
+     screen nobody needs to be told. */
+  .brand { display: none; }
+
+  /* The bar scrolls sideways here, and these three stay where they are while it
+     does. Sticky rather than fixed so they sit in the bar's own flow, and with
+     a background because the rest of the row passes underneath.
+
+     The bar gives up its right padding to them. `right: 0` sticks to the
+     padding edge rather than the border edge, so the eight pixels the bar was
+     holding stayed uncovered and the button behind showed through the gap. */
+  .bar { padding-right: 0; }
+
+  /* Same treatment at the other end of the window: the strip scrolls, and the
+     two held keys stay where they are while it does. Without this they sat at
+     x = 557 in a 390px window, which is a control that exists and cannot be
+     pressed. */
+  .readout { padding-left: 0; }
+  .readout #mods {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    margin-right: 0;
+    padding-right: 6px;
+    background: var(--panel-2);
+    box-shadow: 8px 0 8px -8px var(--ink);
+  }
+  .panels {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    padding: 0 8px 0 6px;
+    background: var(--panel-2);
+    box-shadow: -8px 0 8px -8px var(--ink);
+  }
   /* The rail stops being a column and floats over the canvas, because below
      this width taking 288px from the canvas leaves nothing to draw in. */
   .work { grid-template-columns: minmax(0, 1fr); position: relative; }
