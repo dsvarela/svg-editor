@@ -3426,6 +3426,89 @@ const scenarios = {
 
     return { started, status };
   },
+
+  /**
+   * Offset path: a parallel shape beside the original.
+   *
+   * The geometry is measured in the unit tests. What a browser adds is that the
+   * result reaches the document as a second shape with the first still there,
+   * and that its size is what a parallel path of that distance should be.
+   */
+  async offsetPath(page) {
+    const check = (ok, what) => {
+      if (!ok) throw new Error(`offsetPath: ${what}`);
+    };
+
+    /* A circle, because its offset has a size you can check by eye and by
+       arithmetic: radius 20 offset by 5 is radius 25. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64">' +
+        '<path d="M64 32 C64 43.05 55.05 52 44 52 C32.95 52 24 43.05 24 32 ' +
+        'C24 20.95 32.95 12 44 12 C55.05 12 64 20.95 64 32 Z" fill="none" stroke="#2563d8"/></svg>',
+    );
+    await page.click('#apply');
+    await page.waitForTimeout(200);
+    await closeSource(page);
+
+    await tab(page, 'shape');
+    await page.click('#shapelist li');
+    await page.waitForTimeout(150);
+
+    const boxes = () =>
+      page.$$eval('.artwork path', (els) =>
+        els.map((el) => {
+          const b = el.getBBox();
+          return { x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.width.toFixed(2), h: +b.height.toFixed(2) };
+        }),
+      );
+    const before = await boxes();
+    check(before.length === 1, `${before.length} shapes before offsetting`);
+
+    await page.fill('#offsetBy', '5');
+    await page.dispatchEvent('#offsetBy', 'input');
+    await page.click('#offsetGo');
+    await page.waitForTimeout(300);
+
+    const after = await boxes();
+    check(after.length === 2, `${after.length} shapes after offsetting, wanted 2`);
+    // The original is untouched: an offset is a companion, not a replacement.
+    check(
+      Math.abs(after[0].w - before[0].w) < 0.01 && Math.abs(after[0].h - before[0].h) < 0.01,
+      `the original changed size: ${JSON.stringify([before[0], after[0]])}`,
+    );
+    // And the new one is ten wider and ten taller, being five out all round.
+    check(
+      Math.abs(after[1].w - (before[0].w + 10)) < 0.2 && Math.abs(after[1].h - (before[0].h + 10)) < 0.2,
+      `the offset is ${after[1].w} by ${after[1].h}, wanted ${before[0].w + 10} by ${before[0].h + 10}`,
+    );
+
+    const status = (await page.textContent('#status')).trim();
+    check(/Offset 1 shape/.test(status), `the status line says "${status}"`);
+
+    // Negative goes the other way, from the same original.
+    await tab(page, 'shape');
+    await page.click('#shapelist li');
+    await page.waitForTimeout(150);
+    await page.fill('#offsetBy', '-6');
+    await page.dispatchEvent('#offsetBy', 'input');
+    await page.click('#offsetGo');
+    await page.waitForTimeout(300);
+    const three = await boxes();
+    check(three.length === 3, `${three.length} shapes after the second offset`);
+    check(
+      Math.abs(three[2].w - (before[0].w - 12)) < 0.3,
+      `the inward offset is ${three[2].w} wide, wanted ${before[0].w - 12}`,
+    );
+
+    // One undo step per press, not one per subpath.
+    await undo(page);
+    check((await boxes()).length === 2, 'undo did not take back the whole offset');
+
+    return { before: before[0], after, status };
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

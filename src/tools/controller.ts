@@ -61,6 +61,7 @@ import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
 import { alignmentsFor, shiftBox } from '../model/smart';
 import { canBeAuto, reflowDoc, setAuto } from '../model/auto';
+import { offsetSubpath } from '../core/offset';
 import { rayAngles } from '../model/angles';
 import type { AngleSetup } from '../model/angles';
 import { addGuide, moveGuide, removeGuide, settleGuide } from '../model/guides';
@@ -764,6 +765,63 @@ export class Controller {
       );
     } else {
       this.onMessage?.('Nothing changed.', false);
+    }
+    return ok;
+  }
+
+  /**
+   * Draw a path parallel to each selected shape, at a distance.
+   *
+   * A new shape rather than a change to the old one: the original is almost
+   * always still wanted -- an outline and its offset are a pair -- and an
+   * operation that consumes its input to produce a near-copy is one undo away
+   * from being useless and one step away from being a duplicate.
+   */
+  offsetSelection(d: number): boolean {
+    const shapes = selectedShapes(this.store.state.doc, this.store.state.selection);
+    if (!shapes.length) {
+      this.onMessage?.('Select a shape to offset.', false);
+      return false;
+    }
+    if (!Number.isFinite(d) || d === 0) {
+      this.onMessage?.('Offset by how far? Zero is the shape you already have.', false);
+      return false;
+    }
+
+    const made: string[] = [];
+    let refused = 0;
+    const ok = this.tryEdit((st) => {
+      for (const shape of shapes) {
+        const live = findShape(st.doc, shape.id);
+        if (!live) continue;
+        /* Tolerance from the document's own precision: an offset fitted finer
+           than the serialiser will write is work nobody can see. */
+        const tol = Math.max(invisibleAt(st.decimals), 0.01);
+        const subpaths = live.subpaths
+          .map((sp) => offsetSubpath(sp, d, tol))
+          .filter((sp): sp is Subpath => sp !== null);
+        if (!subpaths.length) {
+          refused++;
+          continue;
+        }
+        const next = makeShape(subpaths, `${live.name} offset`, live.style);
+        st.doc.shapes.push(next);
+        made.push(next.id);
+      }
+      if (!made.length) return false;
+      st.selection = emptySelection();
+      for (const id of made) st.selection.shapes.add(id);
+      return true;
+    });
+
+    if (ok) {
+      this.onMessage?.(
+        `Offset ${made.length} ${made.length === 1 ? 'shape' : 'shapes'} by ${fmt(d)}.` +
+          (refused ? ` ${refused} had no direction to offset along.` : ''),
+        true,
+      );
+    } else {
+      this.onMessage?.('Nothing there could be offset.', false);
     }
     return ok;
   }

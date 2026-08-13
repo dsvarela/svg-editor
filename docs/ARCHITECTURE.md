@@ -1583,6 +1583,52 @@ scenario now blurs, scrolls the panel to the top, and focuses a control at the
 bottom of it, which forces the scroll on any window. With `scroll` wired back to
 `hide` it fails.
 
+## 39. Offset path: sample the offset, let the fitter do the rest
+
+The exact offset of a cubic is not a cubic -- degree 10 in general -- so every
+editor approximates and the only question is how. This samples the true offset
+and fits cubics through the samples, which works here because of one property:
+
+**An offset curve is parallel, so it shares its original's tangent direction at
+every parameter.** `core/fit.ts` takes the end tangents as inputs rather than
+guessing them, so both ends of every run come out at exactly the right angle and
+the fitter is left with only the middle. It subdivides on its own when it cannot
+hit the tolerance, so the error control was already written. Measured: a circle
+of radius 20 offset by 5 at a tolerance of 0.02 is within 0.042 everywhere, in
+ten nodes.
+
+Two details. The whole subpath is sampled and fitted **in one go** rather than
+segment by segment, so the fitter chooses where the curves break instead of
+being forced to break at every node, where the offset has no feature at all. And
+`tangentAt` looks either side of the parameter when the derivative vanishes,
+because a cusp has no tangent to take a normal from and the curve still has a
+direction of travel there.
+
+### What it does not do, measured rather than described
+
+On the **inside** of a corner the two neighbouring offsets overrun each other, so
+the sampled polyline doubles back -- and a curve fitted through a sequence that
+doubles back does not merely loop, **it leaves the offset altogether**. A 40-unit
+square offset inward by 4 departs from the offset distance by up to 4. The same
+square outward by 4 is within 0.05. Both numbers are in `test/offset.test.ts`, so
+the limitation is a failing property with a bound rather than a sentence.
+
+"It loops" was the comfortable version and it is not what happens. Two routes to
+removing the overrun were tried and neither shipped:
+
+- **The boolean library.** `booleanShapes` needs two operands, and uniting a
+  self-crossing path with a copy of itself puts coincident edges everywhere,
+  which throws inside path-bool.
+- **Trimming with the editor's own solver.** Find the self-crossings with
+  `cubicIntersections` and splice out the run between them. The version written
+  skipped adjacent segments, which is exactly where a polygon's offset overruns;
+  including them still left a stray piece at the original corner, six units out
+  on a six-unit offset. It was removed rather than shipped, because geometry
+  that is confidently wrong is worse than geometry that is visibly incomplete.
+
+**Stroke to path needs that answer before it can ship**, since the two offsets
+of a stroke always meet at the caps. That is why it is still open.
+
 ## Known limitations
 
 Recorded because a document listing only the wins is not worth reading.
@@ -1599,6 +1645,9 @@ line you cannot snap to — is impossible by construction, and that is the half
 that matters. See §9.
 
 **Arc round-trip is one-way.** See §2.
+
+**Offset path leaves the offset near a concave corner.** By as much as the
+offset distance, bounded and measured. See §39.
 
 **PathBool.js is early-stage** by its author's own description, who asks for
 failure cases. Treat returned geometry as untrusted: check it is non-empty and
