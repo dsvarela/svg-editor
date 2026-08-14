@@ -1634,6 +1634,27 @@ Three things follow from filtering samples:
   filter cuts up to one sample spacing short, and a corner short by that much is
   a corner the path does not close through. Consecutive runs are put on the
   crossing of the directions they arrive and leave at.
+
+  **Bisecting the filter's own criterion instead does not work, and the reason
+  is the criterion rather than the search.** The obvious replacement for that
+  extrapolation is to hunt between the last surviving sample and the first
+  casualty for the place the offset actually stops. It was built and measured
+  and taken back out. The criterion is asked once per sample and there are
+  thousands, so it is answered by `NearMap` -- the nearest of a polyline's
+  points, which overstates a distance by up to half a step -- and slackened by
+  the fit tolerance on top. Bisecting that lands the end past the corner by the
+  slack divided by the sine of the half angle: the square inward went from
+  0.001 out to 0.031. Bisecting an exact projection instead fixes that one and
+  breaks a worse thing, because it no longer agrees with the cheap criterion
+  about which samples were kept. Eight of the star's run ends were already
+  inside the strict distance, so there was nothing to bisect from, they could
+  not be found to meet, and a shape that is one contour came back as four --
+  taking `strokeOutline` to null with it. Making the filter exact as well is
+  what `NearMap` exists to avoid.
+
+  The extrapolation has neither problem: it reads only the samples that
+  survived, so it cannot disagree with the filter, and for a corner between two
+  straight branches it is exact rather than approximate.
 - **The result is a list of subpaths.** Two runs that do not meet are not a
   corner; the offset has come apart, which happens whenever a shape cannot hold
   the distance asked of it. Returning one path with a segment across the gap was
