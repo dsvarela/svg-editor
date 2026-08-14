@@ -256,6 +256,24 @@ export function segmentIsLine(s: Subpath, i: number): boolean {
 export const STROKE_JOIN = 'round';
 export const STROKE_CAP = 'round';
 
+/**
+ * Distance below which two anchors are one anchor.
+ *
+ * The cases this decides put the two points at bit-identical coordinates, so
+ * `===` would answer them. It is still the wrong test: a rounded rectangle one
+ * ulp wider than twice its radius misses the clamp and leaves the two ends of
+ * its vanished side 4.4e-16 apart, and both get emitted. What that costs is a
+ * zero-length command in the exported path, and a path carrying one can never
+ * be simplified again, because a zero chord gives the fitter no tangent to work
+ * from. Exactness is the wrong test for a predicate about geometry.
+ *
+ * Named here because three modules ask it -- the rounded-rectangle generator,
+ * the fillet, and the offset's merge of fitted curve ends -- and two of them
+ * had spelled it out separately under the same name. Not `DEGENERATE` in
+ * `ops.ts`, which is deliberately looser and says why.
+ */
+export const MEET = 1e-9;
+
 export const defaultStyle = (): Style => ({
   fill: 'none',
   stroke: '#2563d8',

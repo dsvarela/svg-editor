@@ -32,7 +32,15 @@
 
 import { cubicAt, cubicDerivAt } from './bezier';
 import { fitCurve } from './fit';
-import { cloneNode, cloneSubpath, makeNode, nextNodeId, segmentAsCubic, segmentCount } from './types';
+import {
+  cloneNode,
+  cloneSubpath,
+  makeNode,
+  MEET,
+  nextNodeId,
+  segmentAsCubic,
+  segmentCount,
+} from './types';
 import { reverseSubpath } from '../model/ops';
 import type { Cubic, PathNode, Pt, Subpath } from './types';
 
@@ -450,7 +458,7 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
     const merged: PathNode[] = [];
     for (const n of nodes) {
       const last = merged[merged.length - 1];
-      if (last && Math.hypot(last.pt[0] - n.pt[0], last.pt[1] - n.pt[1]) < 1e-9) {
+      if (last && Math.hypot(last.pt[0] - n.pt[0], last.pt[1] - n.pt[1]) <= MEET) {
         last.hOut = n.hOut;
         if (!last.hIn) last.hIn = n.hIn;
         continue;
@@ -461,7 +469,15 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
 
     /* Closed only if it came back to where it started. A piece of a broken-up
        offset is open however closed the original was, and claiming otherwise
-       draws a segment across the gap. */
+       draws a segment across the gap.
+
+       Not `MEET`, fifteen lines above, and the gap between the two is the
+       point. That one asks whether two anchors are the same anchor, of points
+       one computation produced and handed over bit-identical, so its bound only
+       has to survive arithmetic. This one asks whether a path arrived back
+       where it set off, of two ends the fitter reached independently from
+       opposite directions, so its bound has to survive a fit. The tolerance is
+       how far a fit is allowed to be out, which makes it the answer here. */
     const head = merged[0];
     const tail = merged[merged.length - 1];
     const rejoined =

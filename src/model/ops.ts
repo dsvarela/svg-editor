@@ -19,6 +19,7 @@ import {
   continuityOf,
   endNodeIndex,
   makeNode,
+  MEET,
   nextNodeId,
   segmentAsCubic,
   segmentCount,
@@ -909,7 +910,6 @@ export function roundCorner(
      because a zero chord gives the fitter no tangent to work from. Where they
      coincide the neighbour is reused, which is also the right answer
      geometrically: two arcs that meet share the point where they meet. */
-  const MEET = 1e-9;
   const startsAtPrev = Math.hypot(t1[0] - prev.pt[0], t1[1] - prev.pt[1]) <= MEET;
   const endsAtNext = Math.hypot(t2[0] - next.pt[0], t2[1] - next.pt[1]) <= MEET;
 

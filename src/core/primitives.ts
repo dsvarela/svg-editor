@@ -7,7 +7,7 @@
  * that a circle is only as round as four cubics can be; see `KAPPA`.
  */
 
-import { makeNode } from './types';
+import { makeNode, MEET } from './types';
 import type { PathNode, Pt, Subpath } from './types';
 
 /**
@@ -23,19 +23,6 @@ import type { PathNode, Pt, Subpath } from './types';
  * agree, which is the check worth remembering.
  */
 export const KAPPA = (4 / 3) * (Math.SQRT2 - 1);
-
-/**
- * Distance below which two tangent points count as the same point.
- *
- * The same bound `roundCorner` uses, and for the same reason. An exact `===`
- * looks safe here, because when a side genuinely vanishes `x0 + rad` and
- * `x1 - rad` really are bit-identical. It is not: a width one ulp above twice
- * the radius fails `capW`, leaves the two coordinates 4.4e-16 apart, and emits
- * both -- a zero-length command in the exported path, and a path that can never
- * be simplified again. Exactness is the wrong test for a predicate about
- * geometry.
- */
-const MEET = 1e-9;
 
 /** Handle length for an arc of `angle` radians on a circle of radius `r`. */
 export const arcHandle = (r: number, angle: number): number => (r * 4 * Math.tan(angle / 4)) / 3;
