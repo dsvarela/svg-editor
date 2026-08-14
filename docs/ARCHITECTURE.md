@@ -1990,6 +1990,15 @@ Four of the seven are closed. What closed them was not a distance:
   square offset inward has exactly four. A wrong tangent at a seam moves neither
   the position of any point nor the distance to the original.
 
-The remaining three are all the seam cusp above, on one shape. A test that
-pinned the current 0.059 would be recording a defect as the specification, and
-the honest number to assert is not known until the seam is right.
+The other three were not a missing test at all. They were the seam cusp above,
+and what closed them was fixing it: the ring representation retired the
+inference they lived in. Two survivors are left of the 26 across the rewritten
+machinery, and neither is a correctness gap -- a whole ring fitted from two
+samples along, and a hundredth of a unit of deviation at the end of a run. Both
+would have to be pinned by asserting a node count or a tolerance, which is the
+approximation-encoding this file's tests exist not to do.
+
+**The count went up while the gap closed.** 29 of 92 before, 26 of 87 after, and
+the seven that meant something became two. A survivor count is a population of
+candidates, not a measurement, and the two numbers are not comparable without
+reading both populations.

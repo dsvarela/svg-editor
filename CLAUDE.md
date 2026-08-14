@@ -141,14 +141,13 @@ the unit suite still calls green. A survivor is a change to what the program
 does that no test disagreed with. It rewrites files in place while it runs, so
 it cannot share the tree with `npm run drive`.
 
-**A survivor count is not a finding until someone has read the survivors.** Of
-the 29 in `offsetSubpath`, 22 changed nothing observable across thirteen shapes,
-so no test could have caught them. `--apply N` puts one mutation in the tree so
-that difference can be looked at; `git checkout` puts it back. Report the number
-that moved something, and say which measure moved.
-
-Three survive there still, all of them the seam cusp in §39 of
-`docs/ARCHITECTURE.md`. They are a defect to fix, not tests to write.
+**A survivor count is not a finding until someone has read the survivors.** In
+`offsetSubpath` it went from 29 of 92 to 26 of 87 while the gap closed, because
+most survivors change nothing observable and no test could have caught them.
+`--apply N` puts one mutation in the tree so that difference can be looked at;
+`git checkout` puts it back. Report the number that moved something, and say
+which measure moved. Of the 26 there now, 2 do, and both are a node laid out
+differently rather than a shape that is wrong.
 
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 
