@@ -419,7 +419,7 @@ and asks for failure cases:
   NaN that reaches the document cannot be undone out of it — by then it is
   already in a history snapshot — so the check has to happen before the commit,
   and its failure has to be distinguishable from a legitimately empty result.
-- `Controller.booleanSelection` catches, reports, and leaves the document
+- `Commands.booleanSelection` catches, reports, and leaves the document
   untouched. Nothing is mutated until a finite result exists.
 
 Selection order is document order, which is paint order: the first shape

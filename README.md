@@ -4,7 +4,7 @@ A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
 **Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
-or download one file.** The whole editor is a single 201 kB HTML page with every
+or download one file.** The whole editor is a single 257 kB HTML page with every
 asset inlined. Take the `.html` from [the latest
 release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
 browser, and it runs offline with no server and nothing installed.
@@ -43,9 +43,9 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **201.5 kB, 62.3 kB
-gzipped**, as `npm run build` reports it. Open `dist/index.html` from disk and it
-works. Auto-trace is 4.2 kB of
+The production build is one file, no external requests: **256.6 kB, 77.8 kB
+gzipped** on 2026-08-14, as `npm run build` reports it. Open `dist/index.html`
+from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
 and 1.9 kB for the inlined worker it runs in, measured by building without it.
 See ARCHITECTURE §26 and §28.
@@ -64,7 +64,7 @@ tells you a feature exists that does not.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does, and what it costs | a standing explanation |
 | [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written | a rule to apply |
 | [`docs/SHOPPING-LIST.md`](docs/SHOPPING-LIST.md) | What is deliberately not built yet, and why | intent, not behaviour |
-| [`docs/reviews/`](docs/reviews/README.md) | Three reviews, 31 defect classes, 40 documentation claims corrected | evidence, true of its date |
+| [`docs/reviews/`](docs/reviews/README.md) | Six reviews, 2026-08-11 to 2026-08-15, each with what it found and what it got wrong | evidence, true of its date |
 
 ---
 
@@ -105,11 +105,19 @@ src/
     fit.ts         cubics through a run of points, by least squares
     primitives.ts  ellipse, rectangle, and fitting a circle to points
     raster.ts      a raster's boundaries -> polylines, for tracing
+    intersect.ts   where two cubics cross, by hull subdivision
+    offset.ts      a path parallel to another, and stroke outlines
   model/      the document and every mutation it allows
     doc.ts         shapes, selection, bounding boxes
     ops.ts         all geometry edits
     simplify.ts    refit a path with fewer nodes
+    knots.ts       remove the nodes that are not doing anything
+    auto.ts        handles that re-derive themselves from their neighbours
     snapping.ts    which snap wins: vertex, then outline, then grid
+    smart.ts       alignment you did not have to place
+    angles.ts      rays from a point, at multiples of an angle
+    guides.ts      straight lines you place, and then aim at
+    keylines.ts    the icon keyline grid: circle, square, two rectangles
     pixelfit.ts    where the lattice sits so strokes land on whole pixels
     trace.ts       raster boundaries -> shapes, one per colour
     trace.worker.ts   the same walk, off the main thread
@@ -119,30 +127,34 @@ src/
     canvas.ts      two stacked SVGs: artwork and overlay
     viewport.ts    camera, zoom, screen<->document
     pathcache.ts   `d` strings, rebuilt only when the geometry moved
+    rulers.ts      the two rulers, and the guides they hand out
     dom.ts         element pooling
   io/
     svg.ts         import and export whole documents
     boolean.ts     unite/subtract/intersect/exclude, via path-bool
   tools/
-    controller.ts  every pointer and keyboard interaction
+    controller.ts  pointer gestures on the canvas
+    commands.ts    what a button or a key does to the document
+    keys.ts        which of those two a key reaches
+    readout.ts     how a number is written into a status line
   ui/
     styles.css     the shell: one fixed grid, no page scroll
     tooltip.ts     one tooltip layer, fed by the markup's own titles
-  main.ts     wiring: document -> store -> canvas -> controller -> panels
+  main.ts     wiring: document -> store -> canvas -> commands -> panels
 ```
 
-10 997 lines of TypeScript across 28 files, plus 758 lines of CSS. No runtime
-framework.
+15 542 lines of TypeScript across 40 files, plus 1 090 lines of CSS, counted on
+2026-08-14. No runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 588 tests in 18 files, 8 265 lines,
-over parsing, serialising, geometry ops, rendering invariants, SVG
+**Unit and DOM tests**, with `npm test`. 793 tests in 28 files, 11 311 lines on
+2026-08-14, over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
-transforms, history, the grid and the primitives. The rendering tests run in
-jsdom against the real `Canvas`.
+transforms, history, tooltips, the grid and the primitives. The rendering tests
+run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
 path strings. It measures instead: curve equality by projected deviation, boolean
@@ -160,12 +172,9 @@ Chromium-based Edge through `playwright-core`, defaulting to
 somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
 every scenario.
 
-Scenarios: `smoke`, `penPolygon`, `penWithDrags`, `latentHandle`, `penUndo`,
-`continuity`, `bend`, `pasteIcon`, `applyTwoShapes`, `combine`, `gridHonesty`,
-`marqueeDelete`, `smallClosedPath`, `deleteModes`, `chrome`, `primitives`,
-`backdrop`, `simplify`, `transform`, `canvasFrame`, `style`, `roundCorners`,
-`fuse`, `trace`, `traceWorker`, `sourceDeferred`, `reverse`, `pixelFit`,
-`snapOrder`, `measureReadout`, `makeOneShape`.
+There are 43 of them on 2026-08-14, and they are not listed here: `--list`
+prints the set that exists, and a copy of it in this file is a second list that
+drifts. This one had drifted by twelve before anyone noticed.
 
 `gridHonesty` is the one that needs a real browser rather than jsdom: the drawn
 step is derived from a measured element width, so the invariant can only be
