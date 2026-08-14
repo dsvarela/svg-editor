@@ -12,6 +12,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas, MARKER_CAP } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
+import { Commands } from '../src/tools/commands';
+import { bindKeys } from '../src/tools/keys';
 import { Store } from '../src/model/store';
 import { emptyDoc, nodeIdAt, shapeFromPath } from '../src/model/doc';
 import { parsePath } from '../src/core/parse';
@@ -60,6 +62,8 @@ function setup(pathData?: string) {
   const store = new Store(doc);
   const canvas = new Canvas(root);
   const controller = new Controller(store, canvas);
+  const commands = new Commands(store, () => controller.busy);
+  bindKeys(store, controller, commands);
   controller.render();
 
   const ev = (type: string, p: [number, number], target: Element, opts: MouseEventInit = {}): void => {
@@ -72,7 +76,7 @@ function setup(pathData?: string) {
   };
 
   return {
-    store, canvas, controller,
+    store, canvas, controller, commands,
     down: (p: [number, number], t?: Element) => ev('pointerdown', p, t ?? canvas.overlay),
     move: (p: [number, number]) => ev('pointermove', p, canvas.overlay),
     up: () => ev('pointerup', [0, 0], canvas.overlay),
@@ -248,10 +252,10 @@ describe('render fidelity', () => {
   it('keeps the artwork in step after transforms', () => {
     const h = setup('M0 0 C0 20 40 20 40 0 L40 30 Z');
     h.store.update((s) => s.selection.shapes.add(s.doc.shapes[0].id));
-    h.controller.applyTransform('rotate', 37);
+    h.commands.applyTransform('rotate', 37);
     h.controller.render();
     assertFaithful(h.canvas, h.store);
-    h.controller.applyTransform('flipH');
+    h.commands.applyTransform('flipH');
     h.controller.render();
     assertFaithful(h.canvas, h.store);
   });

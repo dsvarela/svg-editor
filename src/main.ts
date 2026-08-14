@@ -34,6 +34,8 @@ import type { Backdrop, EditorState } from './model/store';
 import { Canvas } from './view/canvas';
 import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/viewport';
 import { Controller } from './tools/controller';
+import { Commands } from './tools/commands';
+import { bindKeys } from './tools/keys';
 import type { AlignMode } from './model/ops';
 import { $ } from './view/dom';
 import { installTooltips } from './ui/tooltip';
@@ -58,6 +60,8 @@ store.onOrphanImage = (src) => URL.revokeObjectURL(src);
 const canvasRoot = $('#stage');
 const canvas = new Canvas(canvasRoot);
 const controller = new Controller(store, canvas);
+const commands = new Commands(store, () => controller.busy);
+bindKeys(store, controller, commands);
 const rulers = new Rulers($('#rulerH') as unknown as SVGSVGElement, $('#rulerV') as unknown as SVGSVGElement);
 controller.attachRulers(rulers.h, rulers.v);
 
@@ -200,22 +204,25 @@ toolSeg.addEventListener('click', (e) => {
 
 const on = (sel: string, fn: () => void): void => $(sel).addEventListener('click', fn);
 
-// Notices raised from inside the controller -- reached from both the button and
-// the keyboard, so they cannot be reported at the call site.
-controller.onMessage = (message, ok) => {
+// Notices raised from inside a gesture or a command -- either is reached from
+// both a button and a key, so they cannot be reported at the call site. One
+// function, given to both, because the status line is one place.
+const say = (message: string, ok: boolean): void => {
   const el = $('#status');
   el.textContent = message;
   el.className = ok ? 'st ok' : 'st err';
 };
+controller.onMessage = say;
+commands.onMessage = say;
 
 // Refused mid-gesture for the same reason the keyboard refuses it: the drag is
 // standing on a checkpoint, and popping it makes the drag roll back the edit
 // before it. A second finger can reach these while the first is still down.
 on('#undo', () => !controller.busy && store.undo());
 on('#redo', () => !controller.busy && store.redo());
-on('#del', () => controller.deleteSelection());
-on('#curve', () => controller.setSelectedSegmentsCurved(true));
-on('#straight', () => controller.setSelectedSegmentsCurved(false));
+on('#del', () => commands.deleteSelection());
+on('#curve', () => commands.setSelectedSegmentsCurved(true));
+on('#straight', () => commands.setSelectedSegmentsCurved(false));
 
 const zoom = (f: number): void =>
   store.update((s) => {
@@ -249,17 +256,17 @@ on('#zoomval', () => {
 document.querySelectorAll<HTMLButtonElement>('[data-tr]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const kind = btn.getAttribute('data-tr');
-    if (kind === 'rot90') controller.applyTransform('rotate', 90);
-    else if (kind === 'rot-90') controller.applyTransform('rotate', -90);
-    else if (kind === 'flipH') controller.applyTransform('flipH');
-    else if (kind === 'flipV') controller.applyTransform('flipV');
+    if (kind === 'rot90') commands.applyTransform('rotate', 90);
+    else if (kind === 'rot-90') commands.applyTransform('rotate', -90);
+    else if (kind === 'flipH') commands.applyTransform('flipH');
+    else if (kind === 'flipV') commands.applyTransform('flipV');
   });
 });
 
-on('#rotate', () => controller.applyTransform('rotate', Number(($('#angle') as HTMLInputElement).value) || 0));
+on('#rotate', () => commands.applyTransform('rotate', Number(($('#angle') as HTMLInputElement).value) || 0));
 on('#scaleGo', () => {
   const v = Number(($('#scale') as HTMLInputElement).value);
-  if (v > 0) controller.applyTransform('scale', v);
+  if (v > 0) commands.applyTransform('scale', v);
 });
 
 /* ------------------------------------------------------------- checkboxes */
@@ -309,17 +316,17 @@ angleBase.value = String(store.state.angleBase);
 angleBase.addEventListener('input', () =>
   store.update((s) => (s.angleBase = Number(angleBase.value) || 0)),
 );
-on('#angleFromSel', () => controller.setAngleOrigin());
-on('#angleClear', () => controller.clearAngleOrigin());
+on('#angleFromSel', () => commands.setAngleOrigin());
+on('#angleClear', () => commands.clearAngleOrigin());
 
 /* Guides by number, which is the route that does not need a pointer and the
    only one that is exact. The field is one value used by two buttons, because
    "12" means the same thing on both axes and two fields would be two things to
    keep in step. */
 const guideAt = $('#guideAt') as HTMLInputElement;
-on('#guideAddV', () => controller.addGuideAt('x', Number(guideAt.value)));
-on('#guideAddH', () => controller.addGuideAt('y', Number(guideAt.value)));
-on('#guideClear', () => controller.clearGuides());
+on('#guideAddV', () => commands.addGuideAt('x', Number(guideAt.value)));
+on('#guideAddH', () => commands.addGuideAt('y', Number(guideAt.value)));
+on('#guideClear', () => commands.clearGuides());
 bindCheck('#snapGrid', 'snapToGrid');
 bindCheck('#snapPoints', 'snapToPoints');
 bindCheck('#snapBoundary', 'snapToBoundary');
@@ -350,12 +357,12 @@ radiusInput.addEventListener('input', () =>
   store.update((s) => (s.cornerRadius = Math.max(0, Number(radiusInput.value) || 0))),
 );
 
-on('#circularise', () => controller.circulariseSelection());
+on('#circularise', () => commands.circulariseSelection());
 
 /* Rounding an existing corner, which is what the rectangle tool's radius does
    while drawing and nothing could do afterwards. */
 const roundR = $('#roundR') as HTMLInputElement;
-on('#roundCorner', () => controller.roundSelection(Number(roundR.value)));
+on('#roundCorner', () => commands.roundSelection(Number(roundR.value)));
 
 /**
  * Collapse a control's stream of `input` events into one undo entry.
@@ -529,7 +536,7 @@ function paintPalette(): void {
     b.append(sw, label);
     b.addEventListener('click', () => {
       paletteAt = i;
-      controller.setStyle({ ...entry.style });
+      commands.setStyle({ ...entry.style });
       paintHighlight();
     });
     paletteEl.append(b);
@@ -610,28 +617,28 @@ on('#paletteDrop', () => {
 
 // Dragging inside a colour picker fires `input` per pixel, so both of these go
 // through the same batching as every other continuous control.
-streamed(fillColour, () => controller.setStyle({ fill: fillColour.value }));
-streamed(strokeColour, () => controller.setStyle({ stroke: strokeColour.value }));
+streamed(fillColour, () => commands.setStyle({ fill: fillColour.value }));
+streamed(strokeColour, () => commands.setStyle({ stroke: strokeColour.value }));
 
 /* Unticking `none` has to put a colour back, and the picker is the only place
    one is on offer: the stored value is the string `none`, which carries no hue
    to return to. */
 fillNone.addEventListener('change', () =>
-  controller.setStyle({ fill: fillNone.checked ? 'none' : fillColour.value }),
+  commands.setStyle({ fill: fillNone.checked ? 'none' : fillColour.value }),
 );
 strokeNone.addEventListener('change', () =>
-  controller.setStyle({ stroke: strokeNone.checked ? 'none' : strokeColour.value }),
+  commands.setStyle({ stroke: strokeNone.checked ? 'none' : strokeColour.value }),
 );
 
 streamed(strokeWidthInput, () => {
   const v = Number(strokeWidthInput.value);
   if (!Number.isFinite(v) || v < 0) return;
-  controller.setStyle({ strokeWidth: v });
+  commands.setStyle({ strokeWidth: v });
 });
 
 $('#fillRule').addEventListener('click', (e) => {
   const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-fr');
-  if (v === 'nonzero' || v === 'evenodd') controller.setStyle({ fillRule: v });
+  if (v === 'nonzero' || v === 'evenodd') commands.setStyle({ fillRule: v });
 });
 
 /* ---------------------------------------------------------------- canvas */
@@ -657,7 +664,7 @@ vbNum('#vbx', 'x');
 vbNum('#vby', 'y');
 vbNum('#vbw', 'w');
 vbNum('#vbh', 'h');
-on('#vbFit', () => controller.fitCanvasToDrawing());
+on('#vbFit', () => commands.fitCanvasToDrawing());
 
 /**
  * How far Simplify may move the drawing, in document units.
@@ -685,13 +692,13 @@ function paintRedraw(): void {
 simplifyTol.addEventListener('input', paintRedraw);
 paintRedraw();
 
-on('#keepGo', () => controller.simplifyToCount(Number(($('#keepCount') as HTMLInputElement).value)));
-on('#keepThese', () => controller.keepSelectedNodes());
-on('#strokeButt', () => controller.strokeToPath('butt'));
-on('#strokeRound', () => controller.strokeToPath('round'));
-on('#offsetGo', () => controller.offsetSelection(Number(($('#offsetBy') as HTMLInputElement).value)));
-on('#simplify', () => controller.simplifySelection(Number(simplifyTol.value), redrawEl.checked));
-on('#reverse', () => controller.reverseSelection());
+on('#keepGo', () => commands.simplifyToCount(Number(($('#keepCount') as HTMLInputElement).value)));
+on('#keepThese', () => commands.keepSelectedNodes());
+on('#strokeButt', () => commands.strokeToPath('butt'));
+on('#strokeRound', () => commands.strokeToPath('round'));
+on('#offsetGo', () => commands.offsetSelection(Number(($('#offsetBy') as HTMLInputElement).value)));
+on('#simplify', () => commands.simplifySelection(Number(simplifyTol.value), redrawEl.checked));
+on('#reverse', () => commands.reverseSelection());
 
 const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
@@ -721,7 +728,7 @@ for (const f of coordFields) {
   // undo entry per character and fight the field while a number is half-typed.
   f.input.addEventListener('change', () => {
     const v = Number(f.input.value);
-    if (Number.isFinite(v)) controller.setNodeCoord(f.part, f.axis, v);
+    if (Number.isFinite(v)) commands.setNodeCoord(f.part, f.axis, v);
   });
   f.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') f.input.blur();
@@ -730,20 +737,20 @@ for (const f of coordFields) {
 
 ntypeSeg.addEventListener('click', (e) => {
   const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
-  if (v === 'corner' || v === 'smooth' || v === 'symmetric') controller.setSelectedContinuity(v);
-  else if (v === 'auto') controller.setSelectedAuto();
+  if (v === 'corner' || v === 'smooth' || v === 'symmetric') commands.setSelectedContinuity(v);
+  else if (v === 'auto') commands.setSelectedAuto();
 });
 
-on('#breakPath', () => controller.breakAtSelection());
-on('#joinPath', () => controller.joinSelection('connect'));
-on('#mergePath', () => controller.joinSelection('merge'));
-on('#fuseNodes', () => controller.fuseSelection());
-on('#fitPixels', () => controller.fitToPixels());
-on('#delNode', () => controller.deleteSelection());
+on('#breakPath', () => commands.breakAtSelection());
+on('#joinPath', () => commands.joinSelection('connect'));
+on('#mergePath', () => commands.joinSelection('merge'));
+on('#fuseNodes', () => commands.fuseSelection());
+on('#fitPixels', () => commands.fitToPixels());
+on('#delNode', () => commands.deleteSelection());
 on('#findSrc', () => findInSource());
-on('#prevNode', () => controller.stepNodeSelection(-1));
-on('#nextNode', () => controller.stepNodeSelection(1));
-on('#insertNode', () => controller.insertInSelection());
+on('#prevNode', () => commands.stepNodeSelection(-1));
+on('#nextNode', () => commands.stepNodeSelection(1));
+on('#insertNode', () => commands.insertInSelection());
 
 const delModeSeg = $('#delmode');
 delModeSeg.addEventListener('click', (e) => {
@@ -761,10 +768,10 @@ modSeg.addEventListener('click', (e) => {
 });
 
 document.querySelectorAll<HTMLButtonElement>('[data-al]').forEach((b) =>
-  b.addEventListener('click', () => controller.alignSelection(b.getAttribute('data-al') as AlignMode)),
+  b.addEventListener('click', () => commands.alignSelection(b.getAttribute('data-al') as AlignMode)),
 );
 document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) =>
-  b.addEventListener('click', () => controller.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
+  b.addEventListener('click', () => commands.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
 );
 
 const bendAngle = $('#bendAngle') as HTMLInputElement;
@@ -772,12 +779,12 @@ const bendLoose = $('#bendLoose') as HTMLInputElement;
 const bendInfo = $('#bendinfo');
 
 const commitBend = (): void => {
-  const seg = controller.activeSegment();
+  const seg = commands.activeSegment();
   if (!seg) return;
   const a = Number(bendAngle.value);
   const l = Number(bendLoose.value);
   if (!Number.isFinite(a) || !Number.isFinite(l)) return;
-  controller.setActiveBend({ angle: a, looseness: Math.max(0.05, l) });
+  commands.setActiveBend({ angle: a, looseness: Math.max(0.05, l) });
 };
 for (const inp of [bendAngle, bendLoose]) {
   inp.addEventListener('change', commitBend);
@@ -785,11 +792,11 @@ for (const inp of [bendAngle, bendLoose]) {
     if (e.key === 'Enter') inp.blur();
   });
 }
-on('#bendFlat', () => controller.setActiveBend({ angle: 0, looseness: 1 }));
-on('#bendFree', () => controller.freeActiveSegment());
+on('#bendFlat', () => commands.setActiveBend({ angle: 0, looseness: 1 }));
+on('#bendFree', () => commands.freeActiveSegment());
 
 function refreshBend(): void {
-  const seg = controller.activeSegment();
+  const seg = commands.activeSegment();
   const on = !!seg;
   bendAngle.disabled = !on || !seg!.bend;
   bendLoose.disabled = !on || !seg!.bend;
@@ -814,8 +821,8 @@ function refreshBend(): void {
 }
 
 function refreshInspector(): void {
-  const sel = controller.singleSelectedNode();
-  const count = controller.selectionCount();
+  const sel = commands.singleSelectedNode();
+  const count = commands.selectionCount();
 
   nodeGroup.classList.toggle('disabled', count === 0);
   nodeInfo.textContent = sel ? `${sel.ref.sp}/${sel.ref.i}` : count ? `${count} selected` : 'none';
@@ -1274,7 +1281,7 @@ async function traceBackdrop(): Promise<void> {
     if (!job) {
       // No worker to be had, so trace on this thread. It freezes the page for
       // the duration, which is still better than refusing to trace.
-      controller.traceBackdrop(raster, opts);
+      commands.traceBackdrop(raster, opts);
       return;
     }
     let result: TraceResult;
@@ -1285,7 +1292,7 @@ async function traceBackdrop(): Promise<void> {
       status.className = 'st err';
       return;
     }
-    controller.applyTrace(result, place);
+    commands.applyTrace(result, place);
   } catch {
     status.textContent = 'That image could not be read for tracing.';
     status.className = 'st err';
@@ -1470,7 +1477,7 @@ const boolBtns = [...document.querySelectorAll<HTMLButtonElement>('[data-bool]')
 
 for (const b of boolBtns) {
   b.addEventListener('click', () => {
-    const r = controller.booleanSelection(b.getAttribute('data-bool') as BooleanOp);
+    const r = commands.booleanSelection(b.getAttribute('data-bool') as BooleanOp);
     status.textContent = r.message;
     status.className = r.ok ? 'st ok' : 'st err';
   });
@@ -1478,14 +1485,14 @@ for (const b of boolBtns) {
 
 const makeOneBtn = $('#makeone') as HTMLButtonElement;
 makeOneBtn.addEventListener('click', () => {
-  const r = controller.makeOneShape();
+  const r = commands.makeOneShape();
   status.textContent = r.message;
   status.className = r.ok ? 'st ok' : 'st err';
 });
 
 const splitBtn = $('#splitshape') as HTMLButtonElement;
 splitBtn.addEventListener('click', () => {
-  const r = controller.splitShapes();
+  const r = commands.splitShapes();
   status.textContent = r.message;
   status.className = r.ok ? 'st ok' : 'st err';
 });
@@ -1499,7 +1506,7 @@ function refreshCombine(): void {
      holds more than one path, which one selected shape can satisfy and four
      selected shapes can fail. Tying it to the count would offer it where it
      does nothing and withhold it where it works. */
-  splitBtn.disabled = !controller.canSplitShapes();
+  splitBtn.disabled = !commands.canSplitShapes();
   boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
 }
 
@@ -1717,7 +1724,7 @@ function refreshStats(): void {
   // that happened and is overwritten by the next.
   stats.textContent =
     `${round(vb.w)} × ${round(vb.h)} · ${s.doc.shapes.length} shape${s.doc.shapes.length === 1 ? '' : 's'}` +
-    ` · ${controller.countNodes()} nodes · ${controller.countSegments()} segments` +
+    ` · ${commands.countNodes()} nodes · ${commands.countSegments()} segments` +
     (canvas.markersCapped ? ' · markers off, too dense' : '');
 }
 controller.onRender = refreshStats;

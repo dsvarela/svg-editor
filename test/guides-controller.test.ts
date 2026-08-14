@@ -14,6 +14,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
+import { Commands } from '../src/tools/commands';
+import { bindKeys } from '../src/tools/keys';
 import { Store } from '../src/model/store';
 import { emptyDoc, shapeFromPath } from '../src/model/doc';
 
@@ -78,6 +80,7 @@ function stub(): void {
 interface Rig {
   store: Store;
   controller: Controller;
+  commands: Commands;
   canvas: Canvas;
   rulerH: SVGSVGElement;
   rulerV: SVGSVGElement;
@@ -98,6 +101,8 @@ function rig(): Rig {
   const store = new Store(doc);
   const canvas = new Canvas(root);
   const controller = new Controller(store, canvas);
+  const commands = new Commands(store, () => controller.busy);
+  bindKeys(store, controller, commands);
   const ns = 'http://www.w3.org/2000/svg';
   const rulerH = document.createElementNS(ns, 'svg');
   const rulerV = document.createElementNS(ns, 'svg');
@@ -120,6 +125,7 @@ function rig(): Rig {
   return {
     store,
     controller,
+    commands,
     canvas,
     rulerH,
     rulerV,
@@ -154,7 +160,7 @@ describe('a guide gesture that changes nothing records nothing', () => {
   });
 
   it('leaves no entry when the ruler press lands where a guide already is', () => {
-    r.controller.addGuideAt('y', 30);
+    r.commands.addGuideAt('y', 30);
     const depth = r.store.canUndo;
     expect(depth).toBe(true);
 
@@ -182,7 +188,7 @@ describe('a guide gesture that changes nothing records nothing', () => {
   });
 
   it('leaves no entry when an existing guide is pressed and released', () => {
-    r.controller.addGuideAt('x', 20);
+    r.commands.addGuideAt('x', 20);
     r.store.undo();
     r.store.redo();
     expect(r.store.canUndo).toBe(true);
@@ -199,7 +205,7 @@ describe('a guide gesture that changes nothing records nothing', () => {
 
   it('does record removing a guide that was already there', () => {
     // The other side of the rule: this one is a change, so it costs a step.
-    r.controller.addGuideAt('x', 20);
+    r.commands.addGuideAt('x', 20);
     const el = r.guideEl(0);
     r.at('pointerdown', [20, 25], el);
     r.at('pointermove', [18, 25], r.canvas.overlay);

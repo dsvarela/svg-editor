@@ -11,6 +11,7 @@
 
 import { cloneShape, defaultStyle } from '../core/types';
 import type { Doc, Style, ViewBox } from '../core/types';
+import { reflowDoc } from './auto';
 import { emptySelection } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
@@ -442,10 +443,26 @@ export class Store {
     this.notify();
   }
 
-  /** Checkpoint, mutate, notify. The normal way to make a discrete change. */
+  /**
+   * Checkpoint, mutate, notify. The normal way to make a discrete change.
+   *
+   * The auto-smooth sweep runs on the way out, here rather than at each site
+   * that could invalidate an auto node. Moving one, deleting one, inserting one,
+   * reversing a path, fusing two, applying a boolean: every one of them disturbs
+   * a neighbour, and each would otherwise have to work out which indices it
+   * touched. Getting that wrong leaves a stale handle, which reads as a
+   * rendering bug rather than as a missed call. It is one pass over nodes that
+   * are about to be walked to redraw anyway, and it skips every node in one
+   * comparison.
+   *
+   * `update` deliberately does not sweep: it is for the state around the
+   * document -- camera, tool, selection -- and the geometry it would walk has
+   * not changed.
+   */
   edit(fn: (s: EditorState) => void): void {
     this.checkpoint();
     fn(this.state);
+    reflowDoc(this.state.doc);
     this.notify();
   }
 
@@ -476,6 +493,7 @@ export class Store {
 
     const changed = fn(this.state);
     if (changed) {
+      reflowDoc(this.state.doc);
       // After the mutation, so an image the edit itself replaced is seen.
       this.reap(orphans);
       this.notify();

@@ -2023,3 +2023,54 @@ approximation-encoding this file's tests exist not to do.
 the seven that meant something became two. A survivor count is a population of
 candidates, not a measurement, and the two numbers are not comparable without
 reading both populations.
+
+## 44. A gesture and a command are different things
+
+`controller.ts` held both, and at 3,808 lines with 54 public members it was a
+filing cabinet: the value of a module is what it does over what you must know to
+use it, and 54 is most of what there was to know. The 2026-08-15 structure
+review ranked this fifth of five, as shape rather than defect, which is what it
+is.
+
+**The line is what the thing is, not what it touches.** A gesture has a
+beginning, a middle and an end: it captures the pointer, opens a history batch,
+mutates on every move and closes the batch on release. A command either happens
+or is declined with a reason. Nothing else separates them cleanly -- both read
+the selection, both edit the document, both report to the status line -- and any
+boundary drawn on those would have cut through the middle of both.
+
+Measured before it was moved, the split was already there. Of 44 command
+members, exactly two reached into gesture machinery: `applyTrace` asking whether
+a drag was live, and `fuseSelection` calling a private helper only it used. The
+rest touched the store and nothing else.
+
+| File | What it is | Public members |
+|---|---|---|
+| `controller.ts` | Pointer gestures on the canvas | 14 |
+| `commands.ts` | What a button or a key does to the document | 45 |
+| `keys.ts` | Which of those two a key reaches | 1 |
+
+**They are peers, and `main.ts` holds both.** A `Controller.offsetSelection`
+forwarding to `Commands.offsetSelection` would be a layer that changes no
+vocabulary, which is the definition of one not earning its place. The one fact
+that genuinely crosses is whether a drag is under way, and it arrives as a
+`busy` predicate in the constructor rather than as a back-reference.
+
+**The keyboard is the third peer, not part of either.** It was the reason a
+split looked impossible: `onKeyDown` calls fourteen commands *and* aborts drags,
+so leaving it in `Controller` would have made the two objects reference each
+other. It is wiring -- `Delete` and the `#del` button are the same operation
+reached two ways -- so it belongs beside the button wiring, and now sits one
+import away from it. `test/controller.test.ts` reads its source to check that
+every capital the switch handles appears in the mid-drag refusal list, which is
+the drift this arrangement is meant to make visible.
+
+**Two facts moved down rather than sideways.** The auto-smooth sweep was a
+private `Controller.edit` wrapper, so it protected only the callers that went
+through `Controller`; it is now inside `Store.edit` and `Store.tryEdit`, where
+no edit can skip it. `selectedNodes` and `selectedSubpaths` are pure functions
+of a document and a selection, wanted by both halves, and are now in `doc.ts`
+beside `selectedRefs`.
+
+Nothing observable changed: 783 unit tests, 43 of 43 browser scenarios, and a
+build within a kilobyte of the one before.

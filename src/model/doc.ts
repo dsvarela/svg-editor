@@ -145,6 +145,54 @@ export function nodeIdAt(doc: Doc, shape: string, sp: number, i: number): string
 export const selectedRefs = (doc: Doc, sel: Selection): NodeRef[] =>
   resolveNodes(doc, sel).map((r) => r.ref);
 
+/**
+ * Every node an operation on the selection should touch.
+ *
+ * Wider than `selectedRefs`: a whole-shape selection implies all of that
+ * shape's nodes. That is what makes dragging a shape and dragging its nodes one
+ * piece of code rather than two, and it is why an operation asks this rather
+ * than reading `selection.nodes` itself.
+ *
+ * Deduplicated by position, not by identity, because the two branches can name
+ * the same place from both directions.
+ */
+export function selectedNodes(doc: Doc, sel: Selection): NodeRef[] {
+  const refs = selectedRefs(doc, sel);
+  for (const id of sel.shapes) {
+    findShape(doc, id)?.subpaths.forEach((sp, spI) =>
+      sp.nodes.forEach((_, i) => refs.push({ shape: id, sp: spI, i })),
+    );
+  }
+  const seen = new Set<string>();
+  return refs.filter((r) => {
+    const k = `${r.shape}/${r.sp}/${r.i}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * The same reach, grouped as whole subpaths.
+ *
+ * For the operations that cannot act on loose nodes -- circularise, simplify,
+ * offset -- because rewriting some of a path's nodes leaves the segments joining
+ * them to the rest built from geometry they are not on.
+ */
+export function selectedSubpaths(doc: Doc, sel: Selection): Map<string, Set<number>> {
+  const targets = new Map<string, Set<number>>();
+  const add = (shape: string, sp: number): void => {
+    const set = targets.get(shape) ?? new Set<number>();
+    set.add(sp);
+    targets.set(shape, set);
+  };
+  for (const r of selectedRefs(doc, sel)) add(r.shape, r.sp);
+  for (const id of sel.shapes) {
+    findShape(doc, id)?.subpaths.forEach((_, i) => add(id, i));
+  }
+  return targets;
+}
+
 /** Bounding box of whatever is selected: whole shapes, or just the chosen nodes. */
 export function selectionBBox(doc: Doc, sel: Selection): Box | null {
   let box: Box | null = null;
