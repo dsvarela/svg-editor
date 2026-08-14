@@ -109,7 +109,7 @@ Double-click the shape's name in the **Shapes** list. Type `bookmark` and press
 In the source drawer, switch the mode from **Path data** to **SVG**. You now
 have a complete SVG document, with your shape carrying `id="bookmark"`.
 
-Press **Download**. The file saves to disk. Open it in a browser to check.
+Press **Download SVG**. The file saves to disk. Open it in a browser to check.
 
 ## What you learned
 

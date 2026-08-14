@@ -16,7 +16,7 @@ Every control, and what it does. Dry and complete.
 square, by taking the shorter span of the drag. `Alt` reads the point you pressed
 as the centre rather than a corner.
 
-## Mouse
+## Pointer
 
 | Action | Effect |
 |---|---|
@@ -38,7 +38,11 @@ as the centre rather than a corner.
 | `Alt`+wheel | Pan up and down |
 | `Space`-drag, or middle-drag | Pan, from any tool |
 | Two fingers | Zoom about the point between them, and pan as that point moves |
-| **Shift** and **Alt** in the status strip | Hold the key without a keyboard. They stay held until pressed again, and apply to every gesture in this table |
+| **Shift** and **Alt** in the status strip | Hold the key without a keyboard. They stay held until pressed again, and apply to the pointer rows above: dragging, clicking, and the box handles. Not the wheel, and not the keyboard |
+
+The two-finger row and the two latch buttons are built and tested, but only in a
+headless browser. Nobody has yet used this editor on a phone or a tablet, so
+treat those two rows as untried rather than as reported working.
 
 ## Keyboard
 
@@ -264,7 +268,7 @@ to set it exactly.
   two selected nodes, without changing the curve. Double-clicking the outline
   does the same where you point.
 - **Find in source** opens the source drawer and selects the command that drew
-  the node. It switches the box to path data and to that shape alone, since the
+  the node. It switches the box to **Path data** and to that shape alone, since the
   position it points at is only true of that text.
 - **Delete node** removes it, following the **Delete** panel's mode.
 
@@ -557,13 +561,13 @@ Two modes.
   `ellipse`, `line`, `polyline`, `polygon`, and `transform` attributes, all
   converted to paths.
 
-**Apply** parses and applies. It refuses text that cannot be parsed, and also
-text that parses to nothing drawable, such as a lone `M 0 0`: either way the
-drawing is left as it was and what you typed is left as you typed it, because
-the error names an offset into that text. **Revert** puts the document's own
-text back when you want to start again. **Copy** puts the text on the
-clipboard.
-**Download SVG** saves a whole SVG document, in either mode. **Close** closes the drawer.
+**Apply**, or `Ctrl`+`Enter` from inside the text, parses and applies. It
+refuses text that cannot be parsed, and also text that parses to nothing
+drawable, such as a lone `M 0 0`: either way the drawing is left as it was and
+what you typed is left as you typed it, because the error names an offset into
+that text. **Revert** puts the document's own text back when you want to start
+again. **Copy** puts the text on the clipboard. **Download SVG** saves a whole
+SVG document, in either mode. **Close** closes the drawer.
 
 ## Status strip
 

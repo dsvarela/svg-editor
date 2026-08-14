@@ -228,8 +228,8 @@ Use the **Transform** panel.
 
 **Flip horizontal** and **Flip vertical** mirror the selection in place.
 
-Transforms are baked into the coordinates, so the source box always shows what is
-actually stored. There is no hidden `transform` attribute to read the numbers
+Transforms are baked into the coordinates, so the source box always shows what
+is stored. There is no hidden `transform` attribute to read the numbers
 through.
 
 ## Snap to a whole number of grid steps
@@ -389,8 +389,8 @@ is carrying nothing. Set **Within** to **0** and press **Simplify**: it removes
 exactly those and nothing else, because it can prove they cost nothing. A node
 goes only when its two segments are pieces of the same curve.
 
-Use it after an editing session to get back to the nodes that are actually
-holding the shape. At 0 it cannot change the file you export, so it is safe to
+Use it after an editing session to get back to the nodes that are holding the
+shape. At 0 it cannot change the file you export, so it is safe to
 run on anything.
 
 Sharp corners are kept exactly where they are, so the points of a star and the
