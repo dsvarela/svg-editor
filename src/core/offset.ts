@@ -216,6 +216,54 @@ class NearMap {
 }
 
 /**
+ * Split a ring of items into maximal unbroken runs.
+ *
+ * `broken[i]` cuts the link from item `i` to item `i + 1`, the last one wrapping
+ * back to the first. An open sequence has that last link cut whatever the caller
+ * says, because the end of a path is not a link.
+ *
+ * The wrap is settled by where the walk starts rather than by repairing the
+ * result: beginning just after a break means no run can straddle the join, so
+ * there is never a first and last run to sew back together. Both places that
+ * needed sewing had written that repair out by hand, and the two copies did not
+ * agree about which of them the offset had come apart at.
+ *
+ * A ring with no break at all comes back as one run. That is the caller's answer
+ * to "did it close up", and it is why nothing downstream has to ask the geometry.
+ */
+function ringRuns<T>(items: T[], broken: boolean[], closed: boolean): T[][] {
+  const n = items.length;
+  if (!n) return [];
+  const cut = (i: number): boolean => (!closed && i === n - 1) || broken[i];
+
+  let start = 0;
+  if (closed) {
+    let first = -1;
+    for (let i = 0; i < n; i++) {
+      if (cut(i)) {
+        first = i;
+        break;
+      }
+    }
+    if (first < 0) return [items.slice()];
+    start = (first + 1) % n;
+  }
+
+  const out: T[][] = [];
+  let run: T[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = (start + k) % n;
+    run.push(items[i]);
+    if (cut(i)) {
+      out.push(run);
+      run = [];
+    }
+  }
+  if (run.length) out.push(run);
+  return out;
+}
+
+/**
  * Offset a subpath by `d`, positive to the left of its direction of travel.
  *
  * Returns a **list**, because an offset can come apart: push a notched shape
@@ -286,27 +334,32 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
      meet at a point, and each is fitted on its own so the corner between them
      stays a corner -- fitting across the break would smooth over the very
      feature the filter just uncovered. */
-  const runsKept: Pt[][] = [];
-  let run: Pt[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    if (!keep[i]) {
-      if (run.length) runsKept.push(run);
-      run = [];
-      continue;
-    }
-    run.push(pts[i]);
-  }
-  if (run.length) runsKept.push(run);
+  const survived: number[] = [];
+  for (let i = 0; i < pts.length; i++) if (keep[i]) survived.push(i);
+  if (!survived.length) return null;
 
-  /* On a closed path the first and last runs are one run through the seam,
-     unless the filter cut there -- in which case they are two, and stay two. */
-  if (sp.closed && runsKept.length > 1 && keep[0] && keep[keep.length - 1]) {
-    const first = runsKept.shift()!;
-    runsKept[runsKept.length - 1].push(...first);
-  }
+  /* Two survivors are still linked when the filter took nothing between them,
+     which on a ring includes the last one linking back to the first. */
+  const filtered = survived.map((i, j) => {
+    const next = survived[(j + 1) % survived.length];
+    return next !== (i + 1) % pts.length;
+  });
+  const runsKept = ringRuns(
+    survived.map((i) => pts[i]),
+    filtered,
+    sp.closed,
+  );
 
   const usable = runsKept.filter((r) => r.length >= 2);
   if (!usable.length) return null;
+
+  /* The filter took nothing, so the samples are still the whole ring and its
+     two ends are the seam rather than a feature the filter uncovered. Read off
+     the ring itself: inferring it from "one run in one group" is a different
+     claim, and it is wrong in the case where the filter did cut and the offcut
+     was too short to keep -- there the ends are a corner and the seam tangents
+     below would be the original's, which no longer describe them. */
+  const whole = sp.closed && !filtered.some(Boolean);
 
   /* Where two runs meet, put both ends on the crossing of the directions they
      arrive and leave at. The filter cuts at whichever sample happened to
@@ -346,36 +399,21 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
      notch can hold separates it into pieces, and returning one path with a
      segment drawn across the gap would be a shape nobody asked for -- which is
      what this did, and it measured 6.8 out on an 8-unit offset. */
-  const joined: boolean[] = [];
-  const pairs = sp.closed ? usable.length : usable.length - 1;
-  for (let i = 0; i < pairs; i++) {
+  const apart: boolean[] = [];
+  for (let i = 0; i < usable.length; i++) {
     const a = usable[i];
     const b = usable[(i + 1) % usable.length];
-    const at = a.length >= 2 && b.length >= 2 ? meetAt(a, b) : null;
-    joined[i] = at !== null;
+    /* The link past the last run of an open offset is the end of the path, not
+       a corner, so nothing is asked of it. `ringRuns` cuts it regardless. */
+    const at = sp.closed || i < usable.length - 1 ? meetAt(a, b) : null;
+    apart[i] = at === null;
     if (!at) continue;
     a[a.length - 1] = at;
     b[0] = at;
   }
 
   // Runs strung together by the corners they share.
-  const groups: Pt[][][] = [];
-  let group: Pt[][] = [];
-  for (let i = 0; i < usable.length; i++) {
-    group.push(usable[i]);
-    const last = i === usable.length - 1;
-    if (!joined[i] || (last && !sp.closed)) {
-      groups.push(group);
-      group = [];
-    }
-  }
-  if (group.length) groups.push(group);
-  /* A closed offset whose seam joined has its first and last runs in different
-     groups, and they are one piece. */
-  if (sp.closed && groups.length > 1 && joined[usable.length - 1]) {
-    const head = groups.shift()!;
-    groups[groups.length - 1].push(...head);
-  }
+  const groups = ringRuns(usable, apart, sp.closed);
 
   /* Tangents from the samples themselves rather than from the original. After
      filtering, a run can start and end anywhere -- at a corner the filter
@@ -387,7 +425,6 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
 
   for (const g of groups) {
     const nodes: PathNode[] = [];
-    const wholeThing = sp.closed && groups.length === 1 && usable.length === 1;
 
     for (const r of g) {
       /* Over several samples, not two. A two-sample chord at the end of a run
@@ -395,8 +432,8 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
          the filter left there; averaging four steadies it without reaching far
          enough to cut the corner. */
       const span = Math.min(4, r.length - 1);
-      const leftTan = wholeThing ? runs[0].t0 : chord(r[0], r[span]);
-      const rightTan = wholeThing
+      const leftTan = whole ? runs[0].t0 : chord(r[0], r[span]);
+      const rightTan = whole
         ? ([-runs[0].t0[0], -runs[0].t0[1]] as Pt)
         : chord(r[r.length - 1], r[r.length - 1 - span]);
 

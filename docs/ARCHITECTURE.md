@@ -1660,17 +1660,29 @@ sat at exactly 1.1349 through three attempts to fix the geometry, and that
 constancy is what finally said the geometry was not what was wrong. Cell size and
 sample step are separate arguments now.
 
-**A closed offset whose seam falls on a trimmed corner leaves a cusp there, and
-it is the largest error the routine makes.** The notched shape offset outward by
-8 is 0.059 out at the seam and 0.012 or better everywhere else, and the worst
-point is the seam node itself: its handles are collinear, so the model reads it
-as smooth, but the outgoing one points back the way the curve arrived. The trim
-is in the right place -- the notch tip's bisector at `8 / sin(33.7°)` = 14.42,
-which is where the node sits -- so what is wrong is the tangent and not the
-position, and no distance measure can see it. Three of the mutations in the seam
-and rejoin machinery survive every test, all of them only on this shape, and two
-of the three *reduce* the deviation. Code its own tests cannot pin down, that a
-random change improves, is the case for §39's successor rather than a patch.
+**A closed offset is a ring, and the seam is not a place.** Filtering cuts the
+samples into runs, welding corners cuts the runs into pieces, and both are the
+same operation: split a ring at the places something broke it. Each had been
+written out separately, ending with a repair that took the first result and sewed
+it onto the last. `ringRuns` does it once, by starting the walk just after a
+break, so no run can straddle the join and there is nothing left to sew.
+
+**What the seam repairs were hiding.** The two ends of a closed offset are the
+seam rather than a feature, so the fitter is handed the original's tangents
+there. Whether that applies was inferred from the shape of the result -- one run
+in one group -- and that is a different claim from the one it needs, which is
+that the filter took nothing. They part company when the filter does cut and the
+offcut is too short to keep: one run in one group, and tangents describing a
+seam that is now a trimmed corner. The notched shape offset outward is exactly
+that case, and it came out with a cusp at the tip, 0.059 against 0.012
+everywhere else on the same shape, on a node the model read as smooth because
+its handles were collinear while the outgoing one pointed back the way the curve
+had arrived. Read off the ring instead -- nothing was filtered -- and the node is
+a corner and the error is 0.02.
+
+The trim was never in the wrong place: the notch tip's bisector at
+`8 / sin(33.7°)` = 14.42 is where the node sat all along. It was the tangent that
+was wrong, and no distance measure can see a tangent.
 
 ## 40. Stroke to path is two offsets and some bookkeeping
 

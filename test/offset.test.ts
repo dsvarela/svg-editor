@@ -284,6 +284,21 @@ describe('the corners it should and should not have', () => {
     expect(cornersOf(one(path('M0 0 H40 V40 H0 Z'), 4, 0.02))).toBe(0);
   });
 
+  it('puts one where a trimmed corner lands on the path’s own seam', () => {
+    /* Offsetting the notch outward trims at its tip, and the tip's bisector at
+       8 / sin(33.7 deg) = 14.42 is where the seam of this path already is. The
+       seam takes its tangents from the original only when the filter took
+       nothing; here it took a cut whose offcut was too short to keep, which
+       read as nothing having been cut. That left the node a cusp: handles
+       collinear, so the model called it smooth, and the outgoing one pointing
+       back the way the curve had arrived. It measured 0.059 out against 0.012
+       everywhere else on the same shape. */
+    const sp = path('M0 0 L20 30 L40 0 L40 40 L0 40 Z');
+    const out = one(sp, 8, 0.02);
+    expect(cornersOf(out)).toBe(1);
+    expect(worstDeviation(sp, out, 8)).toBeLessThan(0.03);
+  });
+
   it('keeps all four coming in, where the sides really do meet at a point', () => {
     // The inward offset of a square is a smaller square. Rounding those would
     // be the same mistake in the other direction.
