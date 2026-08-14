@@ -106,7 +106,14 @@ async function counts(page) {
     const m = new RegExp(`(\\d+)\\s+${word}`).exec(text);
     return m ? Number(m[1]) : null;
   };
-  return { shapes: read('shapes?'), nodes: read('nodes?'), segments: read('segments?'), text };
+  /* `saw` goes into every message asserted against these, because a `null` here
+     means the strip did not read as a strip, and that is a different failure
+     from the wrong number of shapes. A run of this failed once in CI, was not
+     reproducible, and could not be diagnosed afterwards: `check` replaces the
+     result with its error, so the text that would have said which of the two it
+     was had already been thrown away. */
+  const saw = ` (#stats reads ${JSON.stringify(text)})`;
+  return { shapes: read('shapes?'), nodes: read('nodes?'), segments: read('segments?'), text, saw };
 }
 
 /**
@@ -336,9 +343,9 @@ const scenarios = {
     const c = await counts(page);
     /* The starting document, which every other scenario builds on. If this is
        not what loaded then no reading taken after it means what it says. */
-    check(c.shapes === 1, `loaded ${c.shapes} shapes, expected 1`);
-    check(c.nodes === 8, `loaded ${c.nodes} nodes, expected 8`);
-    check(c.segments === 8, `${c.segments} segments across 8 nodes, so it is not closed`);
+    check(c.shapes === 1, `loaded ${c.shapes} shapes, expected 1${c.saw}`);
+    check(c.nodes === 8, `loaded ${c.nodes} nodes, expected 8${c.saw}`);
+    check(c.segments === 8, `${c.segments} segments across 8 nodes, so it is not closed${c.saw}`);
     return c;
   },
 

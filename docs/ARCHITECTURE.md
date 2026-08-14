@@ -2074,3 +2074,42 @@ beside `selectedRefs`.
 
 Nothing observable changed: 783 unit tests, 43 of 43 browser scenarios, and a
 build within a kilobyte of the one before.
+
+## 45. The tooltip did not need rewriting; it needed something that could fail
+
+One reviewer of the 2026-08-15 structure review read `tooltip.ts` and concluded
+it wanted a rewrite. The review declined to judge that, calling it a design call
+rather than a defect, and the reading here agrees for a stated reason: **"this
+should be rebuilt" is a claim that needs a specific complaint attached, and
+nobody had one.** 206 lines is not a complaint. Six module-level variables for a
+single overlay is not a complaint either.
+
+The complaint that *is* attachable is about evidence. The file records six
+behaviours in its comments that were each once wrong, and every one of them was
+found by hand. Three had a check afterwards and three did not:
+
+| Behaviour | Checked before |
+|---|---|
+| The `title` is adopted, so the native tooltip cannot show underneath | Browser scenario |
+| A trailing parenthesis becomes a key cap | Browser scenario |
+| A `<label>` resolves to its control, so a screen reader gets the description | Browser scenario |
+| A focus tooltip follows a scroll | Browser scenario |
+| A hover tooltip goes on a scroll | Nothing |
+| Only the described element can dismiss its own tooltip | Nothing |
+| The position is clamped on **both** axes | Nothing |
+
+The last three are now `test/tooltip.test.ts`, along with the delay split --
+focus shows at once, hover waits, and neither had a check either. Ten tests, and
+each was watched failing: the clamps by removing each `Math.max`, the dismissal
+rules by widening `out`'s containment test, the scroll split by wiring
+`onScroll` to one answer for both kinds, the delay by fixing `wait` at each end.
+
+**They are unit tests and not scenarios because of what they need.** A clamp is
+only measurable against a window small enough to hit it, and a real browser is
+one viewport per run. jsdom is a different one per test, which is what turns
+"off the top of the screen" into `y < GAP` and nothing else.
+
+The one code change is that the keydown listener is now a named function like
+the other six. It was an arrow, which the DOM cannot dedupe, and the `installed`
+guard covered for it -- so the guard now says one thing that is true of all
+seven rather than covering an asymmetry the next reader has to rediscover.

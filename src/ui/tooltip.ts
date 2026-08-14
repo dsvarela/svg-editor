@@ -30,9 +30,9 @@ let current: HTMLElement | null = null;
  * element, which is still focused and still correct, so it follows.
  */
 let byFocus = false;
-/* Five of the six listeners below are named functions, which the DOM dedupes on
-   a repeat call; the keydown one was an arrow and leaked one per call. Guarding
-   the whole thing is simpler than remembering which is which. */
+/* Every listener below is a named function, so a repeat call re-registers the
+   same one and the DOM keeps a single copy. The guard says that once, here,
+   rather than depending on each of the seven staying named. */
 let installed = false;
 
 /** The adopted text, which is where every reader gets it from once adopted. */
@@ -187,6 +187,11 @@ function out(e: Event): void {
   hide();
 }
 
+/** Escape dismisses it, which is the keyboard's way out of a description it has read. */
+function onKeyDown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') hide();
+}
+
 /** Start listening. Safe to call more than once. */
 export function installTooltips(): void {
   if (installed) return;
@@ -200,7 +205,5 @@ export function installTooltips(): void {
   document.addEventListener('pointerdown', hide, true);
   window.addEventListener('scroll', onScroll, true);
   window.addEventListener('blur', hide);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hide();
-  });
+  document.addEventListener('keydown', onKeyDown);
 }
