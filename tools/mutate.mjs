@@ -22,6 +22,11 @@
  * `--from` and `--limit` cut the site list, which is in file and line order and
  * does not move between runs, so a long sweep can be taken in pieces.
  *
+ * `--apply N` makes mutation N and stops, which is how a survivor gets read.
+ * The report says a test did not disagree; it cannot say whether anything
+ * changed, and only one of those is a missing test. Put the file back with
+ * `git checkout` when you have looked.
+ *
  * **Not at the same time as `drive.mjs`.** The mutation is in the working tree
  * while the tests run, and the dev server serves that same tree, so a browser
  * scenario running alongside a sweep loads whichever mutation is live and
@@ -57,7 +62,7 @@ const only = testsIdx >= 0 ? args[testsIdx + 1].split(',') : null;
    actually present: `indexOf` returns -1 for a missing one, and reading the
    element after that is the first argument, which is the target itself. */
 const flagValues = new Set(
-  ['--from', '--limit', '--tests']
+  ['--from', '--limit', '--tests', '--apply']
     .map((f) => args.indexOf(f))
     .filter((i) => i >= 0)
     .map((i) => args[i + 1]),
@@ -212,6 +217,40 @@ if (existsSync(PENDING)) {
 }
 
 
+/**
+ * Make one mutation, recording what it replaced.
+ *
+ * The record goes to disk before the file does, so an interrupted run is put
+ * back by the next one -- see the PENDING block above. `--apply` and the sweep
+ * both come through here, which is what keeps a hand-applied mutation under the
+ * same safety net as a swept one.
+ */
+function mutate(site) {
+  const original = readFileSync(site.file, 'utf8');
+  const lines = original.split('\n');
+  const line = lines[site.line];
+  lines[site.line] = line.slice(0, site.col) + site.now + line.slice(site.col + site.was.length);
+  writeFileSync(PENDING, JSON.stringify({ file: site.file, original, pid: process.pid }));
+  writeFileSync(site.file, lines.join('\n'));
+  return { file: site.file, original, line };
+}
+
+/* One mutation, left in the tree for a person to look at. A survivor says no
+   test disagreed, which is two different findings wearing one word: a missing
+   test, or a mutation that changed nothing to disagree with. Reading the code
+   rarely settles which; running the thing does. */
+const applyIdx = flag('--apply', -1);
+if (applyIdx >= 0) {
+  const site = sites[applyIdx];
+  if (!site) {
+    console.error(`no site ${applyIdx}; there are ${sites.length}`);
+    process.exit(1);
+  }
+  const { line } = mutate(site);
+  console.log(`${site.file}:${site.line + 1}  ${site.was} -> ${site.now}\n  ${line.trim()}`);
+  process.exit(0);
+}
+
 /* An unmutated run first, which settles two things at once: that the command
    line is one vitest accepts, and that the tree is green. Either being false
    scores every mutation as caught and reports perfect coverage of a suite that
@@ -247,14 +286,14 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-for (const site of chosen) {
-  const original = readFileSync(site.file, 'utf8');
-  const lines = original.split('\n');
-  const line = lines[site.line];
-  lines[site.line] = line.slice(0, site.col) + site.now + line.slice(site.col + site.was.length);
-  live = { file: site.file, original, pid: process.pid };
-  writeFileSync(PENDING, JSON.stringify(live));
-  writeFileSync(site.file, lines.join('\n'));
+/* Numbered, because the number is what a reader does something with: a survivor
+   is a question -- missing test, or nothing to disagree with -- and `--apply`
+   answers it. Without it, two identical mutations on one line report the same
+   two words and neither can be told from the other. */
+for (const [k, site] of chosen.entries()) {
+  const index = from + k;
+  const { original, line } = mutate(site);
+  live = { file: site.file, original };
   let caught;
   try {
     caught = suiteCatches(site.file);
@@ -264,7 +303,7 @@ for (const site of chosen) {
   done++;
   if (!caught) {
     survivors.push(site);
-    console.log(`SURVIVED  ${site.file}:${site.line + 1}  ${site.was} -> ${site.now}`);
+    console.log(`SURVIVED  ${index}\t${site.file}:${site.line + 1}  ${site.was} -> ${site.now}`);
     console.log(`          ${line.trim().slice(0, 100)}`);
   }
   if (done % 10 === 0) console.log(`  ... ${done}/${chosen.length}, ${survivors.length} survivors`);
@@ -273,4 +312,5 @@ for (const site of chosen) {
 console.log(`\n${survivors.length} survived of ${chosen.length}.`);
 if (survivors.length) {
   console.log('Each is a change to what the program does that no test disagreed with.');
+  console.log(`Read one with: node tools/mutate.mjs ${targets[0]} --apply <number>`);
 }

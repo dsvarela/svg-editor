@@ -1660,6 +1660,18 @@ sat at exactly 1.1349 through three attempts to fix the geometry, and that
 constancy is what finally said the geometry was not what was wrong. Cell size and
 sample step are separate arguments now.
 
+**A closed offset whose seam falls on a trimmed corner leaves a cusp there, and
+it is the largest error the routine makes.** The notched shape offset outward by
+8 is 0.059 out at the seam and 0.012 or better everywhere else, and the worst
+point is the seam node itself: its handles are collinear, so the model reads it
+as smooth, but the outgoing one points back the way the curve arrived. The trim
+is in the right place -- the notch tip's bisector at `8 / sin(33.7°)` = 14.42,
+which is where the node sits -- so what is wrong is the tangent and not the
+position, and no distance measure can see it. Three of the mutations in the seam
+and rejoin machinery survive every test, all of them only on this shape, and two
+of the three *reduce* the deviation. Code its own tests cannot pin down, that a
+random change improves, is the case for §39's successor rather than a patch.
+
 ## 40. Stroke to path is two offsets and some bookkeeping
 
 Everything hard is in §39. What is left is which contours come back and how they
@@ -1939,13 +1951,33 @@ the exact failure it exists to detect. An unmutated baseline run now settles bot
 halves of that before any result is believed: that the invocation is one vitest
 accepts, and that the tree was green to begin with.
 
-`offsetSubpath` is the measured example. A third of its operators survive every
-test that imports the file, and the survivors are almost all in the part that
-decides where an offset comes apart and how the pieces are rejoined across the
-seam -- which is the part §39's successor would have to rewrite. A first attempt
-at closing that gap swept a family of concave shapes and asserted the one-sided
-property that no point of an offset may lie nearer the original than the
-distance asked for. It killed none of them and cost eighteen seconds, so it was
-taken back out. The mutations there do not move points nearer the original; they
-change which pieces come out, and a test that does not read the piece count
-cannot see them.
+`offsetSubpath` is the measured example, and reading its survivors is what shows
+why the count on its own is not the finding. Twenty-nine of its 92 operators
+survived every test that imports the file. Applying each one and looking at what
+it did to thirteen shapes -- piece count, closedness, node count, corner count,
+length, bounding box, deviation -- moved nothing at all for twenty-two of them.
+Those are equivalent mutants, and several are equivalent because the routine
+guards the same condition twice: `usable` is filtered to runs of two points or
+more and then both operands are checked for two points or more, so neither
+comparison can go the other way. The real gap was seven, and the number that
+looked like a third of the file was mostly the tool finding its own noise.
+
+`--apply N` exists for that reading. A survivor is two different findings
+wearing one word -- a missing test, or nothing to disagree with -- and the tool
+cannot tell them apart, so it hands over the number and lets a person look.
+
+Four of the seven are closed. What closed them was not a distance:
+
+- **How many pieces come back.** Cutting an open path that turns sharply into
+  two or three passed everything, because each piece is parallel and that is all
+  a deviation measure asks. The suite had no open path with a sharp turn in it.
+- **How long the result is.** An offset that stops early is parallel for its
+  whole length. Four fixtures have a circumference arithmetic can supply, so
+  the expected number is derived rather than recorded from a run.
+- **Which nodes are corners.** A circle offsets to a circle and has none; a
+  square offset inward has exactly four. A wrong tangent at a seam moves neither
+  the position of any point nor the distance to the original.
+
+The remaining three are all the seam cusp above, on one shape. A test that
+pinned the current 0.059 would be recording a defect as the specification, and
+the honest number to assert is not known until the seam is right.

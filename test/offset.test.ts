@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { offsetSubpath, strokeOutline } from '../src/core/offset';
 import { parsePath } from '../src/core/parse';
 import { cubicAt } from '../src/core/bezier';
-import { makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
+import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
 const path = (d: string): Subpath => parsePath(d)[0];
@@ -35,6 +35,9 @@ const one = (sp: Subpath, d: number, tol?: number): Subpath => {
 const CIRCLE =
   'M20 0 C31.05 0 40 8.95 40 20 C40 31.05 31.05 40 20 40 C8.95 40 0 31.05 0 20 C0 8.95 8.95 0 20 0 Z';
 
+/** An open path that turns sharply, four times, and never closes. */
+const ZIGZAG = 'M0 40 L15 0 L30 40 L45 0 L60 40';
+
 /** Points along a subpath, enough of them to measure against. */
 function dense(sp: Subpath, per = 400): Pt[] {
   const out: Pt[] = [];
@@ -55,6 +58,23 @@ function worstDeviation(sp: Subpath, off: Subpath, d: number): number {
   let worst = 0;
   for (const p of dense(off, 120)) worst = Math.max(worst, Math.abs(nearest(src, p) - Math.abs(d)));
   return worst;
+}
+
+/**
+ * How long the path is, end to end.
+ *
+ * The measure `worstDeviation` cannot take. It asks of each point of the offset
+ * "is this the right distance from the original", and every point of a piece
+ * that should not be there, or of an offset missing a piece, answers yes: what
+ * is left is still parallel. Length is what notices that there is less of it.
+ */
+function lengthOf(sp: Subpath, per = 400): number {
+  const pts = dense(sp, per);
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  }
+  return total;
 }
 
 describe('the offset is parallel', () => {
@@ -187,6 +207,87 @@ describe('the overrun, and what is left of it', () => {
     let worst = 0;
     for (const o of out) worst = Math.max(worst, worstDeviation(sp, o, 8));
     expect(worst).toBeLessThan(0.05);
+  });
+});
+
+describe('how much of it there is', () => {
+  /* Length, where the tests above measure distance. The two catch different
+     mistakes: a distance measure is blind to an offset that stops early or
+     doubles back over itself, because the part that is there is parallel and
+     that is all it asks. These four have an answer arithmetic can supply, so
+     nothing here is copied from a run. */
+
+  it('is as long as the geometry says a parallel curve is', () => {
+    // A circle offset outward is a circle of the larger radius, and its
+    // circumference is that radius times two pi.
+    expect(lengthOf(one(path(CIRCLE), 5, 0.02))).toBeCloseTo(2 * Math.PI * 25, 1);
+    expect(lengthOf(one(path(CIRCLE), -5, 0.02))).toBeCloseTo(2 * Math.PI * 15, 1);
+  });
+
+  it('adds one whole turn of join going round a square, and no length at all coming in', () => {
+    /* Outward, the four sides keep their length and the four round joins add a
+       quarter turn each: one full circle of radius 4 between them, however the
+       corners are distributed. Inward there are no joins, and a 40-unit square
+       inset by 4 is a 32-unit square. */
+    const sq = path('M0 0 H40 V40 H0 Z');
+    expect(lengthOf(one(sq, 4, 0.02))).toBeCloseTo(160 + 2 * Math.PI * 4, 1);
+    expect(lengthOf(one(sq, -4, 0.02))).toBeCloseTo(128, 1);
+  });
+});
+
+describe('how many pieces come back', () => {
+  it('keeps an open path whole where its corners still have room', () => {
+    /* Each vertex turns through 41.1 degrees, so offsetting into it trims
+       6 / tan(20.56 deg) = 16.0 units off each arm, and the arms are
+       hypot(15, 40) = 42.7 long. An interior arm loses 16 at each end and has
+       10.7 left, so nothing is consumed and the answer is one path either side.
+       The suite had no open path that turned sharply at all, and every way of
+       cutting this one into two or three passed. */
+    const sp = path(ZIGZAG);
+    for (const d of [6, -6]) {
+      const out = offsetSubpath(sp, d, 0.02);
+      expect(out).toHaveLength(1);
+      expect(out![0].closed).toBe(false);
+      expect(worstDeviation(sp, out![0], d)).toBeLessThan(0.05);
+    }
+  });
+
+  it('keeps it whole once the trim is deeper than the arms are long', () => {
+    /* At 24 the trim is 65.8 against arms of 42.7, so every arm is eaten
+       through. What that removes is the two ends, not the middle: the part of
+       the offset that survives is the far side of the middle valley, which is
+       one connected run and not three. */
+    const out = offsetSubpath(path(ZIGZAG), -24, 0.02);
+    expect(out).toHaveLength(1);
+    expect(worstDeviation(path(ZIGZAG), out![0], 24)).toBeLessThan(0.05);
+  });
+});
+
+describe('the corners it should and should not have', () => {
+  /* A corner in the result is a claim that the offset changes direction
+     abruptly there, and the model reads that claim off the handles rather than
+     storing it. So a node that should be smooth and is not is a real defect
+     even when every point is still the right distance away: it is the tangent
+     that is wrong, not the position, and no distance measure can see it. */
+
+  const cornersOf = (sp: Subpath): number =>
+    sp.nodes.filter((n) => continuityOf(n) === 'corner').length;
+
+  it('leaves none on the offset of a circle, which is another circle', () => {
+    expect(cornersOf(one(path(CIRCLE), 5, 0.02))).toBe(0);
+    expect(cornersOf(one(path(CIRCLE), -5, 0.02))).toBe(0);
+  });
+
+  it('leaves none going round the outside of a square', () => {
+    // Four straight runs and four arcs, and an arc leaves its straight run at a
+    // tangent, so there is no corner anywhere on it.
+    expect(cornersOf(one(path('M0 0 H40 V40 H0 Z'), 4, 0.02))).toBe(0);
+  });
+
+  it('keeps all four coming in, where the sides really do meet at a point', () => {
+    // The inward offset of a square is a smaller square. Rounding those would
+    // be the same mistake in the other direction.
+    expect(cornersOf(one(path('M0 0 H40 V40 H0 Z'), -4, 0.02))).toBe(4);
   });
 });
 
