@@ -32,6 +32,8 @@ route to finishing it.
 - [Trace over an image](#trace-over-an-image)
 - [Move around the canvas](#move-around-the-canvas)
 - [Paste in a path from somewhere else](#paste-in-a-path-from-somewhere-else)
+- [Save the drawing as a PNG](#save-the-drawing-as-a-png)
+- [See how the icon reads at 16 px](#see-how-the-icon-reads-at-16-px)
 - [Get the smallest possible output](#get-the-smallest-possible-output)
 - [Rename a shape and control its exported id](#rename-a-shape-and-control-its-exported-id)
 
@@ -486,6 +488,28 @@ Paste, then press **Apply**.
 In **Path data** mode with one shape selected, Apply updates that shape. With
 nothing selected it replaces the document, and the hint under the box tells you
 which is about to happen.
+
+## Save the drawing as a PNG
+
+Open the **Document** tab, then the **PNG** group. Type the width you want and
+press **Download PNG**.
+
+The height follows the canvas, so a 100 by 50 canvas at 512 wide gives a 512 by
+256 image. Everywhere nothing is painted stays transparent.
+
+The canvas decides the frame, not the drawing. To crop the image to the artwork,
+press **Fit canvas to drawing** in the **Canvas** group first.
+
+## See how the icon reads at 16 px
+
+Open the **Preview** group in the **Document** tab. The drawing appears at 16,
+24, 32 and 48 pixels wide, which is the size an icon is looked at.
+
+They redraw as you work, except during a drag, when they wait until you let go.
+
+They are made from the exported SVG rather than from the canvas, so the
+**Output** settings show up in them. Set **Decimals** to 0 and you can watch the
+rounding spoil a curve before you save a file with it in.
 
 ## Get the smallest possible output
 

@@ -2437,3 +2437,42 @@ would let the panel refuse what a drag allowed.
 
 **Not here:** a lock linking width to height. Scaling both together is what the
 **Scale** field above already does, and a proportion lock is a mode.
+
+## 53. Pixels come from the browser, and cost nothing to ask for
+
+Two things wanted the drawing as pixels: a PNG to ship, and a row of small
+previews to judge an icon by. Both are the same string -- the document written
+out as an SVG data URI -- handed to a browser that already knows how to draw one.
+
+That is why neither needed a dependency or a server. A data-URI SVG does **not**
+taint a canvas, so the canvas can be read back; an `<img>` pointed at a file
+would, and `toDataURL` on a tainted canvas throws. Everything stays a URI the
+page built itself, so this works from `file://` like the rest of the editor.
+
+**Both are written with the Output settings.** A preview shows what the exported
+file draws rather than what the editor holds, so dropping the decimals to nothing
+visibly rounds the drawing. Seeing that is the point: the settings that shrink
+the file are the ones that can spoil it.
+
+The URI is percent-encoded rather than pasted in raw, because a data URI ends at
+the first unescaped `#` and every fill this editor writes is a hex colour. Raw,
+the browser reads the first colour as a fragment and loses everything after it.
+
+**The previews hold still during a drag.** Pointing an `<img>` at a new data URI
+is a parse and a raster of the whole document, four times over, and doing that on
+every `pointermove` stutters the drag it is meant to illustrate. The drag ends
+with a store notification like any other, which is what redraws them. They are
+also left alone while their group is shut, on the same argument the source drawer
+makes: a panel nobody is looking at should not cost a redraw.
+
+**A PNG's height follows the viewBox, never the drawing.** The canvas is the page
+the icon sits on, and cropping to the artwork would silently change the padding
+somebody chose. Both sides are floored at one pixel, because `toBlob` on a canvas
+of zero pixels returns null and the download would fail rather than produce a
+small image.
+
+`renderPng` rejects rather than resolving with a blank image when the browser
+declines to decode or encode. A silently blank PNG is the worst outcome
+available: the download succeeds and nobody looks at the file until later. The
+browser scenario reads the bytes back for the same reason -- a well-formed PNG of
+nothing has a valid header too, so it counts the opaque pixels.

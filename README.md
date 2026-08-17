@@ -136,6 +136,7 @@ src/
     dom.ts         element pooling
   io/
     svg.ts         import and export whole documents
+    pixels.ts      the document as a data URI, and as a PNG
     boolean.ts     unite/subtract/intersect/exclude, via path-bool
   tools/
     controller.ts  pointer gestures on the canvas
@@ -148,18 +149,18 @@ src/
   main.ts     wiring: document -> store -> canvas -> commands -> panels
 ```
 
-17 697 lines of TypeScript across 41 files, plus 1 144 lines of CSS, counted on
+17 852 lines of TypeScript across 42 files, plus 1 161 lines of CSS, counted on
 2026-08-17. No runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 933 tests in 32 files, 13 104 lines on
+**Unit and DOM tests**, with `npm test`. 942 tests in 33 files, 13 191 lines on
 2026-08-17, over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
 transforms, history, tooltips, node identity, the clipboard, corner fillets,
-groups, arranging shapes, paint order, the grid and the primitives. The rendering
+groups, arranging shapes, paint order, PNG output, the grid and the primitives. The rendering
 tests run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
@@ -178,7 +179,7 @@ Chromium-based Edge through `playwright-core`, defaulting to
 somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
 every scenario.
 
-There are 51 of them on 2026-08-17, and they are not listed here: `--list`
+There are 52 of them on 2026-08-17, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that
 drifts. This one had drifted by twelve before anyone noticed.
 

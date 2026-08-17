@@ -4063,6 +4063,156 @@ const scenarios = {
   },
 
   /**
+   * The drawing as pixels: the four previews, and a PNG read back byte by byte.
+   *
+   * The only way to know a PNG is a PNG is to look at one, and nothing short of
+   * a browser can make one here -- the raster comes from the browser decoding an
+   * SVG and encoding a canvas. So the blob the button hands to the download is
+   * intercepted on its way out and its header is read: the eight-byte signature,
+   * then the width and height out of the IHDR chunk.
+   *
+   * A silently blank or wrongly sized PNG is the failure worth catching. The
+   * download succeeds either way, and nobody looks at the file until later.
+   */
+  async png(page, check) {
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">
+  <path d="M10 10 H40 V40 H10 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'doc');
+    await settle(page);
+
+    /* The previews are `<img>` elements pointed at a data URI of the document.
+       Asserted on the `src` rather than on anything drawn, because whether the
+       browser rasterised it is the browser's business and the URI is what this
+       editor is responsible for. */
+    out.previews = await page.evaluate(() =>
+      ['#prev16', '#prev24', '#prev32', '#prev48'].map((id) => {
+        const el = document.querySelector(id);
+        return { w: el.width, src: el.getAttribute('src')?.slice(0, 33) ?? '' };
+      }),
+    );
+    check(
+      out.previews.every((p) => p.src === 'data:image/svg+xml;charset=utf-8,'),
+      `a preview is not pointed at an SVG data URI: ${JSON.stringify(out.previews)}`,
+    );
+    check(
+      JSON.stringify(out.previews.map((p) => p.w)) === JSON.stringify([16, 24, 32, 48]),
+      `the previews are ${JSON.stringify(out.previews.map((p) => p.w))} px wide`,
+    );
+    const drawnColour = await page.evaluate(
+      () => decodeURIComponent(document.querySelector('#prev32').getAttribute('src')).includes('#2563d8'),
+    );
+    check(drawnColour, 'the preview URI does not hold the fill the document does');
+
+    /* Keep the blob the button makes. `revokeObjectURL` runs immediately after
+       the click, which frees the URL and not the blob, so this reference stays
+       readable. */
+    await page.evaluate(() => {
+      const made = URL.createObjectURL.bind(URL);
+      window.__blobs = [];
+      URL.createObjectURL = (b) => {
+        window.__blobs.push(b);
+        return made(b);
+      };
+    });
+
+    await page.fill('#pngWidth', '200');
+    await page.click('#downloadPng');
+    await page.waitForFunction(() => window.__blobs.length > 0);
+    /* The status line is written from inside the promise, so waiting for it is
+       waiting for the encode rather than for a frame. */
+    await page.waitForFunction(() => /^(Saved|No PNG)/.test(document.querySelector('#status').textContent));
+    out.message = (await page.textContent('#status')).trim();
+
+    out.header = await page.evaluate(async () => {
+      const blob = window.__blobs[window.__blobs.length - 1];
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const view = new DataView(bytes.buffer);
+      return {
+        type: blob.type,
+        size: blob.size,
+        signature: [...bytes.slice(0, 8)].join(' '),
+        chunk: String.fromCharCode(...bytes.slice(12, 16)),
+        width: view.getUint32(16),
+        height: view.getUint32(20),
+      };
+    });
+
+    check(out.header.type === 'image/png', `the blob is ${out.header.type}, not image/png`);
+    check(
+      out.header.signature === '137 80 78 71 13 10 26 10',
+      `the bytes do not start with the PNG signature: ${out.header.signature}`,
+    );
+    check(out.header.chunk === 'IHDR', `the first chunk is ${out.header.chunk}, not IHDR`);
+    // 200 wide, and half that tall because the canvas is 100 by 50.
+    check(
+      out.header.width === 200 && out.header.height === 100,
+      `the PNG is ${out.header.width} x ${out.header.height}, not 200 x 100`,
+    );
+    check(out.header.size > 100, `the PNG is ${out.header.size} bytes, which is too few to hold one`);
+
+    /* A well-formed PNG of nothing has a valid header too, so the header alone
+       cannot tell a working export from one that rasterised a blank page. Read
+       the pixels back: the fixture is a blue square on a transparent field, so
+       the count has to be somewhere strictly between none and all of them. */
+    out.pixels = await page.evaluate(async () => {
+      const blob = window.__blobs[window.__blobs.length - 1];
+      const img = new Image();
+      img.src = URL.createObjectURL(blob);
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let opaque = 0;
+      let blue = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 8) continue;
+        opaque++;
+        if (data[i] === 0x25 && data[i + 1] === 0x63 && data[i + 2] === 0xd8) blue++;
+      }
+      return { total: data.length / 4, opaque, blue };
+    });
+    check(
+      out.pixels.opaque > 0,
+      'every pixel of the PNG is transparent, so the drawing did not reach it',
+    );
+    check(
+      out.pixels.opaque < out.pixels.total,
+      'every pixel of the PNG is opaque, so the background is not transparent',
+    );
+    /* 30 by 30 document units of fill, plus the 1-unit stroke the import gives a
+       path with a fill and no stroke, which is centred on the outline and so
+       adds half a unit all round: 31 by 31 units. The canvas is 100 by 50 and
+       the PNG is 200 by 100, so the scale is 2 and the square is 62 by 62
+       pixels. The margin is for the antialiased edge, which is a pixel wide. */
+    check(
+      Math.abs(out.pixels.opaque - 62 * 62) < 260,
+      `the square covers ${out.pixels.opaque} pixels, not about ${62 * 62}`,
+    );
+
+    // A width of nothing is refused rather than producing a canvas of no pixels.
+    await page.fill('#pngWidth', '0');
+    await page.click('#downloadPng');
+    await settle(page);
+    out.refused = (await page.textContent('#status')).trim();
+    check(/at least one pixel/.test(out.refused), `a width of 0 said ${JSON.stringify(out.refused)}`);
+
+    return out;
+  },
+
+  /**
    * The selection's box as four fields: read, typed, and refused.
    *
    * The unit tests own the arithmetic. What needs a browser is that the fields

@@ -5,6 +5,7 @@
 import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { drawsSomething, exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
+import { pngSize, renderPng, svgDataUri } from './io/pixels';
 import type { BooleanOp } from './io/boolean';
 import {
   docBBox,
@@ -1232,6 +1233,80 @@ on('#copy', () => {
   );
 });
 
+/* -------------------------------------------------------------- pixels */
+
+/**
+ * The drawing at the sizes an icon ships at, and the same drawing saved as one.
+ *
+ * Both go through `svgDataUri`, which writes the document with the Output
+ * settings, so what these show is what the exported file draws rather than what
+ * the editor holds.
+ */
+const previewGroup = [...document.querySelectorAll<HTMLButtonElement>('button.glabel')].find(
+  (b) => b.querySelector('span')?.textContent === 'Preview',
+);
+const previewImgs: [HTMLImageElement, number][] = [16, 24, 32, 48].map((px) => [
+  $(`#prev${px}`) as HTMLImageElement,
+  px,
+]);
+const previewInfo = $('#previewinfo');
+
+const previewOpen = (): boolean => previewGroup?.getAttribute('aria-expanded') === 'true';
+
+function refreshPreview(): void {
+  const s = store.state;
+  const n = s.doc.shapes.length;
+  previewInfo.textContent = `${n} shape${n === 1 ? '' : 's'}`;
+  /* Shut means nothing to see, so nothing is serialised. The source drawer takes
+     the same position for the same reason: a panel nobody is looking at should
+     not cost a redraw.
+
+     Held still during a drag as well. Pointing an `<img>` at a new data URI is a
+     parse and a raster of the whole document, four times over, and doing that on
+     every pointermove stutters the drag it is meant to illustrate. The drag ends
+     with a notification like any other, which is what redraws these. */
+  if (!previewOpen() || controller.busy) return;
+  const uri = svgDataUri(s.doc, { decimals: s.decimals, minify: s.minify });
+  for (const [img, px] of previewImgs) {
+    /* Shaped like the canvas rather than square, and by the same arithmetic the
+       PNG uses. A square swatch of a wide document letterboxes the drawing, so
+       the size under it would be describing the box and not the icon. */
+    const { w, h } = pngSize(s.doc.viewBox, px);
+    img.width = w;
+    img.height = h;
+    img.src = uri;
+  }
+}
+
+previewGroup?.addEventListener('click', () => {
+  // The class toggle runs on its own listener; this one only has to catch up
+  // the images, which were left stale while the group was shut.
+  refreshPreview();
+});
+
+on('#downloadPng', () => {
+  const s = store.state;
+  const width = Number(($('#pngWidth') as HTMLInputElement).value);
+  if (!Number.isFinite(width) || width < 1) {
+    say('A PNG needs a width of at least one pixel.', false);
+    return;
+  }
+  const { w, h } = pngSize(s.doc.viewBox, width);
+  say(`Drawing ${w} × ${h}…`, true);
+  void renderPng(s.doc, width, { decimals: s.decimals, minify: s.minify }).then(
+    (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'drawing.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      say(`Saved ${w} × ${h}, ${Math.round(blob.size / 102.4) / 10} kB.`, true);
+    },
+    (err: unknown) => say(`No PNG: ${err instanceof Error ? err.message : String(err)}`, false),
+  );
+});
+
 on('#download', () => {
   const s = store.state;
   const text = exportSvg(s.doc, { decimals: s.decimals, minify: s.minify });
@@ -2317,6 +2392,7 @@ store.subscribe((s) => {
 
   refreshInspector();
   refreshBend();
+  refreshPreview();
 
   // Every line on screen is a snap position, but when zoomed out not every snap
   // position gets a line. Saying which is drawn keeps that asymmetry visible

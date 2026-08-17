@@ -680,6 +680,33 @@
               <p class="hint">How the exported path data is written.</p>
               </div>
             </div>
+          <div class="group">
+              <button class="glabel" type="button" aria-expanded="false"><span>Preview</span><span class="gval" id="previewinfo"></span></button>
+              <div class="gbody">
+            <!-- The drawing at the sizes an icon ships at. Rendered from the
+                 exported SVG, so the Output settings above show in it. -->
+            <div class="previews" id="previews">
+              <figure><img id="prev16" alt="The drawing at 16 pixels" width="16" height="16" /><figcaption>16</figcaption></figure>
+              <figure><img id="prev24" alt="The drawing at 24 pixels" width="24" height="24" /><figcaption>24</figcaption></figure>
+              <figure><img id="prev32" alt="The drawing at 32 pixels" width="32" height="32" /><figcaption>32</figcaption></figure>
+              <figure><img id="prev48" alt="The drawing at 48 pixels" width="48" height="48" /><figcaption>48</figcaption></figure>
+            </div>
+
+              <p class="hint">Held still during a drag, and redrawn when it ends.</p>
+              </div>
+            </div>
+          <div class="group">
+              <button class="glabel" type="button" aria-expanded="false"><span>PNG</span><span class="gval" id="pnginfo"></span></button>
+              <div class="gbody">
+            <div class="row">
+              <label for="pngWidth">Width</label>
+              <input type="number" id="pngWidth" value="512" min="1" max="8192" step="1" aria-label="PNG width in pixels" />
+            </div>
+            <button class="btn wide primary" id="downloadPng" type="button" title="Save the drawing as a PNG at this width. The height follows the canvas proportions">Download PNG</button>
+
+              <p class="hint">Transparent where nothing is painted. Height follows the canvas.</p>
+              </div>
+            </div>
           </div>
         </aside>
       </main>

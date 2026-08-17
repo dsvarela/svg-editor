@@ -124,7 +124,7 @@ Three tabs, split by what a control acts on.
 |---|---|
 | **Shape** | Shapes, Style, Combine, Draw, Transform, Arrange |
 | **Node** | Node, Bend, Align, Delete |
-| **Document** | Canvas, Grid, Backdrop, Output |
+| **Document** | Canvas, Grid, Backdrop, Output, Preview, PNG |
 
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
 focus.
@@ -662,6 +662,26 @@ to pixels** applies the same lattice to a shape that already exists.
 - **Minify** shortens the spelling only. Drops unnecessary separators and leading
   zeros, drops repeated command letters, and prefers relative commands when they
   are shorter.
+
+### Preview
+
+The drawing at 16, 24, 32 and 48 pixels wide, on a chequer so a transparent
+background is visible. Each is as tall as the canvas proportions make it, so a
+wide canvas gives wide swatches rather than a letterboxed square.
+
+They are drawn from the exported SVG, so the **Output** settings show in them:
+set **Decimals** to 0 and the rounding appears here before it appears in a file.
+
+They hold still while you drag and redraw when you let go, and they do nothing at
+all while the group is shut.
+
+### PNG
+
+- **Width** in pixels, from 1 to 8192. The height follows the canvas proportions.
+- **Download PNG** saves it. The status line says the size it wrote.
+
+Transparent wherever nothing is painted, which is what an icon wants. The canvas
+decides the frame, not the drawing, so padding you left around a shape is kept.
 
 ## The transform box
 
