@@ -4,7 +4,7 @@ A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
 **Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
-or download one file.** The whole editor is a single 274 kB HTML page with every
+or download one file.** The whole editor is a single 290 kB HTML page with every
 asset inlined. Take the `.html` from [the latest
 release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
 browser, and it runs offline with no server and nothing installed.
@@ -43,7 +43,7 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **273.6 kB, 82.5 kB
+The production build is one file, no external requests: **289.9 kB, 86.5 kB
 gzipped** on 2026-08-17, as `npm run build` reports it. Open `dist/index.html`
 from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer

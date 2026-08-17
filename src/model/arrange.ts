@@ -18,7 +18,7 @@ import { translate } from '../core/affine';
 import { unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import type { Doc, Shape, ViewBox } from '../core/types';
-import { groupChain, shapeBBox, shapesInGroup } from './doc';
+import { findGroup, groupChain, shapeBBox, shapesInGroup } from './doc';
 import { transformShape } from './ops';
 import type { AlignMode } from './ops';
 
@@ -192,7 +192,7 @@ export function reorderShapes(doc: Doc, ids: ReadonlySet<string>, move: ZMove): 
   const moving = new Map<string | null, Set<string>>();
   for (const u of units) {
     const parent = u.group
-      ? ((doc.groups ?? []).find((g) => g.id === u.group)?.parent ?? null)
+      ? (findGroup(doc, u.group)?.parent ?? null)
       : (u.shapes[0].group ?? null);
     const key = u.group ?? u.shapes[0].id;
     const set = moving.get(parent) ?? new Set<string>();
