@@ -1,0 +1,48 @@
+# Which colours sit on which, and what each pair is.
+#
+# Read by `design/contrast.mjs` from the handbook, against `styles.css`:
+#
+#     node ../handbook/design/contrast.mjs src/ui/styles.css src/ui/pairs.txt
+#
+# A pair is only a pair because a layout put the two together, which no parser
+# can tell. This file is that knowledge, and it is the only part of the check
+# that needs a person.
+#
+# Roles: text (4.5:1), large (3:1), boundary (3:1), decoration (exempt).
+# A `decoration` line is a decision somebody made, not a pair nobody classified.
+
+# ---- the panels
+ink          panel, panel-2    text
+ink-2        panel, panel-2    text
+ink-3        panel, panel-2    text
+warn         panel             text
+accent       panel             boundary
+accent-ink   accent            text
+# `--edge` draws a control's own border, which is the only thing identifying a
+# button whose background matches the panel behind it. `--line` draws the chrome
+# edges between regions: a bar's underline, a ruler's edge, the rail's left
+# border. One token cannot be both, because a divider at 3:1 stops being a
+# hairline and the whole design is hairlines.
+edge         panel, panel-2    boundary
+line         panel, panel-2    decoration
+line-soft    panel             decoration
+sunk         panel             decoration
+
+# ---- the canvas and its overlay
+measure      canvas            text
+
+# An anchor is a `--node` fill with a `--node-line` outline, so what has to be
+# seen against the canvas is the outline. The fill is what separates a node from
+# a handle, and it is read against the outline around it rather than the canvas.
+node-line    canvas            boundary
+node         node-line         boundary
+node-sel     canvas            boundary
+axis         canvas            boundary
+guide        canvas            boundary
+smart        canvas            boundary
+keyline      canvas            boundary
+
+# The grid is a background texture rather than something you read or aim at, and
+# a grid dense enough to clear 3:1 would fight the drawing on top of it.
+grid         canvas            decoration
+grid-major   canvas            decoration

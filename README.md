@@ -39,6 +39,7 @@ npm run dev        # http://localhost:5173
 | `npm run build` | Typecheck, then build to a single self-contained `dist/index.html` |
 | `npm run check` | Typecheck only |
 | `npm run check:docs` | The [style](docs/STYLE.md) tell sweep, and every link in the docs |
+| `npm run check:contrast` | Every colour pair in `src/ui/pairs.txt`, against the WCAG floors |
 | `npm test` | Unit and DOM tests. See [Testing](#testing) |
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |

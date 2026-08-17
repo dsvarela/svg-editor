@@ -14,20 +14,21 @@
   --panel-2: #f1f4f8;
   --sunk: #eaeef4;
   --line: #ccd2dc;
+  --edge: #78879f;
   --line-soft: #e2e6ed;
   --ink: #0f1218;
   --ink-2: #525a68;
-  --ink-3: #828b99;
+  --ink-3: #67707e;
   --accent: #1f5ed0;
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
   --keyline: #b0339b;
-  --guide: #1aa39a;
+  --guide: #199b93;
   --smart: #d1453b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
-  --axis: #99a5b8;
+  --axis: #8291a8;
   --node: #ffffff;
   --node-line: #525a68;
   --node-sel: #1f5ed0;
@@ -40,10 +41,11 @@
     --panel-2: #0e121a;
     --sunk: #0a0d13;
     --line: #242c3a;
+    --edge: #5a6d8f;
     --line-soft: #1a202b;
     --ink: #e6eaf2;
     --ink-2: #98a1b1;
-    --ink-3: #6a7383;
+    --ink-3: #768091;
     --accent: #5f97ff;
     --accent-ink: #08111f;
     --measure: #dfa34e;
@@ -53,7 +55,7 @@
     --warn: #e4685e;
     --grid: #1c2331;
     --grid-major: #2a3345;
-    --axis: #454f66;
+    --axis: #576380;
     --node: #12161f;
     --node-line: #98a1b1;
     --node-sel: #5f97ff;
@@ -67,20 +69,21 @@
   --panel-2: #f1f4f8;
   --sunk: #eaeef4;
   --line: #ccd2dc;
+  --edge: #78879f;
   --line-soft: #e2e6ed;
   --ink: #0f1218;
   --ink-2: #525a68;
-  --ink-3: #828b99;
+  --ink-3: #67707e;
   --accent: #1f5ed0;
   --accent-ink: #ffffff;
   --measure: #8f5c0d;
   --keyline: #b0339b;
-  --guide: #1aa39a;
+  --guide: #199b93;
   --smart: #d1453b;
   --warn: #bd382a;
   --grid: #d6dce6;
   --grid-major: #bcc6d4;
-  --axis: #99a5b8;
+  --axis: #8291a8;
   --node: #ffffff;
   --node-line: #525a68;
   --node-sel: #1f5ed0;
@@ -92,10 +95,11 @@
   --panel-2: #0e121a;
   --sunk: #0a0d13;
   --line: #242c3a;
+  --edge: #5a6d8f;
   --line-soft: #1a202b;
   --ink: #e6eaf2;
   --ink-2: #98a1b1;
-  --ink-3: #6a7383;
+  --ink-3: #768091;
   --accent: #5f97ff;
   --accent-ink: #08111f;
   --measure: #dfa34e;
@@ -105,7 +109,7 @@
   --warn: #e4685e;
   --grid: #1c2331;
   --grid-major: #2a3345;
-  --axis: #454f66;
+  --axis: #576380;
   --node: #12161f;
   --node-line: #98a1b1;
   --node-sel: #5f97ff;
@@ -230,7 +234,7 @@ input[type='number'],
 .btn {
   padding: 0 10px;
   background: var(--panel);
-  border-color: var(--line);
+  border-color: var(--edge);
   color: var(--ink);
 }
 .ib:hover:not(:disabled) { background: var(--sunk); color: var(--ink); }
@@ -272,7 +276,7 @@ input[type='number'],
 .seg {
   display: flex;
   flex: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: var(--r);
   overflow: hidden;
   background: var(--panel);
@@ -291,7 +295,7 @@ input[type='number'],
   background: transparent;
   color: var(--ink-2);
   border: 0;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--edge);
   cursor: pointer;
 }
 .seg.spread button { flex-direction: column; gap: 2px; height: auto; padding: 5px 4px 6px; font-size: 11.5px; }
@@ -699,7 +703,7 @@ input[type='color'] {
   height: var(--h);
   padding: 2px;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: var(--r);
   cursor: pointer;
 }
@@ -741,7 +745,7 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
   font-size: 11.5px;
   color: var(--ink-2);
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: var(--r);
   cursor: pointer;
 }
@@ -790,7 +794,7 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
   height: var(--h);
   background: var(--panel);
   color: var(--ink-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: var(--r);
   cursor: pointer;
 }
@@ -984,7 +988,7 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .srchead .st.err { color: var(--warn); }
 
 kbd {
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: var(--r);
   padding: 0 4px;
   background: var(--sunk);

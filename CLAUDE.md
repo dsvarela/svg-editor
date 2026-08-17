@@ -20,6 +20,7 @@ those rules cannot know about this project.
 | One browser scenario | `npm run drive <scenario>` |
 | Name every scenario | `npm run drive -- --list` |
 | Style sweep and link check | `npm run check:docs` |
+| Contrast floors, over the palette | `npm run check:contrast` |
 | What a finger cannot hit | `node tools/touch.mjs` |
 | What a keyboard cannot reach | `node tools/keys.mjs` |
 | Build the single file | `npm run build` |
