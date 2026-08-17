@@ -123,6 +123,145 @@ export function arrangeUnits(doc: Doc, ids: ReadonlySet<string>): Unit[] {
   return units;
 }
 
+/* ------------------------------------------------------------- paint order */
+
+/** Where a shape is asked to go in the paint order. */
+export type ZMove = 'forward' | 'backward' | 'front' | 'back';
+
+/**
+ * One child of one parent: a loose shape, or a whole group.
+ *
+ * `doc.shapes` is flat, so the tree it stands for has to be read out before
+ * anything can be reordered inside it. This is that reading, one level at a time.
+ */
+interface Child {
+  /** The group this child is, or `null` when it is the shape in `shape`. */
+  group: string | null;
+  shape: Shape | null;
+}
+
+const childKey = (c: Child): string => c.group ?? c.shape!.id;
+
+/**
+ * The children of one parent, in paint order.
+ *
+ * A group appears where its first shape does, which is where the whole run of it
+ * begins. That only reads as a position because a group's shapes are contiguous,
+ * so this function and §49's invariant hold each other up.
+ */
+export function childrenOf(doc: Doc, parent: string | null): Child[] {
+  const out: Child[] = [];
+  const seen = new Set<string>();
+  for (const sh of doc.shapes) {
+    const own = sh.group ?? null;
+    if (own === parent) {
+      out.push({ group: null, shape: sh });
+      continue;
+    }
+    /* The ancestor of this shape that is a direct child of `parent`. A chain
+       member whose own parent is `parent` can only be that, because the chain is
+       the path to the root: anything above it is above `parent` too. A shape not
+       descended from `parent` has no such member and belongs to no child here. */
+    const chain = groupChain(doc, own);
+    const at = chain.find((g) => (g.parent ?? null) === parent);
+    if (!at || seen.has(at.id)) continue;
+    seen.add(at.id);
+    out.push({ group: at.id, shape: null });
+  }
+  return out;
+}
+
+/**
+ * Move the selected children one step, or all the way, through their parent.
+ *
+ * Reordering happens per parent and never across one, which is §49's invariant
+ * stated as a behaviour: a shape leaving its group's run could not be written as
+ * one `<g>`. So "bring forward" on a grouped shape means forward among its
+ * siblings and it stops at the edge of the group. Front and back on a group move
+ * the group. Ungroup is how a shape leaves.
+ *
+ * `doc.shapes` is then rebuilt by walking the tree, so contiguity holds by
+ * construction rather than by every branch here remembering to preserve it.
+ */
+export function reorderShapes(doc: Doc, ids: ReadonlySet<string>, move: ZMove): boolean {
+  const units = arrangeUnits(doc, ids);
+  if (units.length === 0) return false;
+
+  /* Which child of which parent each unit is. A unit that is a group is a child
+     of that group's own parent; a loose shape is a child of its group. */
+  const moving = new Map<string | null, Set<string>>();
+  for (const u of units) {
+    const parent = u.group
+      ? ((doc.groups ?? []).find((g) => g.id === u.group)?.parent ?? null)
+      : (u.shapes[0].group ?? null);
+    const key = u.group ?? u.shapes[0].id;
+    const set = moving.get(parent) ?? new Set<string>();
+    set.add(key);
+    moving.set(parent, set);
+  }
+
+  const orders = new Map<string | null, Child[]>();
+  const parents: (string | null)[] = [null, ...(doc.groups ?? []).map((g) => g.id)];
+  for (const p of parents) orders.set(p, childrenOf(doc, p));
+
+  let changed = false;
+  for (const [parent, keys] of moving) {
+    const list = orders.get(parent);
+    if (!list) continue;
+    const next = stepped(list, keys, move);
+    if (next.some((c, i) => childKey(c) !== childKey(list[i]))) changed = true;
+    orders.set(parent, next);
+  }
+  if (!changed) return false;
+
+  doc.shapes = flattenOrders(orders);
+  return true;
+}
+
+/** One list reordered: the chosen entries move, the rest close up around them. */
+function stepped(list: Child[], keys: ReadonlySet<string>, move: ZMove): Child[] {
+  const chosen = (c: Child): boolean => keys.has(childKey(c));
+  if (move === 'front' || move === 'back') {
+    const picked = list.filter(chosen);
+    const rest = list.filter((c) => !chosen(c));
+    return move === 'front' ? [...rest, ...picked] : [...picked, ...rest];
+  }
+
+  const out = [...list];
+  /* Swept from the leading end, so a run of neighbours moves as a block instead
+     of the first one hopping over the second and the second then hopping back. */
+  if (move === 'forward') {
+    for (let i = out.length - 2; i >= 0; i--) {
+      if (chosen(out[i]) && !chosen(out[i + 1])) [out[i], out[i + 1]] = [out[i + 1], out[i]];
+    }
+  } else {
+    for (let i = 1; i < out.length; i++) {
+      if (chosen(out[i]) && !chosen(out[i - 1])) [out[i], out[i - 1]] = [out[i - 1], out[i]];
+    }
+  }
+  return out;
+}
+
+/** Walk the tree of orders back into one flat paint order. */
+function flattenOrders(orders: Map<string | null, Child[]>): Shape[] {
+  const out: Shape[] = [];
+  const done = new Set<string>();
+  const walk = (parent: string | null): void => {
+    for (const c of orders.get(parent) ?? []) {
+      if (!c.group) {
+        out.push(c.shape!);
+        continue;
+      }
+      // Bounded against a parent cycle, which would otherwise recur forever.
+      if (done.has(c.group)) continue;
+      done.add(c.group);
+      walk(c.group);
+    }
+  };
+  walk(null);
+  return out;
+}
+
 /** The box every unit sits in, or `null` when there are none. */
 export function unitsBox(units: Unit[]): Box | null {
   let box: Box | null = null;

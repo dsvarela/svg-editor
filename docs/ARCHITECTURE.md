@@ -2372,3 +2372,36 @@ one last.
 **Nothing clamps a negative gap.** Shapes wider than the frame they are being
 spaced across can only overlap, and overlapping them by an even amount is a truer
 answer than refusing, and a much truer one than spilling silently off one end.
+
+## 51. Paint order is reordered per parent, and the canvas has to follow
+
+`doc.shapes` is the paint order and nothing had ever reordered it except
+`groupSelection`, which gathers a group's shapes into one run. Bring forward and
+send backward are the first operations whose whole purpose is to reorder it.
+
+**The move happens among siblings, never across a parent.** A shape brought
+forward moves through the other children of its group and stops at the edge of
+it, because a shape leaving that run could not be written as one `<g>` -- §49's
+invariant stated as a behaviour rather than as something each branch has to
+remember. Front and back on a grouped shape mean front and back of its group.
+Ungroup is how a shape leaves.
+
+The implementation reads the flat array into one list of children per parent,
+reorders the one list that is moving, and rebuilds `doc.shapes` by walking the
+tree. Contiguity then holds by construction. The alternative -- splicing the flat
+array and being careful -- is the version where the fifth case gets it wrong.
+
+**A press with nowhere to go declines through `tryEdit`.** A shape already at the
+front cannot move, and an undo entry for that costs a press of Ctrl+Z that
+appears to do nothing. The buttons stay live regardless: whether there is room is
+a question about the whole tree, and a button greying out on the answer would
+flicker as the selection changed.
+
+**The canvas was drawing the wrong order, and had been.** `renderArtwork` makes a
+`<path>` per shape and keeps it in a map, so creating one can only append. The
+DOM order was therefore the order shapes were *first seen*, not `doc.shapes`
+order -- which had already been wrong since grouping started reordering the
+array, with the export and the screen quietly disagreeing about what covered
+what. One pass now puts each element at its index, writing only where it is
+already wrong. Found by a browser scenario, because no unit test had ever asked
+what order the elements were in.

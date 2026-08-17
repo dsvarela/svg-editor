@@ -106,6 +106,23 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       return;
     }
 
+    /* Ctrl+] and Ctrl+[ move the selection through the paint order, with Shift
+       for all the way, which is the binding Illustrator and Photoshop share. The
+       bare brackets already walk the node selection and return on any modifier,
+       so the two never see each other's presses. Shift makes the browser report
+       the shifted character, so the far form arrives as a brace. */
+    if (mod && !e.altKey && '[]{}'.includes(e.key)) {
+      e.preventDefault();
+      if (controller.busy) {
+        commands.onMessage?.('Finish the drag first.', false);
+        return;
+      }
+      const forward = e.key === ']' || e.key === '}';
+      const far = e.key === '{' || e.key === '}';
+      commands.reorderSelection(far ? (forward ? 'front' : 'back') : forward ? 'forward' : 'backward');
+      return;
+    }
+
     /* Everything below is a bare key, with one exception. Ctrl+E belongs to the
        source drawer and Ctrl+R to the browser, and letting them through here
        switched the tool as a silent side effect of both. The arrows are the

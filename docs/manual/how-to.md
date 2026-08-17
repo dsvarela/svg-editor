@@ -18,6 +18,7 @@ route to finishing it.
 - [Punch a hole in a shape](#punch-a-hole-in-a-shape)
 - [Line up and space out nodes](#line-up-and-space-out-nodes)
 - [Line up and space out shapes](#line-up-and-space-out-shapes)
+- [Change what covers what](#change-what-covers-what)
 - [Centre a shape on the canvas](#centre-a-shape-on-the-canvas)
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
@@ -198,6 +199,19 @@ Select two or more nodes, then use the **Align** panel. Spacing them out needs t
 The six align buttons move the selection to a common left, centre, right, top,
 middle or bottom. **Space H** and **Space V** distribute the middle nodes evenly
 between the two outermost ones, which stay where they are.
+
+## Change what covers what
+
+Select the shape and use **Forward**, **Backward**, **To front** or **To back** in
+the **Shapes** panel. `Ctrl`+`]` and `Ctrl`+`[` do the same, with `Shift` to go
+all the way.
+
+The list of shapes is the order they are painted in, top of the list first, so a
+press moves the row as well as the drawing.
+
+A shape inside a group moves among the shapes of that group and stops at its
+edges, because a group is drawn as one run. Select the whole group to move it
+past other shapes, or ungroup the shape to take it out.
 
 ## Line up and space out shapes
 

@@ -4063,6 +4063,157 @@ const scenarios = {
   },
 
   /**
+   * Paint order: the four buttons, the two chords, and the list that shows it.
+   *
+   * Measured on the order of the `<path>` elements in the artwork, which is what
+   * decides what covers what. The shape list is asserted alongside it because the
+   * list *is* the paint order shown, and the two disagreeing would mean the panel
+   * is lying about the drawing.
+   *
+   * §49 keeps a group's shapes contiguous, so the last part checks that a shape
+   * sent forward past a group clears the whole run rather than landing inside it.
+   */
+  async zorder(page, check) {
+    const painted = () =>
+      page.evaluate(() => [...document.querySelectorAll('.artwork path')].map((p) => p.getAttribute('fill')));
+    const listed = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#shapelist li')].map((li) => li.className),
+      );
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M10 10 H50 V50 H10 Z" fill="#111111"/>
+  <path d="M20 20 H60 V60 H20 Z" fill="#222222"/>
+  <path d="M30 30 H70 V70 H30 Z" fill="#333333"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    out.start = await painted();
+    check(
+      JSON.stringify(out.start) === JSON.stringify(['#111111', '#222222', '#333333']),
+      `the fixture painted ${JSON.stringify(out.start)}`,
+    );
+    check(await page.isDisabled('#orderForward'), 'Forward was live with nothing selected');
+
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    check(!(await page.isDisabled('#orderForward')), 'Forward was dead with a shape selected');
+
+    await page.click('#orderForward');
+    await settle(page);
+    out.forward = await painted();
+    check(
+      JSON.stringify(out.forward) === JSON.stringify(['#222222', '#111111', '#333333']),
+      `one step forward painted ${JSON.stringify(out.forward)}`,
+    );
+
+    await page.click('#orderFront');
+    await settle(page);
+    out.front = await painted();
+    check(
+      out.front[2] === '#111111',
+      `To front left the shape at ${out.front.indexOf('#111111')} of 3`,
+    );
+
+    await undo(page);
+    await undo(page);
+    check(
+      JSON.stringify(await painted()) === JSON.stringify(out.start),
+      'two undos did not put the paint order back',
+    );
+
+    /* A press with nowhere to go declines, and a decline must not cost an undo
+       entry: pressing a dead-end button five times would otherwise take five
+       presses of Ctrl+Z, none of which appear to do anything.
+
+       Probed with two presses of To back. The first moves the shape and the
+       second can only decline, so one undo has to return the order to what it was
+       before the first. An undo entry for the refusal would leave it as it is. */
+    await page.click('#shapelist li.shape:nth-child(3)');
+    await settle(page);
+    await page.click('#orderBack');
+    await settle(page);
+    const sunk = await painted();
+    check(sunk[0] === '#333333', `To back left the shape at ${sunk.indexOf('#333333')} of 3`);
+    await page.click('#orderBack');
+    await settle(page);
+    check(
+      JSON.stringify(await painted()) === JSON.stringify(sunk),
+      'a second To back moved a shape that was already at the back',
+    );
+    await undo(page);
+    out.afterDeclinedUndo = await painted();
+    check(
+      JSON.stringify(out.afterDeclinedUndo) === JSON.stringify(out.start),
+      `one undo after a refused To back gave ${JSON.stringify(out.afterDeclinedUndo)}`,
+    );
+
+    // The chords, which are Illustrator's and Photoshop's. Back to the shape at
+    // the rear, since the last block left a different one selected.
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('Control+BracketRight');
+    await settle(page);
+    check(
+      JSON.stringify(await painted()) === JSON.stringify(out.forward),
+      'Ctrl+] did not bring the shape forward',
+    );
+    await page.keyboard.press('Control+Shift+BracketRight');
+    await settle(page);
+    out.chordFront = await painted();
+    check(out.chordFront[2] === '#111111', 'Ctrl+Shift+] did not bring the shape to the front');
+
+    /* Past a group, not into it. The two remaining shapes are grouped, so the
+       shape at the back has to clear both of them in one step or the group's run
+       is broken and the export writes two `<g>`. */
+    await undo(page);
+    await undo(page);
+    await settle(page);
+    await page.click('#shapelist li.shape:nth-child(2)');
+    await page.click('#shapelist li.shape:nth-child(3)', { modifiers: ['Shift'] });
+    await settle(page);
+    await page.click('#groupShapes');
+    await settle(page);
+    out.grouped = await listed();
+
+    /* The direct child, not `li.shape`, which would also match the two rows
+       nested inside the group's own list. */
+    await page.click('#shapelist > li.shape');
+    await settle(page);
+    const before = await painted();
+    check(before[0] === '#111111', `the loose shape is not at the back: ${JSON.stringify(before)}`);
+    await page.click('#orderForward');
+    await settle(page);
+    out.pastGroup = await painted();
+    check(
+      out.pastGroup[2] === '#111111',
+      `going forward past a group landed the shape at ${out.pastGroup.indexOf('#111111')} of 3`,
+    );
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    const svg = await page.inputValue('#src');
+    out.svg = svg;
+    check(
+      (svg.match(/<g\b/g) ?? []).length === 1,
+      `reordering past a group broke its run: the export holds ${(svg.match(/<g\b/g) ?? []).length} <g>`,
+    );
+    await closeSource(page);
+
+    return out;
+  },
+
+  /**
    * Aligning, distributing and spacing whole shapes, against the selection and
    * against the canvas.
    *

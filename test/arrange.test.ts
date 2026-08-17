@@ -19,6 +19,7 @@ import {
   arrangeUnits,
   distributeUnits,
   edgeOf,
+  reorderShapes,
   spaceUnits,
   unitsBox,
   viewBoxAsBox,
@@ -340,6 +341,169 @@ describe('spacing', () => {
     const units = arrangeUnits(doc, idsOf(doc, 'a'));
     spaceUnits(units, 'h', viewBoxAsBox(doc.viewBox), null);
     expect(snapshot(doc)).toEqual(before);
+  });
+});
+
+describe('paint order', () => {
+  /**
+   * Whether every group's shapes sit in one unbroken run of `doc.shapes`.
+   *
+   * The invariant reordering could break and the reason it happens per parent.
+   * Asserted as a property over every group rather than as a particular order,
+   * because any order satisfying it is a legal document.
+   */
+  function contiguous(doc: Doc): boolean {
+    for (const g of doc.groups ?? []) {
+      const at = doc.shapes
+        .map((sh, i) => (sh.group === g.id || groupOf(doc, sh) === g.id ? i : -1))
+        .filter((i) => i >= 0);
+      if (!at.length) continue;
+      if (at[at.length - 1] - at[0] !== at.length - 1) return false;
+    }
+    return true;
+  }
+  /** The outermost group a shape is in, walked without importing the query. */
+  function groupOf(doc: Doc, sh: Shape): string | null {
+    let at = sh.group ?? null;
+    const chain: string[] = [];
+    for (let i = 0; at && i <= (doc.groups?.length ?? 0); i++) {
+      chain.push(at);
+      at = doc.groups?.find((g) => g.id === at)?.parent ?? null;
+    }
+    return chain.length ? chain[chain.length - 1] : null;
+  }
+
+  const order = (doc: Doc): string[] => doc.shapes.map((sh) => sh.name);
+  const flat = (): Doc =>
+    docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10], ['d', 60, 0, 10, 10]);
+
+  it('brings one shape forward by one', () => {
+    const doc = flat();
+    expect(reorderShapes(doc, idsOf(doc, 'b'), 'forward')).toBe(true);
+    expect(order(doc)).toEqual(['a', 'c', 'b', 'd']);
+  });
+
+  it('sends one shape backward by one', () => {
+    const doc = flat();
+    reorderShapes(doc, idsOf(doc, 'c'), 'backward');
+    expect(order(doc)).toEqual(['a', 'c', 'b', 'd']);
+  });
+
+  it('takes a shape to the front and to the back', () => {
+    const doc = flat();
+    reorderShapes(doc, idsOf(doc, 'a'), 'front');
+    expect(order(doc)).toEqual(['b', 'c', 'd', 'a']);
+    reorderShapes(doc, idsOf(doc, 'a'), 'back');
+    expect(order(doc)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('declines when there is nowhere left to go', () => {
+    const doc = flat();
+    expect(reorderShapes(doc, idsOf(doc, 'd'), 'forward')).toBe(false);
+    expect(reorderShapes(doc, idsOf(doc, 'a'), 'backward')).toBe(false);
+    expect(order(doc)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('moves two neighbours as a block rather than past each other', () => {
+    const doc = flat();
+    reorderShapes(doc, idsOf(doc, 'a', 'b'), 'forward');
+    expect(order(doc)).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('keeps the relative order of what it moves to the front', () => {
+    const doc = flat();
+    reorderShapes(doc, idsOf(doc, 'a', 'c'), 'front');
+    expect(order(doc)).toEqual(['b', 'd', 'a', 'c']);
+  });
+
+  it('moves a shape only within its own group', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10]);
+    doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+    named(doc, 'a').group = 'g1';
+    named(doc, 'b').group = 'g1';
+
+    expect(reorderShapes(doc, idsOf(doc, 'b'), 'forward')).toBe(false);
+    expect(order(doc)).toEqual(['a', 'b', 'c']);
+    expect(contiguous(doc)).toBe(true);
+  });
+
+  it('moves the whole group when the whole group is selected', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10]);
+    doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+    named(doc, 'a').group = 'g1';
+    named(doc, 'b').group = 'g1';
+
+    expect(reorderShapes(doc, idsOf(doc, 'a', 'b'), 'forward')).toBe(true);
+    expect(order(doc)).toEqual(['c', 'a', 'b']);
+    expect(contiguous(doc)).toBe(true);
+  });
+
+  it('keeps a group contiguous when a loose shape is sent past it', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10]);
+    doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+    named(doc, 'b').group = 'g1';
+    named(doc, 'c').group = 'g1';
+
+    // `a` is behind the group, so forward puts it in front of the whole run and
+    // never between `b` and `c`.
+    expect(reorderShapes(doc, idsOf(doc, 'a'), 'forward')).toBe(true);
+    expect(order(doc)).toEqual(['b', 'c', 'a']);
+    expect(contiguous(doc)).toBe(true);
+  });
+
+  it('reorders inside a nested group without disturbing the outer one', () => {
+    const doc = docOf(
+      ['a', 0, 0, 10, 10],
+      ['b', 20, 0, 10, 10],
+      ['c', 40, 0, 10, 10],
+      ['d', 60, 0, 10, 10],
+    );
+    doc.groups = [
+      { id: 'outer', name: 'outer', parent: null },
+      { id: 'inner', name: 'inner', parent: 'outer' },
+    ];
+    named(doc, 'a').group = 'inner';
+    named(doc, 'b').group = 'inner';
+    named(doc, 'c').group = 'outer';
+
+    expect(reorderShapes(doc, idsOf(doc, 'a'), 'forward')).toBe(true);
+    expect(order(doc)).toEqual(['b', 'a', 'c', 'd']);
+    expect(contiguous(doc)).toBe(true);
+  });
+
+  it('keeps every shape, and only those shapes', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10]);
+    doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+    named(doc, 'b').group = 'g1';
+    named(doc, 'c').group = 'g1';
+    reorderShapes(doc, idsOf(doc, 'a'), 'front');
+    expect(order(doc).slice().sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('does nothing with nothing selected', () => {
+    const doc = flat();
+    expect(reorderShapes(doc, new Set(), 'front')).toBe(false);
+    expect(order(doc)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('leaves no undo entry when it declines', () => {
+    const doc = flat();
+    const { store, commands } = editor(doc);
+    select(store, 'd');
+    expect(commands.reorderSelection('forward')).toBe(false);
+    // Undo now would have to take back the last real edit, and there is none.
+    store.undo();
+    expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('undoes a reorder in one step', () => {
+    const doc = flat();
+    const { store, commands } = editor(doc);
+    select(store, 'a');
+    expect(commands.reorderSelection('front')).toBe(true);
+    expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['b', 'c', 'd', 'a']);
+    store.undo();
+    expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 

@@ -484,4 +484,52 @@ describe('the file says what the screen showed', () => {
     h.controller.render();
     expect(exportSvg(h.store.state.doc)).not.toContain('stroke-linejoin');
   });
+
+  /**
+   * The paint order on screen is `doc.shapes` order, whatever it was before.
+   *
+   * Shape elements are made once and kept, so creating them can only append. Two
+   * things reorder the array afterwards -- grouping gathers a run, and the Order
+   * buttons move a shape through it -- and until this was fixed neither reached
+   * the screen. The export changed and the canvas did not, which is the worst
+   * shape a disagreement can take: the file no longer says what was drawn.
+   *
+   * Asserted on the fills rather than on the elements, because a fill is the
+   * thing a person is looking at when they ask what is on top.
+   */
+  it('draws the shapes in the order the document holds them, after a reorder', () => {
+    const h = setup();
+    h.store.update((s) => {
+      for (const [d, fill] of [
+        ['M0 0 H30 V30 H0 Z', '#111111'],
+        ['M10 10 H40 V40 H10 Z', '#222222'],
+        ['M20 20 H50 V50 H20 Z', '#333333'],
+      ] as const) {
+        const sh = shapeFromPath(d);
+        sh.style.fill = fill;
+        s.doc.shapes.push(sh);
+      }
+    });
+    h.controller.render();
+    const fills = (): string[] =>
+      [...h.canvas.artwork.querySelectorAll('path')].map((p) => p.getAttribute('fill')!);
+    expect(fills()).toEqual(['#111111', '#222222', '#333333']);
+
+    // The one at the back goes to the front, as `reorderShapes` would leave it.
+    h.store.update((s) => {
+      const [first, ...rest] = s.doc.shapes;
+      s.doc.shapes = [...rest, first];
+    });
+    h.controller.render();
+    expect(fills()).toEqual(['#222222', '#333333', '#111111']);
+
+    // And back again, which is the move `insertBefore` has to make in the other
+    // direction: the element that belongs first is currently last.
+    h.store.update((s) => {
+      const last = s.doc.shapes[s.doc.shapes.length - 1];
+      s.doc.shapes = [last, ...s.doc.shapes.slice(0, -1)];
+    });
+    h.controller.render();
+    expect(fills()).toEqual(['#111111', '#222222', '#333333']);
+  });
 });

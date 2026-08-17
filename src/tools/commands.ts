@@ -61,11 +61,12 @@ import {
   alignUnits,
   arrangeUnits,
   distributeUnits,
+  reorderShapes,
   spaceUnits,
   unitsBox,
   viewBoxAsBox,
 } from '../model/arrange';
-import type { AlignTo, Unit } from '../model/arrange';
+import type { AlignTo, Unit, ZMove } from '../model/arrange';
 import type { Box } from '../core/bezier';
 import { simplifySubpath } from '../model/simplify';
 import { invisibleAt, keepOnly, reduceToCount, removeRedundantNodes } from '../model/knots';
@@ -2121,6 +2122,29 @@ export class Commands {
       if (frame) distributeUnits(live, mode, frame);
     });
     return true;
+  }
+
+  /**
+   * Move the selection through the paint order.
+   *
+   * `tryEdit` rather than `edit`, because a shape already at the front declines
+   * and an undo entry for that would cost a press of Ctrl+Z that does nothing.
+   * The refusal is silent for the same reason a button at the end of its travel
+   * is: nothing has gone wrong, and there is nowhere left to go.
+   */
+  reorderSelection(move: ZMove): boolean {
+    const s = this.store.state;
+    if (s.selection.shapes.size === 0) {
+      this.onMessage?.('Order needs a shape selected.', false);
+      return false;
+    }
+    const ids = new Set(s.selection.shapes);
+    return this.store.tryEdit((st) => reorderShapes(st.doc, ids, move));
+  }
+
+  /** Whether the selection could move through the paint order at all. */
+  get canReorder(): boolean {
+    return this.store.state.selection.shapes.size > 0;
   }
 
   /**

@@ -317,6 +317,22 @@ export class Canvas {
         this.shapeEls.delete(id);
       }
     }
+
+    /* `doc.shapes` is the paint order, so the elements have to be in it. Creating
+       them only ever appends, which draws the document in the order its shapes
+       were first seen -- right until something reorders the array, and two things
+       do: grouping gathers a group's shapes into one run, and the Order buttons
+       move a shape through it. Both left the screen disagreeing with the export.
+
+       One pass, writing only where the element is already wrong: at step `i`
+       every earlier position is correct, so the element belonging at `i` can only
+       be later in the list, and `insertBefore` moves it back. */
+    doc.shapes.forEach((shape, i) => {
+      const el = this.shapeEls.get(shape.id);
+      if (el && this.artLayer.childNodes[i] !== el) {
+        this.artLayer.insertBefore(el, this.artLayer.childNodes[i] ?? null);
+      }
+    });
     this.paths.keep(seen);
   }
 

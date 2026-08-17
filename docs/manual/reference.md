@@ -76,6 +76,8 @@ treat those two rows as untried rather than as reported working.
 | `Ctrl`+`V` | Put the last copy back, offset from the one before it |
 | `Ctrl`+`G` | Put the selected shapes in a group |
 | `Ctrl`+`Shift`+`G` | Take the selected shapes out of their group, one level |
+| `Ctrl`+`]` `[` | Move the selection one step later or earlier in the paint order |
+| `Ctrl`+`Shift`+`]` `[` | Move it in front of or behind everything |
 | `Ctrl`+`E` | Open or close the source drawer |
 | `Ctrl`+`B` | Open or close the inspector |
 
@@ -166,6 +168,12 @@ had, because a `<g>` holds its contents in one run.
 Grouping a few shapes that are already in one group makes a group inside it rather
 than taking them out of it. Groups nest as deeply as you like, and **Ungroup**
 unwraps one level per press.
+
+**Forward**, **Backward**, **To front** and **To back** move the selection through
+the paint order, which is the order of the list. A shape in a group moves among the
+shapes of that group and stops at its edges, and a whole selected group moves as
+one; a shape leaves a group by being ungrouped. A press with nowhere left to go
+does nothing and costs no undo step.
 
 **A group carries no position of its own.** There is no transform on it, so nothing
 about a shape's coordinates changes when you group or ungroup it, and the numbers in

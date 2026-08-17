@@ -41,7 +41,7 @@ import { Controller } from './tools/controller';
 import { Commands } from './tools/commands';
 import { bindKeys } from './tools/keys';
 import type { AlignMode } from './model/ops';
-import type { AlignTo } from './model/arrange';
+import type { AlignTo, ZMove } from './model/arrange';
 import { $ } from './view/dom';
 import { installTooltips } from './ui/tooltip';
 
@@ -779,6 +779,10 @@ document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) =>
   b.addEventListener('click', () => commands.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
 );
 
+document.querySelectorAll<HTMLButtonElement>('[data-z]').forEach((b) =>
+  b.addEventListener('click', () => commands.reorderSelection(b.getAttribute('data-z') as ZMove)),
+);
+
 /* Arranging whole shapes. Which frame the buttons work in is a standing
    preference like the delete mode, so it lives here rather than in the store:
    nothing about it belongs in an undo step, and no other module asks. */
@@ -921,6 +925,11 @@ function refreshInspector(): void {
   // Both derived from the selection, which every notification carries.
   ($('#groupShapes') as HTMLButtonElement).disabled = !commands.canGroup;
   ($('#ungroupShapes') as HTMLButtonElement).disabled = !commands.canUngroup;
+  /* Live for any selected shape, including one already at the front. Whether
+     there is room to move is a question about the whole tree, and a button that
+     greys out on the answer would flicker as the selection changed; pressing it
+     with nowhere to go simply declines. */
+  document.querySelectorAll<HTMLButtonElement>('[data-z]').forEach((b) => (b.disabled = !commands.canReorder));
   refreshArrange();
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
