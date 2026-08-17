@@ -203,7 +203,9 @@
           <div class="group">
               <button class="glabel" type="button" aria-expanded="true"><span>Shapes</span><span class="gval" id="shapecount"></span></button>
               <div class="gbody">
-            <ul class="shapelist" id="shapelist" role="listbox" aria-label="Shapes" tabindex="0"></ul>
+            <!-- A tree, not a listbox: a shape holding more than one path opens to
+                 show them, and a path is selectable on its own. -->
+            <ul class="shapelist" id="shapelist" role="tree" aria-label="Shapes" tabindex="0"></ul>
             <div class="grid2">
               <button class="btn" id="dupShape">Duplicate</button>
               <button class="btn" id="delShape">Delete</button>

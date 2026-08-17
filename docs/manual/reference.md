@@ -133,13 +133,34 @@ it.
 
 ### Shapes
 
-The list of shapes, newest last, with a colour swatch and a node count.
+The list of shapes, newest last, with a colour swatch. A shape of one path shows
+its node count; a shape of more than one shows how many paths it holds and opens
+to list them.
 
 - Click a name to select it. `Shift`-click to add.
 - Double-click a name to rename it.
-- With the list focused, arrows move the selection (`Shift` extends it), and
-  `F2` or `Enter` starts a rename. With nothing selected they take the first
-  shape, so the list works from the first press of `Tab`.
+- Press the triangle to show or hide the paths inside a shape. Only a shape
+  holding more than one has one.
+- Click **Path 1**, **Path 2** and so on to select that path alone. Its row says
+  how many nodes it has, and says `open` when it does not close.
+- With the list focused, arrows move the selection (`Shift` extends it), `→` and
+  `←` open and shut a shape and step in and out of its paths, and `F2` or `Enter`
+  starts a rename. With nothing selected they take the first shape, so the list
+  works from the first press of `Tab`.
+
+**Selecting a path selects its nodes.** There is no third kind of selection, so
+every operation that works on whole paths -- **Reverse**, **Circle**,
+**Simplify**, **Offset** -- acts on the path you picked with no further step. It
+also means the row lights up whenever you select all of that path's nodes on the
+canvas, by any route.
+
+**A shape holding two paths is not a mistake.** One shape is one `<path>` in the
+output, and the paths inside it share one fill, one stroke and one fill rule. That
+sharing is what a hole is made of: **Even-odd** punches a hole where two paths of
+one shape overlap, and two separate shapes cannot do it. **Unite** on two shapes
+that do not touch produces one shape of two paths for the same reason, and so does
+**Make one shape**. Use **Split into shapes** to give each path a shape of its own
+when that is what you wanted.
 - **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
 - **Delete** removes them.
 - **Copy** holds the selection for a later paste. With shapes selected it takes

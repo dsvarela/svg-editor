@@ -2165,3 +2165,48 @@ The clipboard is where this was found, on the way to building it. It holds
 shapes, not text, and it is not in the store: undoing a paste must not empty it,
 and copying is not something to undo. That also means it does not reach other
 programs, which is what the source drawer's **Copy** is for.
+
+## 47. A path is a row in the list and not a kind of selection
+
+Reported from use: two disjoint paths in one shape, and the shape list showing one
+row, one name and one number. Nothing on screen said the shape held two paths, so
+the reasonable reading was that the editor had put unrelated things together and
+ought to have made a group.
+
+**It had not, and a group would be wrong.** A shape is one `<path>` on export, and
+the paths inside it share one fill, one stroke and one fill rule. That sharing is
+load-bearing rather than incidental: an `evenodd` hole is two contours in *one*
+path, and there is no arrangement of two shapes that draws it. `Unite` on two
+disjoint shapes returns two contours by the same argument -- the union of two
+regions is one region, whether or not it is connected -- and `test/boolean.test.ts`
+has held that since the booleans were written.
+
+So the model was right and the list was hiding it. `Split into shapes` had existed
+the whole time, and you cannot look for it if you cannot see that you need it.
+
+**The list is a tree.** A shape holding more than one path carries a disclosure and
+reads `2 paths` where a single-path shape reads its node count; opening it lists
+the paths, each with its own node count and whether it closes.
+
+**What a path row selects is its nodes.** `Selection` stays two sets, shapes and
+node ids, and nothing was added to it. A third kind -- selected subpaths -- would
+be a second place the same fact lived, and the two would disagree the first time a
+node was deleted out of a selected path. Every operation that works on whole paths
+already reads them back out of the node selection through `selectedSubpaths`, so
+Reverse, Circularise, Simplify and Offset became reachable per path with no change
+to any of them. The row reads its own state back the same way, which is why
+selecting a path's nodes on the canvas lights its row.
+
+Which shapes are open is not in the store, for the reason the open panels are not:
+undo has no business shutting a disclosure.
+
+**The `data-id` collision is the part worth knowing before editing this.** A path
+row is nested inside its shape's `li` and carries the same `data-id`, because it
+needs to name the shape it belongs to. So every handler on the list has to test
+`data-sp` before `data-id`, or the shape branch claims presses meant for a path.
+Three handlers do: click, double-click, and the arrow keys. `shapeTree` in
+`tools/drive.mjs` fails on each of them separately.
+
+Groups are still absent, and this does not add them. `<g>` is flattened on import
+with its transforms baked in (`io/svg.ts`), so grouping made in another tool does
+not survive a round trip.

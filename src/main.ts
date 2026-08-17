@@ -14,9 +14,12 @@ import {
   selectedShapes,
   shapeFromPath,
 } from './model/doc';
+/* Aliased: the DOM's own `Selection` is a global type, and an unaliased import
+   here shadows it in a file that also uses `getSelection`. */
+import type { Selection as Sel } from './model/doc';
 import { isPathEnd, latentHandle } from './model/ops';
 import { continuityOf } from './core/types';
-import type { Shape, Style, ViewBox } from './core/types';
+import type { Shape, Style, Subpath, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import type { Mark } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
@@ -1423,15 +1426,71 @@ on('#backClear', () => {
 const shapeList = $('#shapelist');
 const shapeCount = $('#shapecount');
 
+/** Open or shut a shape's paths. Rebuilds, because the rows themselves change. */
+function setExpanded(id: string, open: boolean): void {
+  if (open) expanded.add(id);
+  else expanded.delete(id);
+  listSig = null;
+  refreshShapeList();
+}
+
+/**
+ * Select one path of a shape, by selecting every node in it.
+ *
+ * A path is not a kind of selection and must not become one, which is what keeps
+ * the operations that act on whole paths working here unchanged. §47 of
+ * `docs/ARCHITECTURE.md` has the argument.
+ */
+function selectPath(shapeId: string, sp: number, additive: boolean): void {
+  const shape = findShape(store.state.doc, shapeId);
+  const path = shape?.subpaths[sp];
+  if (!path) return;
+  const ids = path.nodes.map((n) => n.id);
+  store.update((s) => {
+    if (!additive) {
+      s.selection.shapes.clear();
+      s.selection.nodes.clear();
+      for (const id of ids) s.selection.nodes.add(id);
+      return;
+    }
+    // Toggling the whole path, so Shift-clicking a lit row puts it out rather
+    // than leaving it lit and doing nothing visible.
+    const on = ids.every((id) => s.selection.nodes.has(id));
+    for (const id of ids) {
+      if (on) s.selection.nodes.delete(id);
+      else s.selection.nodes.add(id);
+    }
+  });
+}
+
 shapeList.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
   // The rename input lives inside the row, so `closest('li')` matched it and
   // clicking to move the caret changed the selection underneath the edit.
   if (target.closest('.rename')) return;
 
+  /* The disclosure before the row, because it sits inside the row it opens and
+     `closest('li')` would otherwise read the press as a selection as well. */
+  const twist = target.closest<HTMLElement>('.twist');
+  if (twist) {
+    const id = twist.closest('li')?.getAttribute('data-id');
+    if (id) setExpanded(id, !expanded.has(id));
+    return;
+  }
+
   const li = target.closest('li');
   const id = li?.getAttribute('data-id');
   if (!id) return;
+
+  /* A path row before its shape row: a path row is nested inside the shape's
+     `li` and carries the same `data-id`, so the shape branch below would claim
+     every press meant for a path. */
+  const sp = li?.getAttribute('data-sp');
+  if (sp !== null && sp !== undefined) {
+    selectPath(id, Number(sp), (e as MouseEvent).shiftKey);
+    return;
+  }
+
   store.update((s) => {
     if (!(e as MouseEvent).shiftKey) {
       /* A plain click selects; only Shift toggles. Toggling on a plain click
@@ -1518,7 +1577,9 @@ function startRename(id: string): void {
   // a double-click each select the shape, each notifies, and the list is rebuilt
   // from scratch every time -- so by now that element is detached, and editing
   // it would put the input somewhere no longer in the document.
-  const nm = shapeList.querySelector(`li[data-id="${id}"] .nm`);
+  /* `> .nm`, because a shape's `li` now contains the rows for its paths and each
+     of those carries a `.nm` of its own. */
+  const nm = shapeList.querySelector(`li.shape[data-id="${id}"] > .nm`);
   if (!shape || !nm) return;
 
   renaming = id;
@@ -1563,49 +1624,127 @@ function startRename(id: string): void {
 }
 
 shapeList.addEventListener('dblclick', (e) => {
-  const id = (e.target as HTMLElement).closest('li')?.getAttribute('data-id');
+  const li = (e.target as HTMLElement).closest('li');
+  // A path has no name to edit, and it carries its shape's `data-id`, so without
+  // this a double-click on one renamed the shape it belongs to.
+  if (li?.hasAttribute('data-sp')) return;
+  const id = li?.getAttribute('data-id');
   if (id && !renaming) startRename(id);
 });
 
+/**
+ * A row of the list, as the keyboard sees it.
+ *
+ * `sp` of `null` is a shape. The list is a tree now, so walking it means walking
+ * what is on screen rather than walking `doc.shapes`: a shape with its paths
+ * showing has rows between it and the next shape, and arrowing past them would
+ * skip rows a person can see.
+ */
+interface ListRow {
+  id: string;
+  sp: number | null;
+}
+
+/** The rows in the order they are drawn, shut disclosures left out. */
+function visibleRows(): ListRow[] {
+  const out: ListRow[] = [];
+  for (const sh of store.state.doc.shapes) {
+    out.push({ id: sh.id, sp: null });
+    if (sh.subpaths.length > 1 && expanded.has(sh.id)) {
+      sh.subpaths.forEach((_, i) => out.push({ id: sh.id, sp: i }));
+    }
+  }
+  return out;
+}
+
+/** Which row the selection last landed on, or -1. */
+function rowAtCursor(rows: ListRow[]): number {
+  const s = store.state;
+  const shapes = [...s.selection.shapes];
+  const last = shapes[shapes.length - 1];
+  if (last !== undefined) return rows.findIndex((r) => r.sp === null && r.id === last);
+  /* No shape selected, so look for a path whose nodes are all selected. Read
+     rather than remembered, so arrowing on from a path row selected by a click
+     starts where the click left off. */
+  return rows.findIndex((r) => {
+    if (r.sp === null) return false;
+    const sp = findShape(s.doc, r.id)?.subpaths[r.sp];
+    return !!sp && pathIsSelected(sp, s.selection);
+  });
+}
+
+/** Select one row, replacing the selection or adding to it. */
+function selectRow(row: ListRow, additive: boolean): void {
+  if (row.sp !== null) {
+    selectPath(row.id, row.sp, additive);
+    return;
+  }
+  store.update((st) => {
+    if (!additive) {
+      st.selection.shapes.clear();
+      st.selection.nodes.clear();
+    }
+    st.selection.shapes.add(row.id);
+  });
+}
+
 /* A keyboard route into the list, which had none at all: rows are not focusable
-   and double-click was the only way to rename. Arrows move the selection, F2 and
-   Enter rename the way they do in every file manager. */
+   and double-click was the only way to rename. Arrows move the selection, the
+   sideways pair opens and shuts a shape's paths, and F2 and Enter rename the way
+   they do in every file manager. */
 shapeList.addEventListener('keydown', (e) => {
   if (renaming) return;
   const shapes = store.state.doc.shapes;
   if (!shapes.length) return;
 
-  const selected = [...store.state.selection.shapes];
-  const at = shapes.findIndex((sh) => sh.id === selected[selected.length - 1]);
+  const rows = visibleRows();
+  const at = rowAtCursor(rows);
 
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     const step = e.key === 'ArrowDown' ? 1 : -1;
-    const next = Math.max(0, Math.min(shapes.length - 1, (at < 0 ? (step > 0 ? -1 : 0) : at) + step));
-    store.update((st) => {
-      if (!e.shiftKey) {
-        st.selection.shapes.clear();
-        st.selection.nodes.clear();
-      }
-      st.selection.shapes.add(shapes[next].id);
-    });
+    const from = at < 0 ? (step > 0 ? -1 : 0) : at;
+    selectRow(rows[Math.max(0, Math.min(rows.length - 1, from + step))], e.shiftKey);
     return;
   }
+
+  /* Right opens a shut shape and steps into an open one; Left shuts an open shape
+     and steps out from a path. The standard tree bindings, and the only way to
+     reach a path row without a pointer. */
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const row = at >= 0 ? rows[at] : rows[0];
+    const shape = findShape(store.state.doc, row.id);
+    if (!shape) return;
+    e.preventDefault();
+    const many = shape.subpaths.length > 1;
+    const open = expanded.has(row.id);
+
+    if (e.key === 'ArrowRight') {
+      if (row.sp !== null) return; // already as deep as the tree goes
+      if (many && !open) setExpanded(row.id, true);
+      else if (many) selectRow({ id: row.id, sp: 0 }, false);
+      return;
+    }
+    if (row.sp !== null) {
+      selectRow({ id: row.id, sp: null }, false);
+      return;
+    }
+    if (open) setExpanded(row.id, false);
+    return;
+  }
+
   if (e.key === 'F2' || e.key === 'Enter') {
     e.preventDefault();
     /* With nothing selected, take the first. The route existed and had a dead
        first step: Tab reaches the list on the very first press, and F2 there
        did nothing until an arrow key had chosen a row -- which reads as the
        key not working rather than as a precondition. */
-    const target = at >= 0 ? shapes[at] : shapes[0];
-    if (at < 0) {
-      store.update((st) => {
-        st.selection.shapes.clear();
-        st.selection.nodes.clear();
-        st.selection.shapes.add(target.id);
-      });
-    }
-    startRename(target.id);
+    const row = at >= 0 ? rows[at] : rows[0];
+    // A path has no name. Renaming the shape it sits in would answer a question
+    // nobody asked, so the shape is selected instead and named on the next press.
+    if (at < 0 || row.sp !== null) selectRow({ id: row.id, sp: null }, false);
+    if (row.sp !== null) return;
+    startRename(row.id);
   }
 });
 
@@ -1621,13 +1760,47 @@ shapeList.addEventListener('keydown', (e) => {
 const listSignature = (): string =>
   store.state.doc.shapes
     .map((sh) =>
-      [sh.id, sh.name, sh.subpaths.reduce((a, sp) => a + sp.nodes.length, 0), swatchOf(sh)].join('\u0001'),
+      [
+        sh.id,
+        sh.name,
+        swatchOf(sh),
+        /* Both of these change which rows exist: the count decides whether there
+           is a disclosure at all, and the flag whether its rows are drawn. */
+        sh.subpaths.length,
+        expanded.has(sh.id) ? 'open' : 'shut',
+        /* Per path rather than one total, because a break or a delete can move a
+           node from one path to another and leave the total alone. */
+        sh.subpaths.map((sp) => `${sp.nodes.length}${sp.closed ? 'z' : ''}`).join(','),
+      ].join('\u0001'),
     )
     .join('\u0002');
 
 const swatchOf = (sh: Shape): string => (sh.style.fill !== 'none' ? sh.style.fill : sh.style.stroke);
 
 let listSig: string | null = null;
+
+/**
+ * Which shapes are showing the paths inside them.
+ *
+ * Not in the store, for the reason the open panels are not: it is what you are
+ * looking at rather than what you have drawn, and undo has no business shutting a
+ * disclosure. An id whose shape has gone is harmless, because nothing reads this
+ * except by asking about a shape it already has in hand.
+ */
+const expanded = new Set<string>();
+
+/**
+ * Whether every node of one path is selected, which is what a lit path row means.
+ *
+ * A path is not a thing the selection can hold -- `Selection` is shapes and node
+ * ids, and §46 is the argument for not adding a third kind that would have to be
+ * kept in step with the second. So a path row selects its nodes, and reads itself
+ * back off them. Selecting the path on the canvas by other means lights the row
+ * too, which is the behaviour that falls out of deriving rather than storing.
+ */
+function pathIsSelected(sp: Subpath, sel: Sel): boolean {
+  return sp.nodes.length > 0 && sp.nodes.every((n) => sel.nodes.has(n.id));
+}
 
 function refreshShapeList(): void {
   if (renaming) return;
@@ -1636,9 +1809,7 @@ function refreshShapeList(): void {
 
   const sig = listSignature();
   if (sig === listSig) {
-    for (const li of shapeList.querySelectorAll('li[data-id]')) {
-      li.setAttribute('aria-selected', String(s.selection.shapes.has(li.getAttribute('data-id')!)));
-    }
+    paintListSelection();
     return;
   }
   listSig = sig;
@@ -1655,12 +1826,30 @@ function refreshShapeList(): void {
 
   for (const sh of s.doc.shapes) {
     const li = document.createElement('li');
+    li.className = 'shape';
     li.setAttribute('data-id', sh.id);
     /* `aria-selected` is ignored on a plain list item, so the visual state and
-       the announced state disagreed. A listbox of options is the role that
-       actually carries it. */
-    li.setAttribute('role', 'option');
-    li.setAttribute('aria-selected', String(s.selection.shapes.has(sh.id)));
+       the announced state disagreed. A treeitem is the role that carries it, and
+       the role a shape holding paths needs anyway. */
+    li.setAttribute('role', 'treeitem');
+    li.setAttribute('aria-level', '1');
+
+    /* The disclosure is present on every row and hidden where there is nothing
+       to disclose, so the names line up. A row that had no button at all shifted
+       its swatch left by 22 px and made the list look ragged. */
+    const twist = document.createElement('button');
+    twist.type = 'button';
+    twist.className = sh.subpaths.length > 1 ? 'twist' : 'twist none';
+    twist.textContent = '▸';
+    if (sh.subpaths.length > 1) {
+      const open = expanded.has(sh.id);
+      twist.setAttribute('aria-expanded', String(open));
+      li.setAttribute('aria-expanded', String(open));
+      twist.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the ${sh.subpaths.length} paths in ${sh.name}`);
+    } else {
+      twist.tabIndex = -1;
+      twist.setAttribute('aria-hidden', 'true');
+    }
 
     const sw = document.createElement('span');
     sw.className = 'swatch';
@@ -1672,10 +1861,64 @@ function refreshShapeList(): void {
 
     const ct = document.createElement('span');
     ct.className = 'ct';
-    ct.textContent = String(sh.subpaths.reduce((a, sp) => a + sp.nodes.length, 0));
+    /* The path count where there is more than one, and the node count otherwise.
+       Both at once is two numbers with no units in a 288 px column, and which of
+       the two matters is exactly whether the shape holds more than one path. */
+    ct.textContent =
+      sh.subpaths.length > 1
+        ? `${sh.subpaths.length} paths`
+        : String(sh.subpaths.reduce((a, sp) => a + sp.nodes.length, 0));
 
-    li.append(sw, nm, ct);
+    li.append(twist, sw, nm, ct);
+
+    if (sh.subpaths.length > 1 && expanded.has(sh.id)) {
+      const kids = document.createElement('ul');
+      kids.setAttribute('role', 'group');
+      sh.subpaths.forEach((sp, i) => {
+        const row = document.createElement('li');
+        row.className = 'path';
+        row.setAttribute('role', 'treeitem');
+        row.setAttribute('aria-level', '2');
+        row.setAttribute('data-id', sh.id);
+        row.setAttribute('data-sp', String(i));
+
+        const label = document.createElement('span');
+        label.className = 'nm';
+        label.textContent = `Path ${i + 1}`;
+
+        const count = document.createElement('span');
+        count.className = 'ct';
+        // Closed or open is the fact that decides what most path operations do
+        // with it, and it is not readable from a node count.
+        count.textContent = `${sp.nodes.length}${sp.closed ? '' : ' open'}`;
+
+        row.append(label, count);
+        kids.append(row);
+      });
+      li.append(kids);
+    }
+
     shapeList.append(li);
+  }
+  paintListSelection();
+}
+
+/**
+ * Which rows read as selected.
+ *
+ * Split out because the selection changes far more often than the rows do, and
+ * the rebuild above is skipped whenever the signature says the rows would be
+ * identical. Both paths through `refreshShapeList` end here.
+ */
+function paintListSelection(): void {
+  const s = store.state;
+  for (const li of shapeList.querySelectorAll<HTMLElement>('li.shape')) {
+    li.setAttribute('aria-selected', String(s.selection.shapes.has(li.getAttribute('data-id')!)));
+  }
+  for (const row of shapeList.querySelectorAll<HTMLElement>('li.path')) {
+    const shape = findShape(s.doc, row.getAttribute('data-id')!);
+    const sp = shape?.subpaths[Number(row.getAttribute('data-sp'))];
+    row.setAttribute('aria-selected', String(!!sp && pathIsSelected(sp, s.selection)));
   }
 }
 

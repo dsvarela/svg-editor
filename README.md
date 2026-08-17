@@ -4,7 +4,7 @@ A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
 **Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
-or download one file.** The whole editor is a single 260 kB HTML page with every
+or download one file.** The whole editor is a single 263 kB HTML page with every
 asset inlined. Take the `.html` from [the latest
 release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
 browser, and it runs offline with no server and nothing installed.
@@ -43,7 +43,7 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **259.9 kB, 78.7 kB
+The production build is one file, no external requests: **263.3 kB, 79.6 kB
 gzipped** on 2026-08-17, as `npm run build` reports it. Open `dist/index.html`
 from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
@@ -143,7 +143,7 @@ src/
   main.ts     wiring: document -> store -> canvas -> commands -> panels
 ```
 
-15 828 lines of TypeScript across 40 files, plus 1 091 lines of CSS, counted on
+16 071 lines of TypeScript across 40 files, plus 1 124 lines of CSS, counted on
 2026-08-17. No runtime framework.
 
 ---
@@ -173,7 +173,7 @@ Chromium-based Edge through `playwright-core`, defaulting to
 somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
 every scenario.
 
-There are 45 of them on 2026-08-17, and they are not listed here: `--list`
+There are 46 of them on 2026-08-17, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that
 drifts. This one had drifted by twelve before anyone noticed.
 

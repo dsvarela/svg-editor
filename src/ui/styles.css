@@ -811,6 +811,33 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .shapelist .swatch { width: 10px; height: 10px; border-radius: 1px; border: 1px solid var(--line); flex: none; }
 .shapelist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shapelist .ct { font-size: 10.5px; opacity: 0.75; }
+
+/* The paths inside a shape. `ul` inside the `li` it belongs to, which is what
+   makes the nesting the accessibility tree reads rather than an indent. */
+.shapelist ul { list-style: none; margin: 0; padding: 0; }
+.shapelist li.shape { flex-wrap: wrap; }
+.shapelist li.shape > ul { flex-basis: 100%; }
+.shapelist li.path { padding-left: 22px; font-size: 11.5px; }
+
+/* The disclosure. A button so it takes focus and answers to Space, and 14 px
+   wide so a row with no paths to show lines up with one that has. */
+.shapelist .twist {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  /* Rotated rather than swapped for a second glyph, so the two states are one
+     character and cannot disagree about their size. */
+  transition: transform 0.12s ease;
+}
+.shapelist .twist[aria-expanded='true'] { transform: rotate(90deg); }
+.shapelist .twist.none { visibility: hidden; }
 .shapelist .rename {
   flex: 1;
   min-width: 0;
@@ -1052,6 +1079,12 @@ kbd {
      control even though the list is one element. */
   .shapelist li { min-height: 44px; }
   .shapelist { max-height: none; }
+  /* The disclosure is its own target inside that row, and a 14 px triangle is
+     not one. Width as well as height: it sits in a flex row, so `--h` reaches
+     neither axis of it. */
+  .shapelist .twist { width: 44px; height: 44px; }
+  /* The indent tracks the disclosure it lines up under. */
+  .shapelist li.path { padding-left: 52px; }
 
   /* A checkbox is 13 px and its label is what takes the press, so the label is
      what has to be big enough. Written against the input rather than against a

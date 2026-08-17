@@ -78,13 +78,14 @@ async function tab(page, name) {
 }
 
 /**
- * Press Ctrl+Z, meaning the editor's undo.
+ * Press Ctrl+Z, meaning the editor's undo, from nowhere in particular.
  *
- * The controller ignores single keystrokes while a text field has focus, so the
- * browser's own text undo answers instead. That is not a hypothetical: filling a
- * number field and pressing Ctrl+Z restores the field's text, which fires
- * `input`, which sets the value back through the app -- a scenario asserting on
- * the result passes without the editor's history being touched at all.
+ * The blur is what makes it mean that unambiguously. `Ctrl`+`Z` does reach the
+ * document from a number field, and from anything you type text into it belongs
+ * to the text -- so a scenario pressing it with focus wherever the last step left
+ * it is asserting on whichever of the two that happened to be. Blurring first
+ * asks for the one this helper is named after. `undoFromField` is where the split
+ * itself is under test.
  */
 async function undo(page) {
   await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
@@ -3889,6 +3890,147 @@ const scenarios = {
     check(
       piece.trim().split(/(?=[A-Za-z])/).length === 2,
       `the copied piece is not one segment: ${piece}`,
+    );
+
+    return out;
+  },
+
+  /**
+   * A shape holding more than one path, and the list saying so.
+   *
+   * The complaint this answers: two disjoint paths in one shape, with the list
+   * showing one row, one name and one number. Nothing about that says a shape
+   * holds more than one path, and `Shift`+`K` is undiscoverable if you cannot see
+   * that you need it.
+   *
+   * Driven in a browser because all of it is layout and events: a disclosure that
+   * opens, a nested row that takes a press meant for it rather than for the shape
+   * it sits inside, and the tree's own arrow keys.
+   */
+  async shapeTree(page, check) {
+    const rows = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#shapelist li')].map((li) => ({
+          kind: li.className,
+          level: li.getAttribute('aria-level'),
+          sp: li.getAttribute('data-sp'),
+          selected: li.getAttribute('aria-selected'),
+          expanded: li.getAttribute('aria-expanded'),
+        })),
+      );
+    const selectedRows = async () =>
+      (await rows()).filter((r) => r.selected === 'true').map((r) => `${r.kind}${r.sp ?? ''}`);
+    const out = {};
+
+    /* Two disjoint squares in one shape, which is what `Unite` and `Combine` both
+       produce and what an imported `<path>` with two `M` runs already is. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M10 10 H30 V30 H10 Z M60 60 H80 V80 H60 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await laidOut(page);
+
+    const start = await rows();
+    check(start.length === 1, `the list drew ${start.length} rows for one shape`);
+    check(start[0].expanded === 'false', 'a shape holding two paths offered nothing to open');
+    out.count = (await page.textContent('#shapelist li.shape .ct')).trim();
+    check(/2 paths/.test(out.count), `the row reads "${out.count}" rather than a path count`);
+
+    // Open it. Two rows appear, one level down.
+    await page.click('#shapelist .twist:not(.none)');
+    await settle(page);
+    const open = await rows();
+    check(open.length === 3, `opening the shape drew ${open.length} rows, not 3`);
+    check(
+      open.slice(1).every((r) => r.kind === 'path' && r.level === '2'),
+      'the paths did not come out as rows one level down',
+    );
+
+    /* A press on a path row. The row is nested inside the shape's own `li` and
+       carries the same `data-id`, so a handler reading `data-id` first claims it
+       for the shape and the path can never be selected at all. */
+    await page.click('#shapelist li.path[data-sp="0"]');
+    await settle(page);
+    out.afterFirstPath = await selectedRows();
+    check(
+      out.afterFirstPath.join() === 'path0',
+      `clicking the first path selected ${JSON.stringify(out.afterFirstPath)}`,
+    );
+
+    /* Half the nodes, which is the whole point: a path row selects the nodes of
+       one path, and the canvas is where that has to show. */
+    const anchors = await page.evaluate(() => ({
+      all: document.querySelectorAll('.overlay [data-hit="anchor"]').length,
+      lit: document.querySelectorAll('.overlay [data-hit="anchor"].selected').length,
+    }));
+    out.anchors = anchors;
+    check(anchors.all === 8, `the document drew ${anchors.all} anchors, not 8`);
+    check(anchors.lit === 4, `selecting one path of two lit ${anchors.lit} of 8 anchors`);
+
+    await page.click('#shapelist li.path[data-sp="1"]');
+    await settle(page);
+    out.afterSecondPath = await selectedRows();
+    check(
+      out.afterSecondPath.join() === 'path1',
+      `clicking the second path selected ${JSON.stringify(out.afterSecondPath)}`,
+    );
+
+    // A path has no name, so a double-click on one must not open a rename.
+    await page.evaluate(() =>
+      document
+        .querySelector('#shapelist li.path')
+        .dispatchEvent(new MouseEvent('dblclick', { bubbles: true })),
+    );
+    await settle(page);
+    check(
+      !(await page.$('#shapelist .rename')),
+      'double-clicking a path row started a rename of the shape it belongs to',
+    );
+
+    /* The arrow keys, which are the only route to a path row without a pointer.
+       Shut first, so Right has to open before it can step in. */
+    await page.click('#shapelist .twist:not(.none)');
+    await settle(page);
+    check((await rows()).length === 1, 'the disclosure did not shut again');
+    await page.focus('#shapelist');
+    await page.keyboard.press('ArrowDown');
+    await settle(page);
+    check((await selectedRows()).join() === 'shape', 'ArrowDown did not reach the shape row');
+    await page.keyboard.press('ArrowRight');
+    await settle(page);
+    check((await rows()).length === 3, 'ArrowRight did not open the shape');
+    await page.keyboard.press('ArrowRight');
+    await settle(page);
+    check((await selectedRows()).join() === 'path0', 'a second ArrowRight did not step into the paths');
+    await page.keyboard.press('ArrowDown');
+    await settle(page);
+    check((await selectedRows()).join() === 'path1', 'ArrowDown did not walk to the next path');
+    await page.keyboard.press('ArrowLeft');
+    await settle(page);
+    check((await selectedRows()).join() === 'shape', 'ArrowLeft did not step back out to the shape');
+    await page.keyboard.press('ArrowLeft');
+    await settle(page);
+    check((await rows()).length === 1, 'a second ArrowLeft did not shut the shape');
+
+    /* Split is the operation the list now makes findable, and it has to leave two
+       shapes with nothing left to open. */
+    await page.click('#shapelist li.shape');
+    await settle(page);
+    await page.click('#splitshape');
+    await settle(page);
+    const split = await rows();
+    out.afterSplit = split.length;
+    check(split.length === 2, `Split left ${split.length} rows, not 2`);
+    check(
+      split.every((r) => r.expanded === null),
+      'a shape of one path still offered something to open after Split',
     );
 
     return out;
