@@ -4,20 +4,17 @@
  *   node tools/drive.mjs <scenario> [--headed] [--out shot.png]
  *   node tools/drive.mjs --list
  *
- * Uses playwright-core against the system Edge (Chromium), so no browser
- * download is needed. Console messages and page errors are captured and
- * printed -- that is how the pen-tool crash was first spotted.
+ * The browser is whatever `tools/browser.mjs` resolves, Firefox by default.
+ * Console messages and page errors are captured and printed -- that is how the
+ * pen-tool crash was first spotted.
  */
 
-import { chromium } from 'playwright-core';
+import { launch, URL } from './browser.mjs';
 import zlib from 'node:zlib';
 
-/* playwright-core ships no browser, so the binary has to already be on the
-   machine. That is the point: it keeps `npm install` small. The path below is
-   where Edge lands on this Linux box, and BROWSER_PATH overrides it for any
-   machine where it lands somewhere else, a CI runner most of all. */
-const EDGE = process.env.BROWSER_PATH ?? '/usr/bin/microsoft-edge';
-const URL = process.env.APP_URL ?? 'http://localhost:5173/';
+/* Which browser, and where the app is, live in `tools/browser.mjs`: three tools
+   drive a browser and one fact in three files is one fact that breaks in three
+   places. */
 
 const args = process.argv.slice(2);
 const scenarioName = args.find((a) => !a.startsWith('--')) ?? 'smoke';
@@ -5025,11 +5022,7 @@ if (!scenario) {
   process.exit(1);
 }
 
-const browser = await chromium.launch({
-  executablePath: EDGE,
-  headless: !headed,
-  args: ['--no-sandbox', '--disable-gpu'],
-});
+const browser = await launch({ headless: !headed });
 /* The window shape decides how much of the document is on screen: the camera is
    fitted to the canvas box, so a squarer canvas shows a narrower span of x and
    the scenarios' coordinates start falling outside it. This is sized so the

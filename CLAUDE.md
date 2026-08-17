@@ -159,6 +159,18 @@ the unit suite still calls green. A survivor is a change to what the program
 does that no test disagreed with. It rewrites files in place while it runs, so
 it cannot share the tree with `npm run drive`.
 
+**The browser is Firefox, resolved by `tools/browser.mjs`.** All three driving
+tools go through it: `BROWSER` picks the engine, `BROWSER_PATH` points at a
+system Chromium-family binary, `APP_URL` moves the dev server. Playwright drives
+its own builds, so a stock `/usr/bin/firefox` cannot be used and
+`node node_modules/playwright-core/cli.js install firefox` is what puts one
+there. **49 of the 52 scenarios pass on Firefox and no figure here was measured
+on it before 2026-08-18.** The three that do not are the harness meeting a
+different engine rather than the app behaving differently: `backdrop` passes
+every check it makes and fails on a console error, `angles` lands 0.018 off a
+0.01 tolerance while snapping to the right ray, and `traceWorker` says itself
+that it measured 0 ms against 0 ms and so distinguished nothing.
+
 **Nothing may edit `src/` while `npm run drive` is running.** The dev server
 reloads the page on a save, and a scenario mid-step dies with `Execution context
 was destroyed, most likely because of a navigation`. That message means an edit

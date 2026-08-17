@@ -14,16 +14,10 @@
  * Run with the dev server up: `node tools/keys.mjs`.
  */
 
-import { chromium } from 'playwright-core';
+import { launch, URL } from './browser.mjs';
 
-const EDGE = process.env.BROWSER_PATH ?? '/usr/bin/microsoft-edge';
-const URL = process.env.APP_URL ?? 'http://localhost:5173/';
 
-const browser = await chromium.launch({
-  executablePath: EDGE,
-  headless: true,
-  args: ['--no-sandbox', '--disable-gpu'],
-});
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
@@ -83,7 +77,20 @@ for (const which of ['tab-shape', 'tab-node', 'tab-doc']) {
     // A control counts as live if it was enabled in at least one pass.
     if (c.id && (!live.has(c.id) || live.get(c.id).disabled)) live.set(c.id, c);
   }
-  await page.evaluate(() => document.body.focus());
+  /* Put the tab position back at the top of the document, which needs more
+     than `document.body.focus()`: the body is not focusable, so that call moves
+     nothing and the sweep resumes from wherever the group-opening clicks left
+     focus, in the middle of the rail. Chromium hid it by wrapping the tab order
+     at the end of the page, so 260 presses came round to the start anyway.
+     Firefox stops at the last element, and the controls before the resume point
+     were reported as unreachable. A temporary `tabindex` makes the body a real
+     focus target, and taking it off again leaves the page as it was. */
+  await page.evaluate(() => {
+    document.activeElement?.blur();
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute('tabindex');
+  });
   for (let i = 0; i < 260; i++) {
     await page.keyboard.press('Tab');
     const id = await page.evaluate(() => document.activeElement?.id ?? document.activeElement?.tagName ?? '');

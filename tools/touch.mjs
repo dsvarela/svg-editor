@@ -32,17 +32,11 @@
  * first port Vite tries.
  */
 
-import { chromium } from 'playwright-core';
+import { launch, URL } from './browser.mjs';
 
-const EDGE = process.env.BROWSER_PATH ?? '/usr/bin/microsoft-edge';
-const URL = process.env.APP_URL ?? 'http://localhost:5173/';
 const MIN = 44;
 
-const browser = await chromium.launch({
-  executablePath: EDGE,
-  headless: true,
-  args: ['--no-sandbox', '--disable-gpu'],
-});
+const browser = await launch();
 /* `--coarse` measures what a finger gets rather than what a mouse gets. It is
    the same page under `hasTouch`, which is what makes `pointer: coarse` match,
    so the two runs together say whether sizing up for touch cost the desktop
