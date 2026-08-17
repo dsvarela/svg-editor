@@ -158,6 +158,13 @@ the unit suite still calls green. A survivor is a change to what the program
 does that no test disagreed with. It rewrites files in place while it runs, so
 it cannot share the tree with `npm run drive`.
 
+**Nothing may edit `src/` while `npm run drive` is running.** The dev server
+reloads the page on a save, and a scenario mid-step dies with `Execution context
+was destroyed, most likely because of a navigation`. That message means an edit
+landed during the run and says nothing about the code. Re-run the scenario on a
+still tree before believing it. This is the same constraint `mutate.mjs` has, for
+the same reason, and it applies to a hand edit just as much.
+
 **A survivor count is not a finding until someone has read the survivors.** In
 `offsetSubpath` it went from 29 of 92 to 26 of 87 while the gap closed, because
 most survivors change nothing observable and no test could have caught them.
