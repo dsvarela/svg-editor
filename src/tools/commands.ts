@@ -57,6 +57,16 @@ import {
   transformShape,
 } from '../model/ops';
 import type { AlignMode, FuseRefusal, RoundRefusal } from '../model/ops';
+import {
+  alignUnits,
+  arrangeUnits,
+  distributeUnits,
+  spaceUnits,
+  unitsBox,
+  viewBoxAsBox,
+} from '../model/arrange';
+import type { AlignTo, Unit } from '../model/arrange';
+import type { Box } from '../core/bezier';
 import { simplifySubpath } from '../model/simplify';
 import { invisibleAt, keepOnly, reduceToCount, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel } from '../model/pixelfit';
@@ -2047,6 +2057,94 @@ export class Commands {
     const refs = selectedNodes(s.doc, s.selection);
     if (refs.length < 3) return;
     this.store.edit((st) => distributeNodes(st.doc, refs, axis));
+  }
+
+  /* --------------------------------------------- arranging whole shapes */
+
+  /**
+   * How many things the arrange controls would move, a group counting as one.
+   *
+   * What the buttons are enabled from, and what the readout says. Derived on
+   * every ask rather than cached, because the answer changes with the selection,
+   * with grouping, and with a shape being deleted out from under it.
+   */
+  get arrangeCount(): number {
+    const s = this.store.state;
+    return arrangeUnits(s.doc, s.selection.shapes).length;
+  }
+
+  /** The box an arrangement happens in: the selection's own, or the canvas. */
+  private arrangeFrame(units: Unit[], to: AlignTo): Box | null {
+    const s = this.store.state;
+    return to === 'canvas' ? viewBoxAsBox(s.doc.viewBox) : unitsBox(units);
+  }
+
+  /**
+   * Align whole shapes to one edge of the selection or of the canvas.
+   *
+   * One shape is enough against the canvas -- centring a single icon on it is
+   * the commonest reason anyone opens this -- and needs two against the
+   * selection, where one shape is already aligned with itself.
+   */
+  alignShapes(mode: AlignMode, to: AlignTo): boolean {
+    const s = this.store.state;
+    const units = arrangeUnits(s.doc, s.selection.shapes);
+    const least = to === 'canvas' ? 1 : 2;
+    if (units.length < least) {
+      this.onMessage?.(
+        to === 'canvas' ? 'Align needs a shape selected.' : 'Align needs two shapes selected.',
+        false,
+      );
+      return false;
+    }
+    const ids = new Set(s.selection.shapes);
+    this.store.edit((st) => {
+      const live = arrangeUnits(st.doc, ids);
+      const frame = this.arrangeFrame(live, to);
+      if (frame) alignUnits(live, mode, frame);
+    });
+    return true;
+  }
+
+  /** Space the chosen edge of three or more shapes evenly. */
+  distributeShapes(mode: AlignMode, to: AlignTo): boolean {
+    const s = this.store.state;
+    const units = arrangeUnits(s.doc, s.selection.shapes);
+    if (units.length < 3) {
+      this.onMessage?.('Distribute needs three shapes selected.', false);
+      return false;
+    }
+    const ids = new Set(s.selection.shapes);
+    this.store.edit((st) => {
+      const live = arrangeUnits(st.doc, ids);
+      const frame = this.arrangeFrame(live, to);
+      if (frame) distributeUnits(live, mode, frame);
+    });
+    return true;
+  }
+
+  /**
+   * Put the same gap between neighbouring shapes.
+   *
+   * A `gap` of `null` means whatever fills the frame, which is the answer when
+   * the field is left empty. Anything not finite is treated the same way rather
+   * than refused, because a half-typed number in a spin box is not a request.
+   */
+  spaceShapes(axis: 'h' | 'v', to: AlignTo, gap: number | null): boolean {
+    const s = this.store.state;
+    const units = arrangeUnits(s.doc, s.selection.shapes);
+    if (units.length < 2) {
+      this.onMessage?.('Spacing needs two shapes selected.', false);
+      return false;
+    }
+    const g = gap !== null && Number.isFinite(gap) ? gap : null;
+    const ids = new Set(s.selection.shapes);
+    this.store.edit((st) => {
+      const live = arrangeUnits(st.doc, ids);
+      const frame = this.arrangeFrame(live, to);
+      if (frame) spaceUnits(live, axis, frame, g);
+    });
+    return true;
   }
 
   /* ------------------------------------------------- one segment at a time */

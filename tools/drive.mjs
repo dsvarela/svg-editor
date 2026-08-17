@@ -4063,6 +4063,175 @@ const scenarios = {
   },
 
   /**
+   * Aligning, distributing and spacing whole shapes, against the selection and
+   * against the canvas.
+   *
+   * Measured with `getBBox` on the paths the canvas drew, which is the box the
+   * operation claims to be moving and the one a person is looking at. Reading
+   * the `d` strings instead would compare coordinates, and coordinates can agree
+   * while the drawing is wrong -- a rectangle whose node order starts at the
+   * corner being aligned to passes that test without moving.
+   *
+   * What needs a browser rather than `test/arrange.test.ts`: which buttons are
+   * live for which selection, that the frame switch reaches the commands, and
+   * that an empty Gap field is a different request from a Gap of nothing.
+   */
+  async arrange(page, check) {
+    /* Boxes in document coordinates, in paint order. `getBBox` is the element's
+       own untransformed box, so this is independent of where the camera is. */
+    const boxes = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.artwork path')].map((p) => {
+          const b = p.getBBox();
+          return {
+            x: +b.x.toFixed(4),
+            y: +b.y.toFixed(4),
+            w: +b.width.toFixed(4),
+            h: +b.height.toFixed(4),
+          };
+        }),
+      );
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M10 10 H20 V20 H10 Z" fill="#2563d8"/>
+  <path d="M40 30 H60 V40 H40 Z" fill="#e8a54b"/>
+  <path d="M70 60 H80 V70 H70 Z" fill="#3aa856"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    out.start = await boxes();
+    check(out.start.length === 3, `the fixture drew ${out.start.length} paths, not 3`);
+
+    // Nothing selected: every arrange control is dead, and the readout says so.
+    check(await page.isDisabled('[data-sal="left"]'), 'Align shapes was live with nothing selected');
+    check(await page.isDisabled('[data-sdi="left"]'), 'Distribute was live with nothing selected');
+    check(await page.isDisabled('#spaceGap'), 'the Gap field was live with nothing selected');
+    check(
+      (await page.textContent('#arrangeinfo')).trim() === 'none',
+      `the arrange readout says ${JSON.stringify(await page.textContent('#arrangeinfo'))} with nothing selected`,
+    );
+
+    // One shape: against the selection there is nothing to align it to.
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    check(
+      await page.isDisabled('[data-sal="left"]'),
+      'Align was live for one shape against the selection',
+    );
+
+    /* The same one shape, against the canvas, is the commonest request there is:
+       centre this icon. So the switch has to re-enable the buttons. */
+    await page.click('#alignTo button[data-to="canvas"]');
+    await settle(page);
+    check(
+      !(await page.isDisabled('[data-sal="left"]')),
+      'Align stayed dead for one shape against the canvas',
+    );
+    await page.click('[data-sal="hcenter"]');
+    await page.click('[data-sal="vcenter"]');
+    await settle(page);
+    const centred = (await boxes())[0];
+    out.centred = centred;
+    check(
+      Math.abs(centred.x + centred.w / 2 - 50) < 1e-6 && Math.abs(centred.y + centred.h / 2 - 50) < 1e-6,
+      `centring on the canvas put the shape at ${JSON.stringify(centred)}`,
+    );
+    check(
+      centred.w === out.start[0].w && centred.h === out.start[0].h,
+      'aligning changed the size of the shape, so something scaled it',
+    );
+
+    await undo(page);
+    await undo(page);
+    check(
+      JSON.stringify(await boxes()) === JSON.stringify(out.start),
+      'two undos did not put the two aligns back',
+    );
+
+    // All three, back against the selection.
+    await page.click('#alignTo button[data-to="selection"]');
+    await page.click('#shapelist li.shape:nth-child(2)', { modifiers: ['Shift'] });
+    await page.click('#shapelist li.shape:nth-child(3)', { modifiers: ['Shift'] });
+    await settle(page);
+    check(
+      (await page.textContent('#arrangeinfo')).trim() === '3 items',
+      `three selected shapes read as ${JSON.stringify(await page.textContent('#arrangeinfo'))}`,
+    );
+    check(!(await page.isDisabled('[data-sdi="left"]')), 'Distribute was dead with three shapes');
+
+    await page.click('[data-sal="top"]');
+    await settle(page);
+    const topped = await boxes();
+    out.topped = topped;
+    check(
+      topped.every((b) => Math.abs(b.y - 10) < 1e-6),
+      `aligning top left the shapes at ${JSON.stringify(topped.map((b) => b.y))}`,
+    );
+
+    /* Distributing centres: the outer two hold still and the middle one moves to
+       the midpoint between them. Asserted on the gaps rather than on a position,
+       because "evenly spaced" is a statement about differences. */
+    await page.click('[data-sdi="hcenter"]');
+    await settle(page);
+    const spread = await boxes();
+    out.spread = spread;
+    const mids = spread.map((b) => b.x + b.w / 2).sort((a, b) => a - b);
+    check(
+      Math.abs(mids[1] - mids[0] - (mids[2] - mids[1])) < 1e-6,
+      `distributing centres gave gaps of ${mids[1] - mids[0]} and ${mids[2] - mids[1]}`,
+    );
+
+    /* An empty Gap asks for the gap that fills the selection's own box, so the
+       outer two stay put. A Gap of 5 packs them from the left edge instead, and
+       the two answers have to differ or the field is doing nothing. */
+    const before = (await boxes()).sort((a, b) => a.x - b.x);
+    await page.click('[data-ssp="h"]');
+    await settle(page);
+    const evened = (await boxes()).sort((a, b) => a.x - b.x);
+    const filled = evened.map((b) => b.x);
+    out.filled = filled;
+    const evenGaps = evened.slice(1).map((b, i) => b.x - (evened[i].x + evened[i].w));
+    out.evenGaps = evenGaps;
+    check(
+      Math.abs(evened[0].x - before[0].x) < 1e-6 &&
+        Math.abs(evened[2].x + evened[2].w - (before[2].x + before[2].w)) < 1e-6,
+      `filling the selection moved an outer shape: ${JSON.stringify(filled)}`,
+    );
+    check(
+      Math.abs(evenGaps[0] - evenGaps[1]) < 1e-6 && evenGaps[0] > 0,
+      `filling the selection left gaps of ${JSON.stringify(evenGaps)}`,
+    );
+
+    await page.fill('#spaceGap', '5');
+    await page.click('[data-ssp="h"]');
+    await settle(page);
+    const run = (await boxes()).sort((a, b) => a.x - b.x);
+    const packed = run.map((b) => b.x);
+    out.packed = packed;
+    const gaps = run.slice(1).map((b, i) => b.x - (run[i].x + run[i].w));
+    out.gaps = gaps;
+    check(
+      gaps.every((g) => Math.abs(g - 5) < 1e-6),
+      `packing at a gap of 5 left gaps of ${JSON.stringify(gaps)}`,
+    );
+    check(
+      JSON.stringify(filled) !== JSON.stringify(packed),
+      'the Gap field changed nothing: filling the frame and packing at 5 gave the same result',
+    );
+
+    return out;
+  },
+
+  /**
    * Rounding a corner by dragging it, and un-rounding it by dragging it back.
    *
    * The whole point of the control is that nothing stores a radius: a sharp corner

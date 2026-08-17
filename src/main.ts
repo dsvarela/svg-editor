@@ -41,6 +41,7 @@ import { Controller } from './tools/controller';
 import { Commands } from './tools/commands';
 import { bindKeys } from './tools/keys';
 import type { AlignMode } from './model/ops';
+import type { AlignTo } from './model/arrange';
 import { $ } from './view/dom';
 import { installTooltips } from './ui/tooltip';
 
@@ -778,6 +779,56 @@ document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) =>
   b.addEventListener('click', () => commands.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
 );
 
+/* Arranging whole shapes. Which frame the buttons work in is a standing
+   preference like the delete mode, so it lives here rather than in the store:
+   nothing about it belongs in an undo step, and no other module asks. */
+let alignTo: AlignTo = 'selection';
+const alignToSeg = $('#alignTo');
+const spaceGap = $('#spaceGap') as HTMLInputElement;
+const arrangeInfo = $('#arrangeinfo');
+
+alignToSeg.addEventListener('click', (e) => {
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-to');
+  if (v !== 'selection' && v !== 'canvas') return;
+  alignTo = v;
+  for (const b of alignToSeg.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-to') === alignTo));
+  }
+  refreshArrange();
+});
+
+document.querySelectorAll<HTMLButtonElement>('[data-sal]').forEach((b) =>
+  b.addEventListener('click', () =>
+    commands.alignShapes(b.getAttribute('data-sal') as AlignMode, alignTo),
+  ),
+);
+document.querySelectorAll<HTMLButtonElement>('[data-sdi]').forEach((b) =>
+  b.addEventListener('click', () =>
+    commands.distributeShapes(b.getAttribute('data-sdi') as AlignMode, alignTo),
+  ),
+);
+document.querySelectorAll<HTMLButtonElement>('[data-ssp]').forEach((b) =>
+  b.addEventListener('click', () => {
+    /* An empty field asks for the gap that fills the frame, which is a different
+       request from a gap of zero. Reading `.value` rather than `.valueAsNumber`
+       is what keeps the two apart: the number is `NaN` for both. */
+    const raw = spaceGap.value.trim();
+    const axis = b.getAttribute('data-ssp') as 'h' | 'v';
+    commands.spaceShapes(axis, alignTo, raw === '' ? null : Number(raw));
+  }),
+);
+
+function refreshArrange(): void {
+  const n = commands.arrangeCount;
+  arrangeInfo.textContent = n === 0 ? 'none' : `${n} item${n === 1 ? '' : 's'}`;
+  // Aligning one shape to the canvas is a real request; to the selection it is not.
+  const leastToAlign = alignTo === 'canvas' ? 1 : 2;
+  document.querySelectorAll<HTMLButtonElement>('[data-sal]').forEach((b) => (b.disabled = n < leastToAlign));
+  document.querySelectorAll<HTMLButtonElement>('[data-sdi]').forEach((b) => (b.disabled = n < 3));
+  document.querySelectorAll<HTMLButtonElement>('[data-ssp]').forEach((b) => (b.disabled = n < 2));
+  spaceGap.disabled = n < 2;
+}
+
 const bendAngle = $('#bendAngle') as HTMLInputElement;
 const bendLoose = $('#bendLoose') as HTMLInputElement;
 const bendInfo = $('#bendinfo');
@@ -870,6 +921,7 @@ function refreshInspector(): void {
   // Both derived from the selection, which every notification carries.
   ($('#groupShapes') as HTMLButtonElement).disabled = !commands.canGroup;
   ($('#ungroupShapes') as HTMLButtonElement).disabled = !commands.canUngroup;
+  refreshArrange();
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
      Every other control in the group was disabled explicitly and the newer ones

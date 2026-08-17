@@ -120,7 +120,7 @@ Three tabs, split by what a control acts on.
 
 | Tab | Holds |
 |---|---|
-| **Shape** | Shapes, Style, Combine, Draw, Transform |
+| **Shape** | Shapes, Style, Combine, Draw, Transform, Arrange |
 | **Node** | Node, Bend, Align, Delete |
 | **Document** | Canvas, Grid, Backdrop, Output |
 
@@ -398,6 +398,35 @@ How deleting a node treats the path around it.
 **Rotate −90°**, **Rotate +90°**, **Flip horizontal**, **Flip vertical**, plus an
 **Angle** field with **Rotate**, and a **Scale** factor with **Apply**. All work
 about the centre of the selection, and all are baked into the coordinates.
+
+### Arrange
+
+Moves whole shapes around each other. The **Align** group in the Node panel is a
+different thing: that one moves anchors inside one path.
+
+**Relative to** chooses the box everything below it works in.
+
+| Setting | Means |
+|---|---|
+| **Selection** | The box the selected shapes sit in together |
+| **Canvas** | The whole canvas, whatever the drawing occupies |
+
+**Align shapes** has six buttons: left, horizontal centre, right, top, vertical
+centre, bottom. Each puts that edge of every shape on the same line. Two shapes
+are needed against the selection, and one is enough against the canvas, which is
+how a single icon is centred.
+
+**Distribute shapes** has the same six and needs three shapes. Each spaces that
+edge evenly. Against the selection the outer two stay where they are; against the
+canvas they go flush to its sides.
+
+**Gap** with **Space H** and **Space V** puts the same gap between neighbours.
+Leave the field empty and the gap becomes whatever fills the box, which against
+the selection is the answer that evens out the middle without moving the ends.
+Type a number and the shapes pack from the leading edge at exactly that gap.
+
+A group counts as one thing throughout, and moves without coming apart. Selecting
+only some of a group's shapes moves those on their own.
 
 ### Backdrop
 

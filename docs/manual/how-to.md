@@ -17,6 +17,8 @@ route to finishing it.
 - [Combine two shapes](#combine-two-shapes)
 - [Punch a hole in a shape](#punch-a-hole-in-a-shape)
 - [Line up and space out nodes](#line-up-and-space-out-nodes)
+- [Line up and space out shapes](#line-up-and-space-out-shapes)
+- [Centre a shape on the canvas](#centre-a-shape-on-the-canvas)
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
@@ -196,6 +198,37 @@ Select two or more nodes, then use the **Align** panel. Spacing them out needs t
 The six align buttons move the selection to a common left, centre, right, top,
 middle or bottom. **Space H** and **Space V** distribute the middle nodes evenly
 between the two outermost ones, which stay where they are.
+
+## Line up and space out shapes
+
+Select two or more shapes, open the **Shape** tab and use the **Arrange** panel.
+This is a different panel from the **Align** one above, which moves nodes inside a
+single path.
+
+Leave **Relative to** on **Selection**. The six **Align shapes** buttons put every
+left edge, centre, right edge, top, middle or bottom on one line. The six
+**Distribute shapes** buttons need three shapes and space that edge evenly,
+leaving the outer two where they are.
+
+For even gaps rather than even centres, use **Space H** or **Space V**. Leave
+**Gap** empty and the shapes spread to fill the space they already occupy. Type a
+number and they pack together with exactly that gap, starting from the left or
+the top.
+
+A group counts as one shape here and slides about without coming apart. To move
+one shape inside a group, select only that shape.
+
+## Centre a shape on the canvas
+
+Select the shape, then set **Relative to** to **Canvas** in the **Arrange** panel.
+
+The align buttons now work with a single shape selected, because the canvas is
+the thing being aligned to. Press the horizontal centre and the vertical centre
+buttons to put it in the middle of the page.
+
+The same switch changes what distributing and spacing mean: the outermost shapes
+go flush against the sides of the canvas and the rest spread between them, rather
+than everything staying inside the box the shapes started in.
 
 ## Bend a segment without touching its handles
 

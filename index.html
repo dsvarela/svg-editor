@@ -339,6 +339,46 @@
               <p class="hint">Applies to the selection, about its own centre.</p>
               </div>
             </div>
+          <div class="group">
+              <button class="glabel" type="button" aria-expanded="true"><span>Arrange</span><span class="gval" id="arrangeinfo">needs 2+</span></button>
+              <div class="gbody">
+            <!-- Whole shapes, not nodes. The Align in the Node panel moves anchors
+                 inside one path; this moves paths around each other. -->
+            <div class="row">
+              <span class="rlabel">Relative to</span>
+              <div class="seg spread" id="alignTo" role="group" aria-label="What to arrange against">
+                <button type="button" data-to="selection" aria-pressed="true" title="Arrange the selected shapes against each other">Selection</button>
+                <button type="button" data-to="canvas" aria-pressed="false" title="Arrange the selected shapes against the canvas">Canvas</button>
+              </div>
+            </div>
+            <div class="glabel sub"><span>Align shapes</span></div>
+            <div class="aligns">
+              <button type="button" data-sal="left" aria-label="Align shapes left" title="Put every left edge on the same line">&#8676;</button>
+              <button type="button" data-sal="hcenter" aria-label="Align shape centres horizontally" title="Put every horizontal centre on the same line">&#8677;&#8676;</button>
+              <button type="button" data-sal="right" aria-label="Align shapes right" title="Put every right edge on the same line">&#8677;</button>
+              <button type="button" data-sal="top" aria-label="Align shapes top" title="Put every top edge on the same line">&#8673;</button>
+              <button type="button" data-sal="vcenter" aria-label="Align shape centres vertically" title="Put every vertical centre on the same line">&#8661;</button>
+              <button type="button" data-sal="bottom" aria-label="Align shapes bottom" title="Put every bottom edge on the same line">&#8675;</button>
+            </div>
+            <div class="glabel sub"><span>Distribute shapes</span></div>
+            <div class="aligns">
+              <button type="button" data-sdi="left" aria-label="Distribute left edges" title="Space the left edges evenly">&#8676;</button>
+              <button type="button" data-sdi="hcenter" aria-label="Distribute horizontal centres" title="Space the horizontal centres evenly">&#8677;&#8676;</button>
+              <button type="button" data-sdi="right" aria-label="Distribute right edges" title="Space the right edges evenly">&#8677;</button>
+              <button type="button" data-sdi="top" aria-label="Distribute top edges" title="Space the top edges evenly">&#8673;</button>
+              <button type="button" data-sdi="vcenter" aria-label="Distribute vertical centres" title="Space the vertical centres evenly">&#8661;</button>
+              <button type="button" data-sdi="bottom" aria-label="Distribute bottom edges" title="Space the bottom edges evenly">&#8675;</button>
+            </div>
+            <div class="row">
+              <label for="spaceGap">Gap</label>
+              <input type="number" id="spaceGap" step="1" placeholder="fill" aria-label="Gap to leave between shapes" />
+              <button class="btn" data-ssp="h" title="Put the same gap between the shapes, left to right">Space H</button>
+              <button class="btn" data-ssp="v" title="Put the same gap between the shapes, top to bottom">Space V</button>
+            </div>
+
+              <p class="hint">A group moves as one. An empty Gap spreads them to fill.</p>
+              </div>
+            </div>
           </div>
 
           <div class="tabpanel" id="panel-node" role="tabpanel" aria-labelledby="tab-node" hidden>

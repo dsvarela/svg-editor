@@ -114,6 +114,7 @@ src/
   model/      the document and every mutation it allows
     doc.ts         shapes, groups, selection, bounding boxes
     ops.ts         all geometry edits
+    arrange.ts     align, distribute and space whole shapes
     simplify.ts    refit a path with fewer nodes
     knots.ts       remove the nodes that are not doing anything
     auto.ts        handles that re-derive themselves from their neighbours
@@ -154,11 +155,11 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 870 tests in 31 files, 12 316 lines on
+**Unit and DOM tests**, with `npm test`. 905 tests in 32 files, 12 743 lines on
 2026-08-17, over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
 transforms, history, tooltips, node identity, the clipboard, corner fillets,
-groups, the grid and the primitives. The rendering tests run in jsdom against the
+groups, arranging shapes, the grid and the primitives. The rendering tests run in jsdom against the
 real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
@@ -177,7 +178,7 @@ Chromium-based Edge through `playwright-core`, defaulting to
 somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
 every scenario.
 
-There are 48 of them on 2026-08-17, and they are not listed here: `--list`
+There are 49 of them on 2026-08-17, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that
 drifts. This one had drifted by twelve before anyone noticed.
 

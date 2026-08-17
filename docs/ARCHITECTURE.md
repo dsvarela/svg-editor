@@ -2326,3 +2326,49 @@ ungrouped into anything meaningful.
 in an imported file is pushed down to the shapes rather than kept on the group. There
 is no way to enter a group to edit inside it without selecting it whole first. And a
 group cannot be scaled without scaling its shapes, which is §5 and not an oversight.
+
+## 50. Align and distribute are one operation given two different boxes
+
+Aligning shapes to each other and aligning them to the canvas are the same
+arithmetic. What changes is the box the arrangement happens in, so `arrange.ts`
+takes that box as an argument and has no idea which of the two it was handed.
+The alternative is two families of six buttons whose implementations drift apart
+the first time one of them is fixed.
+
+The same argument covers distribute and spacing, which is why "distribute across
+the canvas" needed no code of its own. It needed the frame it already reads to be
+the viewBox instead of the selection's own box.
+
+**A node and a shape are different subjects, so the two aligns stay apart.**
+`alignNodes` in `ops.ts` moves anchors inside a path and `alignUnits` moves paths
+around each other. They cannot be merged, because a node is a point and every
+question here is about size: aligning two shapes to the left means putting their
+left edges together, and a shape's left edge is a property of its curves rather
+than of any node on it. A rectangle drawn from its top-right corner has no node
+at its left edge at all. What the two do share is the six-way choice of which
+edge, and that lives in one place -- `AlignMode` -- rather than in two lists that
+would drift.
+
+**A group is one thing to arrange.** Without that, aligning a selection holding a
+group collapses the group onto its own left edge, which is the operation
+destroying the structure the user built. `arrangeUnits` gathers the selected
+shapes into units, where a group whose every shape is selected is one unit and
+moves as one. Selecting only some of a group's shapes moves those on their own,
+which is the only reading that leaves room for nudging one shape inside a group.
+
+The unit a shape joins is its **outermost** wholly selected ancestor. Whole-ness
+is inherited downwards, so the outermost is the largest thing the selection can
+be said to have chosen. Nothing about this is stored: the units are rebuilt from
+`Shape.group` on every press, which is §49's relation being read rather than a
+second copy of it.
+
+**Illustrator's key object is not here.** Its Align panel can align everything to
+one nominated object, shown with a heavier outline. That would be a new piece of
+selection state, a way to set it, a way to see it and a way to clear it, and the
+two frames cover the cases people reach for. Naming it as a decided gap rather
+than an oversight: someone wanting "align these to *that* one" has to move that
+one last.
+
+**Nothing clamps a negative gap.** Shapes wider than the frame they are being
+spaced across can only overlap, and overlapping them by an even amount is a truer
+answer than refusing, and a much truer one than spilling silently off one end.
