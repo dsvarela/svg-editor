@@ -35,8 +35,12 @@ export interface ScaleOptions {
  * Below this, an edge is treated as having no length and its axis does not
  * scale. A selection can genuinely be flat: one row of nodes, or a horizontal
  * line. Dividing by its height would send every point to infinity.
+ *
+ * Exported because typing a width into the panel asks the same question a drag
+ * does, and two numbers for one threshold would let the panel refuse what a drag
+ * allowed.
  */
-const FLAT = 1e-9;
+export const FLAT = 1e-9;
 
 const movesX = (part: TransformPart): boolean => part.includes('e') || part.includes('w');
 const movesY = (part: TransformPart): boolean => part.includes('n') || part.includes('s');

@@ -13,6 +13,7 @@
  */
 
 import { about, rotate as rotMat, translate } from '../core/affine';
+import type { Mat } from '../core/affine';
 import { cloneNode, cloneShape, cloneSubpath, continuityOf, segmentCount } from '../core/types';
 import type { Group, NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import {
@@ -53,6 +54,8 @@ import {
   segmentBend,
   setSegmentCurved,
   snap as snapTo,
+  captureNodes,
+  transformCaptured,
   splitSegment,
   transformShape,
 } from '../model/ops';
@@ -80,6 +83,7 @@ import type { Placement, TraceOptions, TraceResult } from '../model/trace';
 import type { RasterLike } from '../core/raster';
 import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
+import { FLAT } from '../model/transform';
 import type { Store } from '../model/store';
 import type { Bend } from '../core/bend';
 import { fmt } from './readout';
@@ -1409,6 +1413,76 @@ export class Commands {
       true,
     );
     return true;
+  }
+
+  /* ------------------------------------------------- the selection's box */
+
+  /**
+   * Where the selection is and how big, as four numbers.
+   *
+   * The same box the transform handles are drawn on, so the panel and the canvas
+   * cannot disagree about what is being measured. `null` when nothing is
+   * selected, which is what leaves the fields empty rather than showing zeroes.
+   */
+  selectionBounds(): { x: number; y: number; w: number; h: number } | null {
+    const s = this.store.state;
+    const b = selectionBBox(s.doc, s.selection);
+    return b ? { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } : null;
+  }
+
+  /**
+   * Move or resize the selection by typing one of its four numbers.
+   *
+   * The typed version of dragging a box handle, and it moves exactly what a drag
+   * would: the selected nodes, which for a selected shape is all of them.
+   *
+   * The matrix is derived from the box as it is now, every time, rather than
+   * composed onto whatever the last edit did. §5 bakes transforms into
+   * coordinates, so there is no stored size to correct: a width typed twice has
+   * to reach the same answer both times, and composing would let rounding
+   * accumulate across a run of edits.
+   *
+   * Width and height scale about the top-left corner, so setting one leaves the
+   * other three numbers alone. Anchoring the centre would move X and Y as a side
+   * effect of typing W.
+   */
+  setSelectionBound(part: 'x' | 'y' | 'w' | 'h', value: number): boolean {
+    if (!Number.isFinite(value)) return false;
+    const s = this.store.state;
+    const box = selectionBBox(s.doc, s.selection);
+    if (!box) {
+      this.onMessage?.('Nothing is selected.', false);
+      return false;
+    }
+
+    const w = box.x1 - box.x0;
+    const h = box.y1 - box.y0;
+    let m: Mat;
+    if (part === 'x') m = translate(value - box.x0, 0);
+    else if (part === 'y') m = translate(0, value - box.y0);
+    else {
+      if (value <= 0) {
+        this.onMessage?.('A size has to be greater than zero.', false);
+        return false;
+      }
+      /* A selection can genuinely be flat: one row of nodes, or a straight
+         horizontal line. Dividing by that side would send every point to
+         infinity, so the axis with no length simply does not scale. */
+      const along = part === 'w' ? w : h;
+      if (Math.abs(along) < FLAT) {
+        this.onMessage?.(`This selection has no ${part === 'w' ? 'width' : 'height'} to scale.`, false);
+        return false;
+      }
+      const k = value / along;
+      m = about(part === 'w' ? [k, 0, 0, 1, 0, 0] : [1, 0, 0, k, 0, 0], box.x0, box.y0);
+    }
+
+    const saved = captureNodes(s.doc, selectedNodes(s.doc, s.selection));
+    if (!saved.length) return false;
+    return this.store.tryEdit((st) => {
+      transformCaptured(st.doc, saved, m);
+      return true;
+    });
   }
 
   /* ---------------------------------------------------------- whole shapes */

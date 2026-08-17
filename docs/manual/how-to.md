@@ -19,6 +19,7 @@ route to finishing it.
 - [Line up and space out nodes](#line-up-and-space-out-nodes)
 - [Line up and space out shapes](#line-up-and-space-out-shapes)
 - [Change what covers what](#change-what-covers-what)
+- [Put something at an exact position or size](#put-something-at-an-exact-position-or-size)
 - [Centre a shape on the canvas](#centre-a-shape-on-the-canvas)
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
@@ -199,6 +200,19 @@ Select two or more nodes, then use the **Align** panel. Spacing them out needs t
 The six align buttons move the selection to a common left, centre, right, top,
 middle or bottom. **Space H** and **Space V** distribute the middle nodes evenly
 between the two outermost ones, which stay where they are.
+
+## Put something at an exact position or size
+
+Select it, then type into the **at** and **size** fields at the top of the
+**Transform** panel. Press `Enter`, or click elsewhere, to apply.
+
+The four numbers are the box drawn around the selection: X, Y, width and height.
+Width and height grow from the top-left corner, so changing the size does not
+move the corner you can see the coordinates of.
+
+Typing the same width twice does nothing the second time. The size is worked out
+from the drawing every time rather than remembered, so there is no accumulated
+error to undo.
 
 ## Change what covers what
 

@@ -327,6 +327,16 @@
           <div class="group">
               <button class="glabel" type="button" aria-expanded="true"><span>Transform</span><span class="gval" id="selinfo"></span></button>
               <div class="gbody">
+            <!-- The same box the handles are drawn on, so the panel and the
+                 canvas cannot disagree about what is being measured. -->
+            <div class="coords">
+              <label for="selX">at</label>
+              <input type="number" id="selX" step="1" aria-label="Selection X" />
+              <input type="number" id="selY" step="1" aria-label="Selection Y" />
+              <label for="selW">size</label>
+              <input type="number" id="selW" step="1" min="0" aria-label="Selection width" />
+              <input type="number" id="selH" step="1" min="0" aria-label="Selection height" />
+            </div>
             <div class="grid2">
               <button class="btn" data-tr="rot-90">Rotate &minus;90°</button>
               <button class="btn" data-tr="rot90">Rotate +90°</button>

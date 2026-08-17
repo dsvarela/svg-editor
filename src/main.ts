@@ -779,6 +779,45 @@ document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) =>
   b.addEventListener('click', () => commands.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
 );
 
+/* The selection's box as four numbers, committed on `change` rather than
+   streamed on `input` like the canvas fields above.
+
+   The matrix is derived from the box as it is, every time, so a stream of
+   keystrokes would scale from each intermediate width to the next. That reaches
+   the right answer, but it passes through the widths a half-typed number spells:
+   typing 120 squashes the selection to 1 unit wide on the way, and a selection
+   already below `FLAT` on an axis cannot be scaled back. One edit per committed
+   value avoids the whole question. */
+const boundFields: [string, 'x' | 'y' | 'w' | 'h'][] = [
+  ['#selX', 'x'],
+  ['#selY', 'y'],
+  ['#selW', 'w'],
+  ['#selH', 'h'],
+];
+for (const [id, part] of boundFields) {
+  const input = $(id) as HTMLInputElement;
+  input.addEventListener('change', () => {
+    const v = Number(input.value);
+    if (input.value.trim() !== '' && Number.isFinite(v)) commands.setSelectionBound(part, v);
+    refreshBounds();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+  });
+}
+
+function refreshBounds(): void {
+  const b = commands.selectionBounds();
+  for (const [id, part] of boundFields) {
+    const el = $(id) as HTMLInputElement;
+    el.disabled = !b;
+    // Left alone while it has focus, so a number being typed is not overwritten
+    // by the render the previous keystroke caused.
+    if (document.activeElement === el) continue;
+    el.value = b ? String(Math.round(b[part] * 1000) / 1000) : '';
+  }
+}
+
 document.querySelectorAll<HTMLButtonElement>('[data-z]').forEach((b) =>
   b.addEventListener('click', () => commands.reorderSelection(b.getAttribute('data-z') as ZMove)),
 );
@@ -931,6 +970,7 @@ function refreshInspector(): void {
      with nowhere to go simply declines. */
   document.querySelectorAll<HTMLButtonElement>('[data-z]').forEach((b) => (b.disabled = !commands.canReorder));
   refreshArrange();
+  refreshBounds();
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
      Every other control in the group was disabled explicitly and the newer ones

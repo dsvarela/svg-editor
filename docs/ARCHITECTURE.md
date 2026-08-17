@@ -2405,3 +2405,35 @@ array, with the export and the screen quietly disagreeing about what covered
 what. One pass now puts each element at its index, writing only where it is
 already wrong. Found by a browser scenario, because no unit test had ever asked
 what order the elements were in.
+
+## 52. A typed size is derived from the box, never composed onto the last one
+
+The four fields for the selection's X, Y, width and height are the typed form of
+dragging a box handle, and they move exactly what a drag moves: the selected
+nodes, which for a selected shape is all of them. The box they show is
+`selectionBBox`, the same one the handles are drawn on, so the panel and the
+canvas cannot disagree about what is being measured.
+
+Each edit builds its matrix from the box as it is at that moment. §5 bakes
+transforms into coordinates, so there is no stored size that could be corrected
+instead -- and composing each edit onto the last would let a run of them
+accumulate rounding, so typing 60 twice would not leave the same drawing as
+typing it once.
+
+That is also why the fields commit on `change` rather than streaming on `input`
+like the canvas fields do. A stream would scale from each intermediate width to
+the next, which reaches the right answer but passes through the widths a
+half-typed number spells: typing 120 squashes the selection to one unit wide on
+the way, and an axis already shorter than `FLAT` cannot be scaled back.
+
+Width and height anchor the top-left corner rather than the centre, so setting
+one leaves the other three numbers alone. Anchoring the centre would move X and Y
+as a side effect of typing W, and a panel whose fields change each other is a
+panel nobody can predict.
+
+`FLAT` is exported from `transform.ts` rather than restated here: a drag and a
+typed number ask the same question about a flat selection, and two thresholds
+would let the panel refuse what a drag allowed.
+
+**Not here:** a lock linking width to height. Scaling both together is what the
+**Scale** field above already does, and a proportion lock is a mode.

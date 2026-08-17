@@ -4063,6 +4063,101 @@ const scenarios = {
   },
 
   /**
+   * The selection's box as four fields: read, typed, and refused.
+   *
+   * The unit tests own the arithmetic. What needs a browser is that the fields
+   * track the selection without being told, that a value typed and committed
+   * reaches the drawing, and that they show the box the canvas is drawing its
+   * handles on rather than a second reading of it.
+   */
+  async selectionBounds(page, check) {
+    const fields = () =>
+      page.evaluate(() =>
+        ['#selX', '#selY', '#selW', '#selH'].map((id) => {
+          const el = document.querySelector(id);
+          return { value: el.value, disabled: el.disabled };
+        }),
+      );
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M10 20 H40 V60 H10 Z" fill="#2563d8"/>
+  <path d="M70 70 H90 V90 H70 Z" fill="#e8a54b"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    out.empty = await fields();
+    check(
+      out.empty.every((f) => f.disabled && f.value === ''),
+      `with nothing selected the fields read ${JSON.stringify(out.empty)}`,
+    );
+
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    out.selected = (await fields()).map((f) => f.value);
+    check(
+      JSON.stringify(out.selected) === JSON.stringify(['10', '20', '30', '40']),
+      `selecting the first shape read ${JSON.stringify(out.selected)}`,
+    );
+
+    /* Typed and committed. `fill` then `Enter`, because a number field fires no
+       change event until it loses focus and nothing else here would blur it. */
+    await page.fill('#selX', '55');
+    await page.press('#selX', 'Enter');
+    await settle(page);
+    out.movedD = await drawnPath(page, 0);
+    check(/M 55 20/.test(out.movedD), `typing X gave ${out.movedD}`);
+
+    await page.fill('#selW', '60');
+    await page.press('#selW', 'Enter');
+    await settle(page);
+    out.wide = (await fields()).map((f) => f.value);
+    check(
+      JSON.stringify(out.wide) === JSON.stringify(['55', '20', '60', '40']),
+      `typing a width of 60 left the fields at ${JSON.stringify(out.wide)}`,
+    );
+
+    // Refused, with the field put back to what the drawing actually says.
+    await page.fill('#selW', '0');
+    await page.press('#selW', 'Enter');
+    await settle(page);
+    out.refused = (await fields()).map((f) => f.value);
+    out.refusedMessage = (await page.textContent('#status')).trim();
+    check(
+      JSON.stringify(out.refused) === JSON.stringify(out.wide),
+      `a width of 0 was accepted: the fields read ${JSON.stringify(out.refused)}`,
+    );
+
+    // Two undos: the width, then the move. Nothing for the refusal.
+    await undo(page);
+    await undo(page);
+    out.undone = (await fields()).map((f) => f.value);
+    check(
+      JSON.stringify(out.undone) === JSON.stringify(['10', '20', '30', '40']),
+      `two undos left the fields at ${JSON.stringify(out.undone)}`,
+    );
+
+    // The fields follow the selection with nobody pressing anything in them.
+    await page.click('#shapelist li.shape:nth-child(2)');
+    await settle(page);
+    out.other = (await fields()).map((f) => f.value);
+    check(
+      JSON.stringify(out.other) === JSON.stringify(['70', '70', '20', '20']),
+      `selecting the second shape read ${JSON.stringify(out.other)}`,
+    );
+
+    return out;
+  },
+
+  /**
    * Paint order: the four buttons, the two chords, and the list that shows it.
    *
    * Measured on the order of the `<path>` elements in the artwork, which is what

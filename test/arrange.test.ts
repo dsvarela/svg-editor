@@ -589,3 +589,152 @@ describe('the commands', () => {
     expect(commands.arrangeCount).toBe(0);
   });
 });
+
+/**
+ * The selection's box, typed rather than dragged.
+ *
+ * Measured on the box that comes back out, because that is the number the field
+ * shows and the promise the control makes: type 40 into width and the selection
+ * is 40 wide. Asserting on coordinates would pass for a shape whose nodes happen
+ * to start at the corner being anchored.
+ */
+describe('the selection box as numbers', () => {
+  const one = (): Doc => docOf(['a', 10, 20, 30, 40]);
+
+  const bounds = (c: Commands): { x: number; y: number; w: number; h: number } => c.selectionBounds()!;
+
+  it('reads the box of what is selected', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+  });
+
+  it('reads nothing when nothing is selected', () => {
+    const { commands } = editor(one());
+    expect(commands.selectionBounds()).toBeNull();
+  });
+
+  it('moves the selection to a typed X, leaving its size and Y alone', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    expect(commands.setSelectionBound('x', 100)).toBe(true);
+    expect(bounds(commands)).toEqual({ x: 100, y: 20, w: 30, h: 40 });
+  });
+
+  it('moves to a typed Y, including a negative one', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    commands.setSelectionBound('y', -5);
+    expect(bounds(commands)).toEqual({ x: 10, y: -5, w: 30, h: 40 });
+  });
+
+  it('scales width about the left edge, leaving X, Y and height alone', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    expect(commands.setSelectionBound('w', 60)).toBe(true);
+    const b = bounds(commands);
+    expect(b.w).toBeCloseTo(60, 9);
+    expect(b.x).toBeCloseTo(10, 9);
+    expect(b.y).toBeCloseTo(20, 9);
+    expect(b.h).toBeCloseTo(40, 9);
+  });
+
+  it('scales height about the top edge', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    commands.setSelectionBound('h', 10);
+    const b = bounds(commands);
+    expect(b.h).toBeCloseTo(10, 9);
+    expect(b.y).toBeCloseTo(20, 9);
+    expect(b.w).toBeCloseTo(30, 9);
+  });
+
+  /**
+   * The reason the matrix is derived from the current box rather than composed
+   * onto the last one. Transforms are baked (§5), so there is no stored size to
+   * correct: setting the same width twice has to be a no-op the second time.
+   */
+  it('reaches the same size however many times it is set', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    for (const w of [60, 15, 60, 60, 7.5]) commands.setSelectionBound('w', w);
+    expect(bounds(commands).w).toBeCloseTo(7.5, 9);
+    expect(bounds(commands).x).toBeCloseTo(10, 9);
+  });
+
+  it('refuses a size of zero or less, and says so', () => {
+    const { store, commands } = editor(one());
+    const said: string[] = [];
+    commands.onMessage = (m) => said.push(m);
+    select(store, 'a');
+    expect(commands.setSelectionBound('w', 0)).toBe(false);
+    expect(commands.setSelectionBound('h', -3)).toBe(false);
+    expect(said).toHaveLength(2);
+    expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+  });
+
+  it('refuses to scale an axis the selection has no length on', () => {
+    const doc = emptyDoc();
+    const flat = shapeFromPath('M0 50 L100 50');
+    flat.name = 'line';
+    doc.shapes.push(flat);
+    const { store, commands } = editor(doc);
+    select(store, 'line');
+    const said: string[] = [];
+    commands.onMessage = (m) => said.push(m);
+    expect(commands.setSelectionBound('h', 20)).toBe(false);
+    expect(said[0]).toMatch(/no height/);
+    // The other axis still works, so the refusal is about the flat side only.
+    expect(commands.setSelectionBound('w', 50)).toBe(true);
+    expect(bounds(commands).w).toBeCloseTo(50, 9);
+  });
+
+  it('refuses with nothing selected, and says so', () => {
+    const { commands } = editor(one());
+    const said: string[] = [];
+    commands.onMessage = (m) => said.push(m);
+    expect(commands.setSelectionBound('x', 5)).toBe(false);
+    expect(said[0]).toMatch(/Nothing is selected/);
+  });
+
+  it('leaves no undo entry when it refuses', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    commands.setSelectionBound('x', 100);
+    commands.setSelectionBound('w', 0);
+    store.undo();
+    expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+  });
+
+  it('moves only the selected shape', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 50, 50, 10, 10]);
+    const { store, commands } = editor(doc);
+    select(store, 'a');
+    commands.setSelectionBound('x', 30);
+    expect(boxOf(store.state.doc, 'b')).toEqual({ x0: 50, y0: 50, x1: 60, y1: 60 });
+  });
+
+  /**
+   * With nodes selected the box is the nodes' box, and typing into it moves
+   * those nodes. That is the typed form of dragging the box handles, which move
+   * the selected nodes and not the shapes around them.
+   */
+  it('moves the selected nodes when the selection is nodes', () => {
+    const doc = emptyDoc();
+    const sh = shapeFromPath('M0 0 L10 0 L10 10 L0 10 Z');
+    sh.name = 'quad';
+    doc.shapes.push(sh);
+    const { store, commands } = editor(doc);
+    store.update((s) => {
+      s.selection.shapes.clear();
+      const nodes = s.doc.shapes[0].subpaths[0].nodes;
+      s.selection.nodes.add(nodes[0].id);
+      s.selection.nodes.add(nodes[1].id);
+    });
+    expect(bounds(commands)).toEqual({ x: 0, y: 0, w: 10, h: 0 });
+    commands.setSelectionBound('y', 4);
+    // The two moved nodes are on y = 4; the other two are where they were.
+    const ys = store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[1]);
+    expect(ys).toEqual([4, 4, 10, 10]);
+  });
+});

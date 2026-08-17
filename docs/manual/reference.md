@@ -403,6 +403,15 @@ How deleting a node treats the path around it.
 
 ### Transform
 
+**at** and **size** are the selection's box as four numbers: X, Y, width and
+height. They show the same box the handles are drawn on, and typing into one is
+the typed form of dragging a handle. Width and height scale about the top-left
+corner, so setting one leaves the other three numbers alone.
+
+A value takes effect when the field loses focus or on `Enter`. A size of zero or
+less is refused, as is scaling an axis the selection has no length on: a straight
+horizontal line has no height to grow from.
+
 **Rotate −90°**, **Rotate +90°**, **Flip horizontal**, **Flip vertical**, plus an
 **Angle** field with **Rotate**, and a **Scale** factor with **Apply**. All work
 about the centre of the selection, and all are baked into the coordinates.
