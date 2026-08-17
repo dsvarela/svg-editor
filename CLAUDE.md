@@ -141,6 +141,22 @@ The exit code now also fails on a `d` attribute that reached the DOM holding
 Both were already measured by the audit every scenario runs and neither was
 read by anything.
 
+**The audit also fails on overlay decoration that takes the press without naming
+a hit**, painted over something that does. The controller reads a press whose
+target has no `data-hit` as the start of a marquee, so such an element does the
+opposite of the control it covers. Document order is paint order in SVG, which
+is what "over" means here, and it is why the grid is exempt: it is under every
+control on the canvas and can take a press from none of them.
+
+It found two, and only the first was doing harm. `.handle-line`: a latent
+handle's line lies along the straight segment it would bend, over that segment's
+outline, and **16.4% of the whole pixels down a selected rectangle's edge
+deselected the shape instead of moving it.** Taking `pointer-events: none` off it
+again fails 31 of the 52 scenarios. `.guide` was swallowing nothing, because its
+8 px hit strip is painted after it and covers it everywhere -- **the check asks
+what an element is, not whether it is currently getting away with it**, and what
+stopped that one was another element's geometry rather than anything saying so.
+
 **No browser scenario waits a fixed number of milliseconds.** There were 233
 such sleeps, each a guess about how long a machine takes, so each was either
 slower than it needed to be or shorter than the thing it waited for. Three waits
@@ -164,12 +180,31 @@ tools go through it: `BROWSER` picks the engine, `BROWSER_PATH` points at a
 system Chromium-family binary, `APP_URL` moves the dev server. Playwright drives
 its own builds, so a stock `/usr/bin/firefox` cannot be used and
 `node node_modules/playwright-core/cli.js install firefox` is what puts one
-there. **49 of the 52 scenarios pass on Firefox and no figure here was measured
-on it before 2026-08-18.** The three that do not are the harness meeting a
-different engine rather than the app behaving differently: `backdrop` passes
-every check it makes and fails on a console error, `angles` lands 0.018 off a
-0.01 tolerance while snapping to the right ray, and `traceWorker` says itself
-that it measured 0 ms against 0 ms and so distinguished nothing.
+there. **All 52 scenarios pass on Firefox, and no figure here was measured on it
+before 2026-08-18.**
+
+**The three that failed on the switch were defects in the tests, not differences
+between the engines.** Each looked like the second and was the first:
+
+- `backdrop`'s 4 by 3 PNG was truncated: an IDAT holding 20 bytes of a deflate
+  stream that needed more, so only the first of three rows could be
+  reconstructed. Chromium decodes what arrived and reports the header's 4 by 3;
+  Firefox refuses the image. Every check passed on both, because they all read
+  the `<image>` element's attributes and none read a pixel. `png()` builds the
+  fixture now and the check reads the far corner, which catches it on either
+  engine.
+- `angles` asked for the pointer at client pixel 656.887. **A browser delivers
+  whole pixels**: Firefox truncates the fraction, Chromium keeps it, so the two
+  put the pointer in different places. `toClient` rounds, which makes what the
+  harness asks for what the page will see, and `toDoc` inverts it so a scenario
+  can compute an expectation from where the pointer is rather than where it
+  aimed.
+- `traceWorker` measured main-thread blocking through a `longtask`
+  `PerformanceObserver`. **`longtask` is a Chromium entry type, and `observe`
+  ignores a type it does not know rather than refusing it**, so it reported 0 ms
+  for both runs and the scenario compared two numbers that had measured nothing.
+  A 10 ms interval measuring its own lateness reads 800 ms on a thread blocked
+  for 800, on both engines, over an 11 ms idle floor.
 
 **Nothing may edit `src/` while `npm run drive` is running.** The dev server
 reloads the page on a save, and a scenario mid-step dies with `Execution context

@@ -397,6 +397,10 @@ input[type='number']:disabled { opacity: 0.4; }
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
   fill: none;
+  /* Said rather than left to the strip below to cover: the hit strip is wider
+     and painted after, so the line is never the topmost thing anywhere, and
+     what stops it swallowing a press today is another element's geometry. */
+  pointer-events: none;
 }
 /* A one-pixel line is not a target. The hit strip is transparent, eight pixels
    wide, and carries the cursor, exactly as the transform box's rotors do. */
@@ -458,7 +462,14 @@ input[type='number']:disabled { opacity: 0.4; }
 .grid-axis { stroke: var(--axis); fill: none; }
 
 .outline { fill: none; stroke: transparent; cursor: move; }
-.handle-line { stroke: var(--node-line); opacity: 0.5; }
+/* The dot is the control and the line is only the connector, so the line takes
+   no pointer. An overlay element that carries no `data-hit` still takes the
+   press when it is painted over something that does, and the controller reads a
+   press with no hit as the start of a marquee. A latent handle's line lies
+   along the straight segment it would bend, directly over that segment's
+   outline: with the line hittable, 16.4% of the whole pixels along a selected
+   rectangle's edge deselected the shape instead of moving it. */
+.handle-line { stroke: var(--node-line); opacity: 0.5; pointer-events: none; }
 .handle-dot { fill: var(--node-sel); stroke: none; cursor: grab; }
 /* A handle that does not exist yet: hollow, dashed, still grabbable. Dragging
    one turns its straight segment into a curve. */

@@ -174,11 +174,13 @@ The grid tests are the other shape: an exact invariant, that every drawn line
 sits on a snap position, swept across six orders of magnitude of zoom and nine snap
 steps. There is no tolerance to tune, so there is no reason to sample.
 
-**Browser tests**, with `npm run drive <scenario>`, which drives the real
-Chromium-based Edge through `playwright-core`, defaulting to
-`/usr/bin/microsoft-edge`. No browser download; set `BROWSER_PATH` if yours is
-somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
-every scenario.
+**Browser tests**, with `npm run drive <scenario>`, which drives a real Firefox
+through `playwright-core`. Playwright drives its own builds rather than the
+browser you installed, so this needs
+`node node_modules/playwright-core/cli.js install firefox` once. `BROWSER` picks
+another engine and `BROWSER_PATH` points at a system Chromium-family binary,
+which does not need the download. Pass `--headed` to watch.
+`npm run drive -- --list` names every scenario.
 
 There are 52 of them on 2026-08-17, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that

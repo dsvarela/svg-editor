@@ -198,14 +198,38 @@ const drawnPath = (page, index = 0) =>
 async function mk(page) {
   const box = await page.locator('#canvas').boundingBox();
 
-  /** Document coords -> client pixels, asked of the page itself. */
+  /**
+   * Document coords -> client pixels, asked of the page itself.
+   *
+   * Rounded to whole pixels, because a browser delivers whole pixels. Firefox
+   * truncates a fractional pointer coordinate and Chromium keeps it, so asking
+   * for 656.887 puts the pointer in a different place on each engine and every
+   * assertion about sub-pixel geometry inherits the difference. Rounding here
+   * makes the number this returns the number the page will actually see, which
+   * is what lets `toDoc` invert it.
+   */
   const toClient = async (doc) =>
     page.evaluate(([x, y]) => {
       const svg = document.querySelector('.overlay');
       const m = svg.getScreenCTM();
       const p = new DOMPoint(x, y).matrixTransform(m);
-      return [p.x, p.y];
+      return [Math.round(p.x), Math.round(p.y)];
     }, doc);
+
+  /**
+   * Client pixels -> document coords: where a pointer at that pixel really is.
+   *
+   * For the scenarios that check where a gesture landed to better than a pixel.
+   * The point asked for and the point delivered differ by up to half a pixel,
+   * so an expectation computed from the first is wrong by that much, and a
+   * tolerance loose enough to absorb it stops distinguishing anything.
+   */
+  const toDoc = async (client) =>
+    page.evaluate(([x, y]) => {
+      const svg = document.querySelector('.overlay');
+      const p = new DOMPoint(x, y).matrixTransform(svg.getScreenCTM().inverse());
+      return [p.x, p.y];
+    }, client);
 
   /**
    * Guard against the harness lying to itself.
@@ -277,7 +301,7 @@ async function mk(page) {
     if (modifier) await page.keyboard.up(modifier);
   };
 
-  return { box, toClient, click, drag, showCanvas };
+  return { box, toClient, toDoc, click, drag, showCanvas };
 }
 
 /**
@@ -1042,16 +1066,48 @@ const scenarios = {
 
     await tab(page, 'doc');
 
-    // A 4x3 PNG, red, small enough to inline. Its aspect ratio is what the fit
-    // has to preserve.
-    const png =
-      'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAFElEQVR4nGP8z8Dwn4GKgImahg0dAwB5UgH9lUqlNwAAAABJRU5ErkJggg==';
-    await page.setInputFiles('#backFile', {
-      name: 'trace.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(png, 'base64'),
-    });
+    /* A 4x3 PNG, red, small enough to inline. Its aspect ratio is what the fit
+       has to preserve.
+
+       Built rather than pasted. The pasted one that stood here for months was
+       truncated: its IDAT held 20 bytes of a deflate stream that needed more,
+       so nothing after the first row could be reconstructed. Chromium rendered
+       what it had and said nothing, Firefox refused the whole image, and every
+       check below passed either way because they all read the `<image>`
+       element's attributes and none of them read a pixel. */
+    const buffer = png(4, 3, () => [224, 32, 32, 255]);
+    await page.setInputFiles('#backFile', { name: 'trace.png', mimeType: 'image/png', buffer });
     await settle(page);
+
+    /* That the bytes decode into the pixels they claim, which is what the
+       attributes above cannot show.
+
+       The far corner rather than the size, and rather than whether `decode()`
+       resolved. A truncated PNG keeps its width and height, because they come
+       from the header and the header is the part a truncation leaves alone --
+       and the two engines disagree about the rest. Firefox rejects the image
+       whole; Chromium decodes what arrived, reports 4 by 3, paints the first
+       row and leaves the other two transparent. The last pixel is the one
+       reading that catches both. */
+    const corner = await page.$eval('.backdrop', async (el) => {
+      const img = new Image();
+      img.src = el.getAttribute('href') ?? el.getAttribute('xlink:href');
+      try {
+        await img.decode();
+      } catch (e) {
+        return String(e);
+      }
+      const c = document.createElement('canvas');
+      [c.width, c.height] = [img.naturalWidth, img.naturalHeight];
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(c.width - 1, c.height - 1, 1, 1).data;
+      return [c.width, c.height, ...px];
+    });
+    check(
+      JSON.stringify(corner) === JSON.stringify([4, 3, 224, 32, 32, 255]),
+      `the backdrop's last pixel reads ${JSON.stringify(corner)}, want [4,3,224,32,32,255]`,
+    );
 
     const placed = await page.$eval('.backdrop', (el) => ({
       x: +el.getAttribute('x'),
@@ -1528,28 +1584,32 @@ const scenarios = {
     /**
      * Click Trace, and measure the longest the main thread was blocked.
      *
-     * `longtask` entries, never animation frames. Frame gaps lie in headless
-     * Chromium: with no compositor the frame callbacks are not scheduled
-     * against real vsync, so a thread demonstrably blocked for 1 152 ms reports
-     * a longest gap of 17 ms. The long-task observer measures the thing being
-     * claimed, directly.
+     * A timer measuring its own lateness, never animation frames and never
+     * `longtask` entries. Frame gaps lie in headless Chromium: with no
+     * compositor the frame callbacks are not scheduled against real vsync, so a
+     * thread demonstrably blocked for 1 152 ms reports a longest gap of 17 ms.
+     * `longtask` is a Chromium entry type, absent from Firefox's
+     * `supportedEntryTypes`, and `observe` ignores a type it does not know
+     * rather than refusing it -- so the observer reported 0 ms for both runs and
+     * the scenario compared two numbers that had measured nothing.
      *
-     * Entries are filtered by start time because a `PerformanceObserver`
-     * delivers in batches: tasks from decoding the PNG arrive after the
-     * counter is reset and would otherwise be counted against the run that
-     * came next. That mistake made the *fallback* look faster than the worker.
+     * A 10 ms interval cannot run while the thread is blocked, so the gap
+     * between two of its fires is how long it was held. That is the claim being
+     * made, it needs no API beyond `setInterval`, and it reads the same on both
+     * engines. The idle floor is the interval plus scheduling jitter, around
+     * 11 ms measured.
      */
     const run = async () => {
       const before = await page.$$eval('.artwork path', (els) => els.length);
       await page.evaluate(() => {
-        if (!window.__obs) {
-          window.__tasks = [];
-          window.__obs = new PerformanceObserver((l) => {
-            for (const e of l.getEntries()) window.__tasks.push([e.startTime, e.duration]);
-          });
-          window.__obs.observe({ entryTypes: ['longtask'] });
-        }
-        window.__t0 = performance.now();
+        clearInterval(window.__tick);
+        window.__gap = 0;
+        window.__last = performance.now();
+        window.__tick = setInterval(() => {
+          const now = performance.now();
+          window.__gap = Math.max(window.__gap, now - window.__last);
+          window.__last = now;
+        }, 10);
         document.querySelector('#status').textContent = '';
       });
       const started = Date.now();
@@ -1560,14 +1620,16 @@ const scenarios = {
         { timeout: 120000 },
       );
       const ms = Date.now() - started;
-      // A moment for the observer's last batch, which arrives after the task
-      // that produced it has ended.
+      /* `Traced …` is written in the same task that commits the shapes, and the
+         controller renders one `requestAnimationFrame` after the store
+         notification -- so when the status appears the render has not run, and
+         reading the gap here would leave out the most expensive block of the
+         lot. Two frames, which is what `settle` waits. */
       await settle(page);
-      const block = await page.evaluate(() =>
-        Math.round(
-          window.__tasks.filter((t) => t[0] >= window.__t0).reduce((a, t) => Math.max(a, t[1]), 0),
-        ),
-      );
+      const block = await page.evaluate(() => {
+        clearInterval(window.__tick);
+        return Math.round(window.__gap);
+      });
       const after = await page.$$eval('.artwork path', (els) => els.length);
       return {
         ms,
@@ -1580,11 +1642,17 @@ const scenarios = {
 
     const worker = await run();
     check(worker.added > 0, 'the worker run added no shapes');
-    /* 400 ms, against a walk that takes twice that. The block is not zero even
-       with the worker, and cannot be: committing the shapes, serialising them
-       and rendering them are all main-thread work. What it no longer contains
-       is the walk. Measured at 215 ms on this fixture in Edge. */
-    check(worker.block < 400, `${worker.block} ms of blocked thread during a ${worker.ms} ms trace`);
+    /* A responsiveness bound, and nothing more. The block is not zero even with
+       the worker, and cannot be: committing the shapes, serialising them and
+       rendering 3695 paths are all main-thread work. What it no longer contains
+       is the walk.
+
+       450 ms against 274, 310 and 353 measured over three runs on Firefox. Do
+       not read this as the check that the worker is being used -- it is not,
+       and the fallback lands at 470 to 530 on the same machine, which is only
+       just the other side of it. That discrimination is the difference check
+       below, which compares the two runs instead of trusting one number. */
+    check(worker.block < 450, `${worker.block} ms of blocked thread during a ${worker.ms} ms trace`);
 
     /* The overlay stops drawing markers rather than putting one on each of
        23 000 nodes, and says so where the node count is. Checked here because
@@ -3130,7 +3198,7 @@ const scenarios = {
    * tier it belongs to.
    */
   async angles(page, check) {
-    const { toClient, click } = await mk(page);
+    const { toClient, toDoc, click } = await mk(page);
     const rays = () =>
       page.evaluate(
         () =>
@@ -3176,11 +3244,19 @@ const scenarios = {
       return m ? [+m[1], +m[2]] : null;
     });
     check(placed !== null, 'the pen placed no second node');
-    // On the diagonal from (30, 30), which the grid alone would never give:
-    // it would have rounded to (50, 49).
+    /* On the diagonal from (30, 30), which the grid alone would never give: it
+       would have rounded to (50, 49), and the two coordinates would differ.
+
+       Where on the diagonal is the pointer's own position projected onto it,
+       and the pointer is at whole pixel `near` rather than at the 50, 49.4 that
+       was asked for. So the expectation is computed from where the pointer
+       actually is. Hard-coding the 49.7 that 50, 49.4 projects to passed only
+       because one engine delivered the fraction. */
+    const at = await toDoc(near);
+    const want = 30 + (at[0] - 30 + (at[1] - 30)) / 2;
     check(
-      Math.abs(placed[0] - placed[1]) < 1e-6 && Math.abs(placed[0] - 49.7) < 0.01,
-      `the node landed at ${placed}`,
+      Math.abs(placed[0] - placed[1]) < 1e-6 && Math.abs(placed[0] - want) < 0.01,
+      `the node landed at ${placed}, want ${want.toFixed(6)} on both axes`,
     );
 
     // A pinned origin, which is the explicit case, and it survives the gesture
@@ -5103,6 +5179,41 @@ const audit = await page.evaluate(() => {
   const outlines = [...document.querySelectorAll('.outline')].filter(
     (e) => e.getAttribute('display') !== 'none',
   );
+
+  /* Overlay decoration that takes the press without naming a hit.
+   *
+   * The controller reads a press whose target has no `data-hit` as the start of
+   * a marquee, so a decorative shape painted over a control makes that patch of
+   * the control do the opposite of what it should. A latent handle line lying
+   * along the segment it would bend is the case that found this: it cost 16.4%
+   * of the whole pixels down a selected rectangle's edge.
+   *
+   * Document order is paint order in SVG, so "over a control" is "after the
+   * first `data-hit`". Anything before that one is under every control on the
+   * canvas and cannot take a press away from one, which is why the grid is not
+   * here. Containers are skipped because a `<g>` has no geometry of its own and
+   * is only hit through a child.
+   *
+   * **This asks what an element is, not whether it currently gets away with
+   * it.** A flagged element need not be swallowing anything: `.guide` never
+   * was, because its 8 px hit strip is painted after it and covers it
+   * everywhere. What flags it is that nothing says so -- what stops it is
+   * another element's geometry, which is not a thing to rely on. */
+  const GEOM = new Set(['path', 'line', 'circle', 'rect', 'ellipse', 'polygon', 'polyline', 'text', 'image', 'use']);
+  const swallow = new Map();
+  let overAControl = false;
+  for (const el of document.querySelectorAll('.overlay *')) {
+    if (el.hasAttribute('data-hit')) {
+      overAControl = true;
+      continue;
+    }
+    if (!overAControl || !GEOM.has(el.tagName)) continue;
+    if (el.getAttribute('display') === 'none') continue;
+    if (getComputedStyle(el).pointerEvents === 'none') continue;
+    const k = el.getAttribute('class') || el.tagName;
+    swallow.set(k, (swallow.get(k) ?? 0) + 1);
+  }
+
   return {
     artworkPaths: artwork.length,
     artworkD: artwork.map((p) => p.getAttribute('d')),
@@ -5111,6 +5222,7 @@ const audit = await page.evaluate(() => {
     visibleHandles: handles.length,
     visibleHandleLines: lines.length,
     visibleOutlines: outlines.length,
+    swallowers: [...swallow].map(([cls, n]) => `${n} x .${cls}`),
   };
 });
 
@@ -5123,6 +5235,12 @@ await browser.close();
    remember to write. A coordinate that reached the DOM as NaN draws nothing and
    throws nothing, which is the failure a screenshot is worst at showing. */
 if (audit.badD > 0) failure ??= `${audit.badD} path(s) reached the DOM with NaN, Infinity or undefined in the d`;
+
+if (audit.swallowers.length) {
+  failure ??=
+    `overlay decoration takes the press without naming a hit, painted over something that does: ` +
+    audit.swallowers.join(', ');
+}
 
 const errors = logs.filter((l) => l.startsWith('[pageerror]') || l.startsWith('[error]'));
 if (errors.length) failure ??= errors[0];

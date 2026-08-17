@@ -1147,6 +1147,13 @@ Measured on the same 400 by 400 fixture, in Edge:
 | one render afterwards | 205 ms | 113 ms |
 | markers drawn | 23 454 | 0, and said so |
 
+The blocked-task row is a `longtask` `PerformanceObserver` reading, which measures
+the longest single task. `traceWorker` measures the gap a 10 ms interval sees
+instead, because `longtask` is a Chromium entry type and Firefox reports nothing
+for it. **The two are not comparable**: consecutive tasks with no yield between
+them are one gap and several long tasks, so the same page reads higher on the
+timer. On Firefox it reads 274 to 353 ms where this table says 215.
+
 What is left is the honest remainder: a 23 454-node document costs about 113 ms
 a render, spread evenly across serialising the artwork, serialising the overlay
 outlines that duplicate it, and the per-node loops. None of it is waste in the
