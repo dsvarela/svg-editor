@@ -829,6 +829,14 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .shapelist li.shape { flex-wrap: wrap; }
 .shapelist li.shape > ul { flex-basis: 100%; }
 .shapelist li.path { padding-left: 22px; font-size: 11.5px; }
+/* A group's row. `flex-wrap` and a full-width child list, the same shape a shape
+   row uses for its paths, so one rule covers both kinds of nesting. */
+.shapelist li.group { flex-wrap: wrap; }
+.shapelist li.group > ul { flex-basis: 100%; }
+.shapelist li.group > .nm { font-weight: 600; }
+/* Indent every level by the width of one disclosure, so depth is readable without
+   a guide line. Nested rather than a computed padding: the depth is the DOM's. */
+.shapelist li.group > ul > li { padding-left: 14px; }
 
 /* The disclosure. A button so it takes focus and answers to Space, and 14 px
    wide so a row with no paths to show lines up with one that has. */
@@ -1096,6 +1104,7 @@ kbd {
   .shapelist .twist { width: 44px; height: 44px; }
   /* The indent tracks the disclosure it lines up under. */
   .shapelist li.path { padding-left: 52px; }
+  .shapelist li.group > ul > li { padding-left: 44px; }
 
   /* A checkbox is 13 px and its label is what takes the press, so the label is
      what has to be big enough. Written against the input rather than against a

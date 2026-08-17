@@ -27,7 +27,7 @@ those rules cannot know about this project.
 `npm run build` typechecks first, so a build that succeeds is a typecheck that
 succeeded.
 
-## Four constraints that are not obvious from the code
+## Constraints that are not obvious from the code
 
 **The build must stay one file that opens from `file://`.** Every asset is
 inlined. This is what rules out a module worker: Chromium refuses one from a
@@ -59,6 +59,16 @@ selects both and dragging one moves both, and the document is well formed
 throughout. Duplicate, paste and both branches of `breakAt` each had it. §46 has
 the three, and `test/identity.test.ts` is what holds the rule.
 
+**A group is a relation, not a container.** `Doc.shapes` stays one flat array in
+paint order, and `Shape.group` points up at a `Group` that points up at its parent.
+No group holds a list of its members. What that costs is one invariant: **a group's
+shapes are contiguous in `doc.shapes`**, because a `<g>` holds its children in one
+run. `Commands.groupSelection` is the only thing that maintains it, and it is the
+only thing that reorders shapes -- everything else appends or filters, and both
+preserve the runs. A copy lands outside any group for the same reason: it is appended,
+and keeping its group would break the run and write the same `<g>` twice. A group
+carries no transform, per §5. §49 of `docs/ARCHITECTURE.md` has the argument.
+
 **Touch is built but has never been held.** The desktop backlog finished first,
 which is what the three rules below were protecting, and the retrofit they were
 protecting happened on 2026-08-13. Nothing here has been tried on a real phone
@@ -77,7 +87,7 @@ Four pieces are in place, all from 2026-08-13:
   the overlay sets `touch-action: none`.
 - **Size.** A `@media (pointer: coarse)` block at the end of
   `src/ui/styles.css` raises `--h` and the handful of controls that do not take
-  their height from it, so **every one of the 169 controls is at least 44 px to
+  their height from it, so **every one of the 172 controls is at least 44 px to
   a finger, and none of them changed for a mouse**.
 - **Zoom.** Two fingers zoom about the point between them and pan as that point
   moves: `Controller.pinchMove`.

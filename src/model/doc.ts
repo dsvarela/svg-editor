@@ -5,7 +5,7 @@
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import { defaultStyle, nextNodeId, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
+import type { Doc, Group, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import { parsePath } from '../core/parse';
 
 let idSeq = 0;
@@ -19,6 +19,85 @@ export function makeShape(subpaths: Subpath[], name?: string, style?: Style): Sh
 
 export function shapeFromPath(d: string, name?: string): Shape {
   return makeShape(parsePath(d), name);
+}
+
+/* ------------------------------------------------------------------ groups */
+
+/**
+ * The group with this id, or `undefined`.
+ *
+ * Every question about groups is answered from `Shape.group` and `Doc.groups`
+ * together, and never from a list of members held on the group. One statement of
+ * the relation is what stops the two disagreeing after a delete. §49 of
+ * `docs/ARCHITECTURE.md` has the argument.
+ */
+export const findGroup = (doc: Doc, id: string): Group | undefined =>
+  doc.groups?.find((g) => g.id === id);
+
+/** A group's ancestors, nearest first, ending at the outermost. */
+export function groupChain(doc: Doc, id: string | null | undefined): Group[] {
+  const out: Group[] = [];
+  let at = id ?? null;
+  /* Bounded by the number of groups rather than by `while (at)`, so a parent cycle
+     that some future edit introduces cannot hang the renderer. A cycle is a bug
+     either way; this is the difference between a wrong list and a frozen page. */
+  const limit = doc.groups?.length ?? 0;
+  for (let i = 0; at && i <= limit; i++) {
+    const g = findGroup(doc, at);
+    if (!g) break;
+    out.push(g);
+    at = g.parent;
+  }
+  return out;
+}
+
+/** Whether `id` is `ancestor`, or nested anywhere inside it. */
+export function groupWithin(doc: Doc, id: string | null | undefined, ancestor: string): boolean {
+  if (!id) return false;
+  if (id === ancestor) return true;
+  return groupChain(doc, id).some((g) => g.id === ancestor);
+}
+
+/**
+ * The shapes of a group, nested ones included, in paint order.
+ *
+ * Paint order because that is `doc.shapes` order, which is the only order there is.
+ */
+export const shapesInGroup = (doc: Doc, id: string): Shape[] =>
+  doc.shapes.filter((sh) => groupWithin(doc, sh.group, id));
+
+/** The groups directly inside `id`, or the outermost ones for `null`. */
+export const groupsDirectlyIn = (doc: Doc, id: string | null): Group[] =>
+  (doc.groups ?? []).filter((g) => (g.parent ?? null) === id);
+
+/**
+ * Drop groups that hold no shapes.
+ *
+ * Deleting the last shape out of a group leaves a group naming nothing, which would
+ * show as an empty row in the list and write an empty `<g>` on export. Run after
+ * anything that removes shapes. Repeated until nothing changes, because a group
+ * whose only content was an empty group becomes empty in the same sweep.
+ */
+export function pruneGroups(doc: Doc): void {
+  for (;;) {
+    const groups = doc.groups;
+    if (!groups?.length) break;
+    const keep = groups.filter((g) => doc.shapes.some((sh) => groupWithin(doc, sh.group, g.id)));
+    if (keep.length === groups.length) break;
+    doc.groups = keep;
+  }
+  // A parent that has gone takes its children out to the top rather than leaving
+  // them pointing at nothing, which would read as ungrouped anyway but through a
+  // dangling id that every lookup has to survive.
+  for (const g of doc.groups ?? []) {
+    if (g.parent && !findGroup(doc, g.parent)) g.parent = null;
+  }
+  /* Outside the guard above, because a document with no groups left is exactly the
+     state that leaves a dangling `Shape.group`: dropping the last group is what
+     makes every shape still naming it point at nothing. */
+  for (const sh of doc.shapes) {
+    if (sh.group && !findGroup(doc, sh.group)) sh.group = null;
+  }
 }
 
 /**

@@ -74,6 +74,8 @@ treat those two rows as untried rather than as reported working.
 | `Ctrl`+`C` | Copy the selected shapes, or the selected nodes as pieces of path |
 | `Ctrl`+`X` | Copy the selection, then delete it |
 | `Ctrl`+`V` | Put the last copy back, offset from the one before it |
+| `Ctrl`+`G` | Put the selected shapes in a group |
+| `Ctrl`+`Shift`+`G` | Take the selected shapes out of their group, one level |
 | `Ctrl`+`E` | Open or close the source drawer |
 | `Ctrl`+`B` | Open or close the inspector |
 
@@ -136,7 +138,7 @@ it.
 
 The list of shapes, newest last, with a colour swatch. A shape of one path shows
 its node count; a shape of more than one shows how many paths it holds and opens
-to list them.
+to list them. A group opens to show the shapes in it, and says how many there are.
 
 - Click a name to select it. `Shift`-click to add.
 - Double-click a name to rename it.
@@ -155,6 +157,31 @@ every operation that works on whole paths -- **Reverse**, **Circle**,
 also means the row lights up whenever you select all of that path's nodes on the
 canvas, by any route.
 
+**A group is a name for shapes that belong together.** It is one `<g>` in the
+output, and pressing its row selects everything in it, so moving, scaling,
+recolouring and deleting all act on the group as a whole. Grouping brings the
+shapes together in the stacking order, at the position the topmost of them already
+had, because a `<g>` holds its contents in one run.
+
+Grouping a few shapes that are already in one group makes a group inside it rather
+than taking them out of it. Groups nest as deeply as you like, and **Ungroup**
+unwraps one level per press.
+
+**A group carries no position of its own.** There is no transform on it, so nothing
+about a shape's coordinates changes when you group or ungroup it, and the numbers in
+the source drawer stay the shapes' own. That is the rule the whole editor follows:
+see [Explanation](explanation.md). What it costs is that a group is organisation and
+export, not a container you can scale without scaling the shapes in it.
+
+A `<g>` in a file you import becomes a group, and its transform is baked into the
+shapes inside it. A group you make survives export and re-import, so its name is
+worth setting: double-click it to rename, and the name becomes the `<g>`'s `id`.
+
+**Duplicate and Paste put the copy outside any group**, on top of everything, even
+when what you copied was inside one. A copy goes to the top of the stacking order,
+and a group has to be one unbroken run of it. Group the copy again if you want it in
+there.
+
 **A shape holding two paths is not a mistake.** One shape is one `<path>` in the
 output, and the paths inside it share one fill, one stroke and one fill rule. That
 sharing is what a hole is made of: **Even-odd** punches a hole where two paths of
@@ -164,6 +191,8 @@ that do not touch produces one shape of two paths for the same reason, and so do
 when that is what you wanted.
 - **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
 - **Delete** removes them.
+- **Group** puts the selected shapes in a group, and **Ungroup** takes them out
+  again one level at a time. Two or more shapes are needed to group.
 - **Copy** holds the selection for a later paste. With shapes selected it takes
   them whole. With only nodes selected it takes each run of two or more adjacent
   ones as its own open path, which is how you lift a piece of an outline. A

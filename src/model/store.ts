@@ -9,10 +9,10 @@
  * problem to solve later rather than a guess to design around now.
  */
 
-import { cloneShape, defaultStyle } from '../core/types';
+import { cloneGroup, cloneShape, defaultStyle } from '../core/types';
 import type { Doc, Style, ViewBox } from '../core/types';
 import { reflowDoc } from './auto';
-import { emptySelection } from './doc';
+import { emptySelection, pruneGroups } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
 
@@ -251,6 +251,7 @@ interface Snapshot {
 const cloneDoc = (d: Doc): Doc => ({
   shapes: d.shapes.map(cloneShape),
   viewBox: { ...d.viewBox },
+  ...(d.groups ? { groups: d.groups.map(cloneGroup) } : {}),
 });
 
 const cloneSelection = (s: Selection): Selection => ({
@@ -458,11 +459,18 @@ export class Store {
    * `update` deliberately does not sweep: it is for the state around the
    * document -- camera, tool, selection -- and the geometry it would walk has
    * not changed.
+   *
+   * `pruneGroups` is here for the same reason and against the same alternative.
+   * Eight places remove shapes, any of them can take the last shape out of a group,
+   * and a group naming nothing shows as an empty row in the list and writes an empty
+   * `<g>` on export. It returns on its first line for a document with no groups, so
+   * it costs nothing where there are none.
    */
   edit(fn: (s: EditorState) => void): void {
     this.checkpoint();
     fn(this.state);
     reflowDoc(this.state.doc);
+    pruneGroups(this.state.doc);
     this.notify();
   }
 
@@ -494,6 +502,7 @@ export class Store {
     const changed = fn(this.state);
     if (changed) {
       reflowDoc(this.state.doc);
+      pruneGroups(this.state.doc);
       // After the mutation, so an image the edit itself replaced is seen.
       this.reap(orphans);
       this.notify();

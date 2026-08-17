@@ -2269,3 +2269,60 @@ all. This was found by building it that way first. It is the same collision `BOX
 exists to prevent between a rectangle's corner anchor and its north-west scale
 handle, and `cornerWidget` in `tools/drive.mjs` asserts the gap directly rather than
 asserting that a drag happens to work.
+
+## 49. Groups are a relation over a flat list, not a tree
+
+§47 said groups were absent and that a multi-path shape was not one in disguise.
+This builds them, and the shape of the answer is set by two decisions already made.
+
+**§5 decides that a group carries no transform.** Transforms are baked into
+coordinates everywhere here, so a `<g transform="...">` would be the hidden
+coordinate system §5 exists to refuse: every hit test, every snap and every number in
+the source drawer would have to be read through it. So a group is organisation and
+export. Its shapes move together because moving a selection moves everything in it,
+and grouping changes no coordinate at all. What that costs is the thing Illustrator
+has and this does not: a group you can scale non-destructively.
+
+**`doc.shapes` stays one flat array, and that decides the model.** Seventy-three
+places in `src/` read it, and it is the paint order -- the only order there is. A tree
+of children would rewrite every one of them to gain nesting that a parent pointer
+gives for nothing. So `Shape.group` names a group and `Group.parent` names another,
+and no group holds a list of its members: one statement of the relation, for the
+reason §46 gives about one statement of an identity.
+
+**The invariant that buys is contiguity.** A `<g>` holds its children in one run, so
+a group's shapes have to be contiguous in `doc.shapes` or the group cannot be written
+without changing what paints over what. `groupSelection` is what maintains it: it
+moves the selected shapes together, to where the topmost of them already was, keeping
+their order among themselves. Nothing else in the editor reorders shapes -- they are
+appended or filtered, and both preserve the runs -- which is why one function can hold
+the invariant. `test/groups.test.ts` asserts it as a property over every group rather
+than checking a particular order.
+
+**Selection gains nothing.** A group reads as selected when every shape in it is,
+derived exactly as a path row's state is derived in §47. A `groups` set on the
+selection would be a second statement that disagreed the first time a shape was
+deleted out of a selected group. It also means every existing operation -- transform,
+delete, style, boolean, align -- works on a group with no change to any of them,
+because each already works on a set of shapes.
+
+**Empty groups are swept in `Store.edit`.** Eight places remove shapes and any of them
+can take the last one out of a group; a group naming nothing draws an empty row and
+writes an empty `<g>`. The sweep is beside the auto-smooth one and for the same
+reason §16 gives, and it returns on its first line when there are no groups.
+
+Nesting is decided by where the selection already is: shapes that all sit in one group
+make a group inside it, and anything else makes one at the top. Grouping part of a
+group and having the outer group come apart is the answer nobody wants. Ungroup goes
+one level per press, so nesting can be taken back a step at a time.
+
+Import stops flattening. A `<g>` becomes a group with its transform still baked into
+the shapes, which is the part §5 keeps and the part that was being thrown away is the
+grouping itself. The outer `<svg>` and an `<a>` deliberately do not become groups:
+neither is a thing anyone drew, and a row wrapping the whole drawing cannot be
+ungrouped into anything meaningful.
+
+**What is still not here.** A group has no style of its own, so a fill set on a `<g>`
+in an imported file is pushed down to the shapes rather than kept on the group. There
+is no way to enter a group to edit inside it without selecting it whole first. And a
+group cannot be scaled without scaling its shapes, which is §5 and not an oversight.

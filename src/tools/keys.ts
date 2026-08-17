@@ -95,6 +95,17 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       return;
     }
 
+    /* Ctrl+G groups and Ctrl+Shift+G ungroups, the binding every editor uses. Both
+       rewrite the document, so both are refused mid-drag for the reason the
+       `rewrites` list below refuses its keys. */
+    if (mod && !e.altKey && e.key.toLowerCase() === 'g') {
+      e.preventDefault();
+      if (controller.busy) commands.onMessage?.('Finish the drag first.', false);
+      else if (e.shiftKey) commands.ungroupSelection();
+      else commands.groupSelection();
+      return;
+    }
+
     /* Everything below is a bare key, with one exception. Ctrl+E belongs to the
        source drawer and Ctrl+R to the browser, and letting them through here
        switched the tool as a silent side effect of both. The arrows are the

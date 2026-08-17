@@ -25,14 +25,32 @@ import { parsePath } from '../core/parse';
 import { serialisePath } from '../core/serialise';
 import type { SerialiseOptions } from '../core/serialise';
 import { STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
-import type { Doc, Shape, Style, Subpath, ViewBox } from '../core/types';
-import { makeShape } from '../model/doc';
+import type { Doc, Group, Shape, Style, Subpath, ViewBox } from '../core/types';
+import { findGroup, groupChain, makeShape, nextId } from '../model/doc';
 import { transformShape } from '../model/ops';
 
 export interface ImportResult {
   shapes: Shape[];
   viewBox: ViewBox | null;
   warnings: string[];
+  /** One per `<g>` that held something, nested as the file nested them. */
+  groups: Group[];
+}
+
+/**
+ * Whether a group id sits inside an ancestor, over a list rather than a document.
+ *
+ * `groupWithin` in `model/doc.ts` answers the same question of a `Doc`, and import
+ * has no `Doc` yet -- it is building the parts of one. Kept small and local rather
+ * than reaching for a shape of data this function does not have.
+ */
+function within(groups: Group[], id: string | null | undefined, ancestor: string): boolean {
+  let at = id ?? null;
+  for (let i = 0; at && i <= groups.length; i++) {
+    if (at === ancestor) return true;
+    at = groups.find((g) => g.id === at)?.parent ?? null;
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------- transforms */
@@ -221,11 +239,11 @@ export function importSvg(text: string): ImportResult {
   const trimmed = text.trim();
   const warnings: string[] = [];
 
-  if (!trimmed) return { shapes: [], viewBox: null, warnings };
+  if (!trimmed) return { shapes: [], viewBox: null, warnings, groups: [] };
 
   // Bare path data: no markup, so parse it directly.
   if (!trimmed.startsWith('<')) {
-    return { shapes: [makeShape(parsePath(trimmed), 'path')], viewBox: null, warnings };
+    return { shapes: [makeShape(parsePath(trimmed), 'path')], viewBox: null, warnings, groups: [] };
   }
 
   const dom = new DOMParser().parseFromString(trimmed, 'image/svg+xml');
@@ -235,9 +253,10 @@ export function importSvg(text: string): ImportResult {
   const root = dom.documentElement;
   const viewBox = parseViewBox(root);
   const shapes: Shape[] = [];
+  const groups: Group[] = [];
   let n = 0;
 
-  const walk = (el: Element, m: Mat, inherited: Style): void => {
+  const walk = (el: Element, m: Mat, inherited: Style, group: string | null): void => {
     if (HIDDEN(el)) return;
 
     const own = el.getAttribute('transform');
@@ -246,7 +265,25 @@ export function importSvg(text: string): ImportResult {
     const tag = el.tagName.toLowerCase();
 
     if (tag === 'g' || tag === 'svg' || tag === 'a') {
-      for (const child of Array.from(el.children)) walk(child, here, style);
+      /* A `<g>` becomes a group; the outer `<svg>` and an `<a>` do not. The first is
+         the document itself and the second is a link, and neither is a thing anyone
+         drew -- wrapping the whole drawing in a group nobody asked for would put a
+         row in the list that cannot be ungrouped into anything meaningful.
+
+         Its transform is still baked into the shapes below, per §5. What survives
+         here is which shapes belong together, which is the part that was being
+         thrown away. */
+      let inner = group;
+      if (tag === 'g') {
+        const made: Group = {
+          id: nextId('group'),
+          name: el.getAttribute('id') || `group ${groups.length + 1}`,
+          parent: group,
+        };
+        groups.push(made);
+        inner = made.id;
+      }
+      for (const child of Array.from(el.children)) walk(child, here, style, inner);
       return;
     }
     if (tag === 'defs' || tag === 'clippath' || tag === 'mask' || tag === 'symbol') return;
@@ -271,13 +308,21 @@ export function importSvg(text: string): ImportResult {
 
     const shape = makeShape(subpaths, el.getAttribute('id') || `${tag}-${++n}`);
     shape.style = style;
+    if (group) shape.group = group;
     // Bake the accumulated transform rather than storing it.
     transformShape(shape, here);
     shapes.push(shape);
   };
 
-  walk(root, identity(), defaultStyle());
-  return { shapes, viewBox, warnings };
+  walk(root, identity(), defaultStyle(), null);
+  /* A `<g>` holding no shape we could read leaves a group naming nothing. Dropped
+     here rather than left for `pruneGroups`, so what this function returns is
+     already consistent and a caller does not have to know to sweep it. */
+  const kept = groups.filter((g) => shapes.some((sh) => within(groups, sh.group, g.id)));
+  for (const g of kept) {
+    if (g.parent && !kept.some((k) => k.id === g.parent)) g.parent = null;
+  }
+  return { shapes, viewBox, warnings, groups: kept };
 }
 
 /* ----------------------------------------------------------------- export */
@@ -298,23 +343,51 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
   // place an id is written, so it is the only place that can guarantee it.
   const used = new Set<string>();
 
-  const body = doc.shapes
-    .filter((s) => s.subpaths.some((sp) => sp.nodes.length >= 2))
-    .map((s) => {
-      const d = serialisePath(s.subpaths, ser);
-      const attrs = [
-        `d="${d}"`,
-        `fill="${xmlAttr(s.style.fill)}"`,
-        s.style.fillRule === 'evenodd' ? 'fill-rule="evenodd"' : '',
-        s.style.stroke === 'none' ? '' : `stroke="${xmlAttr(s.style.stroke)}"`,
-        s.style.stroke === 'none' ? '' : `stroke-width="${xmlAttr(String(s.style.strokeWidth))}"`,
-        s.style.stroke === 'none' ? '' : `stroke-linejoin="${STROKE_JOIN}"`,
-        s.style.stroke === 'none' ? '' : `stroke-linecap="${STROKE_CAP}"`,
-        s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
-      ].filter(Boolean);
-      return `${pad}<path ${attrs.join(' ')}/>`;
-    })
-    .join(nl);
+  const drawn = doc.shapes.filter((s) => s.subpaths.some((sp) => sp.nodes.length >= 2));
+
+  const pathOf = (s: Shape, indent: string): string => {
+    const d = serialisePath(s.subpaths, ser);
+    const attrs = [
+      `d="${d}"`,
+      `fill="${xmlAttr(s.style.fill)}"`,
+      s.style.fillRule === 'evenodd' ? 'fill-rule="evenodd"' : '',
+      s.style.stroke === 'none' ? '' : `stroke="${xmlAttr(s.style.stroke)}"`,
+      s.style.stroke === 'none' ? '' : `stroke-width="${xmlAttr(String(s.style.strokeWidth))}"`,
+      s.style.stroke === 'none' ? '' : `stroke-linejoin="${STROKE_JOIN}"`,
+      s.style.stroke === 'none' ? '' : `stroke-linecap="${STROKE_CAP}"`,
+      s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
+    ].filter(Boolean);
+    return `${indent}<path ${attrs.join(' ')}/>`;
+  };
+
+  /* Groups become `<g>` by walking the shapes in paint order and comparing each
+     one's chain of groups with the last one's: shared ancestors stay open, the rest
+     close, and whatever is new opens. That works precisely because a group's shapes
+     are contiguous, which `groupSelection` is what guarantees -- if they were not,
+     one group would have to open twice and would no longer be one group.
+
+     No `transform`. §5 bakes transforms into the coordinates, so a `<g>` here says
+     what belongs together and nothing about where it is. */
+  const lines: string[] = [];
+  let open: string[] = [];
+  for (const s of drawn) {
+    const chain = groupChain(doc, s.group).map((g) => g.id).reverse();
+    let shared = 0;
+    while (shared < open.length && shared < chain.length && open[shared] === chain[shared]) shared++;
+    for (let i = open.length - 1; i >= shared; i--) {
+      lines.push(`${pad}${pad.repeat(i)}</g>`);
+    }
+    for (let i = shared; i < chain.length; i++) {
+      const g = findGroup(doc, chain[i]);
+      const id = g && g.name && g.name !== g.id ? ` id="${uniqueXmlId(g.name, used)}"` : '';
+      lines.push(`${pad}${pad.repeat(i)}<g${id}>`);
+    }
+    open = chain;
+    lines.push(pathOf(s, pad + pad.repeat(chain.length)));
+  }
+  for (let i = open.length - 1; i >= 0; i--) lines.push(`${pad}${pad.repeat(i)}</g>`);
+
+  const body = lines.join(nl);
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}">` +

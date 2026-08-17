@@ -3896,6 +3896,173 @@ const scenarios = {
   },
 
   /**
+   * Groups: made, shown, selected as one, written as a `<g>`, and read back.
+   *
+   * A group carries no transform, per §5, so there is no coordinate space to check.
+   * What needs a browser is the rest: the list is a tree of real nested elements, a
+   * group's row takes a press meant for it rather than for the shapes inside it, and
+   * the `<g>` has to come out of the source drawer the app actually writes.
+   *
+   * §49 of `docs/ARCHITECTURE.md` has the argument.
+   */
+  async groups(page, check) {
+    const rows = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#shapelist li')].map((li) => ({
+          kind: li.className,
+          level: li.getAttribute('aria-level'),
+          group: li.getAttribute('data-group'),
+          selected: li.getAttribute('aria-selected') === 'true',
+          expanded: li.getAttribute('aria-expanded'),
+        })),
+      );
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path id="a" d="M5 5 H20 V20 Z" fill="#2563d8"/>
+  <path id="b" d="M30 5 H45 V20 Z" fill="#e8a54b"/>
+  <path id="c" d="M55 5 H70 V20 Z" fill="#3aa856"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    const flat = await rows();
+    check(flat.length === 3, `three shapes drew ${flat.length} rows`);
+    check(
+      flat.every((x) => x.kind === 'shape' && x.level === '1'),
+      'a document with no groups drew something other than three plain shape rows',
+    );
+    check(await page.isDisabled('#groupShapes'), 'Group was live with nothing selected');
+
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    check(await page.isDisabled('#groupShapes'), 'Group was live with one shape selected');
+    await page.click('#shapelist li.shape:nth-child(2)', { modifiers: ['Shift'] });
+    await settle(page);
+    check(!(await page.isDisabled('#groupShapes')), 'Group was dead with two shapes selected');
+
+    await page.click('#groupShapes');
+    await settle(page);
+    out.message = (await page.textContent('#status')).trim();
+    const grouped = await rows();
+    out.rows = grouped.map((x) => `${x.kind}${x.level}`);
+    check(grouped.length === 4, `grouping two of three drew ${grouped.length} rows, not 4`);
+    check(grouped[0].kind === 'group', 'the group did not come first, where its shapes were');
+    check(
+      grouped[1].level === '2' && grouped[2].level === '2',
+      'the grouped shapes are not a level down from the group',
+    );
+    check(grouped[3].level === '1', 'the ungrouped shape was drawn inside the group');
+    /* Open on first sight. Shut would mean grouping two shapes made them vanish from
+       the list, which reads as having lost them rather than as having grouped them. */
+    check(grouped[0].expanded === 'true', 'a group nobody had seen yet was drawn shut');
+
+    /* A group's row holds every row inside it, so a press on the group's own line has
+       to be told from a press on a shape in it. Reading `data-id` first would give
+       the group's press to whichever shape it contains. */
+    await page.click('#shapelist li.shape');
+    await settle(page);
+    const one = await rows();
+    check(!one[0].selected, 'selecting one shape of a group lit the group as well');
+    check(one[1].selected && !one[2].selected, 'selecting one shape of a group lit both');
+
+    await page.click('#shapelist li.group');
+    await settle(page);
+    const whole = await rows();
+    check(whole[0].selected, 'pressing the group row did not select it');
+    check(whole[1].selected && whole[2].selected, 'the group row did not select its shapes');
+    check(!whole[3].selected, 'the group row selected a shape outside it');
+    out.selinfo = (await page.textContent('#selinfo')).trim();
+    check(/2 shapes/.test(out.selinfo), `the readout says ${JSON.stringify(out.selinfo)}`);
+
+    // Shut it: the rows inside go, and the group's own row stays.
+    await page.click('#shapelist li.group > .twist');
+    await settle(page);
+    const shut = await rows();
+    out.shut = shut.map((x) => x.kind);
+    check(shut.length === 2, `a shut group left ${shut.length} rows, not 2`);
+    check(shut[0].expanded === 'false', 'the group did not read as shut');
+    await page.click('#shapelist li.group > .twist');
+    await settle(page);
+    check((await rows()).length === 4, 'opening the group again did not bring its rows back');
+
+    // The `<g>` the app writes.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await settle(page);
+    const svg = await page.inputValue('#src');
+    out.svg = svg;
+    check((svg.match(/<g\b/g) ?? []).length === 1, `the export holds ${(svg.match(/<g\b/g) ?? []).length} <g>`);
+    check(/<g id="group-of-2">/.test(svg), 'the group name did not become the <g> id');
+    const inside = svg.slice(svg.indexOf('<g'), svg.indexOf('</g>'));
+    check((inside.match(/<path/g) ?? []).length === 2, 'the <g> does not hold exactly its two paths');
+    check(!/transform/.test(svg), 'a group wrote a transform, which §5 refuses');
+    await closeSource(page);
+    await settle(page);
+
+    /* Read back. This is the round trip that was impossible before: `<g>` was
+       flattened on import, so grouping made anywhere else did not survive. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill('#src', svg);
+    await page.click('#apply');
+    await closeSource(page);
+    await settle(page);
+    const reread = await rows();
+    out.reread = reread.map((x) => `${x.kind}${x.level}`);
+    check(
+      reread.filter((x) => x.kind === 'group').length === 1,
+      `re-importing the export gave ${reread.filter((x) => x.kind === 'group').length} groups`,
+    );
+    check(reread.length === 4, `the round trip drew ${reread.length} rows, not 4`);
+
+    // Ungroup by key, and the group goes.
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.click('#shapelist li.group');
+    await settle(page);
+    await page.keyboard.press('Control+Shift+g');
+    await settle(page);
+    const ungrouped = await rows();
+    out.ungroupMessage = (await page.textContent('#status')).trim();
+    check(
+      ungrouped.every((x) => x.kind === 'shape'),
+      'ungrouping left a group row behind',
+    );
+    check(ungrouped.length === 3, `ungrouping left ${ungrouped.length} rows, not 3`);
+
+    // Ctrl+G is the other half of the pair.
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await page.click('#shapelist li.shape:nth-child(2)', { modifiers: ['Shift'] });
+    await settle(page);
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('Control+g');
+    await settle(page);
+    check(
+      (await rows()).some((x) => x.kind === 'group'),
+      'Ctrl+G did not group',
+    );
+
+    /* Deleting the shapes takes the group with them. Swept in `Store.edit`, so it
+       holds for every one of the routes that removes a shape and not only this one. */
+    await page.click('#shapelist li.group');
+    await settle(page);
+    await page.click('#delShape');
+    await settle(page);
+    const left = await rows();
+    out.afterDelete = left.map((x) => x.kind);
+    check(left.length === 1 && left[0].kind === 'shape', `deleting a group's shapes left ${JSON.stringify(out.afterDelete)}`);
+
+    return out;
+  },
+
+  /**
    * Rounding a corner by dragging it, and un-rounding it by dragging it back.
    *
    * The whole point of the control is that nothing stores a radius: a sharp corner

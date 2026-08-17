@@ -9,10 +9,13 @@ import type { BooleanOp } from './io/boolean';
 import {
   docBBox,
   emptyDoc,
+  findGroup,
   findShape,
+  groupChain,
   selectedRefs,
   selectedShapes,
   shapeFromPath,
+  shapesInGroup,
 } from './model/doc';
 /* Aliased: the DOM's own `Selection` is a global type, and an unaliased import
    here shadows it in a file that also uses `getSelection`. */
@@ -864,6 +867,9 @@ function refreshInspector(): void {
   const anything = count > 0 || store.state.selection.shapes.size > 0;
   ($('#copySel') as HTMLButtonElement).disabled = !anything;
   ($('#cutSel') as HTMLButtonElement).disabled = !anything;
+  // Both derived from the selection, which every notification carries.
+  ($('#groupShapes') as HTMLButtonElement).disabled = !commands.canGroup;
+  ($('#ungroupShapes') as HTMLButtonElement).disabled = !commands.canUngroup;
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
      Every other control in the group was disabled explicitly and the newer ones
@@ -985,6 +991,10 @@ function replaceDocumentFrom(text: string, what: string): boolean {
 
     store.edit((s) => {
       s.doc.shapes = r.shapes;
+      // Taken with the shapes, not derived from them: `Shape.group` names ids that
+      // only exist in this list, so replacing one without the other leaves every
+      // shape pointing at a group the document does not have.
+      s.doc.groups = r.groups;
       if (r.viewBox) s.doc.viewBox = r.viewBox;
       s.selection.nodes.clear();
       s.selection.shapes.clear();
@@ -1473,12 +1483,23 @@ shapeList.addEventListener('click', (e) => {
      `closest('li')` would otherwise read the press as a selection as well. */
   const twist = target.closest<HTMLElement>('.twist');
   if (twist) {
-    const id = twist.closest('li')?.getAttribute('data-id');
+    const li = twist.closest('li');
+    const id = li?.getAttribute('data-group') ?? li?.getAttribute('data-id');
     if (id) setExpanded(id, !expanded.has(id));
     return;
   }
 
   const li = target.closest('li');
+
+  /* A group row before a shape row. A group's `li` contains every row inside it, so
+     `closest('li')` from a shape gives the shape -- but a press on the group's own
+     line gives the group, and it carries no `data-id` for the branch below to read. */
+  const groupId = li?.getAttribute('data-group');
+  if (groupId) {
+    selectRow({ id: groupId, sp: null, group: true }, (e as MouseEvent).shiftKey);
+    return;
+  }
+
   const id = li?.getAttribute('data-id');
   if (!id) return;
 
@@ -1518,6 +1539,8 @@ on('#delShape', () => {
 });
 
 on('#dupShape', () => commands.duplicateSelection());
+on('#groupShapes', () => commands.groupSelection());
+on('#ungroupShapes', () => commands.ungroupSelection());
 on('#copySel', () => commands.copySelection());
 on('#cutSel', () => commands.cutSelection());
 on('#pasteSel', () => commands.paste());
@@ -1571,23 +1594,31 @@ function refreshCombine(): void {
  */
 let renaming: string | null = null;
 
-function startRename(id: string): void {
-  const shape = store.state.doc.shapes.find((sh) => sh.id === id);
+function startRename(id: string, isGroup = false): void {
+  /* A group is renamed the same way and for the same reason: its name is what the
+     exported `<g id>` carries, so it is the only thing about a group there is to
+     edit. */
+  const target = isGroup
+    ? findGroup(store.state.doc, id)
+    : store.state.doc.shapes.find((sh) => sh.id === id);
   // Deliberately NOT the element the event carried: the two clicks that make up
   // a double-click each select the shape, each notifies, and the list is rebuilt
   // from scratch every time -- so by now that element is detached, and editing
   // it would put the input somewhere no longer in the document.
   /* `> .nm`, because a shape's `li` now contains the rows for its paths and each
-     of those carries a `.nm` of its own. */
-  const nm = shapeList.querySelector(`li.shape[data-id="${id}"] > .nm`);
-  if (!shape || !nm) return;
+     of those carries a `.nm` of its own, and a group's holds every row inside it. */
+  const nm = isGroup
+    ? shapeList.querySelector(`li.group[data-group="${id}"] > .nm`)
+    : shapeList.querySelector(`li.shape[data-id="${id}"] > .nm`);
+  if (!target || !nm) return;
+  const shape = target;
 
   renaming = id;
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'rename';
   input.value = shape.name;
-  input.setAttribute('aria-label', 'Shape name');
+  input.setAttribute('aria-label', isGroup ? 'Group name' : 'Shape name');
   nm.replaceWith(input);
   input.focus();
   input.select();
@@ -1600,8 +1631,8 @@ function startRename(id: string): void {
     renaming = null;
     if (commit && name && name !== shape.name) {
       store.edit((st) => {
-        const sh = st.doc.shapes.find((x) => x.id === id);
-        if (sh) sh.name = name;
+        const it = isGroup ? findGroup(st.doc, id) : st.doc.shapes.find((x) => x.id === id);
+        if (it) it.name = name;
       });
       // The name is what the exported `id` carries, and an id is an XML Name --
       // so say when the export will not read back exactly as typed.
@@ -1628,6 +1659,11 @@ shapeList.addEventListener('dblclick', (e) => {
   // A path has no name to edit, and it carries its shape's `data-id`, so without
   // this a double-click on one renamed the shape it belongs to.
   if (li?.hasAttribute('data-sp')) return;
+  const groupId = li?.getAttribute('data-group');
+  if (groupId) {
+    if (!renaming) startRename(groupId, true);
+    return;
+  }
   const id = li?.getAttribute('data-id');
   if (id && !renaming) startRename(id);
 });
@@ -1641,14 +1677,40 @@ shapeList.addEventListener('dblclick', (e) => {
  * skip rows a person can see.
  */
 interface ListRow {
+  /** A shape id, or a group id when `group` is true. */
   id: string;
   sp: number | null;
+  group?: boolean;
 }
 
-/** The rows in the order they are drawn, shut disclosures left out. */
+/**
+ * The rows in the order they are drawn, with anything shut left out.
+ *
+ * Walked over `doc.shapes` in paint order rather than over the groups, because that
+ * array *is* the order and a group's place in it is the place of the shapes in it.
+ * A group opens when its first shape is reached, which is well defined precisely
+ * because a group's shapes are contiguous.
+ */
 function visibleRows(): ListRow[] {
+  const doc = store.state.doc;
   const out: ListRow[] = [];
-  for (const sh of store.state.doc.shapes) {
+  let open: string[] = [];
+  for (const sh of doc.shapes) {
+    const chain = groupChain(doc, sh.group)
+      .map((g) => g.id)
+      .reverse();
+    let shared = 0;
+    while (shared < open.length && shared < chain.length && open[shared] === chain[shared]) shared++;
+    open = chain;
+    // A shut group hides everything below it, itself included in nothing further.
+    let hidden = false;
+    for (let i = 0; i < chain.length; i++) {
+      if (hidden) break;
+      if (i >= shared) out.push({ id: chain[i], sp: null, group: true });
+      if (!expanded.has(chain[i])) hidden = true;
+    }
+    if (hidden) continue;
+
     out.push({ id: sh.id, sp: null });
     if (sh.subpaths.length > 1 && expanded.has(sh.id)) {
       sh.subpaths.forEach((_, i) => out.push({ id: sh.id, sp: i }));
@@ -1657,12 +1719,30 @@ function visibleRows(): ListRow[] {
   return out;
 }
 
-/** Which row the selection last landed on, or -1. */
+/** Every shape a row stands for: one, or all of a group's. */
+function rowShapes(row: ListRow): string[] {
+  if (!row.group) return [row.id];
+  return shapesInGroup(store.state.doc, row.id).map((sh) => sh.id);
+}
+
+/**
+ * Which row the selection last landed on, or -1.
+ *
+ * A group row wins over the shape rows inside it when every one of them is selected,
+ * because that is the selection a press on the group row makes and arrowing on from
+ * it should leave the group rather than walk its contents.
+ */
 function rowAtCursor(rows: ListRow[]): number {
   const s = store.state;
   const shapes = [...s.selection.shapes];
   const last = shapes[shapes.length - 1];
-  if (last !== undefined) return rows.findIndex((r) => r.sp === null && r.id === last);
+  if (last !== undefined) {
+    const whole = rows.findIndex(
+      (r) => r.group && groupIsSelected(r.id) && rowShapes(r).includes(last),
+    );
+    if (whole >= 0) return whole;
+    return rows.findIndex((r) => !r.group && r.sp === null && r.id === last);
+  }
   /* No shape selected, so look for a path whose nodes are all selected. Read
      rather than remembered, so arrowing on from a path row selected by a click
      starts where the click left off. */
@@ -1673,18 +1753,39 @@ function rowAtCursor(rows: ListRow[]): number {
   });
 }
 
+/**
+ * Whether a group reads as selected: every shape in it is.
+ *
+ * Derived, not stored, for the reason §47 gives about paths. A `groups` set on the
+ * selection would be a second statement of the same fact, and the two would disagree
+ * the first time a shape was deleted out of a selected group. It also means selecting
+ * a group's shapes any other way lights the group's row.
+ */
+function groupIsSelected(id: string): boolean {
+  const ids = shapesInGroup(store.state.doc, id);
+  return ids.length > 0 && ids.every((sh) => store.state.selection.shapes.has(sh.id));
+}
+
 /** Select one row, replacing the selection or adding to it. */
 function selectRow(row: ListRow, additive: boolean): void {
   if (row.sp !== null) {
     selectPath(row.id, row.sp, additive);
     return;
   }
+  const ids = rowShapes(row);
   store.update((st) => {
     if (!additive) {
       st.selection.shapes.clear();
       st.selection.nodes.clear();
+      for (const id of ids) st.selection.shapes.add(id);
+      return;
     }
-    st.selection.shapes.add(row.id);
+    // A group toggles as a whole, so Shift on a lit group row puts all of it out.
+    const on = ids.every((id) => st.selection.shapes.has(id));
+    for (const id of ids) {
+      if (on) st.selection.shapes.delete(id);
+      else st.selection.shapes.add(id);
+    }
   });
 }
 
@@ -1708,28 +1809,42 @@ shapeList.addEventListener('keydown', (e) => {
     return;
   }
 
-  /* Right opens a shut shape and steps into an open one; Left shuts an open shape
-     and steps out from a path. The standard tree bindings, and the only way to
-     reach a path row without a pointer. */
+  /* Right opens a shut row and steps into an open one; Left shuts an open row and
+     steps out of it. The standard tree bindings, and the only way to reach a group's
+     contents or a shape's paths without a pointer. */
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     const row = at >= 0 ? rows[at] : rows[0];
-    const shape = findShape(store.state.doc, row.id);
-    if (!shape) return;
+    if (!row) return;
     e.preventDefault();
-    const many = shape.subpaths.length > 1;
     const open = expanded.has(row.id);
+    /* What "has something to open" means depends on the row: a group always does,
+       and a shape does only when it holds more than one path. */
+    const opens = row.group || (findShape(store.state.doc, row.id)?.subpaths.length ?? 0) > 1;
 
     if (e.key === 'ArrowRight') {
       if (row.sp !== null) return; // already as deep as the tree goes
-      if (many && !open) setExpanded(row.id, true);
-      else if (many) selectRow({ id: row.id, sp: 0 }, false);
+      if (opens && !open) setExpanded(row.id, true);
+      else if (opens) {
+        // Into it: the row after this one is its first child, by construction.
+        const next = rows[rows.indexOf(row) + 1];
+        if (next) selectRow(next, false);
+      }
       return;
     }
     if (row.sp !== null) {
       selectRow({ id: row.id, sp: null }, false);
       return;
     }
-    if (open) setExpanded(row.id, false);
+    if (open) {
+      setExpanded(row.id, false);
+      return;
+    }
+    /* Out to whatever holds it. Nothing to shut and nowhere to go is the top of the
+       tree, where Left is a press that correctly does nothing. */
+    const holder = row.group
+      ? findGroup(store.state.doc, row.id)?.parent
+      : findShape(store.state.doc, row.id)?.group;
+    if (holder) selectRow({ id: holder, sp: null, group: true }, false);
     return;
   }
 
@@ -1740,11 +1855,12 @@ shapeList.addEventListener('keydown', (e) => {
        did nothing until an arrow key had chosen a row -- which reads as the
        key not working rather than as a precondition. */
     const row = at >= 0 ? rows[at] : rows[0];
+    if (!row) return;
     // A path has no name. Renaming the shape it sits in would answer a question
     // nobody asked, so the shape is selected instead and named on the next press.
-    if (at < 0 || row.sp !== null) selectRow({ id: row.id, sp: null }, false);
+    if (at < 0 || row.sp !== null) selectRow({ id: row.id, sp: null, ...(row.group ? { group: true } : {}) }, false);
     if (row.sp !== null) return;
-    startRename(row.id);
+    startRename(row.id, row.group === true);
   }
 });
 
@@ -1771,6 +1887,13 @@ const listSignature = (): string =>
         /* Per path rather than one total, because a break or a delete can move a
            node from one path to another and leave the total alone. */
         sh.subpaths.map((sp) => `${sp.nodes.length}${sp.closed ? 'z' : ''}`).join(','),
+        /* The chain of groups above the shape, by name and by open state. A group's
+           row exists because a shape in it exists, so what the list draws changes
+           when a shape's chain does -- and grouping moves no geometry, so nothing
+           else here would notice. */
+        groupChain(store.state.doc, sh.group)
+          .map((g) => `${g.id}:${g.name}:${expanded.has(g.id) ? 'open' : 'shut'}`)
+          .join('>'),
       ].join('\u0001'),
     )
     .join('\u0002');
@@ -1790,6 +1913,28 @@ let listSig: string | null = null;
 const expanded = new Set<string>();
 
 /**
+ * Groups the list has already drawn once.
+ *
+ * A group appears open the first time it appears, and remembers being shut after
+ * that. Shut by default would mean that grouping two shapes made them vanish from
+ * the list, which reads as having lost them rather than as having grouped them; and
+ * a rule of "always open" would reopen everything on the next unrelated edit.
+ */
+const seenGroups = new Set<string>();
+
+/** Open any group nobody has seen yet. Returns whether that changed anything. */
+function openNewGroups(): boolean {
+  let fresh = false;
+  for (const g of store.state.doc.groups ?? []) {
+    if (seenGroups.has(g.id)) continue;
+    seenGroups.add(g.id);
+    expanded.add(g.id);
+    fresh = true;
+  }
+  return fresh;
+}
+
+/**
  * Whether every node of one path is selected, which is what a lit path row means.
  *
  * A path is not a thing the selection can hold -- `Selection` is shapes and node
@@ -1807,6 +1952,8 @@ function refreshShapeList(): void {
   const s = store.state;
   shapeCount.textContent = String(s.doc.shapes.length);
 
+  // Before the signature is taken, since opening a group changes what it should be.
+  openNewGroups();
   const sig = listSignature();
   if (sig === listSig) {
     paintListSelection();
@@ -1824,7 +1971,71 @@ function refreshShapeList(): void {
     return;
   }
 
+  /* A stack of containers, so the nesting the accessibility tree reads is the DOM's
+     own and not an indent that looks like one. `at[0]` is the list; a group pushes
+     the `<ul>` it owns and its last shape pops it.
+
+     Walked over `doc.shapes` in paint order, opening a group when its first shape is
+     reached. That is well defined only because a group's shapes are contiguous,
+     which is the invariant `groupSelection` maintains and §49 argues for. */
+  let at: HTMLElement[] = [shapeList];
+  let open: string[] = [];
+
   for (const sh of s.doc.shapes) {
+    const chain = groupChain(s.doc, sh.group)
+      .map((g) => g.id)
+      .reverse();
+    let shared = 0;
+    while (shared < open.length && shared < chain.length && open[shared] === chain[shared]) shared++;
+    at = at.slice(0, shared + 1);
+    for (let i = shared; i < chain.length; i++) {
+      const g = findGroup(s.doc, chain[i]);
+      if (!g) continue;
+      const row = document.createElement('li');
+      row.className = 'group';
+      row.setAttribute('role', 'treeitem');
+      row.setAttribute('aria-level', String(i + 1));
+      row.setAttribute('data-group', g.id);
+      const isOpen = expanded.has(g.id);
+      row.setAttribute('aria-expanded', String(isOpen));
+
+      const gt = document.createElement('button');
+      gt.type = 'button';
+      gt.className = 'twist';
+      gt.textContent = '▸';
+      gt.setAttribute('aria-expanded', String(isOpen));
+      const held = shapesInGroup(s.doc, g.id).length;
+      gt.setAttribute('aria-label', `${isOpen ? 'Hide' : 'Show'} the ${held} shapes in ${g.name}`);
+
+      const gn = document.createElement('span');
+      gn.className = 'nm';
+      gn.textContent = g.name;
+
+      const gc = document.createElement('span');
+      gc.className = 'ct';
+      gc.textContent = `${held} ${held === 1 ? 'shape' : 'shapes'}`;
+
+      row.append(gt, gn, gc);
+      at[at.length - 1].append(row);
+
+      /* A shut group draws its own row and nothing under it, which means not pushing
+         a container for the rows that would go there. The depth check below reads
+         `at` rather than `chain` for exactly this: a stack shorter than the chain is
+         how it knows a group above this shape is shut. */
+      if (!isOpen) break;
+
+      const kids = document.createElement('ul');
+      kids.setAttribute('role', 'group');
+      row.append(kids);
+      at.push(kids);
+    }
+    open = chain;
+
+    /* Inside a shut group: the row for this shape is not drawn at all. Reading the
+       depth back off the stack rather than off `chain`, because the loop above stops
+       pushing at the first group that is shut. */
+    if (at.length - 1 < chain.length) continue;
+
     const li = document.createElement('li');
     li.className = 'shape';
     li.setAttribute('data-id', sh.id);
@@ -1832,7 +2043,7 @@ function refreshShapeList(): void {
        the announced state disagreed. A treeitem is the role that carries it, and
        the role a shape holding paths needs anyway. */
     li.setAttribute('role', 'treeitem');
-    li.setAttribute('aria-level', '1');
+    li.setAttribute('aria-level', String(chain.length + 1));
 
     /* The disclosure is present on every row and hidden where there is nothing
        to disclose, so the names line up. A row that had no button at all shifted
@@ -1878,7 +2089,7 @@ function refreshShapeList(): void {
         const row = document.createElement('li');
         row.className = 'path';
         row.setAttribute('role', 'treeitem');
-        row.setAttribute('aria-level', '2');
+        row.setAttribute('aria-level', String(chain.length + 2));
         row.setAttribute('data-id', sh.id);
         row.setAttribute('data-sp', String(i));
 
@@ -1898,7 +2109,7 @@ function refreshShapeList(): void {
       li.append(kids);
     }
 
-    shapeList.append(li);
+    at[at.length - 1].append(li);
   }
   paintListSelection();
 }
@@ -1914,6 +2125,9 @@ function paintListSelection(): void {
   const s = store.state;
   for (const li of shapeList.querySelectorAll<HTMLElement>('li.shape')) {
     li.setAttribute('aria-selected', String(s.selection.shapes.has(li.getAttribute('data-id')!)));
+  }
+  for (const row of shapeList.querySelectorAll<HTMLElement>('li.group')) {
+    row.setAttribute('aria-selected', String(groupIsSelected(row.getAttribute('data-group')!)));
   }
   for (const row of shapeList.querySelectorAll<HTMLElement>('li.path')) {
     const shape = findShape(s.doc, row.getAttribute('data-id')!);

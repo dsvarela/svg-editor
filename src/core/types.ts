@@ -124,6 +124,33 @@ export interface Shape {
   name: string;
   subpaths: Subpath[];
   style: Style;
+  /**
+   * The group this shape belongs to, or `null` for none.
+   *
+   * A parent pointer rather than a tree of children, so `Doc.shapes` stays the one
+   * flat statement of paint order that everything else reads. §49 of
+   * `docs/ARCHITECTURE.md` has the argument, and the invariant that goes with it:
+   * the shapes of a group are contiguous in that array.
+   */
+  group?: string | null;
+}
+
+/**
+ * A named set of shapes, exported as one `<g>`.
+ *
+ * It carries no transform and no style. Transforms are baked into coordinates
+ * everywhere here (§5), and a group that stored one would be the hidden coordinate
+ * system §5 exists to refuse. So this is grouping as organisation: the shapes move
+ * together because moving a selection moves everything in it, not because a matrix
+ * above them changed.
+ *
+ * `parent` nests. Which shapes a group holds is not written here -- it is read off
+ * `Shape.group`, so there is one statement of the relation and not two.
+ */
+export interface Group {
+  id: string;
+  name: string;
+  parent: string | null;
 }
 
 export interface ViewBox {
@@ -136,6 +163,14 @@ export interface ViewBox {
 export interface Doc {
   shapes: Shape[];
   viewBox: ViewBox;
+  /**
+   * Every group in the document, in no particular order.
+   *
+   * Order lives in `shapes`: a group's place in the paint order is the place of the
+   * shapes in it. Optional so that a document written before groups existed, or a
+   * fixture that has no use for them, still reads as a `Doc`.
+   */
+  groups?: Group[];
 }
 
 /* ---------------------------------------------------------------- helpers */
@@ -212,11 +247,18 @@ export const cloneSubpath = (s: Subpath): Subpath => ({
   closed: s.closed,
 });
 
+export const cloneGroup = (g: Group): Group => ({ ...g });
+
 export const cloneShape = (s: Shape): Shape => ({
   id: s.id,
   name: s.name,
   subpaths: s.subpaths.map(cloneSubpath),
   style: { ...s.style },
+  // Carried, so a shape survives a history snapshot still in its group. A copy that
+  // is going to live beside its original clears it instead -- see `paste` -- because
+  // a copy lands at the end of the paint order and a group's shapes have to be
+  // contiguous.
+  ...(s.group ? { group: s.group } : {}),
 });
 
 /** Number of segments in a subpath. Closed subpaths have one more than open. */

@@ -14,12 +14,14 @@
 
 import { about, rotate as rotMat, translate } from '../core/affine';
 import { cloneNode, cloneShape, cloneSubpath, continuityOf, segmentCount } from '../core/types';
-import type { NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
+import type { Group, NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import {
   docBBox,
   emptySelection,
+  findGroup,
   findShape,
   makeShape,
+  pruneGroups,
   nextId,
   reidentify,
   selectedNodes,
@@ -1644,6 +1646,116 @@ export class Commands {
     };
   }
 
+  /* --------------------------------------------------------------- groups */
+
+  /**
+   * Put the selected shapes in a group.
+   *
+   * **Brings them together in the paint order**, which is the part that is not
+   * optional. A group is one `<g>` on export and a `<g>` holds its children
+   * contiguously, so shapes scattered through the z-order cannot be one group
+   * without something moving. They move to where the topmost of them already was,
+   * keeping their order among themselves, which is what every editor does and what
+   * leaves the drawing looking the same afterwards.
+   *
+   * A group carries no transform. §5 bakes transforms into coordinates, and a group
+   * that stored one would be the hidden coordinate system §5 exists to refuse. So
+   * this groups for organisation and for export, and the shapes move together
+   * because moving a selection already moves everything in it.
+   */
+  groupSelection(): boolean {
+    const s = this.store.state;
+    const chosen = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    if (chosen.length < 2) {
+      this.onMessage?.('Group needs two or more shapes selected.', false);
+      return false;
+    }
+
+    const ids = new Set(chosen.map((sh) => sh.id));
+    const name = `group of ${chosen.length}`;
+    let made = '';
+
+    this.store.edit((st) => {
+      const group: Group = { id: nextId('group'), name, parent: null };
+      made = group.id;
+
+      /* Nested where every one of them was already in one group together: grouping
+         two shapes out of a group of five makes a group inside it rather than
+         breaking them out of it, which is the answer that keeps the outer group
+         whole. Otherwise the new group sits at the top. */
+      const parents = new Set(chosen.map((sh) => sh.group ?? null));
+      group.parent = parents.size === 1 ? ([...parents][0] ?? null) : null;
+
+      st.doc.groups = [...(st.doc.groups ?? []), group];
+
+      const moving = st.doc.shapes.filter((sh) => ids.has(sh.id));
+      const rest = st.doc.shapes.filter((sh) => !ids.has(sh.id));
+      for (const sh of moving) sh.group = group.id;
+
+      /* Reinserted where the topmost of them was. Counting in `rest` rather than in
+         the original array: the index of the last selected shape means nothing once
+         the earlier selected ones have been taken out. */
+      const lastIndex = st.doc.shapes.reduce((at, sh, i) => (ids.has(sh.id) ? i : at), -1);
+      const before = st.doc.shapes.slice(0, lastIndex + 1).filter((sh) => !ids.has(sh.id)).length;
+      st.doc.shapes = [...rest.slice(0, before), ...moving, ...rest.slice(before)];
+    });
+
+    this.onMessage?.(`Grouped ${chosen.length} shapes.`, true);
+    void made;
+    return true;
+  }
+
+  /**
+   * Take the selected shapes out of their group, innermost first.
+   *
+   * One level at a time, so ungrouping twice unwraps two levels rather than
+   * flattening everything at once. Nothing moves in the paint order: the shapes are
+   * already contiguous, and leaving them where they are is what makes this look like
+   * the inverse of grouping rather than a re-sort.
+   */
+  ungroupSelection(): boolean {
+    const s = this.store.state;
+    const chosen = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    const grouped = chosen.filter((sh) => sh.group);
+    if (!grouped.length) {
+      this.onMessage?.(
+        chosen.length ? 'Nothing selected is in a group.' : 'Ungroup needs a shape selected.',
+        false,
+      );
+      return false;
+    }
+
+    const freed = new Set(grouped.map((sh) => sh.group!));
+    this.store.edit((st) => {
+      for (const sh of st.doc.shapes) {
+        if (!sh.group || !freed.has(sh.group)) continue;
+        // Out to whatever held the group, which is `null` at the top. One level.
+        sh.group = findGroup(st.doc, sh.group)?.parent ?? null;
+      }
+      for (const g of st.doc.groups ?? []) {
+        if (g.parent && freed.has(g.parent)) g.parent = findGroup(st.doc, g.parent)?.parent ?? null;
+      }
+      pruneGroups(st.doc);
+    });
+
+    this.onMessage?.(
+      freed.size === 1 ? 'Ungrouped.' : `Ungrouped ${freed.size} groups.`,
+      true,
+    );
+    return true;
+  }
+
+  /** Whether Group would do anything, for the button that offers it. */
+  get canGroup(): boolean {
+    return this.store.state.selection.shapes.size >= 2;
+  }
+
+  /** Whether Ungroup would do anything. */
+  get canUngroup(): boolean {
+    const s = this.store.state;
+    return s.doc.shapes.some((sh) => s.selection.shapes.has(sh.id) && !!sh.group);
+  }
+
   /* -------------------------------------------------- copying and pasting */
 
   /**
@@ -1714,6 +1826,13 @@ export class Commands {
    * Every shape is reidentified on the way in. Without that a paste is an alias:
    * the copy answers to the original's node ids, so clicking a node of one
    * selects the node of the other and dragging moves both.
+   *
+   * **A copy lands outside any group**, here and in `duplicateSelection`. Both append
+   * to the end of `doc.shapes`, and a copy that kept its original's group would sit at
+   * the end claiming to be in a group whose other shapes are in the middle -- which
+   * breaks the contiguity §49 rests on, and makes the export open the same group
+   * twice. Landing at the top is visible and can be undone by grouping; a `<g>`
+   * written twice is a wrong file with nothing to say so.
    */
   paste(): boolean {
     if (!this.clipboard.length) {
@@ -1727,6 +1846,7 @@ export class Commands {
     const landed: Shape[] = this.clipboard.map((sh) => {
       const copy = reidentify(cloneShape(sh));
       copy.name = `${sh.name} copy`;
+      copy.group = null;
       transformShape(copy, translate(away, away));
       return copy;
     });
@@ -1771,6 +1891,7 @@ export class Commands {
     const copies = shapes.map((sh) => {
       const copy = reidentify(cloneShape(sh));
       copy.name = `${sh.name} copy`;
+      copy.group = null;
       // Offset so the duplicate is visible rather than exactly underneath.
       transformShape(copy, translate(step * 2, step * 2));
       return copy;
