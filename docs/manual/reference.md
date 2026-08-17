@@ -70,12 +70,28 @@ treat those two rows as untried rather than as reported working.
 | `Enter` | Finish the current pen path |
 | `Ctrl`+`Z` | Undo |
 | `Ctrl`+`Shift`+`Z` | Redo |
+| `Ctrl`+`C` | Copy the selected shapes, or the selected nodes as pieces of path |
+| `Ctrl`+`X` | Copy the selection, then delete it |
+| `Ctrl`+`V` | Put the last copy back, offset from the one before it |
 | `Ctrl`+`E` | Open or close the source drawer |
 | `Ctrl`+`B` | Open or close the inspector |
 
 Single-letter shortcuts do nothing while a modifier is held, so `Ctrl+E` opens
 the drawer without also selecting the ellipse tool. They also do nothing while
-a text field has focus.
+any field has focus, which is what lets you type `v` into a shape's name.
+
+`Ctrl`+`Z` is the exception. It reaches the document from inside a number, a
+colour or a checkbox, because none of those carries an edit history of its own:
+a change made in one is already a single step in the document's history, so
+undoing is the only thing the key could mean there. Somewhere you type text --
+the source box, a name, a colour's hex -- it undoes the typing instead.
+
+Undoing from a field takes focus out of it first. A number you typed and had not
+committed is committed and then undone, so one press puts back the value it
+replaced.
+
+`Ctrl`+`C`, `Ctrl`+`X` and `Ctrl`+`V` stay with the field throughout: inside one
+they copy and paste the text, and never the drawing.
 
 A drag is one undo step, however many frames it took.
 
@@ -126,6 +142,19 @@ The list of shapes, newest last, with a colour swatch and a node count.
   shape, so the list works from the first press of `Tab`.
 - **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
 - **Delete** removes them.
+- **Copy** holds the selection for a later paste. With shapes selected it takes
+  them whole. With only nodes selected it takes each run of two or more adjacent
+  ones as its own open path, which is how you lift a piece of an outline. A
+  single node is refused: a path of one node has no segment and would draw
+  nothing.
+- **Cut** copies and then deletes.
+- **Paste** puts the last copy back, each one further from the last so two never
+  land on top of each other. The copy survives being pasted, and survives an
+  undo of the paste.
+
+The clipboard is this editor's own and holds shapes, not text. It does not reach
+other programs, and nothing another program copied arrives in it. To carry a
+shape out, use **Copy** in the source drawer, which copies the text.
 
 ### Style
 

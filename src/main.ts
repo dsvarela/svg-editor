@@ -10,14 +10,12 @@ import {
   docBBox,
   emptyDoc,
   findShape,
-  nextId,
   selectedRefs,
   selectedShapes,
   shapeFromPath,
 } from './model/doc';
-import { isPathEnd, latentHandle, transformShape } from './model/ops';
-import { translate } from './core/affine';
-import { cloneShape, continuityOf } from './core/types';
+import { isPathEnd, latentHandle } from './model/ops';
+import { continuityOf } from './core/types';
 import type { Shape, Style, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
 import type { Mark } from './core/serialise';
@@ -854,6 +852,15 @@ function refreshInspector(): void {
   ($('#nextNode') as HTMLButtonElement).disabled = !canStep;
   ($('#insertNode') as HTMLButtonElement).disabled = count !== 2;
   ($('#findSrc') as HTMLButtonElement).disabled = count === 0;
+
+  /* Copy and Cut are derived from the selection, which every notification
+     carries. Paste is deliberately not derived from the clipboard: copying does
+     not edit the document and so raises no notification, and a Paste greyed out
+     until the next unrelated edit is a button lying about what it would do. It
+     stays live and says what is wrong when there is nothing to put back. */
+  const anything = count > 0 || store.state.selection.shapes.size > 0;
+  ($('#copySel') as HTMLButtonElement).disabled = !anything;
+  ($('#cutSel') as HTMLButtonElement).disabled = !anything;
   /* The group is greyed with `pointer-events: none`, which stops the mouse and
      not the keyboard: Tab still landed on these and Space still fired them.
      Every other control in the group was disabled explicitly and the newer ones
@@ -1451,24 +1458,10 @@ on('#delShape', () => {
   });
 });
 
-on('#dupShape', () => {
-  const ids = new Set(store.state.selection.shapes);
-  if (!ids.size) return;
-  store.edit((s) => {
-    const copies = s.doc.shapes.filter((sh) => ids.has(sh.id)).map((sh) => {
-      const c = cloneShape(sh);
-      c.id = nextId();
-      c.name = `${sh.name} copy`;
-      return c;
-    });
-    // Offset so the duplicate is visible rather than exactly underneath.
-    const step = s.gridStep || 1;
-    for (const c of copies) transformShape(c, translate(step * 2, step * 2));
-    s.doc.shapes.push(...copies);
-    s.selection.shapes = new Set(copies.map((c) => c.id));
-    s.selection.nodes.clear();
-  });
-});
+on('#dupShape', () => commands.duplicateSelection());
+on('#copySel', () => commands.copySelection());
+on('#cutSel', () => commands.cutSelection());
+on('#pasteSel', () => commands.paste());
 
 /* --------------------------------------------------------------- combine */
 

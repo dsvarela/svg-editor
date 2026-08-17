@@ -2113,3 +2113,55 @@ The one code change is that the keydown listener is now a named function like
 the other six. It was an arrow, which the DOM cannot dedupe, and the `installed`
 guard covered for it -- so the guard now says one thing that is true of all
 seven rather than covering an asymmetry the next reader has to rediscover.
+
+## 46. One clone, two meanings, and only one of them mints an identity
+
+`cloneShape` and `cloneNode` carry `PathNode.id` through, deliberately, for the
+reason §43 gives: that is what makes a selection still mean the same nodes after
+an undo. Both are also what an operation reaches for when it needs a second copy
+of a shape to live in the document beside the first, and there the same
+behaviour is a bug. Nothing in either signature says which of the two you are
+doing.
+
+The failure is quiet, because the document is well formed. An id naming two
+nodes is two nodes `resolveNodes` cannot tell apart: it finds a node by walking
+every shape and matching on the id alone, so a selection naming one names both.
+Three places had it.
+
+| Where | What it produced |
+| --- | --- |
+| `Duplicate` | A copy whose every node answered to the original's id |
+| `breakAt`, closed | Two ends of one opened path, sharing one id |
+| `breakAt`, open | The last node of the head and the first of the tail, sharing one id |
+
+All three read as the drawing having a mind of its own rather than as an identity
+collision. Clicking one anchor of a duplicate highlighted the matching anchor of
+the original, and dragging it moved both shapes. Breaking a closed path put two
+ends where there was one, and neither could be pulled away from the other,
+because a drag on either moved both -- so the operation looked like it had done
+nothing at all.
+
+**The fix is a second function rather than a change to the first.** `reidentify`
+in `model/doc.ts` gives a shape and every node in it fresh ids, and the two
+halves stay separate on purpose: folding the minting into `cloneShape` would
+break history, which is the one caller that must not have it. So the rule is
+about the destination, not the operation. A copy going into a history snapshot
+keeps its ids. A copy going into the live document is reidentified.
+
+`breakAt` mints one id rather than calling `reidentify`, because only one of the
+two ends is a node that was not there before. The front keeps the original id, so
+a selection naming the node before the break still names something after it.
+
+**What holds the rule is `test/identity.test.ts`**, which asserts the invariant
+directly -- no id names two nodes -- over each operation that puts a copy into
+the document, and asserts the symptom beside it, because the invariant can hold
+while the document is still wrong in some other way. The symptom needs a real
+drag to show, so `clipboard` in `tools/drive.mjs` grabs one anchor of a copy and
+counts how many paths moved. Both were watched failing: the unit tests against
+each of the three sites in turn, the scenario against `reidentify` with its
+minting loop removed.
+
+The clipboard is where this was found, on the way to building it. It holds
+shapes, not text, and it is not in the store: undoing a paste must not empty it,
+and copying is not something to undo. That also means it does not reach other
+programs, which is what the source drawer's **Copy** is for.

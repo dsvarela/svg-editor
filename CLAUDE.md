@@ -52,6 +52,13 @@ the instant it was read. Build a ref, use it, throw it away. `cloneNode` carries
 the id through a history snapshot, which is what makes a selection survive undo.
 Nothing writes it to a file. §43 of `docs/ARCHITECTURE.md` has the argument.
 
+That carrying-through is why **a copy that will live in the document beside its
+original has to be reidentified**, with `reidentify` from `src/model/doc.ts`. An
+id naming two nodes is two nodes no selection can separate, so clicking one
+selects both and dragging one moves both, and the document is well formed
+throughout. Duplicate, paste and both branches of `breakAt` each had it. §46 has
+the three, and `test/identity.test.ts` is what holds the rule.
+
 **Touch is built but has never been held.** The desktop backlog finished first,
 which is what the three rules below were protecting, and the retrofit they were
 protecting happened on 2026-08-13. Nothing here has been tried on a real phone
@@ -70,7 +77,7 @@ Four pieces are in place, all from 2026-08-13:
   the overlay sets `touch-action: none`.
 - **Size.** A `@media (pointer: coarse)` block at the end of
   `src/ui/styles.css` raises `--h` and the handful of controls that do not take
-  their height from it, so **every one of the 166 controls is at least 44 px to
+  their height from it, so **every one of the 169 controls is at least 44 px to
   a finger, and none of them changed for a mouse**.
 - **Zoom.** Two fingers zoom about the point between them and pan as that point
   moves: `Controller.pinchMove`.
@@ -90,8 +97,8 @@ corrections went into the tool on 2026-08-13, so no count recorded before that
 date means what it says.** It skipped controls in collapsed groups, of which
 the rail redesign left it eleven; it skipped disabled ones, which are laid out
 at the size they will have when they are enabled; and its key for a control
-with no id collided, which quietly merged 28 of them into other rows. It had
-been reporting 37 where the markup holds 166.
+with no id collided, which quietly merged 28 of them into other rows. On the
+markup of that date it had been reporting 37 controls where there were 166.
 
 ## Tests
 

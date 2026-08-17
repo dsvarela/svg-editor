@@ -3740,6 +3740,238 @@ const scenarios = {
 
     return { stats, info, first };
   },
+
+  /**
+   * Copy, cut, paste and duplicate, and the identity each of them has to mint.
+   *
+   * The unit tests assert that no two nodes in the document share an id. This
+   * asserts the symptom that made it matter, which only a real drag can show:
+   * grab one node of a copy and exactly one path must move. When the copy
+   * answered to the original's ids, both did.
+   *
+   * The keys and the buttons are both driven, because they are two wirings of one
+   * operation and either can be connected to the wrong thing.
+   */
+  async clipboard(page, check) {
+    const paths = () =>
+      page.evaluate(() => [...document.querySelectorAll('.artwork path')].map((p) => p.getAttribute('d')));
+    const status = async () => (await page.textContent('#status')).trim();
+    const out = {};
+
+    /** Drag the first anchor on screen, and report how many paths changed. */
+    const dragOneAnchor = async () => {
+      await page.keyboard.press('v');
+      await settle(page);
+      const at = await page.evaluate(() => {
+        const el = document.querySelector('.overlay [data-hit="anchor"]');
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      });
+      check(!!at, 'no anchor was on screen to drag');
+      const before = await paths();
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      await page.mouse.move(at.x + 36, at.y + 36, { steps: 5 });
+      await page.mouse.up();
+      await settle(page);
+      const after = await paths();
+      return before.filter((d, i) => d !== after[i]).length;
+    };
+
+    await tab(page, 'shape');
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+
+    // Duplicate first, because that is where the identity collision was found.
+    await page.click('#dupShape');
+    await settle(page);
+    check((await paths()).length === 2, 'Duplicate did not add a shape');
+    const movedByDuplicate = await dragOneAnchor();
+    check(
+      movedByDuplicate === 1,
+      `dragging one anchor moved ${movedByDuplicate} paths, so the duplicate shares node ids with its original`,
+    );
+    out.movedByDuplicate = movedByDuplicate;
+
+    // Copy and paste, by key.
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+    const beforePaste = (await paths()).length;
+    await page.keyboard.press('Control+c');
+    out.copyMessage = await status();
+    check(/^Copied 1 shape/.test(out.copyMessage), `copy said "${out.copyMessage}"`);
+    await page.keyboard.press('Control+v');
+    await settle(page);
+    out.pasteMessage = await status();
+    check((await paths()).length === beforePaste + 1, 'Ctrl+V did not add a shape');
+    const movedByPaste = await dragOneAnchor();
+    check(movedByPaste === 1, `dragging one anchor moved ${movedByPaste} paths after a paste`);
+
+    /* A second paste has to land somewhere else. Two copies at one position look
+       like one copy, and the second is then only findable in the shape list. */
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    const lastBefore = (await paths()).at(-1);
+    await page.keyboard.press('Control+v');
+    await settle(page);
+    const lastAfter = (await paths()).at(-1);
+    check(lastAfter !== lastBefore, 'a second paste landed exactly on the first');
+
+    // Cut removes what it copied, and what it copied is still pasteable.
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+    const beforeCut = (await paths()).length;
+    await page.keyboard.press('Control+x');
+    await settle(page);
+    out.cutMessage = await status();
+    check((await paths()).length === beforeCut - 1, 'Ctrl+X did not remove the shape');
+    await page.keyboard.press('Control+v');
+    await settle(page);
+    check((await paths()).length === beforeCut, 'a cut shape could not be pasted back');
+
+    // The buttons, which are the other half of the wiring.
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+    check(!(await page.isDisabled('#copySel')), 'Copy is disabled with a shape selected');
+    await page.click('#copySel');
+    out.copyButtonMessage = await status();
+    check(/^Copied/.test(out.copyButtonMessage), `the Copy button said "${out.copyButtonMessage}"`);
+    const beforeButton = (await paths()).length;
+    await page.click('#pasteSel');
+    await settle(page);
+    check((await paths()).length === beforeButton + 1, 'the Paste button added nothing');
+
+    // Copy is offered only when there is something to copy.
+    await page.keyboard.press('Escape');
+    await settle(page);
+    check(await page.isDisabled('#copySel'), 'Copy stayed live with nothing selected');
+    check(await page.isDisabled('#cutSel'), 'Cut stayed live with nothing selected');
+    /* Paste stays live on purpose: copying raises no store notification, so a
+       Paste derived from the clipboard would be greyed out until the next
+       unrelated edit. It refuses in words instead. */
+    check(!(await page.isDisabled('#pasteSel')), 'Paste was greyed out, which nothing keeps in sync');
+
+    // Two adjacent nodes copy as the piece of path between them.
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+    const anchors = await page.evaluate(() => {
+      const id = document.querySelector('#shapelist li').getAttribute('data-id');
+      return [...document.querySelectorAll(`.overlay [data-hit="anchor"][data-shape="${id}"]`)]
+        .slice(0, 2)
+        .map((e) => {
+          const b = e.getBoundingClientRect();
+          return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+        });
+    });
+    check(anchors.length === 2, 'could not find two anchors of the first shape');
+    await page.mouse.click(anchors[0].x, anchors[0].y);
+    await page.keyboard.down('Shift');
+    await page.mouse.click(anchors[1].x, anchors[1].y);
+    await page.keyboard.up('Shift');
+    await settle(page);
+    const beforeNodeCopy = (await paths()).length;
+    await page.keyboard.press('Control+c');
+    out.nodeCopyMessage = await status();
+    check(
+      /piece of path/.test(out.nodeCopyMessage),
+      `copying two nodes said "${out.nodeCopyMessage}"`,
+    );
+    await page.keyboard.press('Control+v');
+    await settle(page);
+    check((await paths()).length === beforeNodeCopy + 1, 'pasting a piece of path added nothing');
+    const piece = (await paths()).at(-1);
+    /* One segment, so one command after the `M`. A closed piece, or the whole
+       outline, would carry more -- and copying the outline is exactly what a
+       widened selection would have done. */
+    out.piece = piece;
+    check(!/[Zz]/.test(piece), `the copied piece closed itself: ${piece}`);
+    check(
+      piece.trim().split(/(?=[A-Za-z])/).length === 2,
+      `the copied piece is not one segment: ${piece}`,
+    );
+
+    return out;
+  },
+
+  /**
+   * Which of a control and the document owns Ctrl+Z and the clipboard keys.
+   *
+   * A number field has no edit history of its own, so undo there is the
+   * document's. Text does have one, so the source box keeps the chord. Both
+   * halves are driven from a real focus, because the rule reads `e.target` and
+   * jsdom cannot say what the browser will make the target of a key press.
+   */
+  async undoFromField(page, check) {
+    const drawn = () => drawnPath(page, 0);
+    const out = {};
+
+    // An edit to undo, made from the canvas so the field is not involved.
+    await page.keyboard.press('v');
+    const at = await page.evaluate(() => {
+      const b = document.querySelector('.overlay [data-hit="anchor"]').getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    });
+    await page.mouse.click(at.x, at.y);
+    await settle(page);
+    const before = await drawn();
+    await page.keyboard.press('ArrowRight');
+    await settle(page);
+    const nudged = await drawn();
+    check(nudged !== before, 'the arrow key did not move anything');
+
+    // Ctrl+Z with focus in a spinner reaches the document.
+    const field = await page.evaluate(() => {
+      const i = [...document.querySelectorAll('input[type="number"]')].find(
+        (x) => !x.disabled && x.offsetParent !== null,
+      );
+      if (!i) return null;
+      i.focus();
+      return i.id;
+    });
+    check(!!field, 'no enabled number field was on screen');
+    out.field = field;
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    check(
+      (await drawn()) === before,
+      `Ctrl+Z from #${field} did not undo; the path reads ${await drawn()}`,
+    );
+    // And focus left, so nothing the field was holding lands afterwards.
+    out.focusAfterUndo = await page.evaluate(() => document.activeElement.tagName);
+    check(out.focusAfterUndo !== 'INPUT', 'focus stayed in the field after undoing from it');
+
+    // Ctrl+C in a spinner belongs to the spinner: the document must not change.
+    await page.evaluate(() => {
+      const i = [...document.querySelectorAll('input[type="number"]')].find(
+        (x) => !x.disabled && x.offsetParent !== null,
+      );
+      i.focus();
+    });
+    const heldBefore = await drawn();
+    const countBefore = await page.textContent('#stats');
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await settle(page);
+    check(
+      (await drawn()) === heldBefore && (await page.textContent('#stats')) === countBefore,
+      'the clipboard keys reached the document from inside a number field',
+    );
+
+    // The source box keeps Ctrl+Z for its own text.
+    await openSource(page);
+    await page.click('#src');
+    await page.keyboard.type(' 0');
+    const typed = await page.inputValue('#src');
+    const docBefore = await drawn();
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    out.textChanged = (await page.inputValue('#src')) !== typed;
+    check(out.textChanged, 'Ctrl+Z in the source box did not undo the typing');
+    check((await drawn()) === docBefore, 'Ctrl+Z in the source box undid the document as well');
+
+    return out;
+  },
 };
 
 /* CI runs every scenario, and a list hard-coded in a workflow file would go

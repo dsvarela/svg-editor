@@ -3484,6 +3484,106 @@ describe('keyboard guard', () => {
   });
 });
 
+/**
+ * Which of a control and the document owns a key press.
+ *
+ * Reported from use: Ctrl+Z did nothing. It works from the canvas, and the rail
+ * is 33 numbers, two colours and 21 checkboxes, so the moment right after typing
+ * a value into one of them is both when undo is most wanted and where it was
+ * unreachable.
+ */
+describe('undo from inside a control', () => {
+  /* Appended to the document and dispatched so it bubbles: the listener is on
+     the window, and what the guard reads is `e.target`. A detached element
+     reaches neither. */
+  function control(tag: 'input' | 'textarea', type?: string): HTMLElement {
+    const el = document.createElement(tag);
+    if (el instanceof HTMLInputElement && type) el.type = type;
+    document.body.append(el);
+    el.focus();
+    return el;
+  }
+
+  const pressIn = (el: HTMLElement, key: string, opts: KeyboardEventInit = {}): void => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...opts }));
+  };
+
+  /** A harness with one edit on the undo stack, and the export from before it. */
+  function edited(): { h: Harness; before: string } {
+    const h = harness('M10 10 L40 10 L40 40 Z');
+    const before = exportSvg(h.store.state.doc);
+    h.store.edit((s) => (s.doc.shapes[0].subpaths[0].nodes[0].pt = [25, 25]));
+    expect(exportSvg(h.store.state.doc)).not.toBe(before);
+    return { h, before };
+  }
+
+  for (const type of ['number', 'color', 'checkbox']) {
+    it(`reaches the document from a ${type} field, which has no undo of its own`, () => {
+      const { h, before } = edited();
+      pressIn(control('input', type), 'z', { ctrlKey: true });
+      expect(exportSvg(h.store.state.doc)).toBe(before);
+    });
+  }
+
+  it('redoes from one too, so the pair is reachable from the same place', () => {
+    const { h, before } = edited();
+    const after = exportSvg(h.store.state.doc);
+    const el = control('input', 'number');
+    pressIn(el, 'z', { ctrlKey: true });
+    expect(exportSvg(h.store.state.doc)).toBe(before);
+    pressIn(control('input', 'number'), 'z', { ctrlKey: true, shiftKey: true });
+    expect(exportSvg(h.store.state.doc)).toBe(after);
+  });
+
+  /* The other half of the rule, and the reason it is not a blanket pass. Text
+     carries an edit history the browser owns, so the chord belongs to it. */
+  it('leaves the document alone when the press came from a textarea', () => {
+    const { h } = edited();
+    const after = exportSvg(h.store.state.doc);
+    pressIn(control('textarea'), 'z', { ctrlKey: true });
+    expect(exportSvg(h.store.state.doc)).toBe(after);
+  });
+
+  it('leaves the document alone when the press came from a text input', () => {
+    const { h } = edited();
+    const after = exportSvg(h.store.state.doc);
+    pressIn(control('input', 'text'), 'z', { ctrlKey: true });
+    expect(exportSvg(h.store.state.doc)).toBe(after);
+  });
+
+  /* Focus has to leave, and this is the assertion that says why. A field commits
+     on blur, so a value typed and not committed is filed by the blur and taken
+     back by the undo. Undoing with focus still inside leaves the field holding
+     text the document has already disagreed with, and it lands on the next blur. */
+  it('takes focus out of the field, so nothing uncommitted lands later', () => {
+    const { h, before } = edited();
+    const el = control('input', 'number');
+    expect(document.activeElement).toBe(el);
+    pressIn(el, 'z', { ctrlKey: true });
+    expect(document.activeElement).not.toBe(el);
+    expect(exportSvg(h.store.state.doc)).toBe(before);
+  });
+
+  /* Every other key still belongs to the control, which is what the guard was
+     there for in the first place. */
+  it('still gives a bare letter to the control it landed in', () => {
+    const h = harness('M10 10 L40 10 L40 40 Z');
+    h.store.update((s) => (s.tool = 'pen'));
+    pressIn(control('input', 'number'), 'v');
+    expect(h.store.state.tool).toBe('pen');
+  });
+
+  it('still gives Delete to the control it landed in', () => {
+    const h = harness('M10 10 L40 10 L40 40 Z');
+    h.store.update((s) => {
+      s.selection.shapes = new Set(s.doc.shapes.map((sh) => sh.id));
+    });
+    const before = exportSvg(h.store.state.doc);
+    pressIn(control('input', 'number'), 'Delete');
+    expect(exportSvg(h.store.state.doc)).toBe(before);
+  });
+});
+
 /* Reported from use: dragging a box around two shapes and pressing Combine was
    refused for want of two selected shapes, and clicking each shape in turn
    worked. The marquee was adding every enclosed node and adding the shape only

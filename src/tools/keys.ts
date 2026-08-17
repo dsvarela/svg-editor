@@ -18,11 +18,39 @@ import type { Store } from '../model/store';
 import type { Commands } from './commands';
 import type { Controller } from './controller';
 
+/**
+ * Whether a control holds text somebody could be midway through typing.
+ *
+ * The line matters for one chord. Text carries its own edit history, so
+ * `Ctrl`+`Z` inside the source box or a shape's name is that text's undo and
+ * never the document's. A number, a colour or a checkbox carries no history of
+ * its own: every change one of them makes is already a single entry in the
+ * document's history, so there the document's undo *is* the field's undo.
+ */
+function typingText(target: EventTarget | null): boolean {
+  if (target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && target.type === 'text';
+}
+
 /** Attach the keyboard. Returns nothing: nothing detaches it for the life of the page. */
 export function bindKeys(store: Store, controller: Controller, commands: Commands): void {
   const onKeyDown = (e: KeyboardEvent): void => {
+    const mod = e.ctrlKey || e.metaKey;
+    const undoKey = mod && e.key.toLowerCase() === 'z';
+
+    /* A control consumes the keys it could be using: typing `v` into a name must
+       not also switch to the select tool, and `Delete` in a spinner must not
+       delete the selected nodes.
+
+       Undo is the exception, which is why this is not one `return`. The rail is
+       33 numbers, two colours and 21 checkboxes, none of which has an undo of
+       its own, so a Ctrl+Z swallowed here is a Ctrl+Z that does nothing in the
+       moment right after typing a value -- which is the moment it is most
+       wanted. `typingText` names the controls that do own the chord. */
     const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const inControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if (inControl && (typingText(e.target) || !undoKey)) return;
+
     /* Somebody nearer the event has already claimed this key. The inspector's
        tab strip and its shape list both handle the arrows and both call
        `preventDefault`, and this listener is on the window, so without this
@@ -35,14 +63,35 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       return;
     }
 
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 'z') {
+    if (undoKey) {
       e.preventDefault();
       // Undoing mid-drag pops the checkpoint the drag is standing on, and the
       // gesture then rolls back somebody else's edit when it ends.
       if (controller.busy) return;
+      /* Leaving the field first is what makes a mistyped number one press away
+         from the value it replaced. A field commits on blur, so this files the
+         pending edit and the undo below takes that edit back; a field nobody
+         typed into commits nothing and the undo reaches past it. Undoing with
+         focus still inside would roll the document back while the field kept
+         uncommitted text, and that text would land again as soon as focus left. */
+      if (inControl && e.target instanceof HTMLElement) e.target.blur();
       if (e.shiftKey) store.redo();
       else store.undo();
+      return;
+    }
+
+    /* The clipboard. Cut and paste rewrite the document, so both are refused
+       mid-drag for the reason the `rewrites` list below refuses its keys; copy
+       reads and is always safe. Alt is excluded because Ctrl+Alt+letter is how
+       several keyboard layouts type a character, and swallowing those would make
+       the editor eat text it has no business seeing. */
+    if (mod && !e.altKey && 'cxv'.includes(e.key.toLowerCase())) {
+      e.preventDefault();
+      const k = e.key.toLowerCase();
+      if (k === 'c') commands.copySelection();
+      else if (controller.busy) commands.onMessage?.('Finish the drag first.', false);
+      else if (k === 'x') commands.cutSelection();
+      else commands.paste();
       return;
     }
 

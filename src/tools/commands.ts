@@ -12,8 +12,8 @@
  * that genuinely crosses -- whether a drag is under way -- arrives as `busy`.
  */
 
-import { about, rotate as rotMat } from '../core/affine';
-import { continuityOf, segmentCount } from '../core/types';
+import { about, rotate as rotMat, translate } from '../core/affine';
+import { cloneNode, cloneShape, cloneSubpath, continuityOf, segmentCount } from '../core/types';
 import type { NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import {
   docBBox,
@@ -21,6 +21,7 @@ import {
   findShape,
   makeShape,
   nextId,
+  reidentify,
   selectedNodes,
   selectedRefs,
   selectedSubpaths,
@@ -73,6 +74,19 @@ import { fmt } from './readout';
 export class Commands {
   /** Where user-facing notices go. Set by the wiring, left unset in tests. */
   onMessage: ((message: string, ok: boolean) => void) | null = null;
+
+  /**
+   * What a paste would put back. Deliberately not in the store.
+   *
+   * The store's state is the document plus what is being looked at, and all of it
+   * is snapshotted by history. A clipboard is neither: undoing a paste must not
+   * empty it, and copying is not something to undo. Held here for the life of the
+   * page, which is also the life of the editor's session.
+   */
+  private clipboard: Shape[] = [];
+
+  /** How many times the current clipboard has been pasted, so each lands clear of the last. */
+  private pastes = 0;
 
   constructor(
     private store: Store,
@@ -1628,6 +1642,205 @@ export class Commands {
           ? `${targets[0].name} split into ${made + 1} shapes.`
           : `${from} shapes split into ${from + made}.`,
     };
+  }
+
+  /* -------------------------------------------------- copying and pasting */
+
+  /**
+   * Put the selection somewhere a later paste can find it.
+   *
+   * The editor's own clipboard, not the system's. A shape here is nodes and
+   * handles, and the system clipboard carries text, so going through it would
+   * mean serialising to path data and parsing it back -- which loses nothing
+   * except the thing that makes a paste feel like a paste, since the round trip
+   * cannot preserve a node's identity or a subpath's place in a shape. The
+   * source drawer's **Copy** button is the way out to other programs, and it is
+   * text on purpose.
+   *
+   * With shapes selected it takes those shapes whole. With only nodes selected
+   * it takes the runs of two or more adjacent nodes, one open path each, which
+   * is the copy that means "this piece of the outline" rather than "this list of
+   * points". A lone node contributes nothing: a path of one node has no segment,
+   * and pasting one would put a shape on the canvas that draws nothing.
+   */
+  copySelection(): boolean {
+    const s = this.store.state;
+    /* `sel.shapes` and not `selectedShapes`, which widens to the shapes that any
+       selected node belongs to. That is the right reading for a transform, where
+       touching a node means acting on its shape, and the wrong one here: it would
+       make every node copy take the whole outline the node sits on, and the run
+       branch below unreachable. */
+    const shapes = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+
+    const taken = shapes.length ? shapes.map((sh) => cloneShape(sh)) : this.nodeRunsAsShapes();
+    if (!taken.length) {
+      this.onMessage?.(
+        s.selection.nodes.size
+          ? 'Copy needs two nodes next to each other on a path, or a whole shape.'
+          : 'Nothing selected to copy.',
+        false,
+      );
+      return false;
+    }
+
+    this.clipboard = taken;
+    this.pastes = 0;
+    const what = shapes.length
+      ? `${taken.length} ${taken.length === 1 ? 'shape' : 'shapes'}`
+      : `${taken.length} ${taken.length === 1 ? 'piece' : 'pieces'} of path`;
+    this.onMessage?.(`Copied ${what}.`, true);
+    return true;
+  }
+
+  /** Copy, then delete what was copied. One history entry, because only the delete edits. */
+  cutSelection(): boolean {
+    if (!this.copySelection()) return false;
+    const { deleted } = this.deleteSelection();
+    if (!deleted) {
+      this.onMessage?.('Copied, but nothing could be removed.', false);
+      return false;
+    }
+    this.onMessage?.('Cut.', true);
+    return true;
+  }
+
+  /**
+   * Put the clipboard back, offset, and select what landed.
+   *
+   * Each paste steps further from the last so that pasting twice never hides one
+   * copy exactly under another. The step is the grid's, so a paste lands on the
+   * lattice if what was copied was on it.
+   *
+   * Every shape is reidentified on the way in. Without that a paste is an alias:
+   * the copy answers to the original's node ids, so clicking a node of one
+   * selects the node of the other and dragging moves both.
+   */
+  paste(): boolean {
+    if (!this.clipboard.length) {
+      this.onMessage?.('Nothing copied yet.', false);
+      return false;
+    }
+
+    const step = this.store.state.gridStep || 1;
+    this.pastes++;
+    const away = step * 2 * this.pastes;
+    const landed: Shape[] = this.clipboard.map((sh) => {
+      const copy = reidentify(cloneShape(sh));
+      copy.name = `${sh.name} copy`;
+      transformShape(copy, translate(away, away));
+      return copy;
+    });
+
+    this.store.edit((st) => {
+      st.doc.shapes.push(...landed);
+      st.selection = emptySelection();
+      for (const sh of landed) st.selection.shapes.add(sh.id);
+    });
+
+    this.onMessage?.(
+      `Pasted ${landed.length} ${landed.length === 1 ? 'shape' : 'shapes'}.`,
+      true,
+    );
+    return true;
+  }
+
+  /** Whether a paste would do anything, for the button that offers it. */
+  get canPaste(): boolean {
+    return this.clipboard.length > 0;
+  }
+
+  /**
+   * A copy of each selected shape, beside the original.
+   *
+   * The same operation as copy-then-paste with the clipboard left alone, which is
+   * why it lives beside them rather than being spelled out at the button. It
+   * shares the rule that matters: a duplicate answering to the original's node
+   * ids is one drag away from moving both, so it is reidentified.
+   */
+  duplicateSelection(): boolean {
+    const s = this.store.state;
+    // Whole shapes only, and `sel.shapes` says which: duplicating what a node
+    // happens to sit on is a different operation from duplicating a shape.
+    const shapes = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    if (!shapes.length) {
+      this.onMessage?.('Select a shape to duplicate.', false);
+      return false;
+    }
+
+    const step = s.gridStep || 1;
+    const copies = shapes.map((sh) => {
+      const copy = reidentify(cloneShape(sh));
+      copy.name = `${sh.name} copy`;
+      // Offset so the duplicate is visible rather than exactly underneath.
+      transformShape(copy, translate(step * 2, step * 2));
+      return copy;
+    });
+
+    this.store.edit((st) => {
+      st.doc.shapes.push(...copies);
+      st.selection = emptySelection();
+      for (const c of copies) st.selection.shapes.add(c.id);
+    });
+    return true;
+  }
+
+  /**
+   * The selected nodes as open paths, one per run of adjacent ones.
+   *
+   * Adjacency is what makes this a copy of a piece of outline rather than a bag
+   * of points: two nodes next to each other bring the segment between them, and
+   * the handles at the outer ends are dropped because the segments they governed
+   * are not coming. A closed subpath wraps, so selecting three corners of a
+   * square that straddle node 0 gives one run and not two.
+   */
+  private nodeRunsAsShapes(): Shape[] {
+    const s = this.store.state;
+    const chosen = new Map<string, Set<number>>();
+    for (const r of selectedRefs(s.doc, s.selection)) {
+      const key = `${r.shape}/${r.sp}`;
+      const set = chosen.get(key) ?? new Set<number>();
+      set.add(r.i);
+      chosen.set(key, set);
+    }
+
+    const out: Shape[] = [];
+    for (const [key, indices] of chosen) {
+      const [shapeId, spIdx] = key.split('/');
+      const shape = findShape(s.doc, shapeId);
+      const sp = shape?.subpaths[Number(spIdx)];
+      if (!shape || !sp) continue;
+      const n = sp.nodes.length;
+
+      // A wholly selected closed path stays closed; there is no run to cut.
+      if (sp.closed && indices.size === n) {
+        out.push(makeShape([cloneSubpath(sp)], `${shape.name} copy`, shape.style));
+        continue;
+      }
+
+      /* Started at the first unselected node so a run cannot be split across the
+         end of the array. There is one when the whole path is not selected, and
+         the closed case above is the only way for that to be false. */
+      const start = sp.closed ? [...Array(n).keys()].find((i) => !indices.has(i)) ?? 0 : 0;
+      const runs: number[][] = [];
+      let run: number[] = [];
+      for (let k = 0; k < n; k++) {
+        const i = sp.closed ? (start + k) % n : k;
+        if (indices.has(i)) run.push(i);
+        else {
+          if (run.length) runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length) runs.push(run);
+
+      for (const r of runs.filter((x) => x.length >= 2)) {
+        const nodes = r.map((i) => cloneNode(sp.nodes[i]));
+        nodes[0].hIn = null;
+        nodes[nodes.length - 1].hOut = null;
+        out.push(makeShape([{ nodes, closed: false }], `${shape.name} piece`, shape.style));
+      }
+    }
+    return out;
   }
 
   /* ---------------------------------------------- what the inspector reads */

@@ -4,7 +4,7 @@
 
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
-import { defaultStyle, segmentAsCubic, segmentCount } from '../core/types';
+import { defaultStyle, nextNodeId, segmentAsCubic, segmentCount } from '../core/types';
 import type { Doc, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import { parsePath } from '../core/parse';
 
@@ -19,6 +19,30 @@ export function makeShape(subpaths: Subpath[], name?: string, style?: Style): Sh
 
 export function shapeFromPath(d: string, name?: string): Shape {
   return makeShape(parsePath(d), name);
+}
+
+/**
+ * Give a shape, and every node in it, an identity of its own. Mutates and
+ * returns it.
+ *
+ * The second half of any copy that is going to live in the document beside what
+ * it was copied from. `cloneShape` deliberately carries ids through, because
+ * that is what makes a selection survive a history snapshot, and a copy that
+ * keeps them is a copy no selection can tell from the original: `resolveNodes`
+ * finds a node by walking every shape, so one id naming two nodes selects both
+ * and drags both.
+ *
+ * Anything putting a copy into the live document is expected to call this, and
+ * `test/identity.test.ts` sweeps the operations that do. §46 of
+ * `docs/ARCHITECTURE.md` has the argument for keeping the two halves separate
+ * rather than folding the minting into `cloneShape`.
+ */
+export function reidentify(shape: Shape): Shape {
+  shape.id = nextId();
+  for (const sp of shape.subpaths) {
+    for (const node of sp.nodes) node.id = nextNodeId();
+  }
+  return shape;
 }
 
 export function emptyDoc(): Doc {

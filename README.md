@@ -4,7 +4,7 @@ A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
 **Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
-or download one file.** The whole editor is a single 257 kB HTML page with every
+or download one file.** The whole editor is a single 260 kB HTML page with every
 asset inlined. Take the `.html` from [the latest
 release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
 browser, and it runs offline with no server and nothing installed.
@@ -43,8 +43,8 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **256.6 kB, 77.8 kB
-gzipped** on 2026-08-14, as `npm run build` reports it. Open `dist/index.html`
+The production build is one file, no external requests: **259.9 kB, 78.7 kB
+gzipped** on 2026-08-17, as `npm run build` reports it. Open `dist/index.html`
 from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
 and 1.9 kB for the inlined worker it runs in, measured by building without it.
@@ -143,17 +143,18 @@ src/
   main.ts     wiring: document -> store -> canvas -> commands -> panels
 ```
 
-15 542 lines of TypeScript across 40 files, plus 1 090 lines of CSS, counted on
-2026-08-14. No runtime framework.
+15 828 lines of TypeScript across 40 files, plus 1 091 lines of CSS, counted on
+2026-08-17. No runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 793 tests in 28 files, 11 311 lines on
-2026-08-14, over parsing, serialising, geometry ops, rendering invariants, SVG
+**Unit and DOM tests**, with `npm test`. 819 tests in 29 files, 11 659 lines on
+2026-08-17, over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
-transforms, history, tooltips, the grid and the primitives. The rendering tests
+transforms, history, tooltips, node identity, the clipboard, the grid and
+the primitives. The rendering tests
 run in jsdom against the real `Canvas`.
 
 Where a test could pass for the wrong reason, it doesn't compare point sets or
@@ -172,7 +173,7 @@ Chromium-based Edge through `playwright-core`, defaulting to
 somewhere else, and pass `--headed` to watch. `npm run drive -- --list` names
 every scenario.
 
-There are 43 of them on 2026-08-14, and they are not listed here: `--list`
+There are 45 of them on 2026-08-17, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that
 drifts. This one had drifted by twelve before anyone noticed.
 
@@ -186,8 +187,8 @@ image decoding and `getImageData` are under test rather than mocked. `chrome` is
 it asserts that the canvas grows when a panel closes and that the page has no
 scroll to speak of, neither of which means anything without real layout.
 
-Every run also audits the overlay: how many anchors and handles are actually in
-the DOM, and whether any rendered `d` is malformed. That is what catches stray
+Every run also audits the overlay: how many anchors and handles are in the DOM,
+and whether any rendered `d` is malformed. That is what catches stray
 geometry surviving a delete or an undo.
 
 The driver refuses to click a document coordinate that maps outside the canvas,

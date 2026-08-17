@@ -382,13 +382,19 @@ export function breakAt(sp: Subpath, i: number): Subpath[] | null {
   const n = sp.nodes.length;
   if (i < 0 || i >= n) return null;
 
+  /* The end that was not there before is a new node and needs an id of its own.
+     `cloneNode` carries the id through, which is what a history snapshot wants
+     and the opposite of what this wants: two ends answering to one id are two
+     ends no selection can separate, so clicking either drags both and the path
+     can never be pulled open. The front keeps the original id, so a selection
+     naming the node still names something afterwards. */
   if (sp.closed) {
     if (n < 2) return null;
     // Rotate so the break lands at both ends. The clone at the front keeps the
     // outgoing handle, the one at the back keeps the incoming handle, which is
     // precisely the pair of segments that used to meet here.
     const rotated = [...sp.nodes.slice(i), ...sp.nodes.slice(0, i)].map(cloneNode);
-    const tail = cloneNode(sp.nodes[i]);
+    const tail = { ...cloneNode(sp.nodes[i]), id: nextNodeId() };
     rotated[0].hIn = null;
     tail.hOut = null;
     return [{ nodes: [...rotated, tail], closed: false }];
@@ -398,6 +404,7 @@ export function breakAt(sp: Subpath, i: number): Subpath[] | null {
 
   const head = sp.nodes.slice(0, i + 1).map(cloneNode);
   const tail = sp.nodes.slice(i).map(cloneNode);
+  tail[0].id = nextNodeId();
   head[head.length - 1].hOut = null;
   tail[0].hIn = null;
   return [
