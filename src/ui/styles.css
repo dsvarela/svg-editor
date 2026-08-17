@@ -461,6 +461,17 @@ input[type='number']:disabled { opacity: 0.4; }
 .handle-line.latent { stroke: var(--node-sel); opacity: 0.35; stroke-dasharray: 2 2; }
 .handle-dot.latent { fill: var(--canvas); stroke: var(--node-sel); opacity: 0.75; }
 .bend-dot { fill: var(--measure); stroke: var(--canvas); cursor: ns-resize; }
+
+/* The corner control. Hollow where the corner is still sharp and filled once it
+   holds an arc, so the two states are told apart without a second colour: an
+   outline is what it would become, a solid is what it is. */
+.corner-dot {
+  fill: var(--canvas);
+  stroke: var(--measure);
+  vector-effect: non-scaling-stroke;
+  cursor: nwse-resize;
+}
+.corner-dot.rounded { fill: var(--measure); stroke: var(--canvas); }
 .anchor {
   fill: var(--node);
   stroke: var(--node-line);

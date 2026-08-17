@@ -16,10 +16,11 @@
  */
 
 import { STROKE_CAP, STROKE_JOIN, continuityOf, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, ViewBox } from '../core/types';
+import type { Doc, Pt, Subpath, ViewBox } from '../core/types';
+import type { Fillet } from '../model/ops';
 import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
-import { latentHandle } from '../model/ops';
+import { cornerArcReach, cornerAt, filletAt, latentHandle } from '../model/ops';
 import { keylinesFor } from '../model/keylines';
 import type { Alignment } from '../model/smart';
 import { serialisePath } from '../core/serialise';
@@ -73,6 +74,20 @@ const BOX_PAD = 6;
 const HANDLE_SIZE = 8;
 
 /**
+ * How far clear of the corner its radius control sits, in screen pixels.
+ *
+ * For the reason `BOX_PAD` exists. A node's anchor is drawn centred on the corner
+ * and is 7 px across, and the anchor layer paints in front of the handle layer --
+ * so a control placed at the corner, or at the arc of a small radius, is covered by
+ * the anchor and can never be pressed. Eleven pixels puts it clear of a 7 px square
+ * with room for the pointer to be imprecise.
+ *
+ * Shared with `Controller`, which subtracts it again to read a radius back off the
+ * pointer. Two numbers here would be a control that does not stay under the finger.
+ */
+export const CORNER_DOT_PX = 11;
+
+/**
  * Side of the invisible square that rotates, placed with its inner corner on
  * the box's corner so the whole of it lies outside.
  *
@@ -124,6 +139,7 @@ export class Canvas {
   private handleDots: Pool<'circle'>;
   private anchors: Pool<'rect'>;
   private bendDots: Pool<'circle'>;
+  private cornerDots: Pool<'circle'>;
 
   /**
    * True when the last render had more markers in view than it would draw.
@@ -201,6 +217,7 @@ export class Canvas {
     this.handleDots = new Pool(handleLayer, 'circle');
     this.anchors = new Pool(anchorLayer, 'rect');
     this.bendDots = new Pool(handleLayer, 'circle');
+    this.cornerDots = new Pool(handleLayer, 'circle');
     // Lines first, hit strips after, so a strip is in front of the line it
     // belongs to and a press anywhere on it reaches the same guide.
     this.guideLines = new Pool(guideLayer, 'line');
@@ -494,6 +511,7 @@ export class Canvas {
     this.handleDots.begin();
     this.anchors.begin();
     this.bendDots.begin();
+    this.cornerDots.begin();
 
     const anchorSize = 7 * k;
     const dotR = 3.5 * k;
@@ -658,10 +676,63 @@ export class Canvas {
             });
           }
         }
+
+        /* One corner control per roundable corner, sharp or already rounded.
+           Placed on the bisector at the tangent point's own distance out, so the
+           control sits where the arc begins and dragging it toward the corner
+           makes the radius smaller -- which is the direction the thing under the
+           pointer is actually moving.
+
+           Nothing here stores a radius. A sharp corner is measured by `cornerAt`
+           and a rounded one recovered by `filletAt`, so the control cannot claim
+           a radius the geometry does not have. §48 of `docs/ARCHITECTURE.md`. */
+        if (state.showHandles && markers) {
+          for (let i = 0; i < sp.nodes.length; i++) {
+            const lit = shapeSelected || sel.nodes.has(sp.nodes[i].id);
+            const f = filletAt(sp, i);
+            if (f) {
+              // A fillet is drawn for a press on either of its two nodes, since
+              // both are the corner as far as a person is concerned.
+              if (!lit && !sel.nodes.has(sp.nodes[f.j].id) && !shapeSelected) continue;
+              const dot = filletControl(sp, f, k);
+              if (!dot || !inView(dot)) continue;
+              this.cornerDots.next({
+                cx: dot[0],
+                cy: dot[1],
+                r: 4 * k,
+                'stroke-width': 1.5 * k,
+                'data-hit': 'corner',
+                'data-shape': shape.id,
+                'data-sp': spI,
+                'data-i': f.i,
+                class: 'corner-dot rounded',
+              });
+              continue;
+            }
+            if (!lit) continue;
+            const c = cornerAt(sp, i);
+            if (typeof c === 'string') continue;
+            // At the offset and no further: a sharp corner has no arc to sit on.
+            const dot = alongBisector(c.at, c.u, c.v, CORNER_DOT_PX * k);
+            if (!dot || !inView(dot)) continue;
+            this.cornerDots.next({
+              cx: dot[0],
+              cy: dot[1],
+              r: 4 * k,
+              'stroke-width': 1.5 * k,
+              'data-hit': 'corner',
+              'data-shape': shape.id,
+              'data-sp': spI,
+              'data-i': i,
+              class: 'corner-dot',
+            });
+          }
+        }
       });
     }
 
     this.bendDots.end();
+    this.cornerDots.end();
     this.outlines.end();
     this.handleLines.end();
     this.handleDots.end();
@@ -767,3 +838,43 @@ function padded(b: Box | null | undefined, d: number): Box | null {
   return { x0: b.x0 - d, y0: b.y0 - d, x1: b.x1 + d, y1: b.y1 + d };
 }
 
+
+/**
+ * A point `d` from `at`, along the bisector of the two directions `u` and `v`.
+ *
+ * `null` when the two are opposite, where there is no bisector to speak of and no
+ * corner either. Both are unit vectors leaving `at`, so their sum points into the
+ * corner and its length is what says how open the corner is.
+ */
+function alongBisector(at: Pt, u: Pt, v: Pt, d: number): Pt | null {
+  const bx = u[0] + v[0];
+  const by = u[1] + v[1];
+  const len = Math.hypot(bx, by);
+  if (len < 1e-9) return null;
+  return [at[0] + (bx / len) * d, at[1] + (by / len) * d];
+}
+
+/**
+ * Where a rounded corner's control goes: on the bisector, at the arc plus the offset.
+ *
+ * The two side directions come from the tangent points, so this needs no stored
+ * radius. `cornerArcReach` is the same function the controller inverts, which is
+ * what keeps the control under the pointer through a drag.
+ */
+function filletControl(sp: Subpath, f: Fillet, k: number): Pt | null {
+  const a = sp.nodes[f.i]?.pt;
+  const b = sp.nodes[f.j]?.pt;
+  if (!a || !b) return null;
+  const dir = (p: Pt): Pt | null => {
+    const dx = p[0] - f.at[0];
+    const dy = p[1] - f.at[1];
+    const len = Math.hypot(dx, dy);
+    return len < 1e-9 ? null : [dx / len, dy / len];
+  };
+  const u = dir(a);
+  const v = dir(b);
+  if (!u || !v) return null;
+  const cos = Math.min(1, Math.max(-1, u[0] * v[0] + u[1] * v[1]));
+  const half = Math.acos(cos) / 2;
+  return alongBisector(f.at, u, v, CORNER_DOT_PX * k + cornerArcReach(f.radius, half));
+}

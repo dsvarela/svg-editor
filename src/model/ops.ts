@@ -860,21 +860,39 @@ export interface RoundResult {
  * of a rectangle one at a time works because each one sees the sides the
  * previous ones left behind.
  */
-export function roundCorner(
-  sp: Subpath,
-  i: number,
-  radius: number,
-): RoundResult | RoundRefusal {
+/**
+ * A corner that could be rounded, measured.
+ *
+ * `u` and `v` are unit vectors from the corner along its two sides, so a tangent
+ * point at distance `d` is `at + u * d`. `alpha` is the interior angle between
+ * them and `reach` the furthest a tangent point can go before it runs past a
+ * neighbour, which is what the radius gets clamped to.
+ */
+export interface Corner {
+  at: Pt;
+  u: Pt;
+  v: Pt;
+  alpha: number;
+  reach: number;
+}
+
+/**
+ * Measure the corner at node `i`, or say why there is not one.
+ *
+ * Shared with `roundCorner` rather than restated in it, because the widget on the
+ * canvas and the button in the rail have to agree about which corners are
+ * roundable and about what radius a given tangent point means. Two answers to
+ * that would be two answers to "why did nothing happen".
+ */
+export function cornerAt(sp: Subpath, i: number): Corner | RoundRefusal {
   const n = sp.nodes.length;
   if (!Number.isInteger(i) || i < 0 || i >= n) return 'tiny';
   if (!sp.closed && (i === 0 || i === n - 1)) return 'end';
-  if (n < 3 || !(radius > 0)) return 'tiny';
+  if (n < 3) return 'tiny';
 
-  const prevI = (i - 1 + n) % n;
-  const nextI = (i + 1) % n;
   const here = sp.nodes[i];
-  const prev = sp.nodes[prevI];
-  const next = sp.nodes[nextI];
+  const prev = sp.nodes[(i - 1 + n) % n];
+  const next = sp.nodes[(i + 1) % n];
 
   // The segment arriving at `i` is straight when neither governing handle
   // exists, and likewise the one leaving it.
@@ -897,11 +915,34 @@ export function roundCorner(
   // to do when it folds back on itself.
   if (alpha > Math.PI - 1e-6 || alpha < 1e-6) return 'straight';
 
+  return { at: clonePt(here.pt), u, v, alpha, reach: Math.min(la, lb) };
+}
+
+/** The largest radius a corner can hold, which is `reach` read as a radius. */
+export const maxCornerRadius = (c: Corner): number => c.reach * Math.tan(c.alpha / 2);
+
+export function roundCorner(
+  sp: Subpath,
+  i: number,
+  radius: number,
+): RoundResult | RoundRefusal {
+  if (!(radius > 0)) return 'tiny';
+  const c = cornerAt(sp, i);
+  if (typeof c === 'string') return c;
+
+  const n = sp.nodes.length;
+  const prevI = (i - 1 + n) % n;
+  const nextI = (i + 1) % n;
+  const here = sp.nodes[i];
+  const prev = sp.nodes[prevI];
+  const next = sp.nodes[nextI];
+  const { u, v, alpha } = c;
+
   const half = alpha / 2;
   // Distance from the corner to each tangent point, for the radius asked for.
   let cut = radius / Math.tan(half);
-  const clamped = cut > Math.min(la, lb);
-  if (clamped) cut = Math.min(la, lb);
+  const clamped = cut > c.reach;
+  if (clamped) cut = c.reach;
   const r = cut * Math.tan(half);
   if (!(r > 1e-9)) return 'tiny';
 
@@ -942,6 +983,132 @@ export function roundCorner(
   // points away from `prev`, and the one arriving at `t2` points at `next`.
   sp.nodes.splice(i, 1, ...insert);
   return { radius: r, clamped };
+}
+
+/**
+ * A rounded corner, read back off the path.
+ *
+ * `i` and `j` are the two tangent nodes, `at` the corner they were cut from, and
+ * `radius` the one they were cut with.
+ */
+export interface Fillet {
+  i: number;
+  j: number;
+  at: Pt;
+  radius: number;
+}
+
+/**
+ * Is the pair of nodes starting at `i` a rounded corner, and if so what of?
+ *
+ * **Nothing is stored to answer this.** A fillet's two tangent nodes each carry
+ * exactly one handle, and each of those handles points at the corner the fillet
+ * was cut from -- so the corner is where the two handle rays cross, and the radius
+ * follows from the distance to it. That is what lets a rounded corner be grabbed
+ * and re-rounded without the path holding a radius that the geometry could then
+ * disagree with.
+ *
+ * Measured rather than assumed. Two nodes with one handle each are not necessarily
+ * a fillet, so the arc is checked for being circular and tangent to both sides
+ * before this says it is one: equal cuts, equal handles, and handles the length a
+ * circular arc through that angle actually needs. §48 has the argument.
+ */
+export function filletAt(sp: Subpath, i: number): Fillet | null {
+  const n = sp.nodes.length;
+  if (!Number.isInteger(i) || i < 0 || i >= n) return null;
+  if (n < 3) return null;
+  const j = (i + 1) % n;
+  if (!sp.closed && j === 0) return null;
+
+  const a = sp.nodes[i];
+  const b = sp.nodes[j];
+  // One handle each, and both facing the arc between them. Anything else is not
+  // a corner that was rounded, whatever it looks like.
+  if (a.hIn !== null || a.hOut === null || b.hIn === null || b.hOut !== null) return null;
+
+  // Direction of travel leaving `a`, and arriving at `b`. The corner lies where
+  // the first ray forward meets the second ray backward.
+  const da: Pt = [a.hOut[0] - a.pt[0], a.hOut[1] - a.pt[1]];
+  const db: Pt = [b.pt[0] - b.hIn[0], b.pt[1] - b.hIn[1]];
+  const ha = Math.hypot(da[0], da[1]);
+  const hb = Math.hypot(db[0], db[1]);
+  if (ha < 1e-9 || hb < 1e-9) return null;
+  // Equal handles, which a fillet has by construction and a hand-pulled pair of
+  // curves has only by accident.
+  if (Math.abs(ha - hb) > 1e-6 * Math.max(ha, hb)) return null;
+
+  const ea: Pt = [da[0] / ha, da[1] / ha];
+  const eb: Pt = [db[0] / hb, db[1] / hb];
+  // Parallel rays never meet, and a straight run through is not a corner.
+  const cross = ea[0] * eb[1] - ea[1] * eb[0];
+  if (Math.abs(cross) < 1e-9) return null;
+
+  const w: Pt = [b.pt[0] - a.pt[0], b.pt[1] - a.pt[1]];
+  const t = (w[0] * eb[1] - w[1] * eb[0]) / cross;
+  if (!(t > 1e-9)) return null; // the crossing is behind `a`, so it is not this corner
+  const at: Pt = [a.pt[0] + ea[0] * t, a.pt[1] + ea[1] * t];
+
+  const cutA = t;
+  const cutB = Math.hypot(b.pt[0] - at[0], b.pt[1] - at[1]);
+  // Equal cuts: a fillet is tangent to both sides at the same distance out.
+  if (Math.abs(cutA - cutB) > 1e-6 * Math.max(cutA, cutB)) return null;
+
+  /* The interior angle, from the two rays *leaving* the corner -- which is `-ea`
+     toward `a` and `eb` toward `b`, the same frame `cornerAt` measures in. */
+  const cos = Math.min(1, Math.max(-1, -ea[0] * eb[0] + -ea[1] * eb[1]));
+  const alpha = Math.acos(cos);
+  if (alpha > Math.PI - 1e-6 || alpha < 1e-6) return null;
+
+  const radius = cutA * Math.tan(alpha / 2);
+  // Circular, not merely tangent: the handle a circular arc through this angle
+  // needs is a fixed length, so a pair that misses it is some other curve.
+  if (Math.abs(ha - arcHandle(radius, Math.PI - alpha)) > 1e-6 * Math.max(ha, 1)) return null;
+
+  return { i, j, at, radius };
+}
+
+/**
+ * How far along the bisector, from the corner, the arc of radius `r` begins.
+ *
+ * The arc's nearest point to the corner: its centre sits `r / sin(half)` in, and the
+ * arc is `r` nearer than that. Paired with `cornerRadiusAtReach`, which is its
+ * inverse, so the control drawn on the canvas and the radius a drag means are one
+ * relation and not two -- a control that tracked the pointer at some other ratio
+ * would slide out from under it.
+ */
+export const cornerArcReach = (r: number, half: number): number =>
+  r <= 0 ? 0 : r / Math.sin(half) - r;
+
+/** The radius whose arc begins `d` from the corner. Zero for anything not positive. */
+export const cornerRadiusAtReach = (d: number, half: number): number => {
+  const sin = Math.sin(half);
+  // `sin` reaches 1 only as the corner opens out flat, which `cornerAt` refuses,
+  // so the division is safe for any corner that exists.
+  return sin >= 1 || d <= 0 ? 0 : (d * sin) / (1 - sin);
+};
+
+/**
+ * Put a rounded corner back to the sharp one it was cut from.
+ *
+ * Returns the index of the node that replaced the pair, or `null` when `i` does
+ * not start a fillet. Exact, because `filletAt` recovers the corner rather than
+ * approximating it, so unrounding and rounding again at the same radius is the
+ * identity on the geometry.
+ */
+export function unroundCorner(sp: Subpath, i: number): number | null {
+  const f = filletAt(sp, i);
+  if (!f) return null;
+  const sharp = makeNode(f.at);
+  /* The pair wraps when the first of the two is the last node, and a splice
+     cannot remove across the end of an array. Removing the tail and the head
+     separately leaves the corner at index 0, which is where the wrap put it. */
+  if (f.j === 0) {
+    sp.nodes.splice(f.i, 1);
+    sp.nodes.splice(0, 1, sharp);
+    return 0;
+  }
+  sp.nodes.splice(f.i, 2, sharp);
+  return f.i;
 }
 
 /* ------------------------------------------------------------- transforms */

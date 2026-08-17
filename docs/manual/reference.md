@@ -31,6 +31,7 @@ as the centre rather than a corner.
 | Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
 | Drag on empty canvas | Marquee-select nodes |
 | `Shift`-click | Add to or remove from the selection |
+| Drag the corner control | Round the corner, or change the radius of one already rounded. Drag it back to the corner to square it off again |
 | Drag the bend dot | Pull the curve through the pointer. Appears on every segment with both its end nodes selected |
 | `Alt`-drag the bend dot | The same, but without keeping a symmetric segment symmetric |
 | Wheel | Zoom at the pointer |
@@ -303,6 +304,19 @@ to set it exactly.
   of the export.
 - **Round** with **Apply** replaces the selected corners with an arc of that
   radius. Both sides of the node have to be straight.
+
+  The same operation is on the canvas as a small mark just inside each roundable
+  corner: hollow while the corner is square, filled once it holds an arc. Drag it
+  in to round the corner and out to open it up, and the status strip reads the
+  radius as you go. **Snap to grid** rounds the radius to a whole step.
+
+  A rounded corner can be grabbed and changed again, because nothing stores the
+  radius: the two handles of the arc point at the corner they were cut from, so the
+  corner and its radius are read back off the path. Dragging the radius to nothing
+  restores the corner exactly. What ends this is editing the arc by other means --
+  move one of its nodes or pull one of its handles and it stops being a circle
+  tangent to two straight sides, which is the only thing the control can recognise.
+  The mark disappears, and the corner is then an ordinary pair of curves.
 - **Break here** duplicates the node to cut the path there.
 - **Connect** draws the missing segment between two free ends. Nothing moves.
 - **Merge** welds two free ends into one node at their midpoint, the inverse of Break.

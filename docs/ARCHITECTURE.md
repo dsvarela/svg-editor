@@ -2210,3 +2210,62 @@ Three handlers do: click, double-click, and the arrow keys. `shapeTree` in
 Groups are still absent, and this does not add them. `<g>` is flattened on import
 with its transforms baked in (`io/svg.ts`), so grouping made in another tool does
 not survive a round trip.
+
+## 48. A corner's radius is recovered, never stored
+
+Asked for: Illustrator's live corner widget, a handle just inside a corner that
+rounds it as you drag. The geometry was already here -- `roundCorner` has built a
+true fillet, tangent to both sides, since the rectangle tool needed one -- so what
+was missing was the handle. The design question is the interesting part.
+
+**Illustrator's widget is available forever because Illustrator keeps a live
+rectangle.** Its corner radius is a property of an object that has not been reduced
+to a path yet, so the widget can read it back whenever it likes. Here everything is
+a path from the moment it is drawn, which is §2, and there is no object to hang a
+radius on.
+
+The obvious answer is to store one: a `radius` on `PathNode`, or on the shape. It is
+the wrong answer, and for the reason §43 gives about node indices. A stored radius is
+a second statement of something the geometry already says, and the two disagree the
+first time anything else moves one of the arc's nodes. The path would then be
+carrying a claim about itself that is false, with nothing to detect it.
+
+**So it is recovered.** A fillet's two tangent nodes carry exactly one handle each,
+and each handle points along the side it came from -- which means both handle rays
+pass through the corner the fillet was cut from. The corner is where they cross, the
+cut is the distance to it, and the radius is `cut * tan(alpha / 2)`. Nothing is
+stored and nothing can disagree.
+
+`filletAt` does that recovery, and it *measures* rather than assuming. Two nodes with
+one handle each are not necessarily a fillet, so it checks four things: one handle
+each and both facing the arc, equal handle lengths, equal cuts on the two sides, and
+a handle of the length a circular arc through that angle actually needs. Dropping any
+one of the four admits something that is not a fillet, and `test/fillet.test.ts` has
+a case for each.
+
+**Which makes the widget's limit honest and visible.** The control appears while the
+corner is a circular arc tangent to two straight sides, and stops appearing when it
+is not. Move one of the arc's nodes and the corner becomes an ordinary pair of
+curves; the mark goes, and it should, because there is no longer a radius to change.
+That is a real difference from Illustrator, and it is the difference between reading
+the drawing and trusting a note attached to it.
+
+**The drag rebuilds from a sharp copy every frame.** On the press the subpath is
+cloned and `unroundCorner` puts the corner back; every move clones that copy and
+calls `roundCorner` at the new radius. One function decides what a fillet is, so a
+dragged radius and one typed into the rail cannot come out differently, and dragging
+back to zero leaves the corner sharp because `roundCorner` declines a radius of
+nothing. `cornerAt` is shared for the same reason: the canvas and the button have to
+agree about which corners are roundable.
+
+`cornerArcReach` and `cornerRadiusAtReach` are an inverse pair, and both are used --
+the first to place the control, the second to read a drag back. Two separate
+formulas here would be a control that slides out from under the pointer.
+
+**The control is offset 11 px from the corner, and that is not decoration.** The
+anchor layer paints in front of the handle layer, and a node's anchor is 7 px centred
+on the corner, so a control at the corner is covered by it and cannot be pressed at
+all. This was found by building it that way first. It is the same collision `BOX_PAD`
+exists to prevent between a rectangle's corner anchor and its north-west scale
+handle, and `cornerWidget` in `tools/drive.mjs` asserts the gap directly rather than
+asserting that a drag happens to work.

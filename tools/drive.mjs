@@ -3896,6 +3896,152 @@ const scenarios = {
   },
 
   /**
+   * Rounding a corner by dragging it, and un-rounding it by dragging it back.
+   *
+   * The whole point of the control is that nothing stores a radius: a sharp corner
+   * is measured off its two sides, and a rounded one is recovered from the two
+   * handles that point at where the corner was. So a rounded corner can be grabbed
+   * again, which is the assertion that matters and the one a unit test cannot make
+   * -- the control's position is a client pixel, and where that lands on the
+   * document is the camera's answer.
+   *
+   * §48 of `docs/ARCHITECTURE.md` has the argument.
+   */
+  async cornerWidget(page, check) {
+    const d = () => drawnPath(page, 0);
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M20 20 L80 20 L80 80 L20 80 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await page.click('#shapelist li.shape');
+    await laidOut(page);
+
+    const square = await d();
+    check(square === 'M 20 20 H 80 V 80 H 20 Z', `the square came out as ${square}`);
+
+    /* Read after a hover and after the layout settles. Moving the pointer over the
+       canvas fills the cursor readout, which changes the status strip's height and
+       moves the canvas -- so a control position read before the first hover is
+       stale by the time a press lands on it. */
+    await page.mouse.move(700, 400);
+    await laidOut(page);
+    await settle(page);
+
+    const controls = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.overlay [data-hit="corner"]')].map((e) => {
+          const b = e.getBoundingClientRect();
+          return {
+            i: Number(e.getAttribute('data-i')),
+            rounded: /rounded/.test(e.getAttribute('class') ?? ''),
+            x: b.x + b.width / 2,
+            y: b.y + b.height / 2,
+          };
+        }),
+      );
+
+    const sharp = await controls();
+    out.controls = sharp.length;
+    check(sharp.length === 4, `a square offered ${sharp.length} corner controls, not 4`);
+    check(
+      sharp.every((c) => !c.rounded),
+      'a corner with no arc in it was drawn as though it had one',
+    );
+
+    /* Clear of the anchor, which is the collision this control was moved to avoid:
+       the anchor layer paints in front of the handle layer, so a control sitting on
+       the corner is covered by the corner's own anchor and can never be pressed. */
+    const anchorAt = await page.evaluate(() => {
+      const a = document.querySelector('.overlay [data-hit="anchor"][data-i="0"]');
+      const b = a.getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width, h: b.height };
+    });
+    const first = sharp.find((c) => c.i === 0);
+    const gap = Math.hypot(first.x - anchorAt.x, first.y - anchorAt.y);
+    out.gapFromAnchor = Math.round(gap);
+    check(gap > anchorAt.w, `the control sits ${gap.toFixed(1)} px from a ${anchorAt.w} px anchor`);
+
+    const under = await page.evaluate(([x, y]) => {
+      const e = document.elementsFromPoint(x, y)[0];
+      return e ? e.getAttribute('data-hit') : null;
+    }, [first.x, first.y]);
+    check(under === 'corner', `the topmost element at the control is ${JSON.stringify(under)}`);
+
+    // Drag it in along the bisector.
+    await page.mouse.move(first.x, first.y);
+    await page.mouse.down();
+    await page.mouse.move(first.x + 22, first.y + 22, { steps: 8 });
+    out.readout = await page.evaluate(() => {
+      const el = document.querySelector('#measure');
+      return el.hidden ? null : el.textContent.trim();
+    });
+    check(
+      /radius/.test(out.readout ?? ''),
+      `the drag reported ${JSON.stringify(out.readout)} rather than a radius`,
+    );
+    await page.mouse.up();
+    await settle(page);
+
+    const rounded = await d();
+    out.rounded = rounded;
+    check(rounded !== square, 'dragging the corner control changed nothing');
+    check(/C/.test(rounded), `the corner did not become an arc: ${rounded}`);
+
+    // One undo step for the whole drag, however many moves it took.
+    await undo(page);
+    check((await d()) === square, `undo left ${await d()} rather than the square`);
+    await page.keyboard.press('Control+Shift+z');
+    await settle(page);
+    check((await d()) === rounded, 'redo did not put the rounded corner back');
+
+    /* The control on a corner that already holds an arc. This is what needs the
+       radius to be recoverable: there is nowhere it could have been read from. */
+    await laidOut(page);
+    const after = await controls();
+    const grown = after.find((c) => c.rounded);
+    out.roundedControls = after.filter((c) => c.rounded).length;
+    check(!!grown, 'a rounded corner offered no control to grab again');
+
+    await page.mouse.move(grown.x, grown.y);
+    await page.mouse.down();
+    await page.mouse.move(grown.x - 14, grown.y - 14, { steps: 6 });
+    await page.mouse.up();
+    await settle(page);
+    const smaller = await d();
+    out.smaller = smaller;
+    check(smaller !== rounded, 'dragging a rounded corner back changed nothing');
+    check(/C/.test(smaller), `the corner stopped being an arc too early: ${smaller}`);
+
+    /* All the way back to the corner. Exact, because the corner is recovered rather
+       than approximated -- so this has to be the square it started as, character for
+       character, and not merely something close to it. */
+    await laidOut(page);
+    const again = (await controls()).find((c) => c.rounded);
+    check(!!again, 'the smaller arc offered no control');
+    await page.mouse.move(again.x, again.y);
+    await page.mouse.down();
+    await page.mouse.move(again.x - 90, again.y - 90, { steps: 10 });
+    await page.mouse.up();
+    await settle(page);
+    out.backTo = await d();
+    check(
+      out.backTo === square,
+      `dragging the radius to nothing left ${out.backTo} rather than ${square}`,
+    );
+
+    return out;
+  },
+
+  /**
    * A shape holding more than one path, and the list saying so.
    *
    * The complaint this answers: two disjoint paths in one shape, with the list

@@ -2340,6 +2340,11 @@ function showMeasure(): void {
   if (m.kind === 'box') {
     measureLabel.textContent = 'size';
     measureVal.textContent = `${m.w.toFixed(dp)} × ${m.h.toFixed(dp)}`;
+  } else if (m.kind === 'radius') {
+    // `radius` rather than `r`, because this slot is prose and the rect tool's own
+    // `r 3` readout is a different thing in a different place.
+    measureLabel.textContent = 'radius';
+    measureVal.textContent = m.r.toFixed(dp);
   } else {
     // The angle keeps one decimal whatever the document's setting. It is
     // degrees, not document units, and the two have no reason to agree.

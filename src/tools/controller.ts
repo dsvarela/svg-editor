@@ -12,7 +12,7 @@
 
 import { translate } from '../core/affine';
 import type { Box } from '../core/bezier';
-import { continuityOf, makeNode, segmentCount } from '../core/types';
+import { cloneSubpath, continuityOf, makeNode, segmentCount } from '../core/types';
 import type { Pt, Subpath } from '../core/types';
 import {
   emptySelection,
@@ -29,9 +29,14 @@ import type { HandlePart, NodeRef } from '../model/doc';
 import {
   captureNodes,
   closeSubpath,
+  cornerAt,
+  cornerRadiusAtReach,
+  maxCornerRadius,
   moveAnchor,
   moveHandle,
   nearestOnPath,
+  roundCorner,
+  unroundCorner,
   reverseSubpath,
   setContinuity,
   reshapeSegment,
@@ -56,6 +61,7 @@ import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/tran
 import type { TransformPart } from '../model/transform';
 import { ellipseSubpath, rectSubpath } from '../core/primitives';
 import type { Store } from '../model/store';
+import { CORNER_DOT_PX } from '../view/canvas';
 import type { Canvas, OverlayExtras } from '../view/canvas';
 import { bendFromPoint } from '../core/bend';
 import { fitAspect, screenToDoc, zoomAt } from '../view/viewport';
@@ -102,7 +108,25 @@ type DragKind =
   /* Placing or moving a guide. `born` marks one dragged out of a ruler, which
      is removed rather than left behind if the drag ends where it started --
      otherwise a stray click on a ruler would litter the canvas. */
-  | { kind: 'guide'; i: number; axis: GuideAxis; born: boolean };
+  | { kind: 'guide'; i: number; axis: GuideAxis; born: boolean }
+  /* Rounding a corner by dragging it. `sharp` is the subpath with this corner
+     un-rounded, captured once at the press: every move rebuilds from it and calls
+     `roundCorner`, so the drag and the rail's button produce the same geometry by
+     construction rather than by two implementations agreeing. */
+  | {
+      kind: 'corner';
+      shape: string;
+      sp: number;
+      sharp: Subpath;
+      at: number;
+      corner: Pt;
+      /** Unit vector from the corner into it, along the bisector of its two sides. */
+      bis: Pt;
+      /** Half the interior angle, which is what turns a distance into a radius. */
+      half: number;
+      max: number;
+      applied: number;
+    };
 
 /**
  * What the drag currently under way is worth reporting as a number.
@@ -115,7 +139,26 @@ type DragKind =
  */
 export type Measure =
   | { kind: 'vector'; len: number; deg: number }
-  | { kind: 'box'; w: number; h: number };
+  | { kind: 'box'; w: number; h: number }
+  /* A third, because a corner's radius is neither. Reporting it as the distance
+     the control moved would answer a question nobody asked: what you are setting
+     is the radius, and it is not the length of anything on screen. */
+  | { kind: 'radius'; r: number };
+
+/**
+ * The unit vector into a corner, along the bisector of its two sides.
+ *
+ * `u` and `v` are the unit vectors leaving the corner, so their sum bisects them.
+ * The degenerate case is two opposite directions, which is a path running straight
+ * through and not a corner at all -- `cornerAt` has already refused it, so the
+ * fallback here is unreachable rather than a decision.
+ */
+function bisector(u: Pt, v: Pt): Pt {
+  const bx = u[0] + v[0];
+  const by = u[1] + v[1];
+  const len = Math.hypot(bx, by);
+  return len < 1e-9 ? [0, 0] : [bx / len, by / len];
+}
 
 /** One decimal at most, and no trailing zero to make an angle look measured. */
 
@@ -550,6 +593,13 @@ export class Controller {
         // The applied translation, which is the snapped one.
         return vec(this.drag.applied[0], this.drag.applied[1]);
 
+      /* The radius that was applied, not the one the pointer asked for: it is
+         clamped to what the corner can hold and snapped to the lattice, and a
+         readout showing the request rather than the result is a readout that
+         disagrees with the drawing. */
+      case 'corner':
+        return { kind: 'radius', r: this.drag.applied };
+
       case 'anchor': {
         const d = this.drag;
         const n = findShape(s.doc, d.grabbed.shape)?.subpaths[d.grabbed.sp]?.nodes[d.grabbed.i];
@@ -852,6 +902,35 @@ export class Controller {
         start: [node.pt[0], node.pt[1]],
       };
       return;
+    }
+
+    if (hit?.kind === 'corner' && hit.ref) {
+      const live = findShape(s.doc, hit.ref.shape)?.subpaths[hit.ref.sp];
+      if (live) {
+        /* Un-round on a copy, and keep the copy. A corner that already holds an arc
+           has to go back to being a corner before it can be rounded to a different
+           radius, and doing that to the live path would make the drag's first frame
+           a visible jump to square. */
+        const sharp: Subpath = cloneSubpath(live);
+        const at = unroundCorner(sharp, hit.ref.i) ?? hit.ref.i;
+        const c = cornerAt(sharp, at);
+        if (typeof c !== 'string') {
+          this.openBatch();
+          this.drag = {
+            kind: 'corner',
+            shape: hit.ref.shape,
+            sp: hit.ref.sp,
+            sharp,
+            at,
+            corner: c.at,
+            bis: bisector(c.u, c.v),
+            half: c.alpha / 2,
+            max: maxCornerRadius(c),
+            applied: 0,
+          };
+          return;
+        }
+      }
     }
 
     if (hit?.kind === 'bend' && hit.ref && hit.seg !== null) {
@@ -1163,6 +1242,35 @@ export class Controller {
 
       case 'create': {
         this.createDrag(p, this.shift(e), this.alt(e));
+        return;
+      }
+
+      case 'corner': {
+        const d = this.drag;
+        // The pointer's distance along the bisector, read back as a radius.
+        const along = (p[0] - d.corner[0]) * d.bis[0] + (p[1] - d.corner[1]) * d.bis[1];
+        /* Less the offset the control is drawn at, so the radius comes out of the
+           same relation the drawing used and the dot stays under the pointer. */
+        const offset = CORNER_DOT_PX * this.canvas.scale(this.store.state.camera);
+        let r = cornerRadiusAtReach(along - offset, d.half);
+        r = Math.max(0, Math.min(d.max, r));
+        // Snapped as a length, not as a point: every other drag lands on the
+        // lattice, and a radius that came out at 3.87 would be the odd one.
+        const step = this.store.state.gridStep;
+        if (this.store.state.snapToGrid && step > 0) r = Math.round(r / step) * step;
+        d.applied = r;
+
+        this.store.edit((st) => {
+          const live = findShape(st.doc, d.shape)?.subpaths[d.sp];
+          if (!live) return;
+          /* Rebuilt from the sharp copy every frame rather than adjusted in place.
+             One function decides what a fillet is, so a dragged radius and a typed
+             one cannot disagree, and dragging back to zero leaves the corner sharp
+             because `roundCorner` declines a radius of nothing. */
+          live.nodes = cloneSubpath(d.sharp).nodes;
+          live.closed = d.sharp.closed;
+          if (r > 0) roundCorner(live, d.at, r);
+        });
         return;
       }
 
