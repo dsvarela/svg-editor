@@ -264,7 +264,36 @@ button in the Backdrop panel that runs on the loaded image as one undo step. The
 tolerance is the one Simplify already takes. Estimate M, not L: the L was the
 tracer, and we are not writing one.
 
+## Composing an icon, rather than drawing one
+
+Surveyed on 2026-08-17, after groups went in. The editor is strong at making one
+path and weak at arranging several into a drawing, and every item in this section is
+part of that one gap. Nothing here is a new mechanism: each is a use of machinery the
+editor already has, which is why the sizes are small.
+
+| | Feature | Source | Size |
+|---|---|---|---|
+| `[ ]` | **Z-order** — bring forward, send backward, to front, to back. Nothing reorders shapes today: `doc.shapes` order **is** the paint order, and only appending and filtering touch it, which is what lets one function keep a group's shapes contiguous (§49). So the routes to changing what paints over what are deleting and redrawing, or editing the source by hand. The design question is what "forward" means for a shape in a group, and the answer follows from §49: within its group's run, stopping at the edges, because a shape leaving that run breaks the invariant the export rests on. Front and back on a grouped shape then mean front and back of the group. Ungroup is how a shape leaves. | every editor | M |
+| `[ ]` | **Align and distribute shapes, and align to the canvas** — the buttons exist and act on **nodes** only: two or more selected nodes for align, three for distribute. Aligning a shape to the canvas centre is what icon work does constantly, and there is no way to do it. The pieces are all present -- `selectionBBox`, `docBBox` and the viewBox -- so what has to be decided is the target, and three are worth having: the selection's own bounds, the canvas, and the last-clicked shape as a key object. | Illustrator, Inkscape, Figma | S |
+| `[ ]` | **Numeric bounds for the selection** — X, Y, width and height as fields. The Canvas group already does exactly this for the viewBox, so the pattern and the one-undo-entry-per-edit machinery are in place. Width and height are a scale about a corner, and since transforms are baked (§5) a typed size has to be derived from the current bounds each time rather than composed onto the last one, or repeated edits accumulate drift. | Illustrator, Figma | S |
+| `[ ]` | **Export PNG at a chosen size** — needs no dependency and no server: serialise the document, draw it into a `<canvas>` through an `<img>` with a data URI, and `toBlob`. A data-URI SVG does not taint the canvas, so the read is allowed and it works from `file://` like everything else. An icon is shipped as a PNG more often than as an SVG, and there is currently no route to one at all. | — | S |
+| `[ ]` | **Target-size preview** — the drawing rendered at 16, 24, 32 and 48 px beside the canvas, redrawn as it changes. Pixel fit, the keyline grid and the honest grid all exist so that an icon reads at 16 px, and there is no way to look at it at 16 px. Cheap, because the export is already a string and the preview is a few `<img>`. This is the most icon-specific thing missing. | icon-design practice | S |
+
+## Smaller things, and one that needs a decision
+
+| | Feature | Source | Size |
+|---|---|---|---|
+| `[ ]` | **Survive a refresh** — the document is held in memory and nothing else, so a reload loses the work. localStorage answers it on the hosted page. Opened from `file://` Chromium gives the page an opaque origin and storage throws, so this has to degrade and say so rather than appear to save. What to save is the harder half: the drawing is the SVG, but guides, keylines, the camera and the backdrop are not in it, and the backdrop is an image. | — | S |
+| `[ ]` | **A workspace file** — export and import already are save and open for the *drawing*. They are not save and open for the workspace: guides, keylines, the backdrop and its placement, and the camera all go. A JSON sidecar carrying those would make a session resumable. Worth doing after the item above, since it answers the same question at a different scale. | — | M |
+| `[ ]` | **Star and polygon tools** — a regular polygon by side count, a star by point count and inner ratio. They are ordinary paths from the moment they are drawn, which is the claim the ellipse and rectangle tools already make good on, so this adds a generator and nothing to the model. | Inkscape, Boxy SVG | S |
+| `[ ]` | **Repeat the last transform** (`Ctrl`+`D`) — duplicate-and-rotate-again is how a radial icon is built. Cheap precisely because transforms are baked: the last matrix is the whole of what has to be remembered, and applying it again is the same call. | Illustrator | S |
+| `[ ]` | **Booleans between the paths of one shape** — a path is selectable on its own now (§47), so uniting or subtracting two paths of one shape without splitting it into two shapes first is a step that could be removed. The operands are subpaths rather than shapes, which is a change to what `booleanShapes` takes. | — | M |
+| `[ ]` | **Opacity** — one number per shape, and the first style attribute added since fill, stroke, width and rule. Listed with its own objection: the reason to stop at one number is the reason gradients are refused, and a `fill-opacity` and a `stroke-opacity` would follow it. Worth having only if opacity is wanted more than the boundary is. | SVG | S |
+
 ## Explicitly not doing
+
+One list, so that nothing is refused in two places for two different reasons. The
+last four were weighed during the survey of 2026-08-17.
 
 - **Vector networks** (Figma) — points with three or more edges. It solves a real
   problem (stroke joins at a T-junction are impossible in plain paths), but it
@@ -272,6 +301,21 @@ tracer, and we are not writing one.
   without flattening. Wrong bet for an SVG-native editor.
 - **Layers, text, filters, gradients** — Method Draw dropped layers deliberately
   to stay pleasant. Same reasoning applies here.
+- **Live or parametric shapes** — a rectangle that stays a rectangle with an editable
+  width, height and corner radius. It contradicts §2 and §5 directly, and §48 shows
+  the alternative that does not: the corner widget re-derives a radius from the
+  geometry rather than storing one, so a rounded corner is re-editable with nothing
+  written down that could disagree with the drawing. Where a parameter is recoverable,
+  recover it. Where it is not, the shape is a path.
+- **Live mirror or symmetry** — draw half, get the other half. A stored relation
+  between two halves, and the same objection as above. The one-shot version is already
+  reachable: duplicate, flip, and connect the ends.
+- **Stroke alignment, inside or outside** — SVG has no attribute for it; a stroke is
+  painted centred and nothing else. Inside and outside are an offset of the path, and
+  **Offset path** and **Stroke to path** already do that, destructively and visibly,
+  which is the honest version of a feature other editors present as a setting.
+- **Artboards or pages** — the document is one viewBox, and every readout, the grid
+  phase and the export are written against that. Several would be several documents.
 
 ---
 
