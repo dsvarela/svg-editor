@@ -142,20 +142,11 @@ Both were already measured by the audit every scenario runs and neither was
 read by anything.
 
 **The audit also fails on overlay decoration that takes the press without naming
-a hit**, painted over something that does. The controller reads a press whose
-target has no `data-hit` as the start of a marquee, so such an element does the
-opposite of the control it covers. Document order is paint order in SVG, which
-is what "over" means here, and it is why the grid is exempt: it is under every
-control on the canvas and can take a press from none of them.
-
-It found two, and only the first was doing harm. `.handle-line`: a latent
-handle's line lies along the straight segment it would bend, over that segment's
-outline, and **16.4% of the whole pixels down a selected rectangle's edge
-deselected the shape instead of moving it.** Taking `pointer-events: none` off it
-again fails 31 of the 52 scenarios. `.guide` was swallowing nothing, because its
-8 px hit strip is painted after it and covers it everywhere -- **the check asks
-what an element is, not whether it is currently getting away with it**, and what
-stopped that one was another element's geometry rather than anything saying so.
+a hit**, painted over something that does, because such an element does the
+opposite of the control it covers. It found two, and only one was doing harm:
+`.handle-line` cost **16.4% of the whole pixels down a selected rectangle's
+edge**, and restoring it fails 31 of the 52 scenarios. §54 of
+`docs/ARCHITECTURE.md` has the rule and both instances.
 
 **No browser scenario waits a fixed number of milliseconds.** There were 233
 such sleeps, each a guess about how long a machine takes, so each was either

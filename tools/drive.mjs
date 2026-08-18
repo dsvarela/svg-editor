@@ -5245,8 +5245,8 @@ const audit = await page.evaluate(() => {
    *
    * The question is what an element is, not whether it is getting away with it
    * today: being covered by a wider hit strip is another element's geometry
-   * rather than a rule. `CLAUDE.md` records what this has caught and what it
-   * cost. */
+   * rather than a rule. §54 of `docs/ARCHITECTURE.md` has the argument and what
+   * this has caught. */
   const swallow = new Map();
   let overAControl = false;
   for (const el of document.querySelectorAll('.overlay *')) {

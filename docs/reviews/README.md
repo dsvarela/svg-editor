@@ -12,6 +12,7 @@ attached to the reason for it.
 
 | Date | Covered | Found |
 |---|---|---|
+| [2026-08-18](2026-08-18.md) | The palette against the contrast floors, the switch to Firefox, and the three scenarios that went red on it | 1 check that could not fail, 2 scenarios asserting nothing, 1 defect in the editor, 1 instrument that had never measured Tab, 5 comments describing code that is gone. The check that could not fail is `--audit` itself: `page.check('#filled')` satisfied its test for a scenario that asserts something. |
 | [2026-08-15](2026-08-15.md) | The touch retrofit: coarse-pointer sizing, the two-finger gesture, the held-key buttons, and the three tests fixed before it | 1 instrument wrong three ways, 1 defect the tests found before a hand could, 5 tests that could not fail, 1 line nothing distinguishes. Every touch number recorded before this date was produced by the wrong instrument: 84 of 85 was really 165 of 166. |
 | [2026-08-14](2026-08-14.md) | The last seven shopping-list items, offset path, stroke to path, importing a file | 3 pieces of code nothing distinguishes, 1 claim wrong twice before it was right, 4 tests that could not fail. The three pieces were all written to fix one error that never moved, because the error was in what measured it. |
 | [2026-08-13](2026-08-13.md) | Knot removal, Make one shape, curve dragging, keylines, rulers and guides | 6 defects, 4 documentation claims, 2 tests that could not fail. Three of the defects were one rule the guide gestures did not follow; two more came out of rewriting a test that could not fail. |

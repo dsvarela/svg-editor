@@ -2483,3 +2483,35 @@ declines to decode or encode. A silently blank PNG is the worst outcome
 available: the download succeeds and nobody looks at the file until later. The
 browser scenario reads the bytes back for the same reason -- a well-formed PNG of
 nothing has a valid header too, so it counts the opaque pixels.
+
+## 54. Overlay decoration takes no pointer, whatever is covering it today
+
+The controller reads a press by asking what is under it and looking for a
+`data-hit` attribute. A target without one is not a control, so the press starts
+a marquee, which clears the selection. That is the right reading of a press on
+empty canvas and the wrong reading of a press on a shape.
+
+So a decorative element painted over a control does the opposite of the control
+where it lies. `.handle-line` did: a latent handle's line runs from a node along
+the straight segment it would bend, directly over that segment's outline, and
+**16.4% of the whole pixels down a selected rectangle's edge deselected the shape
+instead of moving it.** One press in six. It is a dashed line one pixel wide, so
+nobody aiming at the edge could see why the edge sometimes failed.
+
+**Document order is paint order in SVG**, which is what decides whether an
+element is over a control or under one. The grid is painted before anything
+carrying a `data-hit`, so it can take a press from nothing and needs no
+declaration. Everything painted after the first control needs
+`pointer-events: none` unless it is a control itself.
+
+**The rule is about what an element is, not about whether it is getting away
+with it.** `.guide` was swallowing no press at all: its hit strip is eight pixels
+wide, transparent, painted immediately after it and covering it everywhere. What
+stopped it was another element's geometry, and geometry changes. It is declared
+now, and the rule reads the same for both.
+
+The audit inside `tools/drive.mjs` runs on every scenario and fails the run on
+any element that breaks this. Restoring the `.handle-line` defect fails 31 of the
+52 scenarios. It asks the browser's own taxonomy -- `SVGGeometryElement` and its
+image, text and use siblings -- rather than a list of tag names, so a new kind of
+overlay element is covered without anyone remembering to add it.
