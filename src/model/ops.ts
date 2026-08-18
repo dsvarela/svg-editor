@@ -79,17 +79,16 @@ export function moveAnchor(sp: Subpath, i: number, to: Pt): void {
  *
  * The node has no stored type, so the relationship is read off the geometry
  * BEFORE the move -- afterwards the pair is no longer collinear and would
- * always read as a corner, so a smooth node would break itself on its first
- * drag. Having read it, a `smooth` pair keeps the other handle's length and
- * rotates it to match; a `symmetric` pair mirrors exactly; a corner moves one
- * handle alone.
+ * always read as a cusp, so a smooth node would break itself on its first drag.
+ * Having read it, a `smooth` pair keeps the other handle's length and rotates it
+ * to match; a `symmetric` pair mirrors exactly; a cusp moves one handle alone.
  *
  * Because the relation is re-read every move, it is self-maintaining: mirroring
  * keeps lengths exactly equal, so a symmetric node stays symmetric for as long
  * as the drag lasts, and a broken one stays broken.
  *
  * `breakPair` is the Alt-drag escape hatch: move this handle alone regardless,
- * which leaves the pair non-collinear and therefore a corner from then on.
+ * which leaves the pair non-collinear and therefore a cusp from then on.
  */
 export function moveHandle(
   sp: Subpath,
@@ -99,12 +98,12 @@ export function moveHandle(
   breakPair = false,
 ): void {
   const n = sp.nodes[i];
-  const was = breakPair ? 'corner' : continuityOf(n);
+  const was = breakPair ? 'cusp' : continuityOf(n);
 
   if (which === 'in') n.hIn = to;
   else n.hOut = to;
 
-  if (was === 'corner') return;
+  if (was === 'cusp') return;
 
   const otherKey = which === 'in' ? 'hOut' : 'hIn';
   const other = n[otherKey];
@@ -122,10 +121,10 @@ export function moveHandle(
  * Force a node into a given continuity by MOVING ITS HANDLES.
  *
  * With no stored flag there is nothing else to set: to make a node smooth you
- * align its handles, and to make it a corner you take its handles away. Every
+ * align its handles, and to make it a cusp you take its handles away. Every
  * call is therefore a real edit to the geometry or no edit at all.
  *
- * A corner has no handles, so smooth and symmetric materialise them a third
+ * A cusp has no handles, so smooth and symmetric materialise them a third
  * along each neighbouring segment and then rotate both to the averaged
  * direction. That moves the drawing: a right-angle corner with 10-unit sides
  * shifts by 1.48 units.
@@ -138,7 +137,7 @@ export function moveHandle(
 export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): boolean {
   const n = sp.nodes[i];
 
-  if (kind === 'corner') {
+  if (kind === 'cusp') {
     if (!n.hIn && !n.hOut) return false;
     n.hIn = null;
     n.hOut = null;

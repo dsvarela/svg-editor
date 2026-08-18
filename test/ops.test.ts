@@ -85,7 +85,7 @@ describe('moving', () => {
   it('leaves a corner node free to break its tangent', () => {
     // Node 1's handles are at different angles, so nothing is being maintained.
     const sp = parsePath('M0 0 C0 20 40 20 40 0 C60 -20 80 -20 80 0')[0];
-    expect(continuityOf(sp.nodes[1])).toBe('corner');
+    expect(continuityOf(sp.nodes[1])).toBe('cusp');
     moveHandle(sp, 1, 'out', [40, 30]);
     expect(sp.nodes[1].hIn).toEqual([40, 20]);
   });
@@ -123,7 +123,7 @@ describe('moving', () => {
     const sp = curve();
     moveHandle(sp, 1, 'out', [50, -10], true);
     expect(sp.nodes[1].hIn).toEqual([40, 20]);
-    expect(continuityOf(sp.nodes[1])).toBe('corner');
+    expect(continuityOf(sp.nodes[1])).toBe('cusp');
 
     // No break flag this time: the node is a corner now, so it stays one.
     moveHandle(sp, 1, 'out', [55, -12]);
@@ -183,17 +183,17 @@ describe('forcing a continuity', () => {
     // The honest reading: with no stored flag, a node is only a corner because
     // of where its handles are, so "make corner" has to move something.
     const sp = curve();
-    setContinuity(sp, 1, 'corner');
+    setContinuity(sp, 1, 'cusp');
     expect(sp.nodes[1].hIn).toBeNull();
     expect(sp.nodes[1].hOut).toBeNull();
-    expect(continuityOf(sp.nodes[1])).toBe('corner');
+    expect(continuityOf(sp.nodes[1])).toBe('cusp');
   });
 
   it('gives a corner handles rather than declining', () => {
     // Leaving a handle-less node alone reads as a dead button: the node stays
     // a corner and nothing on screen moves.
     const sp = parsePath('M0 0 L10 0 L20 10 L30 10')[0];
-    expect(continuityOf(sp.nodes[1])).toBe('corner');
+    expect(continuityOf(sp.nodes[1])).toBe('cusp');
 
     setContinuity(sp, 1, 'smooth');
 
@@ -230,7 +230,7 @@ describe('forcing a continuity', () => {
     expect(setContinuity(sp, 0, 'smooth')).toBe(false);
     expect(sp.nodes[0].hIn).toBeNull();
     expect(sp.nodes[0].hOut).toBeNull();
-    expect(continuityOf(sp.nodes[0])).toBe('corner');
+    expect(continuityOf(sp.nodes[0])).toBe('cusp');
     // Nothing about the path changed, not even its spelling.
     expect(serialisePath([sp])).toBe(before);
   });
@@ -241,7 +241,7 @@ describe('forcing a continuity', () => {
     // Asking for the same thing twice is a no-op the second time.
     expect(setContinuity(sp, 1, 'smooth')).toBe(false);
     // A corner that is already a corner has nothing to remove.
-    expect(setContinuity(sp, 0, 'corner')).toBe(false);
+    expect(setContinuity(sp, 0, 'cusp')).toBe(false);
   });
 
   it('moves the drawing when it materialises handles, and says so', () => {
@@ -1171,8 +1171,8 @@ describe('reshapeSegment', () => {
     // Two segments meeting smoothly at node 1. Reshaping the first must carry
     // the neighbour round, which is what going through `moveHandle` buys.
     const sp = parsePath('M0 0 C 10 -10 20 -10 30 0 C 40 10 50 10 60 0')[0];
-    expect(continuityOf(sp.nodes[1])).not.toBe('corner');
+    expect(continuityOf(sp.nodes[1])).not.toBe('cusp');
     reshapeSegment(sp, 0, 0.5, [15, -18]);
-    expect(continuityOf(sp.nodes[1])).not.toBe('corner');
+    expect(continuityOf(sp.nodes[1])).not.toBe('cusp');
   });
 });

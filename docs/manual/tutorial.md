@@ -60,7 +60,7 @@ The top of the bookmark is now a shallow curve instead of a flat edge.
 ## 4. Make the curve symmetric
 
 Click the node at 25, 12 again and look at the **Node** panel on the right. One
-of **Corner**, **Smooth** and **Symm** is lit. It reads **Corner**, because one
+of **Cusp**, **Smooth** and **Symm** is lit. It reads **Cusp**, because one
 handle exists and the other does not.
 
 Press **Symm**. The missing handle is created, both are lined up, and they are

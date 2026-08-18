@@ -22,16 +22,24 @@ export type Cubic = [Pt, Pt, Pt, Pt];
  * This is DERIVED from the handles, never stored. A node is just a node; what
  * it does when you drag a handle follows from where its handles already are:
  *
- *  - `corner`    handles missing, or not collinear -- they move independently
+ *  - `cusp`      handles missing, or not collinear -- they move independently
  *  - `smooth`    handles collinear, different lengths -- direction is shared
  *  - `symmetric` handles collinear and equal length -- fully mirrored
  *
+ * **`cusp` and not `corner`**, which is what this was called and what Inkscape
+ * calls it too. `cornerAt` in `model/ops.ts` asks a different question -- two
+ * straight sides meeting, which is what Round can cut -- and the two answers
+ * disagree constantly: a node with two curved sides pulling different ways is a
+ * cusp with no corner to round, and a square's corner is roundable while having
+ * no handles to be a cusp about. One word for both made the interface say
+ * "Corner" beside a corner control that was not there.
+ *
  * Storing a flag instead would let it disagree with the geometry: a file could
  * claim `smooth` while its handles sat at 90 degrees, and an imported path --
- * which has no such flag to import -- would read as all-corner even where it is
+ * which has no such flag to import -- would read as all-cusp even where it is
  * visibly smooth. Deriving it means what you see is always what you get.
  */
-export type NodeContinuity = 'corner' | 'smooth' | 'symmetric';
+export type NodeContinuity = 'cusp' | 'smooth' | 'symmetric';
 
 /**
  * One anchor and its handles.
@@ -190,7 +198,7 @@ export const makeNode = (pt: Pt, hIn: Pt | null = null, hOut: Pt | null = null):
  * Not an epsilon on the raw numbers: a rotation is exact in theory and only
  * nearly exact in floating point, so a hand-mirrored pair that survives a
  * rotate-and-bake would fail a tight test and the node would silently turn into
- * a corner. 1e-4 rad is ~0.006 degrees -- far below anything a person could
+ * a cusp. 1e-4 rad is ~0.006 degrees -- far below anything a person could
  * place by eye, far above the drift a few baked transforms introduce.
  */
 const COLLINEAR_TOL = 1e-4;
@@ -204,12 +212,12 @@ const LENGTH_TOL = 1e-6;
  * The two vectors compared both point "forward" along the path: from `hIn`
  * towards the anchor, and from the anchor towards `hOut`. For a smooth node
  * they are parallel and same-signed, which is why an anti-parallel pair (a
- * cusp folded back on itself) correctly reads as a corner rather than as a
- * perfectly smooth node.
+ * cusp folded back on itself) correctly reads as one rather than as a perfectly
+ * smooth node.
  */
 export function continuityOf(n: PathNode): NodeContinuity {
   const { pt, hIn, hOut } = n;
-  if (!hIn || !hOut) return 'corner';
+  if (!hIn || !hOut) return 'cusp';
 
   const ax = pt[0] - hIn[0];
   const ay = pt[1] - hIn[1];
@@ -218,10 +226,10 @@ export function continuityOf(n: PathNode): NodeContinuity {
 
   const la = Math.hypot(ax, ay);
   const lb = Math.hypot(bx, by);
-  if (la < 1e-12 || lb < 1e-12) return 'corner';
+  if (la < 1e-12 || lb < 1e-12) return 'cusp';
 
-  if ((ax * bx + ay * by) / (la * lb) <= 0) return 'corner';
-  if (Math.abs((ax * by - ay * bx) / (la * lb)) > COLLINEAR_TOL) return 'corner';
+  if ((ax * bx + ay * by) / (la * lb) <= 0) return 'cusp';
+  if (Math.abs((ax * by - ay * bx) / (la * lb)) > COLLINEAR_TOL) return 'cusp';
 
   return Math.abs(la - lb) <= LENGTH_TOL * Math.max(la, lb) ? 'symmetric' : 'smooth';
 }

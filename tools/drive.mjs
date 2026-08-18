@@ -514,7 +514,7 @@ const scenarios = {
        partner until Alt says otherwise. */
     check(asDrawn.badge === 'Symm', `drawn with mirrored handles, badge reads ${asDrawn.badge}`);
     check(mirrored.badge === 'Symm', `after a plain drag the badge reads ${mirrored.badge}`);
-    check(broken.badge === 'Corner', `after an Alt drag the badge reads ${broken.badge}`);
+    check(broken.badge === 'Cusp', `after an Alt drag the badge reads ${broken.badge}`);
     return { asDrawn, mirrored, broken };
   },
 
@@ -1265,6 +1265,12 @@ const scenarios = {
 
     const dragged = await page.textContent('#stats');
     check(/6 nodes/.test(dragged), `dragging one corner of a selected shape: "${dragged}"`);
+    /* At the limit the arcs meet on the sides they share, the tangent points
+       land on the neighbours, and there is no corner left for the control to
+       come back on. That is worth a sentence, or it reads as the control
+       breaking. */
+    const said = await page.textContent('#status');
+    check(/uses the sides up/.test(said), `dragging to the limit said "${said}"`);
     const stadium = await page.getAttribute('.artwork path', 'd');
     check(!/64 16/.test(stadium), `the grabbed corner is still sharp: ${stadium}`);
     check(!/20 48/.test(stadium), `the far corner was left sharp: ${stadium}`);
@@ -3429,7 +3435,7 @@ const scenarios = {
           .filter((b) => b.getAttribute('aria-pressed') === 'true')
           .map((b) => b.getAttribute('data-v')),
       );
-    check(JSON.stringify(await pressed()) === '["corner"]', `starts as ${await pressed()}`);
+    check(JSON.stringify(await pressed()) === '["cusp"]', `starts as ${await pressed()}`);
 
     await page.click('#ntype button[data-v="auto"]');
     await settle(page);

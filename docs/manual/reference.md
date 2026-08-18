@@ -62,7 +62,7 @@ treat those two rows as untried rather than as reported working.
 | `Shift`+`R` | Reverse the selected paths |
 | `Shift`+`P` | Make the selected shapes into one shape, changing no geometry |
 | `Shift`+`K` | Split the selected shapes, giving each path a shape of its own |
-| `Shift`+`C` `S` `Y` | Make every selected node a corner, smooth, or symmetric |
+| `Shift`+`C` `S` `Y` | Make every selected node a cusp, smooth, or symmetric |
 | `Shift`+`A` | Make every selected node auto-smooth, or hand control back |
 | `[` `]` | Select the node before or after this one along the path |
 | `Shift`+`[` `]` | Add it to the selection instead of replacing |
@@ -345,8 +345,11 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 Live coordinates for the selected node and its two handles. Type into any field
 to set it exactly.
 
-- **Corner**, **Smooth**, **Symm** show how the selected node's handles are set,
-  and change it when pressed.
+- **Cusp**, **Smooth**, **Symm** show how the selected node's handles are set,
+  and change it when pressed. **Cusp** means the two handles are not in line, so
+  the path turns at the node; it is the word Inkscape uses, and it is deliberately
+  not "corner" -- **Round** below asks a different question, and a node can be a
+  cusp with no corner to round and a corner with no cusp.
 - **Auto** (`Shift+A`) is different in kind: it does not set the handles once, it
   keeps re-deriving them from the two neighbours, so moving a nearby node re-aims
   this one and the curve stays fair. Press it again to hand control back, which
@@ -371,6 +374,12 @@ to set it exactly.
   **One mark dragged rounds every corner it is grouped with**, under the same
   rule as the button: the whole shape when no nodes are picked out, and the
   selected nodes when some are.
+
+  **The largest radius the sides can hold is where the corner ends.** At that
+  size the arc runs from one neighbour to the other, the two straight sides are
+  used up, and there is no corner left: the control goes, and the status line
+  says so. Undo brings the corner back. A rectangle rounded to its limit is a
+  stadium, which is the drawing you asked for and not a corner any more.
 
   A rounded corner can be grabbed and changed again, because nothing stores the
   radius: the two handles of the arc point at the corner they were cut from, so the
@@ -839,6 +848,9 @@ Named here rather than left for you to find.
 - **Healing across an inflection.** Deleting a node whose two segments curve
   opposite ways rebuilds them as one that visibly differs. Use **Split** or
   **Break here** when the curve matters.
+- **A corner rounded to its limit cannot be adjusted again.** The arc reaches
+  both neighbours, so the two straight sides that defined the corner are gone
+  and nothing can read a radius back off the path. Undo, or draw it again.
 - **Arcs do not survive a round trip.** A shape imported as an `A` comes back out
   as a `C`. See [what is read on import](#what-is-read-on-import-and-what-is-written-on-export).
 - **A traced photograph makes a document too dense to edit.** Tracing runs in a

@@ -2341,7 +2341,7 @@ describe('continuity shortcuts', () => {
     const h = harness('M 0 0 C 4 8 12 8 16 0 C 26 4 28 8 32 0');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
-    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('corner');
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('cusp');
     return h;
   };
 
@@ -2356,7 +2356,7 @@ describe('continuity shortcuts', () => {
     h.key('Y', { shiftKey: true });
     expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('symmetric');
     h.key('C', { shiftKey: true });
-    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('corner');
+    expect(continuityOf(h.store.state.doc.shapes[0].subpaths[0].nodes[1])).toBe('cusp');
   });
 
   it('does nothing without Shift, so typing c, s or y in a field is safe', () => {

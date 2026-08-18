@@ -266,7 +266,7 @@ describe('the corners it should and should not have', () => {
      that is wrong, not the position, and no distance measure can see it. */
 
   const cornersOf = (sp: Subpath): number =>
-    sp.nodes.filter((n) => continuityOf(n) === 'corner').length;
+    sp.nodes.filter((n) => continuityOf(n) === 'cusp').length;
 
   it('leaves none on the offset of a circle, which is another circle', () => {
     expect(cornersOf(one(path(CIRCLE), 5, 0.02))).toBe(0);

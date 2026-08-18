@@ -41,7 +41,7 @@ describe('the handles it derives', () => {
   it('puts them on the chord between the neighbours, so the node is smooth', () => {
     const sp = path('M0 0 L10 6 L20 0');
     setAuto(sp, 1, true);
-    expect(continuityOf(sp.nodes[1])).not.toBe('corner');
+    expect(continuityOf(sp.nodes[1])).not.toBe('cusp');
     // Both handles lie on the line through the neighbours, which is horizontal
     // here: the chord from (0, 0) to (20, 0).
     expect(sp.nodes[1].hIn![1]).toBeCloseTo(6, 9);

@@ -36,7 +36,7 @@ against a tolerance, which is what lets the output keep `L`, `H` and `V` instead
 of writing every line as a curve that happens to be flat.
 
 You can see it in the ghost handles. A hollow circle marks where a handle would
-go if it existed. Pull one out and the segment becomes a curve; press **Corner**
+go if it existed. Pull one out and the segment becomes a curve; press **Cusp**
 and the handles go away and it is a line again, not a curve pretending.
 
 It is also why a rounded rectangle's sides stay exactly straight no matter what

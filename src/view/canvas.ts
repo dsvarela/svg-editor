@@ -652,7 +652,7 @@ export class Canvas {
           // read off the handles every frame, so the marker cannot claim
           // something the geometry does not back up.
           if (!near) return;
-          const r = continuityOf(n) === 'corner' ? 0 : anchorSize / 2;
+          const r = continuityOf(n) === 'cusp' ? 0 : anchorSize / 2;
           this.anchors.next({
             x: n.pt[0] - anchorSize / 2,
             y: n.pt[1] - anchorSize / 2,
@@ -882,7 +882,7 @@ const CORNER_SIDE = 7.5;
  * **A diamond because the other two shapes are taken, and taken with meanings
  * that would clash.** A circle at `--measure` is the bend control, so a round
  * corner control is the same picture for a different tool. A square is worse: an
- * anchor is a square when its node is a corner and a rounded square when it is
+ * anchor is a square when its node is a cusp and a rounded square when it is
  * smooth, so a corner control drawn either of those ways spells the anchor's
  * sentence 16 px from an anchor saying something else. Turning the square 45
  * degrees leaves the tools distinct at a glance and keeps the corner control out

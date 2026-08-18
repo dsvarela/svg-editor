@@ -2615,3 +2615,29 @@ the list rebuilds itself from scratch on a notification, and rows captured befor
 that are detached nodes by the time the pointer moves. The row is found again by
 its key afterwards, which is the same rule §43 states for nodes: build a
 reference, use it, throw it away.
+
+## 57. One word, one meaning, and this one had two
+
+`continuityOf` answered `corner` for a node whose handles are missing or not in
+line. `cornerAt` answers with a corner when two straight sides meet at a node,
+which is what Round can cut. Both are correct about their own question and the
+two answers disagree constantly:
+
+- A node with two curved sides pulling different ways is a cusp with no corner to
+  round. The panel said **Corner** beside a canvas with no corner control on it.
+- A square's corner is roundable and has no handles at all to be a cusp about.
+  The panel said **Corner** there too, for the other reason.
+
+The user reading that screen had no way to tell which sentence the word was in,
+and reported the corner control as broken. It was not: the interface was using
+one noun for two things.
+
+The continuity is `cusp` now, which is the word Inkscape uses for the same node
+type beside the same Smooth and Symmetric. `corner` belongs to the fillet, which
+is where the geometry earns it: `cornerAt`, `roundCorner`, `unroundCorner`, the
+`corner` drag kind and the `data-hit="corner"` control are one concept under one
+name.
+
+`writing` rule 9 states the trap in both directions. Two words for one concept is
+the half everybody checks. One word for two concepts is the half that hides,
+because nothing on the screen looks inconsistent.

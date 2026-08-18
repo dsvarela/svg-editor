@@ -2326,7 +2326,7 @@ export class Commands {
         // An end of an open subpath has a segment on one side only, so there is
         // no pair to line up and smooth/symmetric cannot apply.
         const oneSided =
-          kind !== 'corner' &&
+          kind !== 'cusp' &&
           !sp.closed &&
           (r.i === 0 || r.i === sp.nodes.length - 1) &&
           (!node.hIn || !node.hOut);
@@ -2353,7 +2353,7 @@ export class Commands {
         false,
       );
     } else if (alreadySo) {
-      const word = kind === 'corner' ? 'a corner' : kind === 'smooth' ? 'smooth' : 'symmetric';
+      const word = kind === 'cusp' ? 'a cusp' : kind === 'smooth' ? 'smooth' : 'symmetric';
       this.onMessage?.(
         `Already ${word}.`,
         true,

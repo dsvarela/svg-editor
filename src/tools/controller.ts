@@ -1452,6 +1452,23 @@ export class Controller {
       /* The live readout during a transform is a measurement, not an outcome.
          Restating it as a sentence on release is what turns the last thing on
          screen into a record of what was done. */
+      /* A corner dragged to the limit of what its sides can hold is a corner
+         that has ceased to exist: the arc's tangent points land on the
+         neighbours, `roundCorner` reuses them, and the two straight sides that
+         defined the corner are gone. Nothing stores a radius (§48), so there is
+         nothing left for `filletAt` to recover and the control goes with it.
+         Undo brings it back; without a word here, it looks like the control
+         broke. */
+      if (this.drag.kind === 'corner') {
+        const d = this.drag;
+        if (d.applied > 0 && d.applied >= d.max - 1e-9) {
+          this.onMessage?.(
+            `Rounded to r ${fmt(d.applied)}, which uses the sides up. No corner is left to adjust.`,
+            true,
+          );
+        }
+      }
+
       if (this.drag.kind === 'transform') {
         const d = this.drag;
         const now = selectionBBox(this.store.state.doc, this.store.state.selection);
@@ -1534,7 +1551,7 @@ export class Controller {
       this.store.tryEdit((st) => {
         const sp = findShape(st.doc, ref.shape)?.subpaths[ref.sp];
         if (!sp?.nodes[ref.i]) return false;
-        const order = ['corner', 'smooth', 'symmetric'] as const;
+        const order = ['cusp', 'smooth', 'symmetric'] as const;
         const cur = continuityOf(sp.nodes[ref.i]);
         return setContinuity(sp, ref.i, order[(order.indexOf(cur) + 1) % order.length]);
       });

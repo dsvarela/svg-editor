@@ -245,7 +245,7 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       case 'Y': {
         if (!e.shiftKey) return;
         e.preventDefault();
-        commands.setSelectedContinuity(e.key === 'C' ? 'corner' : e.key === 'S' ? 'smooth' : 'symmetric');
+        commands.setSelectedContinuity(e.key === 'C' ? 'cusp' : e.key === 'S' ? 'smooth' : 'symmetric');
         return;
       }
       // Shift+J spans the gap; Shift+M welds. Inkscape uses Shift+J for the

@@ -161,7 +161,7 @@ describe('simplifySubpath', () => {
     const r = simplifySubpath(sp, 0.5)!;
     expect(r.after).toBe(3);
     expect(sp.nodes[1].pt).toEqual([10, 0]);
-    expect(continuityOf(sp.nodes[1])).toBe('corner');
+    expect(continuityOf(sp.nodes[1])).toBe('cusp');
   });
 
   it('does not put a kink in a closed curve where it cut it', () => {
@@ -171,7 +171,7 @@ describe('simplifySubpath', () => {
     const sp = smoothCircle(24);
     const r = simplifySubpath(sp, 0.5);
     expect(r).not.toBeNull();
-    expect(continuityOf(sp.nodes[0])).not.toBe('corner');
+    expect(continuityOf(sp.nodes[0])).not.toBe('cusp');
   });
 
   it('holds the ends of an open path still', () => {

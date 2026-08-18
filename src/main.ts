@@ -766,7 +766,7 @@ for (const f of coordFields) {
 
 ntypeSeg.addEventListener('click', (e) => {
   const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
-  if (v === 'corner' || v === 'smooth' || v === 'symmetric') commands.setSelectedContinuity(v);
+  if (v === 'cusp' || v === 'smooth' || v === 'symmetric') commands.setSelectedContinuity(v);
   else if (v === 'auto') commands.setSelectedAuto();
 });
 
