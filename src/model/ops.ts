@@ -696,8 +696,9 @@ export interface CirculariseResult {
  * Force every node of a subpath onto its own best-fit circle.
  *
  * Each node keeps its angle about the fitted centre and moves to the fitted
- * radius; handles are rebuilt at `r · 4/3 · tan(θ/4)`. `widestSpan` is returned
- * because a cubic's error grows steeply with the span it covers.
+ * radius; handles are rebuilt at `r · 4/3 · tan(θ/4)`. That approximation costs
+ * 2.7e-4 of the radius at a quarter turn and 1.8e-2 at a half, so `widestSpan`
+ * is returned: it is what says how round the result can possibly be.
  *
  * **A closed contour takes one winding from the sign of the polygon's area**
  * and forces every span to follow. Taking each the shorter way instead is
@@ -804,20 +805,6 @@ export interface RoundResult {
 }
 
 /**
- * Replace a corner with a circular arc tangent to both of its sides.
- *
- * The node becomes two, one at each tangent point, with a cubic between them.
- *
- * **Both sides have to be straight**, because a fillet is defined by tangency
- * to two lines. Against a curve the arc will not meet it smoothly, and a corner
- * operation that leaves a kink has not done its job. Refused, not approximated.
- * §23.
- *
- * The radius is clamped to what the shorter side can hold. Rounding the corners
- * of a rectangle one at a time works because each one sees the sides the
- * previous ones left behind.
- */
-/**
  * A corner that could be rounded, measured. `u` and `v` are unit vectors along
  * its two sides, so a tangent point at `d` is `at + u * d`; `alpha` is the
  * interior angle and `reach` the clamp on the radius.
@@ -875,6 +862,20 @@ export function cornerAt(sp: Subpath, i: number): Corner | RoundRefusal {
 /** The largest radius a corner can hold, which is `reach` read as a radius. */
 export const maxCornerRadius = (c: Corner): number => c.reach * Math.tan(c.alpha / 2);
 
+/**
+ * Replace a corner with a circular arc tangent to both of its sides.
+ *
+ * The node becomes two, one at each tangent point, with a cubic between them.
+ *
+ * **Both sides have to be straight**, because a fillet is defined by tangency
+ * to two lines. Against a curve the arc will not meet it smoothly, and a corner
+ * operation that leaves a kink has not done its job. Refused, not approximated.
+ * §23.
+ *
+ * The radius is clamped to what the shorter side can hold. Rounding the corners
+ * of a rectangle one at a time works because each one sees the sides the
+ * previous ones left behind.
+ */
 export function roundCorner(
   sp: Subpath,
   i: number,
@@ -1310,5 +1311,3 @@ export function nearestOnPath(
   }
   return best;
 }
-
-

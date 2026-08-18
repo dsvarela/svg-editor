@@ -406,8 +406,9 @@ export class Store {
    * Record an undo point. Safe to call repeatedly inside one `edit` -- only the
    * first call in a batch takes a snapshot, so a drag that mutates on every
    * pointermove still collapses to a single undo step.
+   *
+   * Returns whether an entry was actually pushed, which `tryEdit` needs.
    */
-  /** Returns whether an entry was actually pushed, which `tryEdit` needs. */
   checkpoint(): boolean {
     return this.take(false);
   }

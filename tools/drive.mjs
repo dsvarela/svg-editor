@@ -114,18 +114,6 @@ async function counts(page) {
 }
 
 /**
- * Wait for the editor to have drawn whatever the last action asked for.
- *
- * The controller renders one `requestAnimationFrame` after a store
- * notification, so two frames is past any render the event scheduled.
- *
- * **Never a fixed sleep**: a guess about how long a machine takes is either
- * slower than it needs to be or shorter than the thing it waits for.
- *
- * Not enough where the work continues off the event -- a worker, a file read,
- * an image decode. Those wait on their own result.
- */
-/**
  * Wait for a control to gain the tooltip that describes it, and return its id.
  *
  * The tooltip opens on a delay the app owns, so a frame is too early. Throws on
@@ -148,6 +136,18 @@ const backdropRead = (page) =>
 const traced = (page) =>
   page.waitForFunction(() => !/^Tracing/.test(document.querySelector('#status')?.textContent ?? ''));
 
+/**
+ * Wait for the editor to have drawn whatever the last action asked for.
+ *
+ * The controller renders one `requestAnimationFrame` after a store
+ * notification, so two frames is past any render the event scheduled.
+ *
+ * **Never a fixed sleep**: a guess about how long a machine takes is either
+ * slower than it needs to be or shorter than the thing it waits for.
+ *
+ * Not enough where the work continues off the event -- a worker, a file read,
+ * an image decode. Those wait on their own result.
+ */
 const settle = (page) =>
   page.evaluate(
     () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
@@ -947,12 +947,6 @@ const scenarios = {
   async primitives(page, check) {
     const { drag } = await mk(page);
 
-    /* Every value read off the page is compared against something here. A
-       scenario that only reads and returns is not a check: break
-       Shift-constrain, the corner radius, the `e` shortcut or circularise, and
-       it still exits 0 while printing a plausible-looking blob. A scenario
-       that cannot fail reports green while measuring nothing, which is worse
-       than not having it. */
     /* The drawn size of a path, asked of the browser rather than parsed out of
        the `d`. Splitting the numbers into x/y pairs looks obvious and is wrong
        the moment an `H` or a `V` appears, which is exactly what a rounded
@@ -5178,16 +5172,11 @@ await page.evaluate(() => {
 });
 await settle(page);
 
-/* A failed `check` throws, and the screenshot and the audit below are most
-   worth having on exactly that run, so the throw is caught rather than left to
-   end the process. Catching it is not forgiving it: `failure` carries the
-   reason to the exit code at the end of the file. */
 /**
  * What a scenario asserts with.
  *
  * Built here because the runner is the only thing that knows which scenario is
- * speaking, and every scenario used to rebuild this line for itself with its
- * own name spelled into it by hand.
+ * speaking, so no scenario has to spell its own name into the message.
  *
  * A scenario that only reads the page and returns what it found is not a
  * check: break the thing it exercises and it still exits 0, printing a
@@ -5200,6 +5189,10 @@ const check = (ok, what) => {
 
 let result;
 let failure = null;
+/* A failed `check` throws, and the screenshot and the audit below are most
+   worth having on exactly that run, so the throw is caught rather than left to
+   end the process. Catching it is not forgiving it: `failure` carries the
+   reason to the exit code at the end of the file. */
 try {
   result = await scenario(page, check);
 } catch (err) {

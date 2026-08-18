@@ -66,7 +66,6 @@ export function groupWithin(doc: Doc, id: string | null | undefined, ancestor: s
 export const shapesInGroup = (doc: Doc, id: string): Shape[] =>
   doc.shapes.filter((sh) => groupWithin(doc, sh.group, id));
 
-
 /**
  * Drop groups that hold no shapes.
  *
@@ -215,11 +214,7 @@ export function resolveNodes(doc: Doc, sel: Selection): { ref: NodeRef; pt: Pt }
   return out;
 }
 
-/**
- * The id of the node at a position, for the callers that have a position and
- * need an identity: a hit test, a freshly split segment, a test fixture.
- */
-/** The same, when only the positions are wanted. */
+/** `resolveNodes` when only the positions are wanted. */
 export const selectedRefs = (doc: Doc, sel: Selection): NodeRef[] =>
   resolveNodes(doc, sel).map((r) => r.ref);
 

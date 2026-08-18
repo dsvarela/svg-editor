@@ -112,7 +112,10 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
  *
  * **One axis at a time.** `span` and `lengthPx` are the strip's own, never the
  * camera's: reading `camera.w` gives the vertical ruler the horizontal span,
- * out by the aspect ratio. The 1-2-5 ladder hides it at most zooms.
+ * out by the aspect ratio. The 1-2-5 ladder quantises both to the same rung at
+ * most zooms, so to see it at all you need the case where it does not. On a
+ * 1290 by 772 stage they first disagree at a camera 129 units wide, where the
+ * ruler ticks every 2 and the grid draws every 1.
  *
  * `minPx` defaults to the grid's, or ruler ticks land between drawn lines.
  */

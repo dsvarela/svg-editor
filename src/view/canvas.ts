@@ -535,15 +535,18 @@ export class Canvas {
 
     /* Two rules, in this order. Off-screen markers are not drawn, with a
        margin of the marker's own size so one straddling the edge still appears.
-       Above `MARKER_CAP` in view, none are: at 2 microseconds each the
-       overlay's share of a render reaches 4 ms and stops fitting a frame.
+       Above `MARKER_CAP` in view, none are: at 2 microseconds each, measured in
+       Edge, the overlay's share of a render reaches 4 ms and stops fitting a
+       frame.
 
        **All or none, never the first 2 000.** Which nodes you got would follow
        the order shapes are stored in, and read as the rest of the document
        having none.
 
        With markers off, nodes cannot be clicked at all, because the anchors are
-       the hit targets. The readout says which state it is in. §28. */
+       the hit targets. That is a real cost and the cap is still right: 23 454
+       anchors over a 1600 px canvas is eight markers deep, so they could not be
+       clicked accurately anyway. The readout says which state it is in. §28. */
     const cam = state.camera;
     const pad = anchorSize;
     const inView = (p: Pt): boolean =>

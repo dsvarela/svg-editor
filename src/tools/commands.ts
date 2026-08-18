@@ -88,6 +88,19 @@ import type { Store } from '../model/store';
 import type { Bend } from '../core/bend';
 import { fmt } from './readout';
 
+/**
+ * How closely a fitted outline has to follow the curve it was derived from.
+ *
+ * The document's own precision, because fitting finer than the serialiser will
+ * write is work nobody can see. Floored at 0.01, which is where a fitter stops
+ * converging on real geometry and starts spending nodes on rounding.
+ *
+ * Not the tolerance knot removal uses. That one is `invisibleAt` with no floor,
+ * by the argument at `simplifySelection`: it deletes nodes rather than placing
+ * them, so anything the file cannot record is free to go.
+ */
+const outlineTolerance = (decimals: number): number => Math.max(invisibleAt(decimals), 0.01);
+
 export class Commands {
   /** Where user-facing notices go. Set by the wiring, left unset in tests. */
   onMessage: ((message: string, ok: boolean) => void) | null = null;
@@ -218,9 +231,7 @@ export class Commands {
       for (const shape of shapes) {
         const live = findShape(st.doc, shape.id);
         if (!live) continue;
-        /* Tolerance from the document's own precision: an offset fitted finer
-           than the serialiser will write is work nobody can see. */
-        const tol = Math.max(invisibleAt(st.decimals), 0.01);
+        const tol = outlineTolerance(st.decimals);
         /* Flattened, because one subpath can offset into several: an inward
            offset of a notched shape comes apart into pieces, and each is a
            path of the same shape. */
@@ -276,7 +287,7 @@ export class Commands {
           noStroke++;
           continue;
         }
-        const tol = Math.max(invisibleAt(st.decimals), 0.01);
+        const tol = outlineTolerance(st.decimals);
         const subpaths = live.subpaths.flatMap(
           (sp) => strokeOutline(sp, live.style.strokeWidth, cap, tol) ?? [],
         );

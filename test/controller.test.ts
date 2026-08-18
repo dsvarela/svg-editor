@@ -2872,10 +2872,11 @@ describe('split into shapes', () => {
  * are about the majority case.
  */
 describe('bend control on any segment', () => {
-  /* Both bow downwards, into positive y. The harness camera starts at the
-     origin, so a curve arching up puts its own midpoint out of view and the
+  /* Both fixtures bow downwards, into positive y. The harness camera starts at
+     the origin, so a curve arching up puts its own midpoint out of view and the
      control is culled before it is drawn. */
-  /** Both handles pointing different ways and different lengths. */
+
+  /** Handles pointing different ways and different lengths. */
   const SKEW = 'M0 0 C 5 12 25 -4 30 0';
   /** Mirror image handles: what `bendOf` can read as two numbers. */
   const SYMM = 'M0 0 C 10 10 20 10 30 0';
