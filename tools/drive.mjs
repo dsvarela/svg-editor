@@ -938,7 +938,7 @@ const scenarios = {
   },
 
   /**
-   * The two draw tools, circularise, renaming, and the tooltips.
+   * The two draw tools, renaming, and the tooltips.
    *
    * Drawing is the one thing here that cannot be checked without a browser:
    * the shape's size comes from a pointer drag through a real hit-tested
@@ -949,9 +949,9 @@ const scenarios = {
 
     /* The drawn size of a path, asked of the browser rather than parsed out of
        the `d`. Splitting the numbers into x/y pairs looks obvious and is wrong
-       the moment an `H` or a `V` appears, which is exactly what a rounded
-       rectangle emits: pairing the numbers reads a 24x25 rect as 65x65 and
-       fails on its own arithmetic. `getBBox` is also the measure that matters,
+       the moment an `H` or a `V` appears, which is what a rectangle emits:
+       pairing the numbers reads a 24x25 rect as 65x65 and fails on its own
+       arithmetic. `getBBox` is also the measure that matters,
        being the shape as drawn, curves included. */
     const extent = (selector) =>
       page.$eval(selector, (el) => {
@@ -959,9 +959,10 @@ const scenarios = {
         return [b.width, b.height];
       });
 
-    // Clear the starter so the shape list is easy to talk about.
+    // Clear the starter so the shape list is easy to talk about. By key,
+    // because the Delete button is behind the Touch buttons setting.
     await page.click('#shapelist li:nth-child(1)');
-    await page.click('#delShape');
+    await page.keyboard.press('Delete');
     await settle(page);
 
     // A circle: Shift takes the smaller span of the drag.
@@ -978,22 +979,20 @@ const scenarios = {
     check(Math.abs(cw - 30) < 0.5, `expected a 30-unit circle, got ${cw}`);
     check(/^M[^A-Z]*C/.test(circle.d), 'an ellipse should be cubics, not lines');
 
-    // A rounded rectangle, radius set in the rail.
-    await page.fill('#cornerRadius', '3');
-    await page.dispatchEvent('#cornerRadius', 'input');
+    /* A rectangle, which is four straight sides and nothing else. The tool
+       carried a corner radius of its own until it was taken out: it applied
+       only while drawing, no other tool read it, and Round does the same arc on
+       any path afterwards. So a curve in this `d` is a defect now. */
     await page.click('#tool button[data-v="rect"]');
     await drag([56, 15], [80, 40]);
     await settle(page);
-    const rounded = {
+    const rect = {
       shapes: await page.locator('#shapelist li').allTextContents(),
       d: await page.getAttribute('.artwork path:nth-child(2)', 'd'),
     };
-    check(rounded.shapes.length === 2, `expected 2 shapes, got ${rounded.shapes.length}`);
-    // A rounded rectangle is arcs at the corners and straight sides between,
-    // so it must contain both -- all-C means the sides bowed, no C means the
-    // radius was dropped on the floor.
-    check(/C/.test(rounded.d), 'no curves: the corner radius was ignored');
-    check(/[HVL]/.test(rounded.d), 'no straight sides: the rectangle is all curve');
+    check(rect.shapes.length === 2, `expected 2 shapes, got ${rect.shapes.length}`);
+    check(!/C/.test(rect.d), `a drawn rectangle should have no curves in it: ${rect.d}`);
+    check(/[HVL]/.test(rect.d), `no straight sides: ${rect.d}`);
     const [rw, rh] = await extent('.artwork path:nth-child(2)');
     check(Math.abs(rw - 24) < 0.5 && Math.abs(rh - 25) < 0.5, `rect is ${rw} x ${rh}, want 24 x 25`);
 
@@ -1010,26 +1009,6 @@ const scenarios = {
     check(toolAfterCtrlE === 'true', 'Ctrl+E switched the tool as well as opening the drawer');
     await page.keyboard.press('Control+e');
     await settle(page);
-
-    // Circularise: pull one node of the circle well off, then put it back.
-    await page.click('#shapelist li:nth-child(1)');
-    await settle(page);
-    await drag([50, 30], [57, 30]);
-    await settle(page);
-    const dented = await page.getAttribute('.artwork path', 'd');
-    await page.click('#shapelist li:nth-child(1)');
-    await page.click('#circularise');
-    await settle(page);
-    const fixed = {
-      status: await page.textContent('#status'),
-      d: await page.getAttribute('.artwork path', 'd'),
-    };
-    // These two were captured a few lines apart and never compared, so a
-    // circularise that did nothing at all read as a pass.
-    check(dented !== fixed.d, 'circularise left the dented path exactly as it was');
-    check(/Circularised 1 path/.test(fixed.status), `unexpected status: ${fixed.status}`);
-    const [fw, fh] = await extent('.artwork path');
-    check(Math.abs(fw - fh) < 0.6, `circularised shape is not round: ${fw} x ${fh}`);
 
     // Rename, which is what the exported id carries.
     await page.dblclick('#shapelist li:nth-child(1) .nm');
@@ -1073,7 +1052,7 @@ const scenarios = {
     check(cap.kbd === 1, 'the shortcut did not render as a key cap');
     check(cap.key === 'E', `key cap reads ${cap.key}, want E`);
 
-    return { circle, rounded, toolAfterKey, toolAfterCtrlE, dented, fixed, renamed, tip, cap };
+    return { circle, rect, toolAfterKey, toolAfterCtrlE, renamed, tip, cap };
   },
 
   /**
@@ -1215,11 +1194,11 @@ const scenarios = {
   },
 
   /**
-   * Rounding a corner that already exists, from the Node tab.
+   * Rounding corners: by the radius field, and by dragging one control.
    *
-   * The rectangle tool has had a corner radius since the primitives landed, and
-   * it only ever applied while drawing. This is the same arc, afterwards, on
-   * anything with two straight sides.
+   * The rectangle tool used to carry a radius of its own that applied only
+   * while drawing, and that no other tool read. This is the one route now, and
+   * it works on anything with two straight sides.
    */
   async roundCorners(page, check) {
     const { click } = await mk(page);
@@ -1259,7 +1238,38 @@ const scenarios = {
 
     await undo(page);
     check(/4 nodes/.test(await page.textContent('#stats')), 'undo did not restore the square');
-    return { stats, status, d };
+
+    /* One control, dragged, with the whole shape selected: every corner rounds.
+       Dragged far past the limit on purpose, so the radius clamps to what the
+       shortest side allows and the expectation does not depend on the zoom. A
+       44 by 32 rectangle with all four corners at 16 is a stadium: the two short
+       sides are consumed entirely and each pair of arcs shares a node, which is
+       6 nodes. Rounding only the grabbed corner leaves 5. */
+    await page.keyboard.press('Escape');
+    await settle(page);
+    // The shape list lives in the Shape tab, and the radius field is in Node.
+    await tab(page, 'shape');
+    await page.click('#shapelist li:nth-child(1)');
+    await settle(page);
+
+    const dot = await page.locator('.corner-dot[data-i="1"]').boundingBox();
+    check(!!dot, 'a selected shape drew no corner control');
+    const cx = dot.x + dot.width / 2;
+    const cy = dot.y + dot.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    // Into the shape along the bisector of that corner: left and down.
+    for (let i = 1; i <= 8; i++) await page.mouse.move(cx - 10 * i, cy + 10 * i);
+    await page.mouse.up();
+    await settle(page);
+
+    const dragged = await page.textContent('#stats');
+    check(/6 nodes/.test(dragged), `dragging one corner of a selected shape: "${dragged}"`);
+    const stadium = await page.getAttribute('.artwork path', 'd');
+    check(!/64 16/.test(stadium), `the grabbed corner is still sharp: ${stadium}`);
+    check(!/20 48/.test(stadium), `the far corner was left sharp: ${stadium}`);
+
+    return { stats, status, d, dragged };
   },
 
   /**
@@ -3894,7 +3904,7 @@ const scenarios = {
     await settle(page);
 
     // Duplicate first, because that is where the identity collision was found.
-    await page.click('#dupShape');
+    await page.keyboard.press('Control+d');
     await settle(page);
     check((await paths()).length === 2, 'Duplicate did not add a shape');
     const movedByDuplicate = await dragOneAnchor();
@@ -3940,7 +3950,19 @@ const scenarios = {
     await settle(page);
     check((await paths()).length === beforeCut, 'a cut shape could not be pasted back');
 
-    // The buttons, which are the other half of the wiring.
+    /* The buttons, which are the other half of the wiring. They are hidden on a
+       mouse, so this turns them on the way a person on a phone gets them: the
+       setting, not a class poked into the page. */
+    await tab(page, 'doc');
+    check(
+      !(await page.isVisible('#copySel')),
+      'the clipboard buttons are on screen with Touch buttons off',
+    );
+    await page.check('#touchButtons');
+    await settle(page);
+    await tab(page, 'shape');
+    check(await page.isVisible('#copySel'), 'Touch buttons did not bring the Copy button back');
+
     await page.click('#shapelist li:nth-child(1)');
     await settle(page);
     check(!(await page.isDisabled('#copySel')), 'Copy is disabled with a shape selected');
@@ -4162,7 +4184,7 @@ const scenarios = {
        holds for every one of the routes that removes a shape and not only this one. */
     await page.click('#shapelist li.group');
     await settle(page);
-    await page.click('#delShape');
+    await page.keyboard.press('Delete');
     await settle(page);
     const left = await rows();
     out.afterDelete = left.map((x) => x.kind);

@@ -95,6 +95,16 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       return;
     }
 
+    /* Ctrl+D duplicates, the binding Illustrator, Figma and Inkscape share.
+       Duplicate was the one operation in the rail with no key at all, which is
+       what kept its button on screen for a mouse that has never needed it. */
+    if (mod && !e.altKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      if (controller.busy) commands.onMessage?.('Finish the drag first.', false);
+      else commands.duplicateSelection();
+      return;
+    }
+
     /* Ctrl+G groups and Ctrl+Shift+G ungroups, the binding every editor uses. Both
        rewrite the document, so both are refused mid-drag for the reason the
        `rewrites` list below refuses its keys. */

@@ -86,8 +86,15 @@ export interface EditorState {
   selection: Selection;
   tool: ToolName;
   deleteMode: DeleteMode;
-  /** Corner radius the rect tool draws with, in document units. 0 is square. */
-  cornerRadius: number;
+  /**
+   * Show the buttons for operations a keyboard already reaches: Duplicate,
+   * Delete, Copy, Cut, Paste and node stepping.
+   *
+   * On wherever the pointer is coarse, which is the same condition the 44px
+   * targets answer to and for the same reason: a finger has no Ctrl+C. Set from
+   * the media query at startup and a checkbox after that.
+   */
+  touchButtons: boolean;
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   /**
@@ -279,7 +286,7 @@ export class Store {
       selection: emptySelection(),
       tool: 'select',
       deleteMode: 'fuse',
-      cornerRadius: 0,
+      touchButtons: false,
       gridStep: 1,
       nudgeBig: 10,
       wireframe: false,

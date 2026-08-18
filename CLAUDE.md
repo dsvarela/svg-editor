@@ -77,7 +77,10 @@ or tablet, so treat every claim about touch as measured in a headless browser
 and unconfirmed by a hand. The rules still hold for new work:
 
 - Every operation gets a button, not only a shortcut. Shortcuts stay as the
-  fast path.
+  fast path. **On a mouse the button may be hidden, never absent**: the five that
+  only repeat a key (Duplicate, Delete, Copy, Cut, Paste) and the node stepper
+  are behind `touchButtons`, which is on wherever `pointer: coarse` matches. A
+  new operation still needs a button, and needs a key before it may hide one.
 - No information appears only on hover. A tooltip may enrich, never inform.
 - New controls are laid out at 44 px minimum, which is the touch target
   minimum in both Apple's and Google's guidance.

@@ -21,7 +21,7 @@ import {
 /* Aliased: the DOM's own `Selection` is a global type, and an unaliased import
    here shadows it in a file that also uses `getSelection`. */
 import type { Selection as Sel } from './model/doc';
-import { isPathEnd, latentHandle } from './model/ops';
+import { cornerAt, filletAt, isPathEnd, latentHandle } from './model/ops';
 import { continuityOf } from './core/types';
 import type { Shape, Style, Subpath, ViewBox } from './core/types';
 import { serialisePath } from './core/serialise';
@@ -208,10 +208,26 @@ const on = (sel: string, fn: () => void): void => $(sel).addEventListener('click
 // Notices raised from inside a gesture or a command -- either is reached from
 // both a button and a key, so they cannot be reported at the call site. One
 // function, given to both, because the status line is one place.
+/**
+ * How long a notice stays before the status line goes quiet again, in ms.
+ *
+ * It used to stay forever. "Nothing drawn yet, so there is nothing to fit the
+ * canvas to." sat in the strip through every later action, describing a moment
+ * that had passed and contradicting nothing, which is worse than saying nothing:
+ * a reader cannot tell a stale notice from a current one.
+ */
+const NOTICE_MS = 6000;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
 const say = (message: string, ok: boolean): void => {
   const el = $('#status');
   el.textContent = message;
   el.className = ok ? 'st ok' : 'st err';
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => {
+    el.textContent = 'Ready.';
+    el.className = 'st ok';
+  }, NOTICE_MS);
 };
 controller.onMessage = say;
 commands.onMessage = say;
@@ -290,7 +306,8 @@ const bindCheck = (
     | 'showHandles'
     | 'filled'
     | 'wireframe'
-    | 'minify',
+    | 'minify'
+    | 'touchButtons',
 ): void => {
   const input = $(id) as HTMLInputElement;
   input.checked = store.state[key];
@@ -303,6 +320,14 @@ bindCheck('#showGuides', 'showGuides');
 bindCheck('#guidesLocked', 'guidesLocked');
 bindCheck('#smartGuides', 'smartGuides');
 bindCheck('#snapAngles', 'snapToAngles');
+
+/* On before the checkbox is bound, so the box shows what is already true.
+   `pointer: coarse` is the primary input being imprecise, which is the same
+   condition the 44px targets in `styles.css` answer to: those buttons exist for
+   a finger, and a finger has no Ctrl+C. A mouse can turn them on here and a
+   phone can turn them off; neither is guessed at twice. */
+store.update((s) => (s.touchButtons = window.matchMedia('(pointer: coarse)').matches));
+bindCheck('#touchButtons', 'touchButtons');
 
 /* Angular snap's three numbers. The step is clamped above zero because a step
    of 0 asks for infinitely many rays; the base is free, since any angle is a
@@ -352,16 +377,9 @@ nudgeBigInput.addEventListener('input', () =>
   store.update((s) => (s.nudgeBig = Math.max(1, Number(nudgeBigInput.value) || 1))),
 );
 
-const radiusInput = $('#cornerRadius') as HTMLInputElement;
-radiusInput.value = String(store.state.cornerRadius);
-radiusInput.addEventListener('input', () =>
-  store.update((s) => (s.cornerRadius = Math.max(0, Number(radiusInput.value) || 0))),
-);
-
-on('#circularise', () => commands.circulariseSelection());
-
-/* Rounding an existing corner, which is what the rectangle tool's radius does
-   while drawing and nothing could do afterwards. */
+/* Rounding a corner. One control for it, reaching every corner the same way,
+   rather than a second radius on the rectangle tool that no other tool read and
+   nothing said so. */
 const roundR = $('#roundR') as HTMLInputElement;
 on('#roundCorner', () => commands.roundSelection(Number(roundR.value)));
 
@@ -594,15 +612,13 @@ on('#paletteSave', () => {
   if (already >= 0) {
     paletteAt = already;
     paintPalette();
-    status.textContent = `Already saved as ${store.state.palette[already].name}.`;
-    status.className = 'st err';
+    say(`Already saved as ${store.state.palette[already].name}.`, false);
     return;
   }
   store.update((st) => st.palette.push({ name: base, style: { ...shown } }));
   paletteAt = store.state.palette.length - 1;
   paintPalette();
-  status.textContent = `Saved ${base}.`;
-  status.className = 'st ok';
+  say(`Saved ${base}.`, true);
 });
 
 on('#paletteDrop', () => {
@@ -612,8 +628,7 @@ on('#paletteDrop', () => {
   store.update((st) => st.palette.splice(at, 1));
   paletteAt = -1;
   paintPalette();
-  status.textContent = `Forgot ${gone}.`;
-  status.className = 'st ok';
+  say(`Forgot ${gone}.`, true);
 });
 
 // Dragging inside a colour picker fires `input` per pixel, so both of these go
@@ -711,6 +726,7 @@ decInput.addEventListener('input', () =>
 
 const nodeGroup = $('#nodegroup');
 const nodeInfo = $('#nodeinfo');
+const roundWhy = $('#roundwhy');
 const alignInfo = $('#aligninfo');
 const ntypeSeg = $('#ntype');
 
@@ -910,12 +926,46 @@ function refreshBend(): void {
   if (document.activeElement !== bendLoose) bendLoose.value = (+seg.bend.looseness.toFixed(3)).toString();
 }
 
+
+/**
+ * Whether the selected node's corner can be rounded, in three words.
+ *
+ * There are four reasons the corner control does not appear, and every one of
+ * them was silent: the node ends an open path, a handle exists on either side,
+ * nothing is selected, or two fillets have merged onto a shared node and
+ * `filletAt` can no longer read either of them. A control that is simply absent
+ * looks the same as a feature that is broken, and `Round` already owns sentences
+ * for the first two while the canvas owned none.
+ *
+ * The wording is shorter than `Round`'s because this sits in a group header
+ * beside the node's index, not in the status line. Both come from the same
+ * `cornerAt`, so they cannot disagree about which corners are roundable.
+ */
+function roundability(sp: Subpath, i: number): string | null {
+  if (filletAt(sp, i) || (i > 0 && filletAt(sp, i - 1))) return null;
+  const c = cornerAt(sp, i);
+  if (typeof c !== 'string') return null;
+  return {
+    end: 'No corner here: this node ends the path, so it has only one side.',
+    curved: 'No corner here: Round needs a straight segment on both sides.',
+    straight: 'No corner here: the path runs straight through this node.',
+    tiny: 'No corner here: the sides are too short to cut.',
+  }[c];
+}
+
 function refreshInspector(): void {
   const sel = commands.singleSelectedNode();
   const count = commands.selectionCount();
 
   nodeGroup.classList.toggle('disabled', count === 0);
   nodeInfo.textContent = sel ? `${sel.ref.sp}/${sel.ref.i}` : count ? `${count} selected` : 'none';
+
+  /* Only when there is something to say. A roundable corner shows its control,
+     so the line would be restating the canvas; an unroundable one shows nothing
+     at all, which is the case this exists for. */
+  const why = sel ? roundability(sel.subpath, sel.ref.i) : null;
+  roundWhy.textContent = why ?? '';
+  roundWhy.hidden = !why;
   alignInfo.textContent = count >= 2 ? `${count} nodes` : 'needs 2+';
 
   // These read out what the node's handles currently say, and clicking one
@@ -983,8 +1033,14 @@ function refreshInspector(): void {
      for zero-length segments. Two free ends is the one case it declines, since
      that is Merge's, so the button goes with it rather than offering a press
      that can only answer back. */
+  ($('#pasteSel') as HTMLButtonElement).disabled = !commands.hasClipboard();
+
+  /* One node is the case this missed. Fuse welds two nodes that sit on the same
+     point, or sweeps a whole shape for zero-length segments -- one node on its
+     own is neither, so the button used to offer a press whose only outcome was
+     "No two nodes there sit on the same point." */
   ($('#fuseNodes') as HTMLButtonElement).disabled =
-    twoEnds || (count === 0 && store.state.selection.shapes.size === 0);
+    twoEnds || (count < 2 && store.state.selection.shapes.size === 0);
 
   const dp = store.state.decimals;
   for (const f of coordFields) {
@@ -1014,7 +1070,6 @@ function refreshInspector(): void {
 /* ----------------------------------------------------------------- source */
 
 const src = $('#src') as HTMLTextAreaElement;
-const status = $('#status');
 const srcinfo = $('#srcinfo');
 
 /* Apply the initial panel state through the same path, so `inert` and the ARIA
@@ -1077,8 +1132,7 @@ function replaceDocumentFrom(text: string, what: string): boolean {
     const r = importSvg(text);
     // "Nothing to import" means nothing drawable, not zero elements.
     if (!drawsSomething(r.shapes)) {
-      status.textContent = `${what} draws nothing, so nothing was changed.`;
-      status.className = 'st err';
+      say(`${what} draws nothing, so nothing was changed.`, false);
       return false;
     }
 
@@ -1094,17 +1148,17 @@ function replaceDocumentFrom(text: string, what: string): boolean {
       s.sourceError = null;
     });
     const n = r.shapes.length;
-    status.textContent =
+    say(
       `Imported ${n} shape${n === 1 ? '' : 's'}` +
-      (r.warnings.length ? `. ${r.warnings.join('; ')}` : '.');
-    status.className = r.warnings.length ? 'st err' : 'st ok';
+        (r.warnings.length ? `. ${r.warnings.join('; ')}` : '.'),
+      r.warnings.length === 0,
+    );
     fit();
     return true;
   } catch (err) {
     const msg =
       err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
-    status.textContent = msg;
-    status.className = 'st err';
+    say(msg, false);
     return false;
   }
 }
@@ -1130,8 +1184,7 @@ function applySource(): void {
   try {
     const r = importSvg(src.value);
     if (!drawsSomething(r.shapes)) {
-      status.textContent = 'That draws nothing, so nothing was changed.';
-      status.className = 'st err';
+      say('That draws nothing, so nothing was changed.', false);
       return;
     }
     if (r.shapes.length !== 1) {
@@ -1144,13 +1197,11 @@ function applySource(): void {
       if (sh) sh.subpaths = r.shapes[0].subpaths;
       s.selection.nodes.clear();
     });
-    status.textContent = `Updated ${target.name}.`;
-    status.className = 'st ok';
+    say(`Updated ${target.name}.`, true);
   } catch (err) {
     const msg =
       err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
-    status.textContent = msg;
-    status.className = 'st err';
+    say(msg, false);
   }
 }
 
@@ -1183,8 +1234,7 @@ importFile.addEventListener('change', () => {
       if (!replaceDocumentFrom(text, f.name)) loadedName = null;
     })
     .catch(() => {
-      status.textContent = `Could not read ${f.name}.`;
-      status.className = 'st err';
+      say(`Could not read ${f.name}.`, false);
     });
 });
 
@@ -1204,8 +1254,7 @@ on('#apply', applySource);
  */
 on('#revertSrc', () => {
   refreshSource();
-  status.textContent = "Put back what the document says. Nothing was applied.";
-  status.className = 'st ok';
+  say("Put back what the document says. Nothing was applied.", true);
 });
 src.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') applySource();
@@ -1214,12 +1263,10 @@ src.addEventListener('keydown', (e) => {
 on('#copy', () => {
   void navigator.clipboard.writeText(currentSource()).then(
     () => {
-      status.textContent = 'Copied.';
-      status.className = 'st ok';
+      say('Copied.', true);
     },
     () => {
-      status.textContent = 'Clipboard blocked by the browser.';
-      status.className = 'st err';
+      say('Clipboard blocked by the browser.', false);
     },
   );
 });
@@ -1353,13 +1400,11 @@ function loadBackdrop(file: File): void {
         locked: was?.locked ?? true,
       };
     });
-    status.textContent = `Tracing over ${file.name}. It is not part of the drawing.`;
-    status.className = 'st ok';
+    say(`Tracing over ${file.name}. It is not part of the drawing.`, true);
   };
   probe.onerror = () => {
     URL.revokeObjectURL(src);
-    status.textContent = 'That file could not be read as an image.';
-    status.className = 'st err';
+    say('That file could not be read as an image.', false);
   };
   probe.src = src;
 }
@@ -1410,8 +1455,7 @@ function traceOffThread(req: TraceRequest): Promise<TraceResult> | null {
 async function traceBackdrop(): Promise<void> {
   const b = store.state.backdrop;
   if (!b || tracing) {
-    status.textContent = 'Load an image in the Backdrop panel first.';
-    status.className = 'st err';
+    say('Load an image in the Backdrop panel first.', false);
     return;
   }
   const num = (sel: string, fallback: number): number => {
@@ -1432,8 +1476,7 @@ async function traceBackdrop(): Promise<void> {
      thread now, but decoding and `getImageData` are not, and the fallback below
      is the old synchronous path in full. Two frames cost 32 ms against seconds.
   */
-  status.textContent = `Tracing ${b.name}…`;
-  status.className = 'st ok';
+  say(`Tracing ${b.name}…`, true);
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   try {
@@ -1446,13 +1489,11 @@ async function traceBackdrop(): Promise<void> {
        the `b` captured above. */
     const live = store.state.backdrop;
     if (!live || live.src !== b.src) {
-      status.textContent = 'The backdrop changed while tracing. Nothing was added.';
-      status.className = 'st err';
+      say('The backdrop changed while tracing. Nothing was added.', false);
       return;
     }
     if (controller.busy) {
-      status.textContent = 'Finish the drag first, then trace.';
-      status.className = 'st err';
+      say('Finish the drag first, then trace.', false);
       return;
     }
     const raster = rasterFrom(img, live.naturalW, live.naturalH);
@@ -1474,14 +1515,12 @@ async function traceBackdrop(): Promise<void> {
     try {
       result = await job;
     } catch {
-      status.textContent = 'That image could not be traced.';
-      status.className = 'st err';
+      say('That image could not be traced.', false);
       return;
     }
     commands.applyTrace(result, place);
   } catch {
-    status.textContent = 'That image could not be read for tracing.';
-    status.className = 'st err';
+    say('That image could not be read for tracing.', false);
   } finally {
     tracing = false;
     refreshTraceButton();
@@ -1514,8 +1553,7 @@ canvasRoot.addEventListener('drop', (e) => {
   e.preventDefault();
   if (f.type.startsWith('image/')) loadBackdrop(f);
   else {
-    status.textContent = 'Only image files can be used as a backdrop.';
-    status.className = 'st err';
+    say('Only image files can be used as a backdrop.', false);
   }
 });
 
@@ -1559,10 +1597,7 @@ backLock.addEventListener('change', (e) => {
   store.update((s) => {
     if (s.backdrop) s.backdrop.locked = locked;
   });
-  status.textContent = locked
-    ? 'Backdrop locked. Dragging the canvas selects again.'
-    : 'Backdrop unlocked. Drag the canvas to move it.';
-  status.className = 'st ok';
+  say(locked ? 'Backdrop locked. Dragging the canvas selects again.' : 'Backdrop unlocked. Drag the canvas to move it.', true);
 });
 
 $('#backShow').addEventListener('change', (e) => {
@@ -1593,8 +1628,7 @@ on('#backClear', () => {
     return true;
   });
   if (!had) return;
-  status.textContent = 'Backdrop removed. Undo brings it back.';
-  status.className = 'st ok';
+  say('Backdrop removed. Undo brings it back.', true);
 });
 
 /* ------------------------------------------------------------ shape list */
@@ -1719,23 +1753,20 @@ const boolBtns = [...document.querySelectorAll<HTMLButtonElement>('[data-bool]')
 for (const b of boolBtns) {
   b.addEventListener('click', () => {
     const r = commands.booleanSelection(b.getAttribute('data-bool') as BooleanOp);
-    status.textContent = r.message;
-    status.className = r.ok ? 'st ok' : 'st err';
+    say(r.message, r.ok);
   });
 }
 
 const makeOneBtn = $('#makeone') as HTMLButtonElement;
 makeOneBtn.addEventListener('click', () => {
   const r = commands.makeOneShape();
-  status.textContent = r.message;
-  status.className = r.ok ? 'st ok' : 'st err';
+  say(r.message, r.ok);
 });
 
 const splitBtn = $('#splitshape') as HTMLButtonElement;
 splitBtn.addEventListener('click', () => {
   const r = commands.splitShapes();
-  status.textContent = r.message;
-  status.className = r.ok ? 'st ok' : 'st err';
+  say(r.message, r.ok);
 });
 
 function refreshCombine(): void {
@@ -1803,9 +1834,7 @@ function startRename(id: string, isGroup = false): void {
       // The name is what the exported `id` carries, and an id is an XML Name --
       // so say when the export will not read back exactly as typed.
       const safe = xmlId(name);
-      status.textContent =
-        safe === name ? `Renamed to ${name}.` : `Renamed to ${name}. Exports as id="${safe}".`;
-      status.className = 'st ok';
+      say(safe === name ? `Renamed to ${name}.` : `Renamed to ${name}. Exports as id="${safe}".`, true);
     } else {
       listSig = null; // an input stands where the row was; force the row back
       refreshShapeList();
@@ -2305,7 +2334,7 @@ const stats = $('#stats');
 const selinfo = $('#selinfo');
 const gridval = $('#gridval');
 const gridreadout = $('#gridreadout');
-const drawinfo = $('#drawinfo');
+const fillruleinfo = $('#fillruleinfo');
 const zoomnum = $('#zoomnum');
 const backinfo = $('#backinfo');
 const outval = $('#outval');
@@ -2480,8 +2509,9 @@ store.subscribe((s) => {
   for (const b of $('#fillRule').querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-fr') === shown.fillRule));
   }
+  // On the collapsed header, so the setting reads without being opened.
+  fillruleinfo.textContent = shown.fillRule === 'evenodd' ? 'even-odd' : 'nonzero';
 
-  drawinfo.textContent = s.cornerRadius > 0 ? `r ${s.cornerRadius}` : 'square corners';
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
   /* Here rather than only on `input`, because the line above sets the value
      programmatically and that fires no event. Without this the box started
@@ -2549,6 +2579,10 @@ store.subscribe((s) => {
   app.classList.toggle('tool-hand', s.tool === 'hand');
   app.classList.toggle('rulers', s.showRulers);
   app.classList.toggle('guides-locked', s.guidesLocked);
+  /* On the body rather than on `#app`, because the class has to reach the rail
+     and everything else the panel may grow later, and `#app` is not the only
+     ancestor those share. */
+  document.body.classList.toggle('touchbtns', s.touchButtons);
   if (s.showRulers) rulers.render(s.camera, s.gridStep, rulerAt);
 
   /* What the rays are doing, and where from. `free` is a real answer: the
@@ -2610,8 +2644,7 @@ store.subscribe((s) => {
 function findInSource(): void {
   const ref = selectedRefs(store.state.doc, store.state.selection)[0];
   if (!ref) {
-    status.textContent = 'Select a node first.';
-    status.className = 'st err';
+    say('Select a node first.', false);
     return;
   }
   const shape = store.state.doc.shapes.find((sh) => sh.id === ref.shape);
@@ -2630,8 +2663,7 @@ function findInSource(): void {
   src.value = text;
   const mark = marks.find((m) => m.sp === ref.sp && m.i === ref.i);
   if (!mark) {
-    status.textContent = 'That node has no command of its own: the path closes onto it.';
-    status.className = 'st err';
+    say('That node has no command of its own: the path closes onto it.', false);
     return;
   }
   src.focus();
@@ -2642,8 +2674,7 @@ function findInSource(): void {
   src.blur();
   src.focus();
   src.setSelectionRange(mark.start, mark.end);
-  status.textContent = `Node ${ref.sp}/${ref.i} is the ${text.slice(mark.start, mark.end).trim().split(/\s/)[0]} at character ${mark.start}.`;
-  status.className = 'st ok';
+  say(`Node ${ref.sp}/${ref.i} is the ${text.slice(mark.start, mark.end).trim().split(/\s/)[0]} at character ${mark.start}.`, true);
 }
 
 /**

@@ -11,7 +11,7 @@ import { bendOf, bendToHandles } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { applyMat } from '../core/affine';
 import type { Mat } from '../core/affine';
-import { arcHandle, fitCircle } from '../core/primitives';
+import { arcHandle } from '../core/primitives';
 import {
   cloneNode,
   clonePt,
@@ -637,12 +637,10 @@ const DEGENERATE = 1e-7;
  * with one zero-length segment still in it. That is the least bad answer
  * available and it is worth stating rather than claiming otherwise.
  *
- * The sweep behind the fillet generators. `roundCorner` reuses a neighbour when
- * a tangent point lands on one, but the rectangle tool and `circulariseSubpath`
- * build their nodes in one go and cannot check as they place them: a rectangle
- * rounded to exactly half its shorter side has two anchors on each of the ends
- * it just made into a semicircle. Running this afterwards is one rule in one
- * place rather than a coincidence test threaded through three constructors.
+ * The sweep behind Fuse with a shape selected. `roundCorner` reuses a
+ * neighbour when a tangent point lands on one, so it needs no sweep; anything
+ * that places its nodes in one go and cannot check as it goes leaves the pair
+ * for this to find. §23.
  */
 export function fuseDegenerate(sp: Subpath): number {
   let gone = 0;
@@ -670,125 +668,6 @@ export function reverseSubpath(sp: Subpath): void {
     // Reversing a ring moves the start; rotate it back so node 0 is unchanged.
     sp.nodes.unshift(sp.nodes.pop()!);
   }
-}
-
-/* --------------------------------------------------------- circularising */
-
-export interface CirculariseResult {
-  centre: Pt;
-  radius: number;
-  /** How far the furthest node had to travel to reach the circle. */
-  moved: number;
-  /**
-   * Nodes welded away because two shared an angle about the centre, and so
-   * landed on the same point. Reported, because the node count changed.
-   */
-  fused: number;
-  /**
-   * The widest arc any one segment now spans, in radians. A cubic's radial
-   * error climbs steeply with it, so this is the ceiling on how round the
-   * result can be — 2.7e-4 of the radius at a quarter turn, 1.8e-2 at a half.
-   */
-  widestSpan: number;
-}
-
-/**
- * Force every node of a subpath onto its own best-fit circle.
- *
- * Each node keeps its angle about the fitted centre and moves to the fitted
- * radius; handles are rebuilt at `r · 4/3 · tan(θ/4)`. That approximation costs
- * 2.7e-4 of the radius at a quarter turn and 1.8e-2 at a half, so `widestSpan`
- * is returned: it is what says how round the result can possibly be.
- *
- * **A closed contour takes one winding from the sign of the polygon's area**
- * and forces every span to follow. Taking each the shorter way instead is
- * destructive above half a turn and invisible to a radial measurement: nodes at
- * 0°, 20°, 40° and 60° leave a 300° gap that reads as −60°, and the closing
- * segment retraces the other three. The spans then sum to one turn in angular
- * order and a multiple of one otherwise, which is the test for a ring.
- *
- * An open subpath keeps the shorter way: its anchors cannot say which way an
- * arc went. `null`, mutating nothing, for fewer than three nodes, collinear
- * ones, a node on the centre, or nodes out of angular order.
- */
-export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
-  const n = sp.nodes.length;
-  if (n < 3) return null;
-
-  const fit = fitCircle(sp.nodes.map((nd) => nd.pt));
-  if (!fit) return null;
-  const [cx, cy] = fit.centre;
-  const r = fit.radius;
-
-  // A node on the centre has no angle to keep. atan2(0, 0) is 0, which would
-  // teleport it to the eastern point of the circle on top of whatever is there.
-  if (sp.nodes.some((nd) => Math.hypot(nd.pt[0] - cx, nd.pt[1] - cy) < 1e-9)) return null;
-
-  const ang = sp.nodes.map((nd) => Math.atan2(nd.pt[1] - cy, nd.pt[0] - cx));
-  const segs = sp.closed ? n : n - 1;
-
-  /* Decide every span before moving anything, so a contour that turns out not
-     to be a ring leaves the document untouched. */
-  const spans: number[] = [];
-  if (sp.closed) {
-    let area = 0;
-    for (let i = 0; i < n; i++) {
-      const a = sp.nodes[i].pt;
-      const b = sp.nodes[(i + 1) % n].pt;
-      area += a[0] * b[1] - b[0] * a[1];
-    }
-    const dir = area >= 0 ? 1 : -1;
-
-    let total = 0;
-    for (let i = 0; i < segs; i++) {
-      let d = ang[(i + 1) % n] - ang[i];
-      // Into (0, 2π) going one way, (−2π, 0) the other. A span of zero stays
-      // zero rather than becoming a full turn.
-      d -= Math.floor(d / (2 * Math.PI)) * 2 * Math.PI; // [0, 2π)
-      if (dir < 0 && d > 0) d -= 2 * Math.PI;
-      if (Math.abs(d) < 1e-9 || Math.abs(Math.abs(d) - 2 * Math.PI) < 1e-9) d = 0;
-      spans.push(d);
-      total += d;
-    }
-    // One turn means the nodes go round once, in order. Anything else is a
-    // star or a doubled loop, which no circle through these nodes can be.
-    if (Math.abs(Math.abs(total) - 2 * Math.PI) > 1e-6) return null;
-  } else {
-    for (let i = 0; i < segs; i++) {
-      let d = ang[i + 1] - ang[i];
-      while (d > Math.PI) d -= 2 * Math.PI;
-      while (d < -Math.PI) d += 2 * Math.PI;
-      spans.push(Math.abs(d) < 1e-9 ? 0 : d);
-    }
-  }
-
-  let moved = 0;
-  sp.nodes.forEach((nd, i) => {
-    const to: Pt = [cx + r * Math.cos(ang[i]), cy + r * Math.sin(ang[i])];
-    moved = Math.max(moved, Math.hypot(to[0] - nd.pt[0], to[1] - nd.pt[1]));
-    nd.pt = to;
-    nd.hIn = null;
-    nd.hOut = null;
-  });
-
-  let widestSpan = 0;
-  for (let i = 0; i < segs; i++) {
-    const d = spans[i];
-    widestSpan = Math.max(widestSpan, Math.abs(d));
-    // Coincident angles span no arc: leave the segment straight rather than
-    // emitting a zero-length handle that reads as a cusp.
-    if (d === 0) continue;
-
-    const j = (i + 1) % n;
-    const L = arcHandle(r, d);
-    const a = sp.nodes[i];
-    const b = sp.nodes[j];
-    // The tangent at angle t, for increasing t, is (-sin t, cos t).
-    a.hOut = [a.pt[0] - Math.sin(ang[i]) * L, a.pt[1] + Math.cos(ang[i]) * L];
-    b.hIn = [b.pt[0] + Math.sin(ang[j]) * L, b.pt[1] - Math.cos(ang[j]) * L];
-  }
-
-  return { centre: fit.centre, radius: r, moved, widestSpan, fused: fuseDegenerate(sp) };
 }
 
 /**
@@ -861,6 +740,37 @@ export function cornerAt(sp: Subpath, i: number): Corner | RoundRefusal {
 
 /** The largest radius a corner can hold, which is `reach` read as a radius. */
 export const maxCornerRadius = (c: Corner): number => c.reach * Math.tan(c.alpha / 2);
+
+/**
+ * The largest radius every corner named by `ids` can hold at the same time.
+ *
+ * `maxCornerRadius` answers for one corner on its own, which stops being the
+ * right question the moment its neighbour is rounding too: the two arcs eat the
+ * side between them from both ends, so each may have half of it. Rounding a
+ * square's four corners without this clamps them one at a time, in whatever
+ * order the loop ran, and returns four different radii for one request.
+ *
+ * Ids rather than indices because rounding splices, and 0 rather than infinity
+ * when nothing in the set is a corner, so the caller has one number to test.
+ */
+export function sharedCornerRadius(sp: Subpath, ids: readonly string[]): number {
+  const set = new Set(ids);
+  const n = sp.nodes.length;
+  let max = Infinity;
+  for (const id of ids) {
+    const i = sp.nodes.findIndex((nd) => nd.id === id);
+    if (i < 0) continue;
+    const c = cornerAt(sp, i);
+    if (typeof c === 'string') continue;
+    const here = sp.nodes[i].pt;
+    const prev = sp.nodes[(i - 1 + n) % n];
+    const next = sp.nodes[(i + 1) % n];
+    const back = Math.hypot(prev.pt[0] - here[0], prev.pt[1] - here[1]) / (set.has(prev.id) ? 2 : 1);
+    const fwd = Math.hypot(next.pt[0] - here[0], next.pt[1] - here[1]) / (set.has(next.id) ? 2 : 1);
+    max = Math.min(max, Math.min(back, fwd) * Math.tan(c.alpha / 2));
+  }
+  return Number.isFinite(max) ? max : 0;
+}
 
 /**
  * Replace a corner with a circular arc tangent to both of its sides.

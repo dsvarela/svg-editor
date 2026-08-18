@@ -91,10 +91,10 @@ Everything else, including this file, is inside the rule.
 
 In user documentation only when it changes what the reader should do or expect.
 
-"Circularise fits a circle by least squares, so it cannot know which node was
-wrong" earns its place, because it tells the reader why the result moved. "The
-fit is a Kåsa algebraic solve with the data centred first" does not, and lives in
-`ARCHITECTURE.md`.
+"Simplify fits new curves through the nodes it keeps, so it cannot know which
+node you meant to place" earns its place, because it tells the reader why the
+drawing moved. "The fitter solves for the tangent lengths by least squares" does
+not, and lives in `ARCHITECTURE.md`.
 
 ## Terminology
 
@@ -123,7 +123,7 @@ where they are the right words. In the manual they are both **path**, because a
 reader who has drawn two separate rings in one shape does not need a third noun
 to describe what they can already see.
 
-Keys as `Ctrl+S`. Buttons and panels in bold (**Circularise**, the **Draw**
+Keys as `Ctrl+S`. Buttons and panels in bold (**Simplify**, the **Path**
 panel). Paths, flags and path data in `monospace`.
 
 ## In-app copy

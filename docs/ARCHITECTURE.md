@@ -2540,3 +2540,45 @@ any element that breaks this. Restoring the `.handle-line` defect fails 31 of th
 52 scenarios. It asks the browser's own taxonomy -- `SVGGeometryElement` and its
 image, text and use siblings -- rather than a list of tag names, so a new kind of
 overlay element is covered without anyone remembering to add it.
+
+## 55. Two ways to do a thing is one way and a trap
+
+Three controls left in one pass, and the reason was the same each time.
+
+**The rectangle tool's corner radius.** `rectSubpath` took an `r` and built four
+quarter arcs, so the tool rounded while drawing and `roundCorner` rounded after.
+Two generators for one shape, which §23 had already had to teach the same lesson
+about coincident anchors twice. It also applied to one tool out of four, with
+nothing on screen saying so: the field sat in a panel of operations that acted on
+what was selected, and it acted on what you were about to draw. The tool draws
+four handle-less nodes now, and `roundCorner` is the only thing in the program
+that builds a fillet.
+
+**Circularise.** It fitted a circle through a path's nodes by least squares and
+moved each onto it at its own angle, which is not what "make this round" means to
+anyone who has not read the implementation: a hand-drawn ring came back with its
+node spacing untouched and its shape only as round as the fit. `fitCircle` went
+with it, having no other caller.
+
+**The five clipboard buttons, on a mouse.** Duplicate, Delete, Copy, Cut and
+Paste each repeat a key. They stay for a finger, which has no Ctrl+C, and
+`touchButtons` decides: on wherever `pointer: coarse` matches, which is the same
+condition the 44px targets answer to. The rule that every operation gets a button
+is a rule about touch, and this is what it costs to keep it there and not
+everywhere. Duplicate had no key at all until this, which is what had kept its
+button in front of a keyboard that never needed it.
+
+**What one radius buys, beyond one implementation.** `sharedCornerRadius` asks
+what every corner in a set can hold at once, which `maxCornerRadius` cannot: two
+corners rounding on the side they share eat it from both ends, so each may have
+half. Without it, rounding a rectangle clamped each corner in whatever order the
+loop ran and returned four radii for one request, reported as "Rounded 4 corners.
+3 clamped to r 8.284 by the shorter side." One request now has one answer, and
+the drag on a corner control uses the same number: dragging one control rounds
+every corner of the shape, or every selected node, the way a corner widget
+behaves everywhere else.
+
+§12, §16, §23 and §47 all name the deleted code. They are records of decisions
+taken while it existed, and they stay as they are: the reason `setContinuity`
+returns a boolean is not changed by the fact that the other example of it is
+gone.

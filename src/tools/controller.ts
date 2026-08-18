@@ -32,6 +32,7 @@ import {
   cornerAt,
   cornerRadiusAtReach,
   maxCornerRadius,
+  sharedCornerRadius,
   moveAnchor,
   moveHandle,
   nearestOnPath,
@@ -48,6 +49,7 @@ import {
   transformShape,
 } from '../model/ops';
 import type { NodeSnapshot } from '../model/ops';
+import { invisibleAt } from '../model/knots';
 import { phaseInForce, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
@@ -109,16 +111,18 @@ type DragKind =
      is removed rather than left behind if the drag ends where it started --
      otherwise a stray click on a ruler would litter the canvas. */
   | { kind: 'guide'; i: number; axis: GuideAxis; born: boolean }
-  /* Rounding a corner by dragging it. `sharp` is the subpath with this corner
-     un-rounded, captured once at the press: every move rebuilds from it and calls
-     `roundCorner`, so the drag and the rail's button produce the same geometry by
-     construction rather than by two implementations agreeing. */
+  /* Rounding corners by dragging one of them. `sharp` is the subpath with every
+     corner in `ids` un-rounded, captured once at the press: every move rebuilds
+     from it and calls `roundCorner`, so the drag and the rail's button produce
+     the same geometry by construction rather than by two implementations
+     agreeing. Node ids rather than indices, because `roundCorner` splices two
+     nodes in where there was one and an index is only true when it is read. */
   | {
       kind: 'corner';
       shape: string;
       sp: number;
       sharp: Subpath;
-      at: number;
+      ids: string[];
       corner: Pt;
       /** Unit vector from the corner into it, along the bisector of its two sides. */
       bis: Pt;
@@ -159,6 +163,41 @@ function bisector(u: Pt, v: Pt): Pt {
   const len = Math.hypot(bx, by);
   return len < 1e-9 ? [0, 0] : [bx / len, by / len];
 }
+
+/**
+ * The corners one drag on a corner control rounds, un-rounding each in `sharp`.
+ *
+ * Illustrator's rule, which is the one people arrive with: a widget dragged
+ * while nothing in particular is selected rounds every corner of the path, and
+ * one dragged with nodes selected rounds those. The grabbed corner is always in
+ * the set, so a drag can never do nothing.
+ *
+ * `sharp` is mutated. A corner that already holds an arc goes back to being a
+ * corner before it can be rounded to a different radius, and doing that to all
+ * of them at the press is what lets every frame rebuild from one square path.
+ * Returns ids because `unroundCorner` replaces a pair with one new node.
+ */
+function cornersForDrag(sharp: Subpath, at: number, selected: ReadonlySet<string>): string[] {
+  const wanted = new Set<string>([sharp.nodes[at].id]);
+  for (const n of sharp.nodes) {
+    if (selected.size === 0 || selected.has(n.id)) wanted.add(n.id);
+  }
+
+  const ids: string[] = [];
+  for (const id of wanted) {
+    /* Found again each time round: un-rounding one corner splices two nodes
+       into one, which moves every index after it and can consume the other half
+       of a pair that is also in this set. That one is gone from `sharp` and
+       drops out here. */
+    let i = sharp.nodes.findIndex((n) => n.id === id);
+    if (i < 0) continue;
+    i = unroundCorner(sharp, i) ?? i;
+    if (typeof cornerAt(sharp, i) === 'string') continue;
+    ids.push(sharp.nodes[i].id);
+  }
+  return ids;
+}
+
 
 /** One decimal at most, and no trailing zero to make an angle look measured. */
 
@@ -897,8 +936,14 @@ export class Controller {
            radius, and doing that to the live path would make the drag's first frame
            a visible jump to square. */
         const sharp: Subpath = cloneSubpath(live);
-        const at = unroundCorner(sharp, hit.ref.i) ?? hit.ref.i;
-        const c = cornerAt(sharp, at);
+        const grabbed = unroundCorner(sharp, hit.ref.i) ?? hit.ref.i;
+        const id = sharp.nodes[grabbed].id;
+        /* Every corner this drag is for, un-rounded together. The grabbed one is
+           found again afterwards, because un-rounding another corner ahead of it
+           moves it. */
+        const ids = cornersForDrag(sharp, grabbed, s.selection.nodes);
+        const at = sharp.nodes.findIndex((n) => n.id === id);
+        const c = at < 0 ? 'end' : cornerAt(sharp, at);
         if (typeof c !== 'string') {
           this.openBatch();
           this.drag = {
@@ -906,11 +951,14 @@ export class Controller {
             shape: hit.ref.shape,
             sp: hit.ref.sp,
             sharp,
-            at,
+            ids,
             corner: c.at,
             bis: bisector(c.u, c.v),
             half: c.alpha / 2,
-            max: maxCornerRadius(c),
+            /* The whole set's limit, not this corner's. `maxCornerRadius` alone
+               would let the pointer ask for a radius its neighbours cannot hold,
+               and they would clamp one at a time to different sizes. */
+            max: ids.length > 1 ? sharedCornerRadius(sharp, ids) : maxCornerRadius(c),
             applied: 0,
           };
           return;
@@ -1251,7 +1299,15 @@ export class Controller {
              because `roundCorner` declines a radius of nothing. */
           live.nodes = cloneSubpath(d.sharp).nodes;
           live.closed = d.sharp.closed;
-          if (r > 0) roundCorner(live, d.at, r);
+          if (r <= 0) return;
+          /* By id, and looked up again for each one, because rounding a corner
+             splices a second node in beside it and moves everything after. The
+             clone carries the ids through, which is what makes the lookup work
+             at all. */
+          for (const id of d.ids) {
+            const i = live.nodes.findIndex((n) => n.id === id);
+            if (i >= 0) roundCorner(live, i, r);
+          }
         });
         return;
       }
@@ -1285,7 +1341,31 @@ export class Controller {
           // Dragging away from a freshly placed node pulls out its handles.
           // Mirroring the two makes the node symmetric by construction -- there
           // is nothing to declare, the geometry says it.
-          n.hOut = this.snap(p, d.ref);
+          const h = this.snap(p, d.ref);
+
+          /* **A handle on top of its own anchor is not a handle.** It draws
+             nothing, `continuityOf` reads it as a corner, and yet `cornerAt`
+             sees a non-null handle and refuses to round the node -- so the
+             corner control never appears and nothing says why.
+
+             This is what a hand produces. Any movement between press and
+             release used to pull handles out, and snap-to-points drags a
+             one-pixel drift straight back onto the node, so tapping the pen
+             wrote `C x y  x y  x y` with every control on its endpoint. Two
+             identically drawn shapes then behaved differently for a reason
+             invisible on the canvas and in the panel alike.
+
+             `invisibleAt` rather than an arbitrary epsilon: below half a unit
+             in the last exported place, a handle cannot change one character
+             of the saved file, so it is not curvature by the only definition
+             the rest of this program uses. §23. */
+          if (Math.hypot(h[0] - n.pt[0], h[1] - n.pt[1]) <= invisibleAt(st.decimals)) {
+            n.hOut = null;
+            if (d.ref.i > 0 || sp.closed) n.hIn = null;
+            return;
+          }
+
+          n.hOut = h;
           // The very first node of an open path has nothing arriving at it.
           if (d.ref.i > 0 || sp.closed) n.hIn = [2 * n.pt[0] - n.hOut[0], 2 * n.pt[1] - n.hOut[1]];
         });
@@ -1552,11 +1632,10 @@ export class Controller {
        and the pointer can always grow it again. */
     if (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9) return;
 
-    const radius = this.store.state.cornerRadius;
     const build = (): Subpath =>
       d.tool === 'ellipse'
         ? ellipseSubpath(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2)
-        : rectSubpath(x, y, w, h, radius);
+        : rectSubpath(x, y, w, h);
 
     if (!d.id) {
       this.openBatch();

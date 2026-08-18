@@ -637,6 +637,24 @@ input[type='number']:disabled { opacity: 0.4; }
 .group:last-child { border-bottom: 0; padding-bottom: 24px; }
 .group.disabled { opacity: 0.42; pointer-events: none; }
 
+/* A group nested inside one, which is how a setting gets to be one press away
+   instead of on screen forever. It borrows the header so the same handler
+   collapses it, and gives back the three things that belong to a top-level
+   group: the padding, the rule under it, and the sticky header. */
+.group.inner { gap: 8px; padding: 0; border-bottom: 0; }
+.group.inner > .ghead:first-child {
+  position: static;
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+/* Buttons for operations a keyboard already reaches. Hidden unless Touch
+   buttons is on, which it is wherever the pointer is coarse: 44px targets and
+   a button for every operation are both rules about a finger, and a finger has
+   no Ctrl+C. On a mouse they were the bulk of the clutter in the rail. */
+body:not(.touchbtns) .tonly { display: none; }
+
 /* Three roles in the rail, separated by weight rather than by size: a header at
    600, a control at 450, a value at 400. Before this the header was 10.5px and a
    hint 11px, both at `--ink-3`, which made a section title and a throwaway
@@ -886,13 +904,16 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 /* Where an operation has a picture, the picture is the definition: the four
    booleans, paint order, flip and rotate, align and distribute. Illustrator's
    Pathfinder and Affinity's Geometry bar both draw the result for the same
-   reason. Text stays on the operations that have no picture -- Duplicate,
-   Paste, Save style -- which is also what those two do.
+   reason. Text stays on the operations that have no picture -- Save style,
+   Make one shape -- which is also what those two do.
    The name is inside the tile rather than in a `title`, because a tooltip may
    enrich and must never inform, and it keeps the label with its icon when the
    row wraps to three columns under a coarse pointer. */
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .tiles.six { grid-template-columns: repeat(6, 1fr); }
+/* Five across a 288px rail is 55px each, clear of the 44px floor, so this one
+   does not wrap under a coarse pointer and needs no second row. */
+.tiles.five { grid-template-columns: repeat(5, 1fr); }
 .tile {
   display: inline-flex;
   flex-direction: column;
@@ -939,6 +960,23 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
   min-width: 50px;
 }
 .row input { flex: 1; }
+
+/* An action and the one number it reads, in the order the sentence goes:
+   `Simplify within [0.5]`, `Reduce to [8] nodes`, `Offset by [2]`. The verb was
+   the last control in the row before this, so a field sat directly under an
+   unrelated button above it and read as belonging to that one. */
+.act { display: flex; align-items: center; gap: 7px; }
+.act > .btn { flex: none; }
+.act > label,
+.act > .rlabel {
+  flex: none;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.act > input { flex: 1; min-width: 0; }
+
 .coords { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
 .coords label { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
 .coords input,

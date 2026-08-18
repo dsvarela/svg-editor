@@ -35,7 +35,6 @@ import type { HandlePart, NodeRef } from '../model/doc';
 import {
   alignNodes,
   breakAt,
-  circulariseSubpath,
   deleteNode,
   deleteNodesSplitting,
   distributeNodes,
@@ -49,6 +48,7 @@ import {
   moveHandle,
   reverseSubpath,
   roundCorner,
+  sharedCornerRadius,
   setContinuity,
   setSegmentBend,
   segmentBend,
@@ -473,103 +473,6 @@ export class Commands {
     return ok;
   }
 
-  /* ------------------------------------------------------ refitting a path */
-
-  /**
-   * Force the selected subpaths onto their own best-fit circles.
-   *
-   * Whole subpaths rather than loose nodes: circularising some of a path's
-   * nodes would leave the segments joining them to the rest built from a circle
-   * they are not on, which is a worse drawing than either choice on its own.
-   */
-  circulariseSelection(): boolean {
-    const s = this.store.state;
-    const targets = selectedSubpaths(s.doc, s.selection);
-
-    let eligible = 0;
-    let tooFew = 0;
-    for (const [id, sps] of targets) {
-      const shape = findShape(s.doc, id);
-      for (const i of sps) {
-        const sp = shape?.subpaths[i];
-        if (!sp) continue;
-        if (sp.nodes.length >= 3) eligible++;
-        else tooFew++;
-      }
-    }
-
-    if (!eligible) {
-      this.onMessage?.(
-        targets.size
-          ? 'Circularise needs a path of three or more nodes.'
-          : 'Select a shape, or some of its nodes, first.',
-        false,
-      );
-      return false;
-    }
-
-    let done = 0;
-    let flat = 0;
-    let moved = 0;
-    let radius = 0;
-    let widest = 0;
-    let fused = 0;
-    this.store.tryEdit((st) => {
-      for (const [id, sps] of targets) {
-        const shape = findShape(st.doc, id);
-        for (const i of sps) {
-          const sp = shape?.subpaths[i];
-          if (!sp || sp.nodes.length < 3) continue;
-          const r = circulariseSubpath(sp);
-          if (!r) {
-            flat++;
-            continue;
-          }
-          done++;
-          moved = Math.max(moved, r.moved);
-          radius = r.radius;
-          widest = Math.max(widest, r.widestSpan);
-          fused += r.fused;
-        }
-      }
-      return done > 0;
-    });
-
-    if (!done) {
-      this.onMessage?.(
-        'Those nodes do not determine a circle. They are collinear, or they do not go ' +
-          'round in order.',
-        false,
-      );
-      return false;
-    }
-
-    const dp = (v: number): string => (+v.toFixed(3)).toString();
-    const extra = [
-      tooFew ? `${tooFew} too small` : '',
-      flat ? `${flat} not a ring` : '',
-    ].filter(Boolean);
-    // A cubic's radial error climbs steeply with the arc it covers, so a wide
-    // gap is the ceiling on the result and the user should hear about it rather
-    // than wonder why one side looks flat.
-    const wideDeg = Math.round((widest * 180) / Math.PI);
-    this.onMessage?.(
-      `Circularised ${done} path${done === 1 ? '' : 's'} onto r ${dp(radius)}${
-        done > 1 ? ' (the last one)' : ''
-      }. Furthest node moved ${dp(moved)}.` +
-        (extra.length ? ` Skipped ${extra.join(', ')}.` : '') +
-        /* Two nodes at the same angle land on the same point of the circle, so
-           one of them goes. The count was computed and thrown away, while three
-           documents claimed the user was told. */
-        (fused ? ` Welded ${fused} node${fused === 1 ? '' : 's'} that shared an angle.` : '') +
-        (wideDeg > 120
-          ? ` Widest gap is ${wideDeg}°. One curve cannot hold that arc tightly; add a node in it.`
-          : ''),
-      true,
-    );
-    return true;
-  }
-
   /**
    * Reduce the selected paths to a node count.
    *
@@ -788,19 +691,37 @@ export class Commands {
     }
 
     const s = this.store.state;
+    /* `selectedNodes`, not `selectedRefs`: a selected shape means all of its
+       nodes here, the same rule a corner control dragged with nothing picked out
+       follows. Reading the node selection alone made Round the one operation in
+       the rail that answered "select one or more nodes" to a selected shape. */
     const byPath = new Map<string, number[]>();
-    for (const r of selectedRefs(s.doc, s.selection)) {
+    for (const r of selectedNodes(s.doc, s.selection)) {
       const k = `${r.shape}/${r.sp}`;
       byPath.set(k, [...(byPath.get(k) ?? []), r.i]);
     }
     if (!byPath.size) {
-      this.onMessage?.('Select one or more nodes to round.', false);
+      this.onMessage?.('Select a shape, or some of its nodes, to round.', false);
       return false;
     }
 
+    /* One radius for the whole selection, decided before anything is cut: the
+       largest every corner asked for can hold at once. Rounding each to its own
+       limit instead gave one request several answers -- "Rounded 4 corners. 3
+       clamped to r 8.284 by the shorter side" is a rectangle with one corner
+       rounder than the other three, and no way to ask for the four to match. */
+    let use = radius;
+    for (const [key, indices] of byPath) {
+      const [shapeId, spIdx] = key.split('/');
+      const sp = findShape(s.doc, shapeId)?.subpaths[Number(spIdx)];
+      if (!sp) continue;
+      const ids = indices.map((i) => sp.nodes[i]?.id).filter((id): id is string => !!id);
+      const fits = sharedCornerRadius(sp, ids);
+      if (fits > 0) use = Math.min(use, fits);
+    }
+    const held = use < radius;
+
     let done = 0;
-    let clamped = 0;
-    let smallest = Infinity;
     const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
 
     this.store.tryEdit((st) => {
@@ -809,14 +730,12 @@ export class Commands {
         const sp = findShape(st.doc, shapeId)?.subpaths[Number(spIdx)];
         if (!sp) continue;
         for (const i of [...indices].sort((a, b) => b - a)) {
-          const r = roundCorner(sp, i, radius);
+          const r = roundCorner(sp, i, use);
           if (typeof r === 'string') {
             refused[r]++;
             continue;
           }
           done++;
-          if (r.clamped) clamped++;
-          smallest = Math.min(smallest, r.radius);
         }
       }
       if (done) st.selection = emptySelection();
@@ -840,8 +759,8 @@ export class Commands {
     const dp = (v: number): string => (+v.toFixed(3)).toString();
     const skipped = Object.values(refused).reduce((a, b) => a + b, 0);
     this.onMessage?.(
-      `Rounded ${done} corner${done === 1 ? '' : 's'}.` +
-        (clamped ? ` ${clamped} clamped to r ${dp(smallest)} by the shorter side.` : '') +
+      `Rounded ${done} corner${done === 1 ? '' : 's'} to r ${dp(use)}.` +
+        (held ? ' The shortest side allowed no more.' : '') +
         (skipped ? ` Skipped ${skipped}.` : ''),
       true,
     );
@@ -1869,6 +1788,10 @@ export class Commands {
 
     this.clipboard = taken;
     this.pastes = 0;
+    /* The clipboard is not in the store, so filling it raises nothing and the
+       Paste button, which is greyed out until there is something to paste,
+       would stay grey until an unrelated edit redrew the rail. */
+    this.store.notify();
     const what = shapes.length
       ? `${taken.length} ${taken.length === 1 ? 'shape' : 'shapes'}`
       : `${taken.length} ${taken.length === 1 ? 'piece' : 'pieces'} of path`;
@@ -1886,6 +1809,11 @@ export class Commands {
     }
     this.onMessage?.('Cut.', true);
     return true;
+  }
+
+  /** Whether there is anything to paste, so the button can say so before it is pressed. */
+  hasClipboard(): boolean {
+    return this.clipboard.length > 0;
   }
 
   /**

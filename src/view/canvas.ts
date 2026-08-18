@@ -84,12 +84,25 @@ const HANDLE_SIZE = 8;
  * Clearing the anchor is the floor, not the target. At 11 the two shapes cleared
  * each other by 3.5 px and still read as one cluster, which is a different failure
  * from being unpressable: you could hit it and could not tell it apart from the
- * node it belongs to. Sixteen leaves about 8 px of gap.
+ * node it belongs to.
+ *
+ * **Sixteen was recorded here as leaving about 8 px of gap, and measured 4.6.**
+ * The arithmetic behind the 8 subtracted the anchor's half-width. On a right
+ * angle the bisector points at the anchor's *corner*, which is half a diagonal
+ * out, and the control is a diamond whose near vertex is half its width in:
+ * 16 − 8.5/2·√2 − 10.8/2 = 4.6, read off the rendered boxes at 1400%, 1800% and
+ * 2200% zoom, where the centre distance is 16.00 every time. Twenty gives 8.6,
+ * which is what the paragraph above always meant.
+ *
+ * Constant in screen pixels at every zoom, by design: `k` converts it to
+ * document units at the point of use. A *rounded* corner's control sits further
+ * out again, past its own arc, so it travels away from the node as you zoom in
+ * rather than toward it.
  *
  * Shared with `Controller`, which subtracts it again to read a radius back off the
  * pointer. Two numbers here would be a control that does not stay under the finger.
  */
-export const CORNER_DOT_PX = 16;
+export const CORNER_DOT_PX = 20;
 
 /**
  * Side of the invisible square that rotates, placed with its inner corner on

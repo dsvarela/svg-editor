@@ -7,7 +7,6 @@ route to finishing it.
 
 - [Add a node to an existing curve](#add-a-node-to-an-existing-curve)
 - [Move several shapes at once](#move-several-shapes-at-once)
-- [Make a hand-drawn ring perfectly round](#make-a-hand-drawn-ring-perfectly-round)
 - [Make a corner smooth](#make-a-corner-smooth)
 - [Break one path into two](#break-one-path-into-two)
 - [Join two ends back together](#join-two-ends-back-together)
@@ -62,23 +61,6 @@ Three ways to select more than one shape:
 
 Arrow keys nudge the whole selection too, and everything in the **Transform**
 panel applies to all of it.
-
-## Make a hand-drawn ring perfectly round
-
-Select the shape, then press **Circularise** in the **Draw** panel.
-
-A circle is fitted through the nodes by least squares. Each node keeps its angle
-and moves out or in to the fitted radius, and the handles are rebuilt to match
-the arc each segment now covers.
-
-The status line reports the radius it found and how far the furthest node had to
-travel. A small number means it was nearly a circle already. A large one is the
-honest measure of how far it was.
-
-Two things it will not do. It refuses nodes that do not go round in order, such
-as a star, because no circle through them in that order is a ring. And when one
-gap is much wider than the others, it says so, because a single curve cannot
-hold a wide arc tightly. Add a node in the gap and run it again.
 
 ## Make a corner smooth
 
@@ -155,16 +137,20 @@ surviving curve untouched.
 
 ## Draw a rounded rectangle
 
-1. Set **Corner** in the **Draw** panel to the radius you want.
-2. Press `R`.
-3. Drag out the rectangle.
+1. Press `R` and drag out the rectangle.
+2. Select it, set **Radius** in the **Node** panel, and press **Round**.
 
-`Shift` constrains it to a square, and `Alt` treats the point you pressed as the
-centre instead of a corner.
+`Shift` constrains the drag to a square, and `Alt` treats the point you pressed
+as the centre instead of a corner.
 
-The radius is clamped to half the shorter side, so a large value gives a stadium
-rather than a shape that crosses itself. The four sides stay exactly straight,
-because their nodes carry no handles at all.
+Every corner gets the same radius, and a radius larger than the shape can hold
+is reduced to the largest that fits everywhere rather than applied unevenly. So
+a large value gives a stadium rather than a shape that crosses itself. The four
+sides stay exactly straight, because their nodes carry no handles at all.
+
+Dragging one of the small diamonds beside a corner does the same thing by hand.
+With the whole shape selected it rounds every corner at once; with particular
+nodes selected it rounds those.
 
 ## Combine two shapes
 
@@ -438,7 +424,7 @@ Imported and traced paths often carry a node every few units. Every handle is
 too short to grab and moving one node changes nothing you can see.
 
 1. Select the shape.
-2. Set **Within** in the **Draw** panel. It is how far the drawing may move, in
+2. Set **Within** in the **Path** panel. It is how far the drawing may move, in
    document units, and it starts at roughly one screen pixel for the document you
    have open.
 3. Tick **Redraw curves**. A traced path's nodes are not yours, so there is

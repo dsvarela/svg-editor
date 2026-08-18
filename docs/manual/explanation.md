@@ -55,32 +55,6 @@ A circle drawn this way is four curves, and it is round to about 0.027 % of its
 radius. That is not exact, because a Bézier curve cannot be a circular arc. It is
 closer than a screen can show and closer than most renderers care about.
 
-The number matters when you circularise something with one wide gap between
-nodes, because the error grows quickly with the arc a single curve has to cover.
-That is why the status line tells you when a gap is wide, and suggests adding a
-node in it.
-
-## A closed shape has to go round once
-
-Circularise takes the nodes you have, fits a circle through them, and moves each
-one onto it. It then has to decide, for each pair of neighbours, which way round
-the circle the curve between them travels.
-
-Taking the shorter way is right almost always, and destructive in one case. If
-four nodes are bunched into a sixty degree wedge, the gap closing the shape is
-three hundred degrees, and "the shorter way" reads that as sixty degrees
-backwards. The closing curve then retraces the other three instead of completing
-the circle.
-
-Every node still sits exactly on the circle when this happens, so measuring the
-radius cannot detect it, and the reported travel is zero. It looks like a perfect
-result.
-
-So a closed path is treated as a ring. One direction is chosen from the shape's
-own winding, every gap follows it, and the total has to add up to a full turn. A
-set of nodes that cannot do that, such as a five-pointed star, is refused with
-nothing changed rather than mangled.
-
 ## The grid never draws a line you cannot snap to
 
 Zoom out far enough in most editors and the grid switches to a coarser lattice

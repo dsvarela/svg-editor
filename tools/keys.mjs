@@ -46,7 +46,12 @@ const snapshot = () => page.evaluate(() => {
       id: el.id || null,
       what: (el.getAttribute('aria-label') || el.title || el.textContent || '').trim().slice(0, 42),
       panel,
-      disabled: !!el.disabled || !!el.closest('[hidden]'),
+      /* Not surveyed: disabled, inside a `hidden` ancestor, or rendered
+         nowhere. The third is `display: none`, which is how the buttons behind
+         the Touch buttons setting leave a mouse: a control with no box cannot
+         be tabbed to and is not a keyboard failure. Reading only `hidden` put
+         all seven of them in the missed list. */
+      disabled: !!el.disabled || !!el.closest('[hidden]') || el.getClientRects().length === 0,
       // A negative tabindex is a deliberate removal from the tab order, which
       // is how a segmented control lets the arrow keys own its buttons.
       tabbable: el.tabIndex >= 0,
@@ -110,7 +115,7 @@ for (const c of missed) byPanel.set(c.panel, [...(byPanel.get(c.panel) ?? []), c
 console.log(
   `${controls.length} controls with an id. ` +
     `${missed.length} are live and cannot be reached by Tab; ` +
-    `${dead.length} were disabled throughout and so were not surveyed.`,
+    `${dead.length} were disabled or unrendered throughout and so were not surveyed.`,
 );
 for (const [panel, list] of byPanel) {
   console.log(`\n  ${panel}`);
@@ -120,6 +125,6 @@ for (const [panel, list] of byPanel) {
 await browser.close();
 
 if (dead.length) {
-  console.log('\n  not surveyed, disabled throughout (needs a document state this does not set up)');
+  console.log('\n  not surveyed: disabled or not rendered throughout (needs a state this does not set up)');
   for (const c of dead) console.log(`    ${(c.id ?? '').padEnd(18)} ${c.what}`);
 }

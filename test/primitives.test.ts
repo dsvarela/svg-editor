@@ -1,5 +1,5 @@
 /**
- * Primitives and circle fitting.
+ * Primitives: the ellipse and the rectangle the two draw tools build.
  *
  * The question a circle test has to answer is "how round is it", not "are the
  * numbers the ones I wrote down". So these measure: they sample the curve and
@@ -9,12 +9,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { KAPPA, arcHandle, ellipseSubpath, fitCircle, rectSubpath } from '../src/core/primitives';
-import { circulariseSubpath } from '../src/model/ops';
-import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
+import { KAPPA, arcHandle, ellipseSubpath, rectSubpath } from '../src/core/primitives';
+import { continuityOf, segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 import { cubicAt } from '../src/core/bezier';
-import { parsePath } from '../src/core/parse';
 
 /** Dense samples along every segment of a subpath. */
 function samples(sp: Subpath, per = 64): Pt[] {
@@ -86,7 +84,7 @@ describe('ellipseSubpath', () => {
 });
 
 describe('rectSubpath', () => {
-  it('is four handle-less nodes when square-cornered', () => {
+  it('is four handle-less nodes', () => {
     const sp = rectSubpath(2, 3, 10, 6);
     expect(sp.closed).toBe(true);
     expect(sp.nodes).toHaveLength(4);
@@ -108,243 +106,4 @@ describe('rectSubpath', () => {
     );
   });
 
-  it('rounds corners with quarter arcs and keeps the sides straight', () => {
-    const sp = rectSubpath(0, 0, 20, 10, 3);
-    expect(sp.nodes).toHaveLength(8);
-
-    // Every second segment is a side, and a side must have no handles at all or
-    // it is not straight -- which is the whole reason corners get two nodes.
-    const sideStart = [1, 3, 5, 7];
-    for (const i of sideStart) {
-      const j = (i + 1) % 8;
-      const curved = sp.nodes[i].hOut !== null || sp.nodes[j].hIn !== null;
-      expect(curved).toBe(true); // i -> i+1 is a corner arc
-    }
-    for (const i of [0, 2, 4, 6]) {
-      const j = i + 1;
-      expect(sp.nodes[i].hOut).toBeNull();
-      expect(sp.nodes[j].hIn).toBeNull();
-    }
-  });
-
-  it('clamps the radius to half the shorter side rather than crossing itself', () => {
-    const stadium = rectSubpath(0, 0, 20, 10, 999);
-    // r clamped to 5: the top edge runs from x = 5 to x = 15.
-    expect(stadium.nodes[0].pt).toEqual([5, 0]);
-    expect(stadium.nodes[1].pt).toEqual([15, 0]);
-    // And the ends are semicircles, so the extent is still the box.
-    const xs = samples(stadium).map((p) => p[0]);
-    expect(Math.max(...xs)).toBeCloseTo(20, 6);
-    expect(Math.min(...xs)).toBeCloseTo(0, 6);
-  });
-
-  it('treats a zero or negative radius as square', () => {
-    expect(rectSubpath(0, 0, 8, 8, 0).nodes).toHaveLength(4);
-    expect(rectSubpath(0, 0, 8, 8, -3).nodes).toHaveLength(4);
-  });
-});
-
-describe('fitCircle', () => {
-  it('recovers a circle it was given exactly', () => {
-    const c: Pt = [17, -5];
-    const r = 12;
-    const pts: Pt[] = [0, 1, 2, 3, 4].map((k) => {
-      const t = (k / 5) * Math.PI * 2;
-      return [c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)];
-    });
-    const fit = fitCircle(pts)!;
-    expect(fit.centre[0]).toBeCloseTo(17, 9);
-    expect(fit.centre[1]).toBeCloseTo(-5, 9);
-    expect(fit.radius).toBeCloseTo(12, 9);
-  });
-
-  it('averages noise rather than following it', () => {
-    // Deterministic wobble of +/- 0.1 on a radius of 10.
-    const pts: Pt[] = [];
-    for (let k = 0; k < 12; k++) {
-      const t = (k / 12) * Math.PI * 2;
-      const r = 10 + (k % 2 ? 0.1 : -0.1);
-      pts.push([r * Math.cos(t), r * Math.sin(t)]);
-    }
-    const fit = fitCircle(pts)!;
-    expect(Math.hypot(...fit.centre)).toBeLessThan(0.02);
-    expect(fit.radius).toBeCloseTo(10, 2);
-  });
-
-  it('refuses collinear points and short lists', () => {
-    expect(fitCircle([[0, 0], [1, 1], [2, 2], [3, 3]])).toBeNull();
-    expect(fitCircle([[0, 0], [1, 0]])).toBeNull();
-  });
-
-  it('is not thrown by points a long way from the origin', () => {
-    const c: Pt = [1e6, -1e6];
-    const pts: Pt[] = [0, 1, 2, 3].map((k) => {
-      const t = (k / 4) * Math.PI * 2;
-      return [c[0] + 5 * Math.cos(t), c[1] + 5 * Math.sin(t)];
-    });
-    const fit = fitCircle(pts)!;
-    expect(fit.radius).toBeCloseTo(5, 6);
-    expect(fit.centre[0]).toBeCloseTo(1e6, 3);
-  });
-});
-
-describe('circulariseSubpath', () => {
-  it('makes a wobbly ring exactly round', () => {
-    const sp = ellipseSubpath(0, 0, 10, 10);
-    // Push every node off the circle by a different amount.
-    sp.nodes.forEach((n, i) => {
-      const f = 1 + (i - 1.5) * 0.06;
-      n.pt = [n.pt[0] * f, n.pt[1] * f];
-    });
-    expect(roundness(sp, [0, 0], 10)).toBeGreaterThan(0.02);
-
-    const r = circulariseSubpath(sp)!;
-    expect(r.radius).toBeCloseTo(10, 1);
-
-    // The anchors land on the circle exactly; that part has no tolerance.
-    for (const n of sp.nodes) {
-      expect(Math.hypot(n.pt[0] - r.centre[0], n.pt[1] - r.centre[1])).toBeCloseTo(r.radius, 12);
-    }
-    // The curve between them is as round as its arcs allow. The bound is looser
-    // than a quarter arc's 2.7e-4 because the fitted centre shifts off the
-    // original one, which leaves the four spans no longer exactly 90 degrees.
-    expect(roundness(sp, r.centre, r.radius)).toBeLessThan(5e-4);
-  });
-
-  it('leaves an already exact circle where it is', () => {
-    const sp = ellipseSubpath(4, 4, 7, 7);
-    const before = samples(sp);
-    const r = circulariseSubpath(sp)!;
-    expect(r.moved).toBeLessThan(1e-9);
-    samples(sp).forEach((p, i) => {
-      expect(p[0]).toBeCloseTo(before[i][0], 9);
-      expect(p[1]).toBeCloseTo(before[i][1], 9);
-    });
-  });
-
-  it('is as round with uneven nodes as with even ones', () => {
-    // Three nodes bunched into half the circle and two spread over the rest:
-    // the per-arc handle length is what keeps this exact.
-    const angles = [0, 0.4, 0.9, 2.6, 4.6];
-    const sp: Subpath = {
-      nodes: angles.map((t) => (makeNode([9 * Math.cos(t), 9 * Math.sin(t)] as Pt))),
-      closed: true,
-    };
-    const r = circulariseSubpath(sp)!;
-    for (const n of sp.nodes) {
-      expect(Math.hypot(n.pt[0] - r.centre[0], n.pt[1] - r.centre[1])).toBeCloseTo(r.radius, 12);
-    }
-    // The widest gap here spans about 96 degrees, and a cubic's radial error
-    // climbs steeply with the arc it covers -- so the ceiling is the span's,
-    // not the method's. Even spacing gets the 2.7e-4 the ellipse test asserts.
-    expect(roundness(sp, r.centre, r.radius)).toBeLessThan(2e-3);
-  });
-
-  it('reports how far the furthest node had to move', () => {
-    const sp = ellipseSubpath(0, 0, 10, 10);
-    sp.nodes[2].pt = [-13, 0];
-    const r = circulariseSubpath(sp)!;
-    // The fit splits the difference: pulling one node 3 units out drags the
-    // fitted circle after it, so the node travels back well under 3.
-    expect(r.moved).toBeGreaterThan(0.5);
-    expect(r.moved).toBeLessThan(3);
-  });
-
-  it('opens an arc without closing it', () => {
-    // Three points on the circle of radius 10 about the origin: 0, 45 and 90
-    // degrees. Anything else and "nothing moves" would be false.
-    const sp = parsePath('M10 0 L7.0710678118654755 7.0710678118654755 L0 10')[0];
-    expect(sp.closed).toBe(false);
-    const r = circulariseSubpath(sp)!;
-    expect(sp.closed).toBe(false);
-    // Three points determine a circle exactly, so nothing moves.
-    expect(r.moved).toBeLessThan(1e-9);
-    expect(r.radius).toBeCloseTo(10, 6);
-    // The last node ends a path, so it keeps no outgoing handle.
-    expect(sp.nodes[2].hOut).toBeNull();
-    expect(sp.nodes[0].hIn).toBeNull();
-  });
-
-  it('refuses what is not a circle to begin with', () => {
-    expect(circulariseSubpath(parsePath('M0 0 L10 0')[0])).toBeNull();
-    expect(circulariseSubpath(parsePath('M0 0 L5 5 L10 10 L15 15')[0])).toBeNull();
-  });
-
-  /* The wrap-around defect, and why a radial measurement could not see it.
-     Spans were taken the shorter way round, so a closed contour with a gap
-     wider than half a turn had that gap drawn BACKWARDS -- the path retraced
-     the other segments instead of closing. Every node still sat exactly on the
-     circle and the reported travel was zero, so it looked like a success. */
-  describe('a closed contour is a ring', () => {
-    const ringAt = (degrees: number[], r = 10): Subpath => ({
-      nodes: degrees.map((d) => (makeNode([r * Math.cos((d * Math.PI) / 180), r * Math.sin((d * Math.PI) / 180)] as Pt))),
-      closed: true,
-    });
-
-    /** Total turning of the drawn path about a centre, in radians. */
-    const turning = (sp: Subpath, c: Pt): number => {
-      const pts = samples(sp, 32);
-      let total = 0;
-      for (let i = 1; i < pts.length; i++) {
-        let d =
-          Math.atan2(pts[i][1] - c[1], pts[i][0] - c[0]) -
-          Math.atan2(pts[i - 1][1] - c[1], pts[i - 1][0] - c[0]);
-        while (d > Math.PI) d -= 2 * Math.PI;
-        while (d < -Math.PI) d += 2 * Math.PI;
-        total += d;
-      }
-      return total;
-    };
-
-    it('goes round exactly once when one gap is wider than half a turn', () => {
-      const sp = ringAt([0, 20, 40, 60]);
-      const r = circulariseSubpath(sp)!;
-      // A path that closes back on the start without ever going round has a
-      // turning of ~0. This is the assertion that goes red when it does.
-      expect(Math.abs(turning(sp, r.centre))).toBeCloseTo(2 * Math.PI, 6);
-      // And the widest gap is reported, because one cubic cannot hold 300 well.
-      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(300, 4);
-    });
-
-    it('still goes round once for an ordinary ring', () => {
-      const sp = ringAt([0, 90, 180, 270]);
-      const r = circulariseSubpath(sp)!;
-      expect(Math.abs(turning(sp, r.centre))).toBeCloseTo(2 * Math.PI, 6);
-      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(90, 6);
-    });
-
-    it('goes the same way round whichever way the nodes were written', () => {
-      const ccw = ringAt([0, 90, 180, 270]);
-      const cw = ringAt([0, 270, 180, 90]);
-      const a = circulariseSubpath(ccw)!;
-      const b = circulariseSubpath(cw)!;
-      expect(turning(ccw, a.centre)).toBeCloseTo(-turning(cw, b.centre), 6);
-    });
-
-    it('refuses a contour whose nodes do not go round in order', () => {
-      // A five-pointed star visits the circle twice; no circle through these
-      // nodes in this order is a ring, so nothing is mutated.
-      const star = ringAt([0, 144, 288, 72, 216]);
-      const before = star.nodes.map((n) => [...n.pt]);
-      expect(circulariseSubpath(star)).toBeNull();
-      expect(star.nodes.map((n) => [...n.pt])).toEqual(before);
-    });
-
-    it('refuses a contour with a node on the fitted centre', () => {
-      // atan2(0, 0) is 0, so a node on the centre would be placed at the
-      // eastern point of the circle, on top of whatever is already there.
-      const sp = ringAt([0, 90, 180, 270]);
-      sp.nodes.push(makeNode([0, 0]));
-      expect(circulariseSubpath(sp)).toBeNull();
-    });
-
-    it('leaves an open arc taking the shorter way round', () => {
-      // An open path has no ring constraint and its anchors cannot say which
-      // way the arc went, so this behaviour is deliberate rather than missed.
-      const sp = parsePath('M10 0 L7.0710678118654755 7.0710678118654755 L0 10')[0];
-      const r = circulariseSubpath(sp)!;
-      expect(r.moved).toBeLessThan(1e-9);
-      expect((r.widestSpan * 180) / Math.PI).toBeCloseTo(45, 6);
-    });
-  });
 });

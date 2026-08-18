@@ -29,12 +29,24 @@
         <symbol id="i-rect" viewBox="0 0 16 16">
           <rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.4" />
         </symbol>
-        <symbol id="i-circularise" viewBox="0 0 16 16">
-          <circle cx="8" cy="8" r="5.4" stroke-dasharray="2.2 1.8" />
-          <rect class="sq" x="6.8" y="1.3" width="2.4" height="2.4" />
-          <rect class="sq" x="12.3" y="6.8" width="2.4" height="2.4" />
-          <rect class="sq" x="6.8" y="12.3" width="2.4" height="2.4" />
-          <rect class="sq" x="1.3" y="6.8" width="2.4" height="2.4" />
+        <!-- The clipboard four. Each is the same 6.6-unit square moved or cut,
+             so the row reads as one family rather than four drawings. -->
+        <symbol id="i-duplicate" viewBox="0 0 16 16">
+          <rect x="2.4" y="2.4" width="7.6" height="7.6" rx="1" stroke-dasharray="2 1.6" opacity="0.55" />
+          <rect x="6" y="6" width="7.6" height="7.6" rx="1" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 16 16">
+          <path d="M10.4 5.2V3.4a1 1 0 0 0-1-1H3.4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8" />
+          <rect x="5.6" y="5.6" width="8" height="8" rx="1" />
+        </symbol>
+        <symbol id="i-cut" viewBox="0 0 16 16">
+          <path d="M4.6 3 11 11.2M11.4 3 5 11.2" />
+          <circle cx="4.2" cy="12.6" r="1.7" />
+          <circle cx="11.8" cy="12.6" r="1.7" />
+        </symbol>
+        <symbol id="i-paste" viewBox="0 0 16 16">
+          <path d="M6.2 3.2H4.4a1 1 0 0 0-1 1v8.4a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V4.2a1 1 0 0 0-1-1H9.8" />
+          <rect class="sq" x="6.2" y="1.9" width="3.6" height="2.6" rx="0.6" />
         </symbol>
         <!-- Reverse: a path with an arrowhead, pointing back the way it came. -->
         <symbol id="i-reverse" viewBox="0 0 16 16">
@@ -230,9 +242,15 @@
             <!-- A tree, not a listbox: a shape holding more than one path opens to
                  show them, and a path is selectable on its own. -->
             <ul class="shapelist" id="shapelist" role="tree" aria-label="Shapes" tabindex="0"></ul>
-            <div class="grid2">
-              <button class="btn" id="dupShape">Duplicate</button>
-              <button class="btn" id="delShape">Delete</button>
+            <!-- Every one of these five is a keyboard shortcut as well, so the
+                 row is hidden unless "Touch buttons" is on, which it is by
+                 default on a coarse pointer. A finger has no Ctrl+C. -->
+            <div class="tiles five tonly">
+              <button class="tile" type="button" id="dupShape" aria-label="Duplicate: a copy of the selection, offset from it (Ctrl+D)" title="Duplicate: a copy of the selection, offset from it (Ctrl+D)"><svg class="ico"><use href="#i-duplicate" /></svg><span>duplicate</span></button>
+              <button class="tile" type="button" id="copySel" aria-label="Copy the selection. With only nodes selected, copies each run of adjacent ones as its own path (Ctrl+C)" title="Copy the selection. With only nodes selected, copies each run of adjacent ones as its own path (Ctrl+C)"><svg class="ico"><use href="#i-copy" /></svg><span>copy</span></button>
+              <button class="tile" type="button" id="cutSel" aria-label="Cut: copy the selection, then delete it (Ctrl+X)" title="Cut: copy the selection, then delete it (Ctrl+X)"><svg class="ico"><use href="#i-cut" /></svg><span>cut</span></button>
+              <button class="tile" type="button" id="pasteSel" aria-label="Paste the last copy back, offset from the one before it (Ctrl+V)" title="Paste the last copy back, offset from the one before it (Ctrl+V)"><svg class="ico"><use href="#i-paste" /></svg><span>paste</span></button>
+              <button class="tile" type="button" id="delShape" aria-label="Delete the selection (Delete)" title="Delete the selection (Delete)"><svg class="ico"><use href="#i-delete" /></svg><span>delete</span></button>
             </div>
             <div class="grid2">
               <button class="btn" id="groupShapes" title="Put the selected shapes in a group. They keep their own coordinates: a group says what belongs together, not where it is (Ctrl+G)">Group</button>
@@ -246,12 +264,7 @@
                 <button class="tile" type="button" id="orderForward" data-z="forward" aria-label="Forward: paint this one step later, so it covers the shape it was behind (Ctrl+])" title="Forward: paint this one step later, so it covers the shape it was behind (Ctrl+])"><svg class="ico"><use href="#i-zfwd" /></svg><span>forward</span></button>
                 <button class="tile" type="button" id="orderFront" data-z="front" aria-label="To front: paint this last of all, in front of everything (Ctrl+Shift+])" title="To front: paint this last of all, in front of everything (Ctrl+Shift+])"><svg class="ico"><use href="#i-zfront" /></svg><span>to front</span></button>
               </div>
-            <div class="grid3">
-              <button class="btn" id="copySel" title="Copy the selection. With only nodes selected, copies each run of adjacent ones as its own path (Ctrl+C)">Copy</button>
-              <button class="btn" id="cutSel" title="Copy the selection, then delete it (Ctrl+X)">Cut</button>
-              <button class="btn" id="pasteSel" title="Put the last copy back, offset from the one before it (Ctrl+V)">Paste</button>
-            </div>
-          
+
               <p class="hint" id="hint-shapes" hidden>Newest last. Double-click a name to rename it.</p>
               </div>
             </div>
@@ -272,11 +285,17 @@
               <label for="strokeWidth">Width</label>
               <input type="number" id="strokeWidth" step="0.25" min="0" />
             </div>
-            <div class="row">
-              <span class="rlabel">Rule</span>
-              <div class="seg spread" id="fillRule" role="group" aria-label="Fill rule">
-                <button type="button" data-fr="nonzero" aria-pressed="true">Nonzero</button>
-                <button type="button" data-fr="evenodd" aria-pressed="false">Even-odd</button>
+            <!-- Set once on a shape and rarely looked at again, so it is one
+                 press away rather than permanently on screen beside Width,
+                 which is read every time. -->
+            <div class="group inner">
+              <div class="ghead"><button class="glabel sub" type="button" aria-expanded="false"><span>Fill rule</span><span class="gval" id="fillruleinfo">nonzero</span></button></div>
+              <div class="gbody">
+                <div class="seg spread" id="fillRule" role="group" aria-label="Fill rule">
+                  <button type="button" data-fr="nonzero" aria-pressed="true">Nonzero</button>
+                  <button type="button" data-fr="evenodd" aria-pressed="false">Even-odd</button>
+                </div>
+                <p class="says">Where one shape's own paths overlap: nonzero fills the overlap, even-odd leaves a hole.</p>
               </div>
             </div>
             <div class="glabel sub"><span>Saved</span><span class="gval" id="paletteinfo">none</span></div>
@@ -307,45 +326,46 @@
               </div>
             </div>
           <div class="group">
-              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Draw</span><span class="gval" id="drawinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-draw" aria-label="What Draw is for">?</button></div>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Path</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-draw" aria-label="What Path is for">?</button></div>
               <div class="gbody">
-            <div class="row">
-              <label for="cornerRadius">Corner</label>
-              <input type="number" id="cornerRadius" value="0" step="0.5" min="0" />
-            </div>
-            <button class="btn wide" id="circularise" title="Move every node of the selected path onto its own best-fit circle">
-              <svg class="ico"><use href="#i-circularise" /></svg>Circularise
-            </button>
-            <div class="row">
-              <label for="simplifyTol">Within</label>
+            <!-- Three clusters, because these eight do three different things to
+                 a path: take nodes out of it, make a second path from it, or
+                 turn it round. The number each one reads sits inside its own
+                 row, so no field can be mistaken for the operation above it. -->
+            <div class="glabel sub"><span>Fewer nodes</span></div>
+            <div class="act">
+              <button class="btn" id="simplify" title="Remove nodes from the selected paths, moving the outline no further than this"><svg class="ico"><use href="#i-simplify" /></svg>Simplify</button>
+              <label for="simplifyTol">within</label>
               <input type="number" id="simplifyTol" step="0.05" min="0" />
             </div>
             <div class="checks">
               <label><input type="checkbox" id="simplifyRedraw" title="Let Simplify replace your curves with fitted ones. Off, every node that survives is one you placed" /> Redraw curves</label>
             </div>
-            <div class="row">
-              <label for="offsetBy">By</label>
-              <input type="number" id="offsetBy" step="0.5" value="2" title="How far the parallel path sits from this one. Negative goes the other way" />
+            <div class="act">
+              <button class="btn" id="keepGo" type="button" title="Reduce each selected path to that many nodes">Reduce</button>
+              <label for="keepCount">to</label>
+              <input type="number" id="keepCount" step="1" min="2" value="8" title="How many nodes to leave on each selected path" />
+              <span class="rlabel">nodes</span>
+            </div>
+            <button class="btn wide" id="keepThese" type="button" title="Remove every node except the ones selected">Keep these nodes</button>
+
+            <div class="glabel sub"><span>A second path</span></div>
+            <div class="act">
               <button class="btn" id="offsetGo" type="button" title="Draw a path parallel to the selected shapes">Offset</button>
+              <label for="offsetBy">by</label>
+              <input type="number" id="offsetBy" step="0.5" value="2" title="How far the parallel path sits from this one. Negative goes the other way" />
             </div>
             <div class="grid2">
               <button class="btn" id="strokeButt" type="button" title="Turn the stroke into a filled outline, cut square at the ends">Outline</button>
               <button class="btn" id="strokeRound" type="button" title="Turn the stroke into a filled outline, rounded at the ends">Outline round</button>
             </div>
-            <div class="row">
-              <label for="keepCount">Keep</label>
-              <input type="number" id="keepCount" step="1" min="2" value="8" title="How many nodes to leave on each selected path" />
-              <button class="btn" id="keepGo" type="button" title="Reduce each selected path to that many nodes">Reduce</button>
-            </div>
-            <button class="btn wide" id="keepThese" type="button" title="Remove every node except the ones selected">Keep these nodes</button>
-            <button class="btn wide" id="simplify" title="Remove nodes from the selected paths">
-              <svg class="ico"><use href="#i-simplify" /></svg>Simplify
-            </button>
+
+            <div class="glabel sub"><span>Direction</span></div>
             <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
               <svg class="ico"><use href="#i-reverse" /></svg>Reverse
             </button>
-          
-              <p class="hint" id="hint-draw" hidden>Within is how far Simplify may move things; Keep is how many nodes to leave.</p>
+
+              <p class="hint" id="hint-draw" hidden>Offset and Outline leave the path alone and make a new one. Everything else here rewrites it.</p>
               </div>
             </div>
           <div class="group">
@@ -471,16 +491,20 @@
               <input type="number" id="roundR" step="0.5" min="0" value="4" />
               <button class="btn" id="roundCorner" title="Replace the selected corners with an arc of this radius">Round</button>
             </div>
+            <p class="says" id="roundwhy" hidden></p>
             <div class="grid2">
               <button class="btn" id="breakPath" title="Break the path at this node, keeping it (Shift+B)">Break here</button>
               <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>
               <button class="btn" id="mergePath" title="Weld two selected free ends into one node at their midpoint (Shift+M)">Merge</button>
               <button class="btn" id="fuseNodes" title="Weld two adjacent nodes into one, anywhere along a path. With a shape selected, sweeps away every zero-length segment (Shift+F)">Fuse</button>
-              <button class="btn" id="prevNode" type="button" title="Select the node before this one along the path ([)">&#8592; Node</button>
-              <button class="btn" id="nextNode" type="button" title="Select the node after this one along the path (])">Node &#8594;</button>
+              <!-- Stepping and deleting are `[`, `]` and Delete on a keyboard,
+                   and a click on the next node does the stepping too. Kept for
+                   the finger that has none of the three. -->
+              <button class="btn tonly" id="prevNode" type="button" title="Select the node before this one along the path ([)">&#8592; Node</button>
+              <button class="btn tonly" id="nextNode" type="button" title="Select the node after this one along the path (])">Node &#8594;</button>
               <button class="btn wide" id="insertNode" type="button" title="Insert a node in the middle of the segment between the two selected nodes (Shift+I)">Insert node</button>
               <button class="btn wide" id="findSrc" title="Open the source and put the cursor on the command that drew this node">Find in source</button>
-              <button class="btn wide" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
+              <button class="btn wide tonly" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
             </div>
 
             <div class="glabel sub"><span>Bend</span><span class="gval" id="bendinfo">no segment</span></div>
@@ -725,6 +749,16 @@
             <button class="btn wide primary" id="downloadPng" type="button" title="Save the drawing as a PNG at this width. The height follows the canvas proportions">Download PNG</button>
 
               <p class="hint" id="hint-png" hidden>Transparent where nothing is painted. Height follows the canvas.</p>
+              </div>
+            </div>
+          <div class="group">
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Controls</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-controls" aria-label="What Controls is for">?</button></div>
+              <div class="gbody">
+            <div class="checks">
+              <label><input type="checkbox" id="touchButtons" title="Show buttons for Duplicate, Delete, Copy, Cut, Paste and node stepping, which otherwise only a keyboard reaches" /> Touch buttons</label>
+            </div>
+
+              <p class="hint" id="hint-controls" hidden>On by default where the pointer is a finger. Off, those operations are keyboard only.</p>
               </div>
             </div>
           </div>

@@ -978,17 +978,6 @@ describe('the ellipse and rectangle tools', () => {
     }
   });
 
-  it('rounds the corners when the radius is set', () => {
-    const h = harness();
-    h.store.update((s) => (s.cornerRadius = 2));
-    draw(h, 'rect', [0, 0], [20, 10]);
-
-    const sp = h.store.state.doc.shapes[0].subpaths[0];
-    expect(sp.nodes).toHaveLength(8);
-    expect(sp.nodes[0].pt).toEqual([2, 0]);
-    expect(sp.nodes[1].pt).toEqual([18, 0]);
-  });
-
   it('is one undo step however many moves the drag took', () => {
     const h = harness();
     h.store.update((s) => (s.tool = 'ellipse'));
@@ -1014,62 +1003,6 @@ describe('the ellipse and rectangle tools', () => {
     draw(h, 'ellipse', [0, 0], [10, 10]);
     const id = h.store.state.doc.shapes[0].id;
     expect([...h.store.state.selection.shapes]).toEqual([id]);
-  });
-});
-
-describe('circularising', () => {
-  it('makes a selected near-circle exact', () => {
-    // A square's four corners fit a circle exactly, so this is the clearest
-    // case: it becomes the circumscribed circle and every node is on it.
-    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
-    const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.shapes.add(id));
-
-    expect(h.commands.circulariseSelection()).toBe(true);
-
-    for (const p of samplePath(h, 24)) {
-      expect(Math.hypot(p[0], p[1])).toBeCloseTo(10, 1);
-    }
-  });
-
-  it('works from a node selection, taking the whole contour with it', () => {
-    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
-    const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
-
-    expect(h.commands.circulariseSelection()).toBe(true);
-    // Every node moved onto the circle, not just the selected one.
-    for (const n of h.store.state.doc.shapes[0].subpaths[0].nodes) {
-      expect(Math.hypot(n.pt[0], n.pt[1])).toBeCloseTo(10, 6);
-    }
-  });
-
-  it('refuses a straight line and says so', () => {
-    const h = harness('M0 0 L10 10 L20 20');
-    const id = h.store.state.doc.shapes[0].id;
-    h.store.update((s) => s.selection.shapes.add(id));
-
-    const said: string[] = [];
-    h.commands.onMessage = (m) => said.push(m);
-    expect(h.commands.circulariseSelection()).toBe(false);
-    expect(said.join(' ')).toMatch(/collinear/i);
-  });
-
-  it('refuses with nothing selected', () => {
-    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
-    const said: string[] = [];
-    h.commands.onMessage = (m) => said.push(m);
-    expect(h.commands.circulariseSelection()).toBe(false);
-    expect(said.join(' ')).toMatch(/select/i);
-  });
-
-  it('is one undo step', () => {
-    const h = harness('M0 -10 L10 0 L0 10 L-10 0 Z');
-    const before = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
-    h.store.update((s) => s.selection.shapes.add(h.store.state.doc.shapes[0].id));
-    h.commands.circulariseSelection();
-    h.store.undo();
-    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
   });
 });
 
@@ -1188,7 +1121,7 @@ describe('rounding corners', () => {
     expect(said.join(' ')).toMatch(/select/i);
   });
 
-  it('says when the radius was cut down to fit', () => {
+  it('says when the radius was cut down to fit, and names the one it used', () => {
     const h = harness('M0 0 L40 0 L40 6 L0 6 Z');
     const id = ids(h);
     h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
@@ -1196,7 +1129,34 @@ describe('rounding corners', () => {
     h.commands.onMessage = (m) => said.push(m);
 
     expect(h.commands.roundSelection(30)).toBe(true);
-    expect(said.join(' ')).toMatch(/clamped/i);
+    expect(said.join(' ')).toMatch(/r 6\b/);
+    expect(said.join(' ')).toMatch(/shortest side/i);
+  });
+
+  it('gives every corner of a rectangle the same radius, not each its own', () => {
+    /* 40 by 6: the two ends can hold 3, the long sides far more. Asked for 10,
+       every corner comes back at 3 rather than four corners at three sizes.
+       Measured as the extent of the straight run left on the long side, which
+       is what a corner of a different radius would move. */
+    const h = harness('M0 0 L40 0 L40 6 L0 6 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.shapes.add(id));
+
+    expect(h.commands.roundSelection(10)).toBe(true);
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    /* A stadium: at r = 3 each short side is exactly consumed by its two arcs,
+       which meet at its midpoint and share that node. A corner rounded to any
+       other radius puts a node somewhere else, so this fixture is the whole
+       assertion. Rounding each to its own limit in turn gave 6, then 3, 3, 3. */
+    const pts = sp.nodes.map((n) => [+n.pt[0].toFixed(6), +n.pt[1].toFixed(6)]);
+    expect(pts).toEqual([
+      [3, 0],
+      [37, 0],
+      [40, 3],
+      [37, 6],
+      [3, 6],
+      [0, 3],
+    ]);
   });
 });
 

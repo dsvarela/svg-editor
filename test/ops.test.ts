@@ -22,7 +22,7 @@ import {
   transformShape,
 } from '../src/model/ops';
 import { emptyDoc, shapeFromPath, shapeBBox } from '../src/model/doc';
-import { rectSubpath } from '../src/core/primitives';
+import { KAPPA } from '../src/core/primitives';
 import { Store } from '../src/model/store';
 
 function sample(sp: Subpath, per = 24): Pt[] {
@@ -956,10 +956,32 @@ describe('roundCorner', () => {
     expect(roundCorner(rect(), 1, -3)).toBe('tiny');
   });
 
-  it('is exactly what the rectangle tool draws', () => {
-    // Two routes to a rounded rectangle should not disagree: the tool rounds
-    // while drawing, this rounds afterwards, and both are the same arc.
-    const drawn = rectSubpath(0, 0, 40, 20, 5);
+  it('draws the same arc as a quarter circle built from KAPPA', () => {
+    /* The independent construction. `roundCorner` derives its handle from
+       `arcHandle(r, pi - alpha)`, so checking it against another call of the
+       same function would prove only that the function is deterministic. This
+       builds the 40 by 20 rectangle at radius 5 out of the circle constant
+       directly, node by node, and asks whether the two outlines coincide.
+
+       It used to compare against `rectSubpath(0, 0, 40, 20, 5)`, which was the
+       rectangle tool's own radius. That tool no longer rounds anything, so the
+       second route had to be written out rather than borrowed. */
+    const k = 5 * KAPPA;
+    const drawn: Subpath = {
+      closed: true,
+      nodes: [
+        [5, 0], [35, 0], [40, 5], [40, 15], [35, 20], [5, 20], [0, 15], [0, 5],
+      ].map((pt) => makeNode(pt as Pt)),
+    };
+    drawn.nodes[0].hIn = [5 - k, 0];
+    drawn.nodes[1].hOut = [35 + k, 0];
+    drawn.nodes[2].hIn = [40, 5 - k];
+    drawn.nodes[3].hOut = [40, 15 + k];
+    drawn.nodes[4].hIn = [35 + k, 20];
+    drawn.nodes[5].hOut = [5 - k, 20];
+    drawn.nodes[6].hIn = [0, 15 + k];
+    drawn.nodes[7].hOut = [0, 5 - k];
+
     const sp = rect();
     for (const i of [3, 2, 1, 0]) roundCorner(sp, i, 5);
 

@@ -122,9 +122,9 @@ Three tabs, split by what a control acts on.
 
 | Tab | Holds |
 |---|---|
-| **Shape** | Shapes, Style, Combine, Draw, Transform, Arrange |
+| **Shape** | Shapes, Style, Combine, Path, Transform, Arrange |
 | **Node** | Node, Bend, Align, Delete |
-| **Document** | Canvas, Grid, Backdrop, Output, Preview, PNG |
+| **Document** | Canvas, Grid, Backdrop, Output, Preview, PNG, Controls |
 
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
 focus.
@@ -154,8 +154,8 @@ to list them. A group opens to show the shapes in it, and says how many there ar
   works from the first press of `Tab`.
 
 **Selecting a path selects its nodes.** There is no third kind of selection, so
-every operation that works on whole paths -- **Reverse**, **Circle**,
-**Simplify**, **Offset** -- acts on the path you picked with no further step. It
+every operation that works on whole paths -- **Reverse**, **Simplify**,
+**Offset** -- acts on the path you picked with no further step. It
 also means the row lights up whenever you select all of that path's nodes on the
 canvas, by any route.
 
@@ -197,17 +197,23 @@ one shape overlap, and two separate shapes cannot do it. **Unite** on two shapes
 that do not touch produces one shape of two paths for the same reason, and so does
 **Make one shape**. Use **Split into shapes** to give each path a shape of its own
 when that is what you wanted.
-- **Duplicate** copies the selected shapes, offset by two grid steps and named after their originals.
-- **Delete** removes them.
+**Duplicate**, **Delete**, **Copy**, **Cut** and **Paste** are the five buttons
+that also have keys, so they appear only when **Touch buttons** is on in the
+**Controls** panel. That is the default wherever the pointer is a finger. On a
+mouse the keys below are the whole of it.
+
+- **Duplicate** (`Ctrl+D`) copies the selected shapes, offset by two grid steps
+  and named after their originals.
+- **Delete** (`Delete`) removes them.
 - **Group** puts the selected shapes in a group, and **Ungroup** takes them out
   again one level at a time. Two or more shapes are needed to group.
-- **Copy** holds the selection for a later paste. With shapes selected it takes
+- **Copy** (`Ctrl+C`) holds the selection for a later paste. With shapes selected it takes
   them whole. With only nodes selected it takes each run of two or more adjacent
   ones as its own open path, which is how you lift a piece of an outline. A
   single node is refused: a path of one node has no segment and would draw
   nothing.
-- **Cut** copies and then deletes.
-- **Paste** puts the last copy back, each one further from the last so two never
+- **Cut** (`Ctrl+X`) copies and then deletes.
+- **Paste** (`Ctrl+V`) puts the last copy back, each one further from the last so two never
   land on top of each other. The copy survives being pasted, and survives an
   undo of the paste.
 
@@ -225,7 +231,11 @@ styles the shape it belongs to, since style is a property of the whole path.
 | **Fill** | The colour inside. Tick **none** for no fill |
 | **Stroke** | The colour of the line. Tick **none** for no stroke |
 | **Width** | Stroke width in document units |
-| **Rule** | **Nonzero** fills overlapping subpaths; **Even-odd** punches holes where they overlap |
+
+**Fill rule** is a group of its own inside **Style**, shut until you press it,
+because it is set once on a shape and then rarely looked at. **Nonzero** fills
+the places where one shape's own paths overlap; **Even-odd** leaves a hole
+there. The setting shows beside the header without opening it.
 
 With nothing selected these set what the next shape you draw will look like. That
 is not an edit to the drawing, so it records no undo step, and the header says
@@ -274,13 +284,9 @@ A hole does not survive the trip. A hole is a relationship between two paths in
 one shape, so once they are two shapes the inner one is a filled shape again.
 Undo is the exact inverse of **Make one shape**; this is the useful one.
 
-### Draw
+### Path
 
-- **Corner** sets the radius the rectangle tool rounds with. Clamped to half the
-  shorter side of whatever you draw.
-- **Circularise** fits a circle through the selected path's nodes and moves each
-  onto it.
-- **By** with **Offset** draws a path parallel to each selected shape, as a new
+- **Offset** with **by** draws a path parallel to each selected shape, as a new
   shape beside it, or several if the shape cannot hold the distance and the offset
   comes apart. A negative distance goes the other way, and one that would consume
   the shape leaves nothing rather than a sliver.
@@ -340,12 +346,22 @@ to set it exactly.
   neighbour on the far side to take a direction from, and the setting is not part
   of the export.
 - **Radius** with **Round** replaces the selected corners with an arc of that
-  radius. Both sides of the node have to be straight.
+  radius. Both sides of the node have to be straight. With a shape selected and
+  no particular nodes, it rounds every corner the shape has.
+
+  **Every corner gets the same radius.** A radius larger than one of them can
+  hold reduces the whole request to the largest that fits everywhere, and the
+  status line says so, rather than leaving one corner rounder than the rest.
+  Where two corners share a side, each may have half of it.
 
   The same operation is on the canvas as a small mark just inside each roundable
   corner: hollow while the corner is square, filled once it holds an arc. Drag it
   in to round the corner and out to open it up, and the status strip reads the
   radius as you go. **Snap to grid** rounds the radius to a whole step.
+
+  **One mark dragged rounds every corner it is grouped with**, under the same
+  rule as the button: the whole shape when no nodes are picked out, and the
+  selected nodes when some are.
 
   A rounded corner can be grabbed and changed again, because nothing stores the
   radius: the two handles of the arc point at the corner they were cut from, so the
@@ -362,7 +378,9 @@ to set it exactly.
   and welds those. Two free ends are the one case it declines, because that is
   Merge.
 - **&#8592; Node** and **Node &#8594;** (`[` and `]`) walk the selection along the
-  path, wrapping on a closed one. With a shape selected and no nodes, they take
+  path, wrapping on a closed one. The two buttons appear only when **Touch
+  buttons** is on; the keys are always there, and clicking the next node does the
+  same thing. So does **Delete node**, which is the `Delete` key. With a shape selected and no nodes, they take
   the first. `Shift` adds instead of replacing, which is how you get the two
   adjacent nodes the next two operations want.
 - **Insert node** (`Shift+I`) puts a node in the middle of the segment between
@@ -683,6 +701,17 @@ all while the group is shut.
 Transparent wherever nothing is painted, which is what an icon wants. The canvas
 decides the frame, not the drawing, so padding you left around a shape is kept.
 
+### Controls
+
+- **Touch buttons** shows the buttons for the operations a keyboard already
+  reaches: **Duplicate**, **Delete**, **Copy**, **Cut**, **Paste**, and stepping
+  and deleting nodes. It is on wherever the pointer is a finger and off on a
+  mouse, and either can be changed here.
+
+Nothing else moves with it. Every operation still has a button; this decides
+whether the ones that repeat a shortcut take up room while you have the keyboard
+to hand.
+
 ## The transform box
 
 Select a shape, or two or more of its nodes, and a dashed box appears around it
@@ -795,11 +824,6 @@ Named here rather than left for you to find.
   **Break here** when the curve matters.
 - **Arcs do not survive a round trip.** A shape imported as an `A` comes back out
   as a `C`. See [what is read on import](#what-is-read-on-import-and-what-is-written-on-export).
-- **Circularise is a least-squares fit.** It cannot know which node was the
-  mistake, so with few nodes and one big outlier it moves the whole circle rather
-  than restoring the original radius. The reported travel is how it tells you.
-- **A wide gap circularises loosely.** One curve cannot hold an arc much wider
-  than a quarter turn tightly. The status line says when this applies.
 - **A traced photograph makes a document too dense to edit.** Tracing runs in a
   worker, so the editor stays live while it works, and the walk itself is no
   longer what costs the time. What costs it is the result: a 400 by 400
