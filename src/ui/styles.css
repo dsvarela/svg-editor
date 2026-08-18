@@ -6,6 +6,15 @@
    so the chrome reads as chosen against the one accent it carries. Numbers are
    always monospaced and tabular: a readout that jitters while you drag is a
    readout you stop trusting.
+
+   **`--edge` and `--line` are not interchangeable.** `--edge` draws a control's
+   own border, which on a button whose background matches the panel behind it is
+   the only thing saying where the control is: it clears 3:1 and is checked.
+   `--line` draws the chrome edges between regions -- a bar's underline, a
+   ruler's edge, the rail's left border -- and is a hairline, exempt by
+   declaration. One token cannot be both, because a divider at 3:1 stops being a
+   hairline and the whole design is hairlines. `src/ui/pairs.txt` lists which
+   colour sits on which, and `npm run check:contrast` does the arithmetic.
    --------------------------------------------------------------------------- */
 
 :root {
@@ -851,7 +860,12 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 }
 .shapelist li:hover { background: var(--sunk); color: var(--ink); }
 .shapelist li[aria-selected='true'] { background: var(--accent); color: var(--accent-ink); }
-.shapelist .swatch { width: 10px; height: 10px; border-radius: 1px; border: 1px solid var(--line); flex: none; }
+/* A control's own border, not a hairline: the swatch is filled with the shape's
+   own colour, so a white shape on a white row is its border and nothing else.
+   The selected row is `--accent`, which `--edge` does not clear, so it takes
+   the ink that row already uses for its text. */
+.shapelist .swatch { width: 10px; height: 10px; border-radius: 1px; border: 1px solid var(--edge); flex: none; }
+.shapelist li[aria-selected='true'] .swatch { border-color: var(--accent-ink); }
 .shapelist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shapelist .ct { font-size: 10.5px; opacity: 0.75; }
 

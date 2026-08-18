@@ -9,12 +9,11 @@
  * pen-tool crash was first spotted.
  */
 
-import { launch, URL } from './browser.mjs';
+import { launch, APP_URL } from './browser.mjs';
 import zlib from 'node:zlib';
 
-/* Which browser, and where the app is, live in `tools/browser.mjs`: three tools
-   drive a browser and one fact in three files is one fact that breaks in three
-   places. */
+/* Which browser, and where the app is, live in `tools/browser.mjs`, which says
+   why. */
 
 const args = process.argv.slice(2);
 const scenarioName = args.find((a) => !a.startsWith('--')) ?? 'smoke';
@@ -710,10 +709,45 @@ const scenarios = {
         fill: await page.getAttribute('.artwork path', 'fill'),
         shapes: await page.locator('#shapelist li').allTextContents(),
         d: await page.getAttribute('.artwork path', 'd'),
+        /* Enclosed area, sampled at the centre of every unit square, which is
+           exact for these axis-aligned integer polygons. `isPointInFill` is the
+           browser's own answer with the fill rule applied, so an `exclude` that
+           came out as one ring rather than two reads differently here. A `d`
+           string cannot say this: four operations that all produced the same
+           shape would still have four different strings if the contours were
+           ordered differently. */
+        area: await page.evaluate(() => {
+          const p = document.querySelector('.artwork path');
+          let n = 0;
+          for (let x = 0.5; x < 40; x++) {
+            for (let y = 0.5; y < 40; y++) if (p.isPointInFill(new DOMPoint(x, y))) n++;
+          }
+          return n;
+        }),
       };
       await page.keyboard.press('Control+z');
       await settle(page);
       runs[op].afterUndo = await page.textContent('#stats');
+    }
+
+    check(disabledWhenIdle, 'the boolean buttons are reachable with nothing selected');
+    check(enabledWithTwo, 'the boolean buttons stayed disabled with two shapes selected');
+
+    /* Two 20 by 20 squares overlapping in a 10 by 10 corner. Each operation has
+       one area and no two share it, so this is the whole claim in four numbers:
+       400 + 400 - 100 united, 400 - 100 subtracted, the overlap intersected,
+       and the union less the overlap excluded. */
+    const WANT = { unite: 700, subtract: 300, intersect: 100, exclude: 600 };
+    for (const [op, want] of Object.entries(WANT)) {
+      const r = runs[op];
+      check(r.area === want, `${op} enclosed ${r.area} square units, want ${want}`);
+      check(
+        r.fill === '#2563d8',
+        `${op} kept ${r.fill}, so the survivor did not take the first operand's fill`,
+      );
+      check(r.status === `${op[0].toUpperCase()}${op.slice(1)}: 2 shapes → 1 path.`, `${op} said "${r.status}"`);
+      check(r.shapes.length === 1, `${op} left ${r.shapes.length} shapes in the list`);
+      check(/2 shapes/.test(r.afterUndo), `undoing ${op} left "${r.afterUndo}"`);
     }
 
     return { disabledWhenIdle, enabledWithTwo, runs };
@@ -1066,21 +1100,13 @@ const scenarios = {
 
     await tab(page, 'doc');
 
-    /* A 4x3 PNG, red, small enough to inline. Its aspect ratio is what the fit
-       has to preserve.
-
-       Built rather than pasted. The pasted one that stood here for months was
-       truncated: its IDAT held 20 bytes of a deflate stream that needed more,
-       so nothing after the first row could be reconstructed. Chromium rendered
-       what it had and said nothing, Firefox refused the whole image, and every
-       check below passed either way because they all read the `<image>`
-       element's attributes and none of them read a pixel. */
+    // A 4x3 PNG, red. Its aspect ratio is what the fit has to preserve.
     const buffer = png(4, 3, () => [224, 32, 32, 255]);
     await page.setInputFiles('#backFile', { name: 'trace.png', mimeType: 'image/png', buffer });
     await settle(page);
 
     /* That the bytes decode into the pixels they claim, which is what the
-       attributes above cannot show.
+       attribute checks below cannot show.
 
        The far corner rather than the size, and rather than whether `decode()`
        resolved. A truncated PNG keeps its width and height, because they come
@@ -1590,8 +1616,8 @@ const scenarios = {
      * thread demonstrably blocked for 1 152 ms reports a longest gap of 17 ms.
      * `longtask` is a Chromium entry type, absent from Firefox's
      * `supportedEntryTypes`, and `observe` ignores a type it does not know
-     * rather than refusing it -- so the observer reported 0 ms for both runs and
-     * the scenario compared two numbers that had measured nothing.
+     * rather than refusing it. An observer for it on Firefox therefore reads
+     * 0 ms for every run, and two runs of 0 ms distinguish nothing.
      *
      * A 10 ms interval cannot run while the thread is blocked, so the gap
      * between two of its fires is how long it was held. That is the claim being
@@ -2635,6 +2661,28 @@ const scenarios = {
     // shapes are selected.
     out.splitEnabledAfter = !(await page.isDisabled('#splitshape'));
     out.d = await page.inputValue('#src');
+
+    check(out.start.paths === 2 && out.start.centre, 'the two squares did not start as two filled paths');
+    check(out.disabledWhenIdle, 'Make one shape is reachable with nothing selected');
+    check(out.enabledWithTwo, 'Make one shape stayed disabled with two shapes selected');
+
+    /* The hole, which is the whole scenario. Same geometry and the same element
+       in both readings: only the rule changed, so `centre` going false is the
+       renderer applying `evenodd` and nothing else it could be. `between` is
+       the control -- it is painted under either rule, so a shape that vanished
+       cannot pass for a hole. */
+    check(out.nonzero.paths === 1, `Make one shape left ${out.nonzero.paths} paths`);
+    check(out.nonzero.centre, 'nonzero punched a hole, which is the rule it is not');
+    check(out.evenodd.centre === false, 'evenodd painted the middle, so there is no hole');
+    check(out.nonzero.between && out.evenodd.between, 'the shape between the squares is unpainted under one of the rules');
+    check(out.evenodd.rules.join() === 'evenodd', `the element reads fill-rule ${out.evenodd.rules.join()}`);
+
+    check(out.splitEnabled, 'Split was disabled on a shape holding two paths');
+    check(out.afterSplit.paths === 2, `Split left ${out.afterSplit.paths} paths`);
+    // An inner path in its own shape is a filled shape, whatever the rule says.
+    check(out.afterSplit.centre, 'the hole survived the split');
+    check(out.splitEnabledAfter === false, 'Split stayed enabled with nothing left to split');
+
     return out;
   },
 
@@ -3248,10 +3296,10 @@ const scenarios = {
        would have rounded to (50, 49), and the two coordinates would differ.
 
        Where on the diagonal is the pointer's own position projected onto it,
-       and the pointer is at whole pixel `near` rather than at the 50, 49.4 that
-       was asked for. So the expectation is computed from where the pointer
-       actually is. Hard-coding the 49.7 that 50, 49.4 projects to passed only
-       because one engine delivered the fraction. */
+       and the pointer sits at whole pixel `near` rather than at the 50, 49.4
+       asked for. So the expectation is computed from where the pointer is. The
+       point 50, 49.4 projects to 49.7, and a constant of 49.7 here is only
+       right on an engine that delivers a fractional pointer coordinate. */
     const at = await toDoc(near);
     const want = 30 + (at[0] - 30 + (at[1] - 30)) / 2;
     check(
@@ -3360,7 +3408,7 @@ const scenarios = {
    * otherwise light up as, and that the export carries no trace of it.
    */
   async autoSmooth(page, check) {
-    const { toClient, click, drag } = await mk(page);
+    const { click, drag } = await mk(page);
 
     await openSource(page);
     await page.click('#srcmode button[data-v="svg"]');
@@ -5084,8 +5132,13 @@ if (args.includes('--list')) {
  * that much a machine can settle. Run by CI ahead of the scenarios themselves.
  */
 if (args.includes('--audit')) {
+  /* `check(` with nothing but whitespace or an operator in front of it. A word
+     boundary is not enough: `page.check('#filled')` ticks a checkbox, it is
+     everywhere in this file, and it satisfied `\bcheck\(` -- so two scenarios
+     that asserted nothing were counted as asserting something by the check
+     written to catch exactly that. */
   const silent = Object.entries(scenarios)
-    .filter(([, fn]) => !/\bcheck\(/.test(fn.toString()))
+    .filter(([, fn]) => !/(?<![.\w])check\(/.test(fn.toString()))
     .map(([name]) => name);
   for (const name of silent) console.error(`${name} never calls check, so it cannot fail`);
   console.log(`${Object.keys(scenarios).length} scenarios, ${silent.length} of which assert nothing`);
@@ -5110,7 +5163,7 @@ const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(APP_URL, { waitUntil: 'networkidle' });
 await settle(page);
 
 /* Every inspector group open, before any scenario runs.
@@ -5183,23 +5236,17 @@ const audit = await page.evaluate(() => {
   /* Overlay decoration that takes the press without naming a hit.
    *
    * The controller reads a press whose target has no `data-hit` as the start of
-   * a marquee, so a decorative shape painted over a control makes that patch of
-   * the control do the opposite of what it should. A latent handle line lying
-   * along the segment it would bend is the case that found this: it cost 16.4%
-   * of the whole pixels down a selected rectangle's edge.
+   * a marquee, so decoration painted over a control makes that patch of the
+   * control do the opposite of what it should.
    *
    * Document order is paint order in SVG, so "over a control" is "after the
-   * first `data-hit`". Anything before that one is under every control on the
-   * canvas and cannot take a press away from one, which is why the grid is not
-   * here. Containers are skipped because a `<g>` has no geometry of its own and
-   * is only hit through a child.
+   * first `data-hit`". Anything earlier is under every control on the canvas
+   * and can take a press from none of them, which is why the grid is exempt.
    *
-   * **This asks what an element is, not whether it currently gets away with
-   * it.** A flagged element need not be swallowing anything: `.guide` never
-   * was, because its 8 px hit strip is painted after it and covers it
-   * everywhere. What flags it is that nothing says so -- what stops it is
-   * another element's geometry, which is not a thing to rely on. */
-  const GEOM = new Set(['path', 'line', 'circle', 'rect', 'ellipse', 'polygon', 'polyline', 'text', 'image', 'use']);
+   * The question is what an element is, not whether it is getting away with it
+   * today: being covered by a wider hit strip is another element's geometry
+   * rather than a rule. `CLAUDE.md` records what this has caught and what it
+   * cost. */
   const swallow = new Map();
   let overAControl = false;
   for (const el of document.querySelectorAll('.overlay *')) {
@@ -5207,7 +5254,18 @@ const audit = await page.evaluate(() => {
       overAControl = true;
       continue;
     }
-    if (!overAControl || !GEOM.has(el.tagName)) continue;
+    if (!overAControl) continue;
+    /* The browser's own taxonomy rather than a list of tag names kept here. A
+       new kind of overlay element is an `SVGGeometryElement` whether or not
+       anyone remembers this check exists; a hand-written list of tags would let
+       it through and say nothing. A `<g>` is in none of these, which is right:
+       it has no geometry and is only ever hit through a child. */
+    const drawn =
+      el instanceof SVGGeometryElement ||
+      el instanceof SVGImageElement ||
+      el instanceof SVGTextContentElement ||
+      el instanceof SVGUseElement;
+    if (!drawn) continue;
     if (el.getAttribute('display') === 'none') continue;
     if (getComputedStyle(el).pointerEvents === 'none') continue;
     const k = el.getAttribute('class') || el.tagName;

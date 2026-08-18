@@ -32,7 +32,7 @@
  * first port Vite tries.
  */
 
-import { launch, URL } from './browser.mjs';
+import { launch, APP_URL } from './browser.mjs';
 
 const MIN = 44;
 
@@ -47,7 +47,7 @@ const page = await browser.newPage({
   hasTouch: coarse,
   isMobile: coarse,
 });
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(APP_URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 
 // The source drawer is a panel of its own and its controls count too.

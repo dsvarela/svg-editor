@@ -14,12 +14,12 @@
  * Run with the dev server up: `node tools/keys.mjs`.
  */
 
-import { launch, URL } from './browser.mjs';
+import { launch, APP_URL } from './browser.mjs';
 
 
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(APP_URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 await page.click('#toggleSrc');
 await page.waitForTimeout(260);
@@ -80,11 +80,14 @@ for (const which of ['tab-shape', 'tab-node', 'tab-doc']) {
   /* Put the tab position back at the top of the document, which needs more
      than `document.body.focus()`: the body is not focusable, so that call moves
      nothing and the sweep resumes from wherever the group-opening clicks left
-     focus, in the middle of the rail. Chromium hid it by wrapping the tab order
-     at the end of the page, so 260 presses came round to the start anyway.
-     Firefox stops at the last element, and the controls before the resume point
-     were reported as unreachable. A temporary `tabindex` makes the body a real
-     focus target, and taking it off again leaves the page as it was. */
+     focus, in the middle of the rail.
+
+     Whether that shows up depends on the engine, which is why it can pass for
+     years. Chromium wraps the tab order at the end of the page, so the presses
+     below come round to the start regardless; Firefox stops at the last
+     element, and everything before the resume point counts as unreachable. A
+     temporary `tabindex` makes the body a real focus target, and taking it off
+     again leaves the page as it was. */
   await page.evaluate(() => {
     document.activeElement?.blur();
     document.body.tabIndex = -1;

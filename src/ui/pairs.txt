@@ -18,12 +18,15 @@ ink-3        panel, panel-2    text
 warn         panel             text
 accent       panel             boundary
 accent-ink   accent            text
-# `--edge` draws a control's own border, which is the only thing identifying a
-# button whose background matches the panel behind it. `--line` draws the chrome
-# edges between regions: a bar's underline, a ruler's edge, the rail's left
-# border. One token cannot be both, because a divider at 3:1 stops being a
-# hairline and the whole design is hairlines.
+# Why `--edge` and `--line` are separate tokens is at the top of `styles.css`,
+# where somebody picking a border colour will be looking.
 edge         panel, panel-2    boundary
+# A shape's swatch in the list is user colour, which can match the row behind
+# it, so its border is the only thing giving it an extent. The row has three
+# backgrounds and `--edge` clears two: on `--accent` it is 1.61:1, so a selected
+# row switches the border to the ink already proven against that background.
+edge         sunk              boundary
+accent-ink   accent            boundary
 line         panel, panel-2    decoration
 line-soft    panel             decoration
 sunk         panel             decoration
