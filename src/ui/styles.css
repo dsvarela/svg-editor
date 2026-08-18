@@ -880,12 +880,63 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    The child combinator matters: as a descendant selector this also reached into
    a nested grid and spanned its buttons across the outer one. */
 .grid2 > .wide { grid-column: 1 / -1; }
+
+/* --- icon tiles ---------------------------------------------------------- */
+
+/* Where an operation has a picture, the picture is the definition: the four
+   booleans, paint order, flip and rotate, align and distribute. Illustrator's
+   Pathfinder and Affinity's Geometry bar both draw the result for the same
+   reason. Text stays on the operations that have no picture -- Duplicate,
+   Paste, Save style -- which is also what those two do.
+   The name is inside the tile rather than in a `title`, because a tooltip may
+   enrich and must never inform, and it keeps the label with its icon when the
+   row wraps to three columns under a coarse pointer. */
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.tiles.six { grid-template-columns: repeat(6, 1fr); }
+.tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 2px 6px;
+  font: inherit;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  color: var(--ink);
+  cursor: pointer;
+}
+.tile > span {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tile:hover:not(:disabled) { background: var(--sunk); border-color: var(--ink-3); }
+.tile:hover:not(:disabled) > span { color: var(--ink-2); }
+.tile:active:not(:disabled) { transform: translateY(0.5px); }
+.tile:disabled { opacity: 0.34; cursor: default; }
+.tile .ico { width: 18px; height: 18px; }
+
+/* The tile icons carry their own `fill`, `stroke-dasharray` and `style` as
+   presentation attributes rather than classes. A `<use>` clone is not reachable
+   by a selector from this stylesheet -- `.ico .sq` never matched, because the
+   symbols live in the sprite and not inside an `.ico` -- but an attribute on the
+   element travels with the clone and beats the inherited `fill: none` above. */
+
 .row { display: flex; align-items: center; gap: 7px; }
 .row label {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink-3);
-  min-width: 54px;
+  min-width: 50px;
 }
 .row input { flex: 1; }
 .coords { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
@@ -1242,6 +1293,13 @@ kbd {
   }
   .ghelp:hover { box-shadow: inset 0 0 0 1px var(--ink-3); }
   .ghelp[aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--accent); }
+
+
+  /* Six tiles across a 288px rail is 40px each, under the floor. Three columns
+     and two rows clears it, and the name travelling inside the tile is what
+     makes the wrap harmless. */
+  .tiles.six { grid-template-columns: repeat(3, 1fr); }
+  .tile { min-height: 44px; }
 
   /* A row in the shape list is pressed to select the shape, so the row is a
      control even though the list is one element. */
