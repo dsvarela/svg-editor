@@ -174,6 +174,16 @@ its own builds, so a stock `/usr/bin/firefox` cannot be used and
 there. **All 52 scenarios pass on Firefox, and no figure here was measured on it
 before 2026-08-18.**
 
+**CI's browser job could not launch one from that switch until 2026-08-18, so a
+red run in between said nothing about the code.** `ci.yml` hunted for a system
+Edge and exported `BROWSER_PATH`, which `browser.mjs` reads only when the engine
+is Chromium. It found Edge, set the path, then tried to launch a Firefox nobody
+had installed, and all 52 scenarios died at launch. The job installs the
+Playwright build now. This is the third time a signal here has been worth
+nothing: the two before it were greens, and this one was a red, which is the
+easier of the two to leave alone because it looks like it is already telling you
+something.
+
 **The three that failed on the switch were defects in the tests, not differences
 between the engines.** Each looked like the second and was the first:
 

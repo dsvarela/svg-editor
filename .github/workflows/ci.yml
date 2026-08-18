@@ -1,8 +1,8 @@
 # Everything the handbook and CLAUDE.md say to run before trusting a change.
 #
 # Two jobs rather than one, because they fail for unrelated reasons. `checks`
-# needs nothing but Node. `browser` needs a real Chromium and is the only part
-# that can be broken by the runner image rather than by the code.
+# needs nothing but Node. `browser` needs a browser Playwright can drive, and is
+# the only part that can be broken by the runner image rather than by the code.
 name: CI
 
 on:
@@ -65,25 +65,30 @@ jobs:
 
       - run: npm ci
 
-      # playwright-core ships no browser. The runner image carries Edge, which
-      # is what `drive.mjs` expects; falling back to Chrome or Chromium keeps
-      # this working if a future image drops it. Failing here with a clear
-      # message beats 29 scenarios each failing to launch.
-      - name: Locate a Chromium
-        run: |
-          for candidate in \
-            /usr/bin/microsoft-edge \
-            /usr/bin/google-chrome \
-            /usr/bin/chromium-browser \
-            /usr/bin/chromium; do
-            if [ -x "$candidate" ]; then
-              echo "BROWSER_PATH=$candidate" >> "$GITHUB_ENV"
-              echo "using $candidate"
-              exit 0
-            fi
-          done
-          echo "no Chromium-family browser on this runner"
-          exit 1
+      # playwright-core ships no browser, and it drives its own builds rather
+      # than whatever the runner image carries: a stock Firefox has no Juggler
+      # protocol compiled in, so `executablePath` pointed at one cannot launch.
+      # This puts the build `tools/browser.mjs` reaches by default under
+      # `~/.cache/ms-playwright`.
+      #
+      # It replaces a step that hunted for Edge and exported `BROWSER_PATH`.
+      # That variable is only read when the engine is Chromium, so from the
+      # switch to Firefox on 2026-08-18 the job found Edge, set the path, then
+      # tried to launch a Firefox nobody had installed. Every scenario died at
+      # launch and this job was red on every commit in between.
+      #
+      # Cached on the lockfile, because the download is the slow part and the
+      # browser version is pinned by the playwright-core in it. The install runs
+      # on a hit as well: it skips a browser already present, and a partially
+      # restored cache that skipped it would leave the job with no browser.
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-firefox-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Firefox
+        run: node node_modules/playwright-core/cli.js install --with-deps firefox
 
       # Server and scenarios in one step on purpose. A `&` in an earlier step
       # leaves the process orphaned across the step boundary, which is how this
