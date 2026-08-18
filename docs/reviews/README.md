@@ -3,7 +3,7 @@
 **Evidence, never instruction.** Each file records what one review found on one
 date: the defects, the documentation claims that turned out to be false, and the
 tests that could not have failed. They justify decisions. They do not tell you
-how anything currently works.
+how anything works now.
 
 To find out how something works now, read [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
 or the [manual](../manual/README.md). A review is true of the day it was written

@@ -330,8 +330,8 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 Live coordinates for the selected node and its two handles. Type into any field
 to set it exactly.
 
-- **Corner**, **Smooth**, **Symm** show what the handles currently say, and set
-  it when pressed.
+- **Corner**, **Smooth**, **Symm** show how the selected node's handles are set,
+  and change it when pressed.
 - **Auto** (`Shift+A`) is different in kind: it does not set the handles once, it
   keeps re-deriving them from the two neighbours, so moving a nearby node re-aims
   this one and the curve stays fair. Press it again to hand control back, which
@@ -716,17 +716,23 @@ Two modes.
 - **Path data** is a bare `d` string. With one shape selected, **Apply** updates
   that shape; with nothing selected it replaces the document. The hint under the
   box says which.
-- **SVG** is a whole document. Import understands `path`, `rect`, `circle`,
-  `ellipse`, `line`, `polyline`, `polygon`, and `transform` attributes, all
-  converted to paths.
+- **SVG** is a whole document. Everything it understands on the way in is
+  converted to paths, and
+  [what is read on import](#what-is-read-on-import-and-what-is-written-on-export)
+  lists it.
 
-**Apply**, or `Ctrl`+`Enter` from inside the text, parses and applies. It
-refuses text that cannot be parsed, and also text that parses to nothing
-drawable, such as a lone `M 0 0`: either way the drawing is left as it was and
+| Button | What it does |
+|---|---|
+| **Apply** | Parses the text and applies it. `Ctrl`+`Enter` from inside the box does the same |
+| **Revert** | Puts the document's own text back, to start again |
+| **Copy** | Puts the text on the clipboard |
+| **Download SVG** | Saves a whole SVG document, in either mode |
+| **Close** | Closes the drawer |
+
+**Apply** refuses text that cannot be parsed, and text that parses to nothing
+drawable, such as a lone `M 0 0`. Either way the drawing is left as it was and
 what you typed is left as you typed it, because the error names an offset into
-that text. **Revert** puts the document's own text back when you want to start
-again. **Copy** puts the text on the clipboard. **Download SVG** saves a whole
-SVG document, in either mode. **Close** closes the drawer.
+that text.
 
 ## Status strip
 
@@ -766,8 +772,9 @@ to the left.
 
 ## What is read on import and what is written on export
 
-Read: `M m L l H h V v C c S s Q q T t A a Z z`, the six shape elements above,
-`transform`, `fill`, `fill-rule`, `stroke`, `stroke-width`, `viewBox`.
+Read: `M m L l H h V v C c S s Q q T t A a Z z`, the six shape elements
+`rect`, `circle`, `ellipse`, `line`, `polyline` and `polygon`, plus `transform`,
+`fill`, `fill-rule`, `stroke`, `stroke-width` and `viewBox`.
 
 Written: `M L H V C S Q Z`, absolute or relative depending on which is shorter when
 minifying, plus `fill`, `fill-rule`, `stroke`, `stroke-width` and an `id` taken
@@ -786,7 +793,8 @@ Named here rather than left for you to find.
 - **Healing across an inflection.** Deleting a node whose two segments curve
   opposite ways rebuilds them as one that visibly differs. Use **Split** or
   **Break here** when the curve matters.
-- **Arcs do not survive a round trip.** See above.
+- **Arcs do not survive a round trip.** A shape imported as an `A` comes back out
+  as a `C`. See [what is read on import](#what-is-read-on-import-and-what-is-written-on-export).
 - **Circularise is a least-squares fit.** It cannot know which node was the
   mistake, so with few nodes and one big outlier it moves the whole circle rather
   than restoring the original radius. The reported travel is how it tells you.
@@ -800,10 +808,10 @@ Named here rather than left for you to find.
   to it. Above 2 000 node markers in view the overlay stops drawing them and the
   document readout says `markers off, too dense`; the shapes are all still
   there, but you cannot click a node until you zoom in far enough for the
-  markers to come back. A document that size redraws in about 20 ms rather than
-  the 130 ms it once took, so it is workable, but it is not what this editor is
-  shaped for. Tracing is for flat artwork. For a photograph, fewer colours and a
-  higher **Noise** floor are the controls that help.
+  markers to come back. A document that size redraws in about 20 ms, so it is
+  workable, but it is not what this editor is shaped for. Tracing is for flat
+  artwork. For a photograph, fewer colours and a higher **Noise** floor are the
+  controls that help.
 - **A feature one pixel wide loses its corners when traced.** The pass that keeps
   right angles sharp needs two straight lattice steps on each side of a corner,
   so a 1 px line or dot has none and comes back as a diamond of half the area.

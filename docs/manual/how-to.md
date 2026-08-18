@@ -291,7 +291,7 @@ Use the **Transform** panel.
 
 **Flip horizontal** and **Flip vertical** mirror the selection in place.
 
-Transforms are baked into the coordinates, so the source box always shows what
+Transforms are baked into the coordinates, so the source drawer always shows what
 is stored. There is no hidden `transform` attribute to read the numbers
 through.
 
@@ -320,9 +320,10 @@ It appears under the drawing, scaled to fit the document and at half opacity, so
 you can draw over it with the pen. **Opacity** dims it further; **Show** hides it
 without unloading it.
 
-To line it up, untick **Locked**. While unlocked, dragging on empty canvas moves
-the image instead of selecting, which is what unlocking means. Tick it again when
-you are done, or you will keep moving the reference instead of selecting nodes.
+To line it up, untick **Locked**. Dragging on empty canvas then moves the image
+instead of selecting. Tick it again when you are done, or you will keep moving
+the reference instead of selecting nodes.
+
 **X**, **Y** and **Width** place it exactly, and **Fit** puts it back in the
 middle of the document. Width drives height, so it cannot be squashed.
 
@@ -339,12 +340,15 @@ Load the image as a backdrop, then press **Trace** in the same panel.
 You get one shape per colour, filled with that colour, with holes already cut.
 The backdrop stays where it is, so switch **Show** off and on to compare.
 
-Three numbers control it. **Colours** caps the palette: an icon usually wants two
-or three, and asking for more finds antialiasing rather than detail. **Within**
-is how far a fitted curve may move, in document units, and it is the same idea as
-Simplify's tolerance; raise it for fewer, smoother nodes and lower it to keep the
-shape honest. **Noise** drops small regions, which is what removes the specks
-around a scanned line.
+Three numbers control it.
+
+- **Colours** caps the palette. An icon usually wants two or three, and asking
+  for more finds antialiasing rather than detail.
+- **Within** is how far a fitted curve may move, in document units. It is the
+  same idea as Simplify's tolerance: raise it for fewer, smoother nodes, and
+  lower it to keep the shape honest.
+- **Noise** drops small regions, which is what removes the specks around a
+  scanned line.
 
 If the result has more nodes than you want, select the shapes and run **Simplify**
 on them with a larger tolerance. Tracing and simplifying use the same fitter, so

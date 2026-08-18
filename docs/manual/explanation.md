@@ -151,7 +151,7 @@ Rotating a shape rewrites its coordinates. There is no `transform` attribute
 hanging off it waiting to be applied at render time, and imported ones are baked
 in on the way in.
 
-This is why the source box always shows what is there. No hidden
+This is why the source drawer always shows what is there. No hidden
 coordinate system, and no numbers that only make sense after a matrix you cannot
 see. The cost is that rotating by ten degrees and back is not exactly the
 identity. Undo is exact; arithmetic is not.
@@ -195,7 +195,7 @@ somewhere, and the obvious home was wrong.
 
 Putting it in the document would have meant two bad things. It could reach the
 export, and an SVG that carries the photograph you traced from is not what
-anyone asked for. And **Apply** in the source box replaces the document
+anyone asked for. And **Apply** in the source drawer replaces the document
 wholesale, so editing the path text would silently throw away the thing you were
 tracing.
 
@@ -284,7 +284,6 @@ there is no such thing as an operation that forgets to record part of what it
 did. A drag is one entry because the whole drag is wrapped in one batch, not
 because each frame is cleverly merged.
 
-An operation that turns out to have nothing to do records no entry at all. That
-sounds obvious and was not true until recently: pressing a button that declined
-used to leave an empty step on the stack and throw away anything you could have
-redone.
+An operation that turns out to have nothing to do records no entry at all. So a
+button that declines leaves the undo stack alone, and whatever you could have
+redone is still there.
