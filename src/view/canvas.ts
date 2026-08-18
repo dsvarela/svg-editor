@@ -79,13 +79,17 @@ const HANDLE_SIZE = 8;
  * For the reason `BOX_PAD` exists. A node's anchor is drawn centred on the corner
  * and is 7 px across, and the anchor layer paints in front of the handle layer --
  * so a control placed at the corner, or at the arc of a small radius, is covered by
- * the anchor and can never be pressed. Eleven pixels puts it clear of a 7 px square
- * with room for the pointer to be imprecise.
+ * the anchor and can never be pressed.
+ *
+ * Clearing the anchor is the floor, not the target. At 11 the two shapes cleared
+ * each other by 3.5 px and still read as one cluster, which is a different failure
+ * from being unpressable: you could hit it and could not tell it apart from the
+ * node it belongs to. Sixteen leaves about 8 px of gap.
  *
  * Shared with `Controller`, which subtracts it again to read a radius back off the
  * pointer. Two numbers here would be a control that does not stay under the finger.
  */
-export const CORNER_DOT_PX = 11;
+export const CORNER_DOT_PX = 16;
 
 /**
  * Side of the invisible square that rotates, placed with its inner corner on
@@ -139,7 +143,7 @@ export class Canvas {
   private handleDots: Pool<'circle'>;
   private anchors: Pool<'rect'>;
   private bendDots: Pool<'circle'>;
-  private cornerDots: Pool<'circle'>;
+  private cornerDots: Pool<'rect'>;
 
   /**
    * True when the last render had more markers in view than it would draw.
@@ -217,7 +221,7 @@ export class Canvas {
     this.handleDots = new Pool(handleLayer, 'circle');
     this.anchors = new Pool(anchorLayer, 'rect');
     this.bendDots = new Pool(handleLayer, 'circle');
-    this.cornerDots = new Pool(handleLayer, 'circle');
+    this.cornerDots = new Pool(handleLayer, 'rect');
     // Lines first, hit strips after, so a strip is in front of the line it
     // belongs to and a press anywhere on it reaches the same guide.
     this.guideLines = new Pool(guideLayer, 'line');
@@ -705,10 +709,7 @@ export class Canvas {
               const dot = filletControl(sp, f, k);
               if (!dot || !inView(dot)) continue;
               this.cornerDots.next({
-                cx: dot[0],
-                cy: dot[1],
-                r: 4 * k,
-                'stroke-width': 1.5 * k,
+                ...cornerDiamond(dot, k),
                 'data-hit': 'corner',
                 'data-shape': shape.id,
                 'data-sp': spI,
@@ -724,10 +725,7 @@ export class Canvas {
             const dot = alongBisector(c.at, c.u, c.v, CORNER_DOT_PX * k);
             if (!dot || !inView(dot)) continue;
             this.cornerDots.next({
-              cx: dot[0],
-              cy: dot[1],
-              r: 4 * k,
-              'stroke-width': 1.5 * k,
+              ...cornerDiamond(dot, k),
               'data-hit': 'corner',
               'data-shape': shape.id,
               'data-sp': spI,
@@ -860,6 +858,36 @@ function alongBisector(at: Pt, u: Pt, v: Pt, d: number): Pt | null {
   const len = Math.hypot(bx, by);
   if (len < 1e-9) return null;
   return [at[0] + (bx / len) * d, at[1] + (by / len) * d];
+}
+
+/** Drawn side of the corner control's square before it is turned, in screen pixels. */
+const CORNER_SIDE = 7.5;
+
+/**
+ * The corner control's box, drawn as a diamond.
+ *
+ * **A diamond because the other two shapes are taken, and taken with meanings
+ * that would clash.** A circle at `--measure` is the bend control, so a round
+ * corner control is the same picture for a different tool. A square is worse: an
+ * anchor is a square when its node is a corner and a rounded square when it is
+ * smooth, so a corner control drawn either of those ways spells the anchor's
+ * sentence 16 px from an anchor saying something else. Turning the square 45
+ * degrees leaves the tools distinct at a glance and keeps the corner control out
+ * of the node vocabulary entirely.
+ *
+ * The turn is the only difference between the two states' geometry. Sharp and
+ * rounded differ by fill, in `styles.css`, so one tool cannot read as two.
+ */
+function cornerDiamond(at: Pt, k: number): Record<string, string | number> {
+  const side = CORNER_SIDE * k;
+  return {
+    x: at[0] - side / 2,
+    y: at[1] - side / 2,
+    width: side,
+    height: side,
+    transform: `rotate(45 ${at[0]} ${at[1]})`,
+    'stroke-width': 1.5 * k,
+  };
 }
 
 /**

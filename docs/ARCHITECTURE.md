@@ -2269,13 +2269,38 @@ agree about which corners are roundable.
 the first to place the control, the second to read a drag back. Two separate
 formulas here would be a control that slides out from under the pointer.
 
-**The control is offset 11 px from the corner, and that is not decoration.** The
+**The control is offset 16 px from the corner, and that is not decoration.** The
 anchor layer paints in front of the handle layer, and a node's anchor is 7 px centred
 on the corner, so a control at the corner is covered by it and cannot be pressed at
 all. This was found by building it that way first. It is the same collision `BOX_PAD`
 exists to prevent between a rectangle's corner anchor and its north-west scale
 handle, and `cornerWidget` in `tools/drive.mjs` asserts the gap directly rather than
 asserting that a drag happens to work.
+
+**Being pressable is the floor, and it is not the same as being readable.** The
+offset was 11 px, which clears the anchor by 3.5 px: enough to hit, not enough to
+tell apart from the node it belongs to, so the pair read as one cluster.
+
+**The control is a diamond because the other two shapes were already spoken for.**
+This is the constraint that is easy to miss, because each half of it is reasonable
+on its own:
+
+| Shape at `--measure` | Already means |
+|---|---|
+| Circle | the bend control, `.bend-dot` |
+| Square | an anchor whose node is a corner |
+| Rounded square | an anchor whose node is smooth |
+
+So a round corner control is the bend control's own picture, and a square one
+spells the anchor's sentence 16 px from an anchor using it to mean something else.
+Both were drawn before this was noticed: the corner control was a circle at
+`--measure`, filled when rounded, which made it and `.bend-dot` identical but for
+half a pixel of radius. A diamond is in neither vocabulary.
+
+**State is fill, and only fill.** Sharp is the same diamond at `fill-opacity: 0.3`,
+rounded is the same diamond solid. An earlier version swapped fill and stroke
+between the states, which made one tool read as two: the sharp state was an
+outline and the rounded state was a solid of a different colour pairing.
 
 ## 49. Groups are a relation over a flat list, not a tree
 

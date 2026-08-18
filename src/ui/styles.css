@@ -486,16 +486,30 @@ input[type='number']:disabled { opacity: 0.4; }
 .handle-dot.latent { fill: var(--canvas); stroke: var(--node-sel); opacity: 0.75; }
 .bend-dot { fill: var(--measure); stroke: var(--canvas); cursor: ns-resize; }
 
-/* The corner control. Hollow where the corner is still sharp and filled once it
-   holds an arc, so the two states are told apart without a second colour: an
-   outline is what it would become, a solid is what it is. */
+/* The corner control: a diamond, drawn as a square turned 45 degrees in
+   `cornerDiamond`.
+
+   **The shape separates the tools and the fill separates the states.** A circle
+   at `--measure` is `.bend-dot`, and a square is what an `.anchor` is when its
+   node is a corner, so a corner control drawn as either says something the rest
+   of the overlay has already claimed. A diamond is in neither vocabulary.
+
+   Tinted where the corner is still sharp and solid once it holds an arc: a
+   faint one is what it would become, a solid one is what it is. Both states keep
+   the same outline and the same colour, so one tool cannot read as two.
+
+   **The tint is what the sharp state was missing.** Filled with `--canvas` it
+   was an outline 1.5 px wide on a pale grid, which is legible next to the solid
+   state and invisible on its own -- and on its own is how it is always met,
+   since a corner is sharp before anyone has thought about rounding it. */
 .corner-dot {
-  fill: var(--canvas);
+  fill: var(--measure);
+  fill-opacity: 0.3;
   stroke: var(--measure);
   vector-effect: non-scaling-stroke;
   cursor: nwse-resize;
 }
-.corner-dot.rounded { fill: var(--measure); stroke: var(--canvas); }
+.corner-dot.rounded { fill-opacity: 1; }
 .anchor {
   fill: var(--node);
   stroke: var(--node-line);
