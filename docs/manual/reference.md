@@ -280,7 +280,7 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
   shorter side of whatever you draw.
 - **Circularise** fits a circle through the selected path's nodes and moves each
   onto it.
-- **Offset** with **Apply** draws a path parallel to each selected shape, as a new
+- **By** with **Offset** draws a path parallel to each selected shape, as a new
   shape beside it, or several if the shape cannot hold the distance and the offset
   comes apart. A negative distance goes the other way, and one that would consume
   the shape leaves nothing rather than a sliver.
@@ -289,7 +289,7 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
   new fill is what the stroke was coloured. A closed path becomes two contours
   under **Even-odd**, which is what makes it read as a band. A stroke too wide for
   its shape is refused rather than guessed at.
-- **Keep** with **Apply** reduces each selected path to that many nodes, whatever
+- **Keep** with **Reduce** reduces each selected path to that many nodes, whatever
   it costs, and says how far the drawing moved. **Within** asks the opposite
   question: what can go for a given cost.
 - **Keep these nodes** removes everything except the nodes you have selected. A
@@ -339,7 +339,7 @@ to set it exactly.
   control back. An end of an open path cannot be auto, since there is no
   neighbour on the far side to take a direction from, and the setting is not part
   of the export.
-- **Round** with **Apply** replaces the selected corners with an arc of that
+- **Radius** with **Round** replaces the selected corners with an arc of that
   radius. Both sides of the node have to be straight.
 
   The same operation is on the canvas as a small mark just inside each roundable
@@ -413,7 +413,7 @@ less is refused, as is scaling an axis the selection has no length on: a straigh
 horizontal line has no height to grow from.
 
 **Rotate −90°**, **Rotate +90°**, **Flip horizontal**, **Flip vertical**, plus an
-**Angle** field with **Rotate**, and a **Scale** factor with **Apply**. All work
+**Angle** field with **Rotate**, and a **Factor** field with **Scale**. All work
 about the centre of the selection, and all are baked into the coordinates.
 
 ### Arrange

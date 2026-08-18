@@ -300,9 +300,9 @@
               <label><input type="checkbox" id="simplifyRedraw" title="Let Simplify replace your curves with fitted ones. Off, every node that survives is one you placed" /> Redraw curves</label>
             </div>
             <div class="row">
-              <label for="offsetBy">Offset</label>
+              <label for="offsetBy">By</label>
               <input type="number" id="offsetBy" step="0.5" value="2" title="How far the parallel path sits from this one. Negative goes the other way" />
-              <button class="btn" id="offsetGo" type="button" title="Draw a path parallel to the selected shapes">Apply</button>
+              <button class="btn" id="offsetGo" type="button" title="Draw a path parallel to the selected shapes">Offset</button>
             </div>
             <div class="grid2">
               <button class="btn" id="strokeButt" type="button" title="Turn the stroke into a filled outline, cut square at the ends">Outline</button>
@@ -311,7 +311,7 @@
             <div class="row">
               <label for="keepCount">Keep</label>
               <input type="number" id="keepCount" step="1" min="2" value="8" title="How many nodes to leave on each selected path" />
-              <button class="btn" id="keepGo" type="button" title="Reduce each selected path to that many nodes">Apply</button>
+              <button class="btn" id="keepGo" type="button" title="Reduce each selected path to that many nodes">Reduce</button>
             </div>
             <button class="btn wide" id="keepThese" type="button" title="Remove every node except the ones selected">Keep these nodes</button>
             <button class="btn wide" id="simplify" title="Remove nodes from the selected paths">
@@ -349,9 +349,9 @@
               <button class="btn" id="rotate">Rotate</button>
             </div>
             <div class="row">
-              <label for="scale">Scale</label>
+              <label for="scale">Factor</label>
               <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
-              <button class="btn" id="scaleGo">Apply</button>
+              <button class="btn" id="scaleGo">Scale</button>
             </div>
           
               <p class="hint">Applies to the selection, about its own centre.</p>
@@ -443,19 +443,17 @@
               </button>
             </div>
             <div class="row">
-              <label for="roundR">Round</label>
+              <label for="roundR">Radius</label>
               <input type="number" id="roundR" step="0.5" min="0" value="4" />
-              <button class="btn" id="roundCorner" title="Replace the selected corners with an arc of this radius">Apply</button>
+              <button class="btn" id="roundCorner" title="Replace the selected corners with an arc of this radius">Round</button>
             </div>
             <div class="grid2">
               <button class="btn" id="breakPath" title="Break the path at this node, keeping it (Shift+B)">Break here</button>
               <button class="btn" id="joinPath" title="Draw the missing segment between two selected free ends, moving neither (Shift+J)">Connect</button>
               <button class="btn" id="mergePath" title="Weld two selected free ends into one node at their midpoint (Shift+M)">Merge</button>
               <button class="btn" id="fuseNodes" title="Weld two adjacent nodes into one, anywhere along a path. With a shape selected, sweeps away every zero-length segment (Shift+F)">Fuse</button>
-              <div class="grid2">
-                <button class="btn" id="prevNode" type="button" title="Select the node before this one along the path ([)">&#8592; Node</button>
-                <button class="btn" id="nextNode" type="button" title="Select the node after this one along the path (])">Node &#8594;</button>
-              </div>
+              <button class="btn" id="prevNode" type="button" title="Select the node before this one along the path ([)">&#8592; Node</button>
+              <button class="btn" id="nextNode" type="button" title="Select the node after this one along the path (])">Node &#8594;</button>
               <button class="btn wide" id="insertNode" type="button" title="Insert a node in the middle of the segment between the two selected nodes (Shift+I)">Insert node</button>
               <button class="btn wide" id="findSrc" title="Open the source and put the cursor on the command that drew this node">Find in source</button>
               <button class="btn wide" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>

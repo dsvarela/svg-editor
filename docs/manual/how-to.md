@@ -286,8 +286,8 @@ straight line. **Free** hands control back to the handles.
 Use the **Transform** panel.
 
 **Rotate −90°** and **Rotate +90°** are one press. For anything else, type into
-**Angle** and press **Rotate**, or type a factor into **Scale** and press
-**Apply**. Both work about the centre of the selection.
+**Angle** and press **Rotate**, or into **Factor** and press **Scale**. Both
+work about the centre of the selection.
 
 **Flip horizontal** and **Flip vertical** mirror the selection in place.
 
@@ -367,8 +367,8 @@ themselves are unaffected.
 
 ## Round off a corner
 
-Select the corner node, set **Round** in the **Node** panel to the radius you
-want, and press **Apply**.
+Select the corner node, set **Radius** in the **Node** panel to the radius you
+want, and press **Round**.
 
 The node is replaced by two, one where the arc meets each side, and the sides
 stay exactly straight. Select several corners and they are all rounded at once.
@@ -379,7 +379,7 @@ says why rather than leaving a kink where the arc nearly meets the curve.
 
 If the radius is larger than a side can hold it is cut down to fit, and the
 status line says so. To round every corner of a rectangle evenly, select all four
-and apply once.
+and press **Round** once.
 
 ## Colour a shape
 
