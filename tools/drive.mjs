@@ -3437,8 +3437,18 @@ const scenarios = {
       );
     check(JSON.stringify(await pressed()) === '["cusp"]', `starts as ${await pressed()}`);
 
+    /* The in and out fields are filled either way, because a missing handle is
+       shown where it would go. Nothing on the panel said which, so two
+       identically drawn shapes differed for an invisible reason and Round
+       refused one of them. */
+    const ghosts = () => page.locator('#hix.ghost, #hiy.ghost, #hox.ghost, #hoy.ghost').count();
+    check((await ghosts()) === 4, `a node with no handles ghosts ${await ghosts()} of 4 fields`);
+    check(await page.isVisible('#handlewhy'), 'nothing said the handles were not there');
+
     await page.click('#ntype button[data-v="auto"]');
     await settle(page);
+    check((await ghosts()) === 0, `after Auto, ${await ghosts()} fields still read as latent`);
+    check(!(await page.isVisible('#handlewhy')), 'the latent note outlived the latent handles');
     /* Exactly one button lit, and it is Auto. An auto node is collinear by
        construction, so a display reading the handles alone would light Smooth
        as well and leave two buttons pressed at once. */

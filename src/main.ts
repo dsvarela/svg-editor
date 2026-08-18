@@ -739,6 +739,7 @@ decInput.addEventListener('input', () =>
 const nodeGroup = $('#nodegroup');
 const nodeInfo = $('#nodeinfo');
 const roundWhy = $('#roundwhy');
+const handleWhy = $('#handlewhy');
 const alignInfo = $('#aligninfo');
 const ntypeSeg = $('#ntype');
 
@@ -1055,28 +1056,39 @@ function refreshInspector(): void {
     twoEnds || (count < 2 && store.state.selection.shapes.size === 0);
 
   const dp = store.state.decimals;
+  let latent = false;
   for (const f of coordFields) {
     // Never clobber a field mid-edit.
     if (document.activeElement === f.input) continue;
     if (!sel) {
       f.input.value = '';
       f.input.disabled = true;
+      f.input.classList.remove('ghost');
       continue;
     }
-    const pt =
-      f.part === 'anchor'
-        ? sel.node.pt
-        : (f.part === 'in' ? sel.node.hIn : sel.node.hOut) ??
-          latentHandle(sel.subpath, sel.ref.i, f.part);
+    const real = f.part === 'anchor' ? sel.node.pt : f.part === 'in' ? sel.node.hIn : sel.node.hOut;
+    const pt = real ?? (f.part === 'anchor' ? null : latentHandle(sel.subpath, sel.ref.i, f.part));
     if (!pt) {
       // No segment on that side at all, so there is nothing to curve.
       f.input.value = '';
       f.input.disabled = true;
+      f.input.classList.remove('ghost');
       continue;
     }
+    /* A handle that is not there reads exactly like one that is, because
+       `latentHandle` fills the field with where it would go. Two identically
+       drawn shapes then differ for a reason nothing on this panel shows, and
+       Round refuses one of them: `cornerAt` wants both sides straight, and a
+       straight side is one with no handle on it. */
+    f.input.classList.toggle('ghost', !real);
+    if (!real) latent = true;
     f.input.disabled = false;
     f.input.value = (+pt[f.axis].toFixed(dp)).toString();
   }
+  handleWhy.hidden = !sel || !latent;
+  handleWhy.textContent = handleWhy.hidden
+    ? ''
+    : 'Dimmed: that handle does not exist. The number is where one would go.';
 }
 
 /* ----------------------------------------------------------------- source */

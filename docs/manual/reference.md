@@ -345,6 +345,11 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 Live coordinates for the selected node and its two handles. Type into any field
 to set it exactly.
 
+**A dimmed, italic number is a handle that does not exist**, shown where one
+would go if you pulled it out. The canvas draws the same thing as a hollow
+circle. The difference matters: a side with no handle on it is straight, and
+**Round** needs a straight side on both sides of the node.
+
 - **Cusp**, **Smooth**, **Symm** show how the selected node's handles are set,
   and change it when pressed. **Cusp** means the two handles are not in line, so
   the path turns at the node; it is the word Inkscape uses, and it is deliberately
