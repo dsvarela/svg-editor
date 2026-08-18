@@ -26,7 +26,7 @@ import {
   segmentIsLine,
 } from '../core/types';
 import type { Doc, NodeContinuity, PathNode, Pt, Shape, Subpath } from '../core/types';
-import type { HandlePart, NodeRef } from './doc';
+import type { NodeRef } from './doc';
 
 const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
@@ -125,19 +125,15 @@ export function moveHandle(
  * align its handles, and to make it a corner you take its handles away. Every
  * call is therefore a real edit to the geometry or no edit at all.
  *
- * A corner has no handles to align, so smooth and symmetric first materialise
- * them where the hollow ghosts are drawn — a third along each neighbouring
- * segment. This moves the drawing: both handles are placed on their chords and
- * then rotated to the averaged direction, which pulls them off. A right-angle
- * corner with 10-unit sides shifts by 1.48 units.
+ * A corner has no handles, so smooth and symmetric materialise them a third
+ * along each neighbouring segment and then rotate both to the averaged
+ * direction. That moves the drawing: a right-angle corner with 10-unit sides
+ * shifts by 1.48 units.
  *
- * Returns whether the handles actually changed, so a caller can decline to
- * record an undo entry for a click that did nothing. It is `false` in two
- * situations. An end of an open subpath has no segment on the outside, so there
- * is no handle to invent and nothing to align against. A node already in the
- * requested state computes the handles it already has, which is why `smooth` on
- * a symmetric node reports no change: symmetric *is* smooth. See
- * `docs/ARCHITECTURE.md` §6 for why that case is not weakened into a change.
+ * Returns whether the handles changed, so a caller can skip an undo entry.
+ * `false` for an end of an open subpath, which has no outside segment to align
+ * against, and for a node already in the requested state -- which is why
+ * `smooth` on a symmetric node reports nothing: symmetric *is* smooth. §6.
  */
 export function setContinuity(sp: Subpath, i: number, kind: NodeContinuity): boolean {
   const n = sp.nodes[i];
@@ -493,22 +489,17 @@ export function connectEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
 /**
  * Weld two free ends into a single node.
  *
- * The other half of the pair, and the one that loses a node. Where
- * `connectEnds` spans the gap, this closes it: the two nodes merge at their
- * midpoint, so ends already sitting on top of each other do not move and the
- * operation exactly undoes a `breakAt`.
+ * Where `connectEnds` spans the gap, this closes it: the two nodes merge at
+ * their midpoint, so coincident ends do not move and this exactly undoes a
+ * `breakAt`. Each end keeps the handle facing away from the joint, the other
+ * having governed nothing.
  *
- * Each end keeps the handle facing away from the joint, which is the one that
- * shapes a segment that still exists. The handles facing the joint governed
- * nothing, because an end of an open path has no segment on its outside.
+ * Two ends of one path close it into a ring; two of different paths
+ * concatenate, reversing either so the directions agree. The caller removes
+ * whichever subpath was replaced.
  *
- * Two ends of the SAME path close it into a ring, one node shorter. Two ends of
- * different paths concatenate, reversing either as needed so the drawing
- * directions agree. The result is one subpath; the caller is responsible for
- * removing whichever subpath it replaced.
- *
- * Returns `null` when either node is not a free end, when both are the same
- * node, or when closing would leave fewer than two nodes to draw with.
+ * `null` when either node is not a free end, when both are the same node, or
+ * when closing would leave fewer than two nodes.
  */
 export function mergeEnds(a: JoinEnd, b: JoinEnd): Subpath | null {
   if (!isPathEnd(a.sp, a.i) || !isPathEnd(b.sp, b.i)) return null;
@@ -573,24 +564,14 @@ export interface FuseResult {
 /**
  * Weld two ADJACENT nodes into one, anywhere along a path.
  *
- * `mergeEnds` deliberately refuses anything but two free ends, because welding
- * two ends is a topology change it has to reason about: two paths become one, or
- * one becomes a ring. In the middle of a path there is no topology to change.
- * The pair is already joined by a segment, and fusing them just removes that
- * segment, so this is the simpler operation of the two despite sounding like the
- * harder one.
+ * The pair is already joined by a segment, so this removes that segment and
+ * changes no topology -- which is why it is simpler than `mergeEnds`, not
+ * harder. The survivor sits at the midpoint keeping the handle facing away from
+ * the joint on each side, so two nodes already coincident do not move. That is
+ * the case that matters: this is the repair for a zero-length segment.
  *
- * The survivor sits at the midpoint and keeps the handle facing away from the
- * joint on each side, exactly as `mergeEnds` does. Two nodes already on top of
- * each other therefore do not move at all, which is the case that matters: this
- * is the repair for a **zero-length segment**, and a path carrying one can never
- * be simplified again, because a zero chord leaves the fitter with no tangent.
- *
- * **Adjacent only.** Two nodes further apart along the path have a run of
- * segments between them, and welding them would pinch the path into two loops
- * that no longer share an interior. That is a different operation with a
- * different name, and guessing at it here would silently discard whatever ran
- * between the pair.
+ * **Adjacent only.** A pair further apart has a run of segments between them,
+ * and welding would pinch the path into two loops and discard the run. §24.
  */
 export function fuseNodes(sp: Subpath, i: number, j: number): FuseResult | FuseRefusal {
   const n = sp.nodes.length;
@@ -699,12 +680,8 @@ export interface CirculariseResult {
   /** How far the furthest node had to travel to reach the circle. */
   moved: number;
   /**
-   * Nodes welded away because two of them shared an angle.
-   *
-   * Two nodes at the same angle about the centre land on the same point of the
-   * circle, which is a zero-length segment however faithfully each one was
-   * placed. Reported rather than silent, because the node count changing is
-   * something the person watching should be told.
+   * Nodes welded away because two shared an angle about the centre, and so
+   * landed on the same point. Reported, because the node count changed.
    */
   fused: number;
   /**
@@ -718,34 +695,20 @@ export interface CirculariseResult {
 /**
  * Force every node of a subpath onto its own best-fit circle.
  *
- * Each node keeps its angle about the fitted centre and is pushed out or pulled
- * in to the fitted radius; the handles are then rebuilt from the angle each
- * segment now spans, at `r · 4/3 · tan(θ/4)`. That is the midpoint-matching
- * approximation rather than an exact arc — a cubic cannot be one — and its
- * error grows steeply with the span: 2.7e-4 of the radius at a quarter turn,
- * 1.8e-2 at a half. So node spacing does matter, and `widestSpan` is returned
- * so the caller can say how round the result can possibly be.
+ * Each node keeps its angle about the fitted centre and moves to the fitted
+ * radius; handles are rebuilt at `r · 4/3 · tan(θ/4)`. `widestSpan` is returned
+ * because a cubic's error grows steeply with the span it covers.
  *
- * **A closed contour is a ring, and its spans must sum to a full turn.** Taking
- * each span the shorter way round is right for spans under half a turn and
- * silently destructive above it: four nodes at
- * 0°, 20°, 40° and 60° leave a 300° gap, the shorter way reads that as −60°,
- * and the closing segment retraces the other three instead of completing the
- * circle. Every node still lands exactly on the circle, so a radial measurement
- * cannot see it, and the reported travel is zero. It looked like a success.
+ * **A closed contour takes one winding from the sign of the polygon's area**
+ * and forces every span to follow. Taking each the shorter way instead is
+ * destructive above half a turn and invisible to a radial measurement: nodes at
+ * 0°, 20°, 40° and 60° leave a 300° gap that reads as −60°, and the closing
+ * segment retraces the other three. The spans then sum to one turn in angular
+ * order and a multiple of one otherwise, which is the test for a ring.
  *
- * So a closed contour picks one winding from the sign of the polygon's area and
- * forces every span to follow it. The spans then sum to exactly one turn when
- * the nodes are in angular order, and to a multiple of one when they are not —
- * a star, a figure of eight — which is the test for whether this was a ring at
- * all. When it was not, nothing is mutated and `null` comes back.
- *
- * An open subpath has no such constraint, and its anchors alone cannot say
- * which way an arc went, so it keeps the shorter way round.
- *
- * Returns `null` for fewer than three nodes, a collinear arrangement, a node
- * sitting on the fitted centre (its angle is undefined), or a closed contour
- * whose nodes are not in angular order.
+ * An open subpath keeps the shorter way: its anchors cannot say which way an
+ * arc went. `null`, mutating nothing, for fewer than three nodes, collinear
+ * ones, a node on the centre, or nodes out of angular order.
  */
 export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
   const n = sp.nodes.length;
@@ -828,11 +791,8 @@ export function circulariseSubpath(sp: Subpath): CirculariseResult | null {
 }
 
 /**
- * Why a corner could not be rounded, or `null` when it was.
- *
- * Named reasons rather than a bare `false`, because every one of them is
- * something the person pressing the button can act on, and "it did not work" is
- * the least useful thing to tell them.
+ * Why a corner could not be rounded, or `null` when it was. Named reasons
+ * rather than a bare `false`: each one is something the caller can act on.
  */
 export type RoundRefusal = 'end' | 'curved' | 'straight' | 'tiny';
 
@@ -846,27 +806,21 @@ export interface RoundResult {
 /**
  * Replace a corner with a circular arc tangent to both of its sides.
  *
- * The operation the rectangle tool performs while drawing, available afterwards
- * on any corner. The node is replaced by two, one at each tangent point, and the
- * arc between them is a cubic, the same approximation used everywhere else here.
+ * The node becomes two, one at each tangent point, with a cubic between them.
  *
- * **Both sides have to be straight.** A fillet is defined by being tangent to
- * two lines, and there is no honest version of it against a curve: you can put
- * an arc somewhere near, but it will not meet the curve smoothly, and a corner
- * operation that leaves a kink has not done its job. Refused rather than
- * approximated.
+ * **Both sides have to be straight**, because a fillet is defined by tangency
+ * to two lines. Against a curve the arc will not meet it smoothly, and a corner
+ * operation that leaves a kink has not done its job. Refused, not approximated.
+ * §23.
  *
  * The radius is clamped to what the shorter side can hold. Rounding the corners
  * of a rectangle one at a time works because each one sees the sides the
  * previous ones left behind.
  */
 /**
- * A corner that could be rounded, measured.
- *
- * `u` and `v` are unit vectors from the corner along its two sides, so a tangent
- * point at distance `d` is `at + u * d`. `alpha` is the interior angle between
- * them and `reach` the furthest a tangent point can go before it runs past a
- * neighbour, which is what the radius gets clamped to.
+ * A corner that could be rounded, measured. `u` and `v` are unit vectors along
+ * its two sides, so a tangent point at `d` is `at + u * d`; `alpha` is the
+ * interior angle and `reach` the clamp on the radius.
  */
 export interface Corner {
   at: Pt;
@@ -951,13 +905,10 @@ export function roundCorner(
   // The arc turns through the exterior angle, not the interior one.
   const h = arcHandle(r, Math.PI - alpha);
 
-  /* A tangent point can land exactly on a neighbour: at the clamp, and whenever
-     two fillets meet in the middle of a side they share. Inserting a node there
-     anyway left two anchors on the same point and a zero-length segment in the
-     exported path -- and a path carrying one can never be simplified again,
-     because a zero chord gives the fitter no tangent to work from. Where they
-     coincide the neighbour is reused, which is also the right answer
-     geometrically: two arcs that meet share the point where they meet. */
+  /* A tangent point can land exactly on a neighbour: at the clamp, and where
+     two fillets meet on a side they share. The neighbour is reused there, or
+     the path carries a zero-length segment and can never be simplified again --
+     a zero chord gives the fitter no tangent. §23. */
   const startsAtPrev = Math.hypot(t1[0] - prev.pt[0], t1[1] - prev.pt[1]) <= MEET;
   const endsAtNext = Math.hypot(t2[0] - next.pt[0], t2[1] - next.pt[1]) <= MEET;
 
@@ -1113,7 +1064,7 @@ export function unroundCorner(sp: Subpath, i: number): number | null {
 
 /* ------------------------------------------------------------- transforms */
 
-export function transformSubpath(sp: Subpath, m: Mat): void {
+function transformSubpath(sp: Subpath, m: Mat): void {
   for (const n of sp.nodes) {
     n.pt = applyMat(m, n.pt);
     if (n.hIn) n.hIn = applyMat(m, n.hIn);
@@ -1206,28 +1157,18 @@ export function segmentBend(sp: Subpath, segIdx: number): Bend | null {
 /**
  * Move the point at `t` on a segment to `target`, changing both handles.
  *
- * `setSegmentBend` is the constrained edit: two numbers, a symmetric result,
- * and no way to express a curve that leans. It is the better tool when the
- * segment is already symmetric, and it has nothing to say when it is not.
- * Most curves in a real drawing are not, so this unconstrained edit is what
- * the bend control reaches for outside the symmetric case.
- *
- * A cubic's point at `t` is a weighted sum of its four control points, and the
- * endpoints are fixed here, so the displacement has to come out of the two
- * controls:
+ * The unconstrained edit, where `setSegmentBend` is the symmetric one. The
+ * endpoints are fixed, so the displacement comes out of the two controls:
  *
  *   d = b1 * dC1 + b2 * dC2,  b1 = 3(1-t)^2 t,  b2 = 3(1-t) t^2
  *
- * One equation, two unknowns, so the answer is a choice rather than a
- * derivation. Taking the least-norm solution -- `dCi = d * bi / (b1^2 + b2^2)`
- * -- moves the handles as little as the displacement allows, which is what
- * makes a drag feel like it is dragging the curve rather than rearranging it.
- * It also splits the work in the ratio the two controls already influence the
- * point, so the control nearer the pointer does more of it.
+ * One equation, two unknowns, so the answer is a choice. The least-norm
+ * solution `dCi = d * bi / (b1^2 + b2^2)` moves the handles as little as the
+ * displacement allows, and splits the work in the ratio the two controls
+ * already influence the point.
  *
- * `t` is clamped away from the ends because `b1` and `b2` vanish there: the
- * point at `t = 0` is the endpoint, no handle can move it, and the least-norm
- * answer to an unsatisfiable equation is an infinity.
+ * `t` is clamped off the ends, where `b1` and `b2` vanish: no handle can move
+ * the endpoint, and the least-norm answer there is an infinity.
  */
 export function reshapeSegment(sp: Subpath, segIdx: number, t: number, target: Pt): void {
   const tc = Math.min(0.95, Math.max(0.05, t));
@@ -1370,9 +1311,4 @@ export function nearestOnPath(
   return best;
 }
 
-/** The handle or anchor nearest `p`, within `maxDist`. */
-export interface NodeHit extends NodeRef {
-  part: HandlePart;
-  d: number;
-}
 

@@ -1,28 +1,17 @@
 /**
  * Fewer nodes, same drawing.
  *
- * Imported and traced paths arrive with a node every few units, which makes
- * them unusable for editing: every handle is too short to grab, and moving one
- * node changes nothing you can see. Simplify replaces a run of them with the
- * smallest number of curves that stays within a stated distance of the original.
+ * `core/fit.ts` fits cubics through a run of points and knows nothing about
+ * paths. This file decides which runs to fit, which is where the judgement is:
  *
- * The work splits in two. `core/fit.ts` fits cubics through a run of points and
- * knows nothing about paths. This file decides which runs to fit, which is where
- * every judgement call lives:
- *
- *  - **Corners survive.** A node where the path turns sharply is a feature, and
- *    fitting through it would round it off. Those nodes stay exactly where they
- *    are and end one run and start the next.
- *  - **Every surviving node keeps its tangents.** The fitter is told which
- *    direction to leave and arrive at, taken from the original geometry. A
- *    corner stays exactly as sharp, and a smooth join stays smooth, because
- *    neither is something the fit gets to choose.
- *  - **A closed path with no corners is cut at node 0** and fitted as one run,
- *    with the original tangents at that node passed in from both sides. If it
- *    was smooth there it still is; if it was a cusp it still is. One that has
- *    corners is cut at those, and node 0 is not special.
- *  - **Sampling is ten times finer than the tolerance**, so the answer is
- *    limited by the fit rather than by how the curve was measured.
+ *  - **Corners survive** and end one run and start the next.
+ *  - **Every surviving node keeps its tangents**, taken from the original
+ *    geometry, so neither a corner's sharpness nor a smooth join is something
+ *    the fit gets to choose.
+ *  - **A closed path with no corners is cut at node 0** and fitted as one run.
+ *    One that has corners is cut at those, and node 0 is not special.
+ *  - **Sampling is ten times finer than the tolerance**, so the fit limits the
+ *    answer rather than the measurement does. §19.
  */
 
 import { cubicAt, cubicDerivAt, splitCubic } from '../core/bezier';
@@ -54,11 +43,9 @@ const SAMPLE_RATIO = 0.1;
 /**
  * Longest gap between samples, as a multiple of the tolerance.
  *
- * Flatness alone is not enough. A straight input segment is perfectly flat and
- * so is sampled at its two ends, and the fit is then free to bow out between
- * them: the tolerance is only ever checked where a sample sits. Capping the gap
- * puts a sample everywhere the answer could go wrong. A run 100 units long with
- * a tolerance of 1 costs 50 points, which the fit reads once per iteration.
+ * Flatness alone is not enough: the tolerance is only checked where a sample
+ * sits, so a flat input sampled at its two ends lets the fit bow out between
+ * them. A 100-unit run at tolerance 1 costs 50 points. §19.
  */
 const SAMPLE_SPACING = 2;
 

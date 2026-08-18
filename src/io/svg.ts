@@ -1,22 +1,14 @@
 /**
  * Whole-SVG import and export.
  *
- * This is what makes the source box round trip shape-preserving, and what lets
- * you paste a real icon in. A box holding one concatenated `d` string collapses
- * every shape into one on Apply: the geometry survives and the shape boundaries
- * do not.
+ * What makes the source box round trip shape-preserving: one concatenated `d`
+ * string would collapse every shape into one on Apply.
  *
- * Two decisions worth stating:
- *
- *  - Primitives (`rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`)
- *    are converted to path data and parsed with the same parser as `<path>`.
- *    Writing a second geometry path for them would mean a second set of bugs.
- *
- *  - `transform` attributes are BAKED into coordinates rather than stored.
- *    That follows the model's existing choice: a shape is its points, and
- *    nothing downstream has to unwind a matrix before hit-testing or editing.
- *    The cost is that an imported `rotate(30)` is not recoverable as "30
- *    degrees" afterwards, only as the points it produced.
+ *  - Primitives are converted to path data and read by the same parser as
+ *    `<path>`, so there is no second geometry path to carry its own bugs.
+ *  - `transform` attributes are **baked into coordinates**, following the
+ *    model's choice that a shape is its points. An imported `rotate(30)` is
+ *    recoverable only as the points it produced. §5.
  */
 
 import { identity, mul, rotate, scale as scaleMat, skew, translate } from '../core/affine';
@@ -207,23 +199,14 @@ function parseViewBox(el: Element): ViewBox | null {
 /**
  * Whether an import would put anything on the canvas.
  *
- * An import that parsed cleanly can still draw nothing. `M 0 0` and
- * `M 0 0 Q Q Q` both come back as a shape with no subpaths at all, since the
- * parser drops a subpath with nothing in it. Both import routes refuse text
- * this returns false for, which is what stops an Apply over a selected shape
- * from emptying it, reporting "Updated Star." and leaving a `<path d="">`
- * behind.
+ * An import that parsed cleanly can still draw nothing: `M 0 0` comes back as a
+ * shape with no subpaths. Both import routes refuse text this returns false
+ * for, which is what stops an Apply from emptying a shape and reporting
+ * "Updated".
  *
- * **Two nodes, not one, and the difference is not reachable from here.** No
- * input to `parsePath` produces a subpath holding a single node -- every
- * degenerate case is dropped whole, which was measured rather than assumed --
- * so `>= 2` and `>= 1` behave identically on anything `importSvg` can return.
- * It is written as the geometric fact, that one node is not a drawing, and
- * tested against a shape built by hand, because the argument is about the
- * shape and not about which parser handed it over.
- *
- * Lives here rather than in `main.ts` because it is the importer's own
- * question, and because the two callers there each had their own copy of it.
+ * **Two nodes, not one**, because one node is not a drawing. No input to
+ * `parsePath` produces a single-node subpath, so the two behave alike on
+ * anything `importSvg` returns; the test builds the shape by hand.
  */
 export function drawsSomething(shapes: Shape[]): boolean {
   return shapes.some((sh) => sh.subpaths.some((sp) => sp.nodes.length >= 2));
@@ -423,7 +406,7 @@ export function xmlId(name: string): string {
  * will not re-open. `xmlId` was written for exactly this failure on the `id`
  * and left its two neighbours interpolating raw.
  */
-export function xmlAttr(value: string): string {
+function xmlAttr(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -439,7 +422,7 @@ export function xmlAttr(value: string): string {
  * document that does is invalid rather than merely untidy. A collision gets a
  * numeric suffix, which is the same shape `nextId` uses for names.
  */
-export function uniqueXmlId(name: string, used: Set<string>): string {
+function uniqueXmlId(name: string, used: Set<string>): string {
   const base = xmlId(name);
   let id = base;
   for (let n = 2; used.has(id); n++) id = `${base}-${n}`;

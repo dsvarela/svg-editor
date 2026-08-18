@@ -1,19 +1,10 @@
 /**
  * Auto-smooth nodes: handles that re-derive themselves from the neighbours.
  *
- * Inkscape's fourth node type, and the one that saves the most fiddling. Move
- * one node of a curve and the two either side of it re-aim themselves, so a
- * shape stays fair without anyone dragging six handles to keep it that way.
- *
- * **This is the model's only stored node state, and §6 argues against exactly
- * that.** It earns the exception on a distinction: a stored `smooth` flag is a
- * *claim about the geometry*, checkable against the handles and therefore able
- * to disagree with them, which is why continuity is derived. `auto` is not a
- * claim about anything. It is an instruction about the future -- keep
- * recomputing me -- and no arrangement of control points can express that.
- *
- * It is never exported. A file has no way to say it, and reading one back gives
- * ordinary handles sitting exactly where the auto node had put them.
+ * **The model's only stored node state, against §6.** The exception is that
+ * `auto` is an instruction about the future rather than a claim about the
+ * geometry, so no arrangement of control points can express it and nothing can
+ * disagree with it. Never exported; a file has no way to say it. §35.
  */
 
 import type { Doc, Pt, Subpath } from '../core/types';

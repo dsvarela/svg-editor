@@ -17,7 +17,8 @@ import { Controller } from '../src/tools/controller';
 import { Commands } from '../src/tools/commands';
 import { bindKeys } from '../src/tools/keys';
 import { Store } from '../src/model/store';
-import { docBBox, emptyDoc, emptySelection, makeShape, nodeIdAt, resolveNodes, shapeBBox, shapeFromPath } from '../src/model/doc';
+import { docBBox, emptyDoc, emptySelection, makeShape, resolveNodes, shapeBBox, shapeFromPath } from '../src/model/doc';
+import { nodeIdAt } from './helpers';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
 import { segmentBend, splitSegment } from '../src/model/ops';
@@ -3127,15 +3128,12 @@ describe('two fingers', () => {
   });
 
   it('abandons the drag the first finger started, and closes its batch', () => {
-    /* The first finger lands before there is any way to know a second is
-       coming, so it starts a drag on whatever it hit, and by the time the
-       second arrives that drag may already have moved a node.
-
-       Two things have to happen to it. The edit is rolled back, which is
-       visible in the drawing. The batch is closed, which is not visible at all:
-       a batch left open makes `checkpoint` return early for the rest of the
-       session, so nothing is ever undoable again and nothing on screen says so.
-       The second is why the later edit below is part of this test. */
+    /* The first finger starts a drag before a second can be known about, so by
+       the time one arrives a node may have moved. Two things must happen: the
+       edit rolls back, which shows in the drawing, and the batch closes, which
+       shows nowhere -- an open batch makes `checkpoint` return early for the
+       rest of the session and nothing is undoable again. The later edit below
+       is what checks the second. */
     const h = harness('M0 0 L10 0 L10 10 Z');
     const id = h.store.state.doc.shapes[0].id;
     h.store.update((s) => (s.snapToGrid = false));

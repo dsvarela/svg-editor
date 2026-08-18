@@ -269,10 +269,9 @@ function preferRelative(cmds: Cmd[], decimals: number): Cmd[] {
 /**
  * Serialise subpaths to a `d` attribute value.
  *
- * `marks`, when given, is filled with where each node's command landed in the
- * returned string. It is an out-parameter rather than a second return value so
- * that the overwhelmingly common caller -- every render, every export -- pays
- * nothing for a feature only the source drawer uses.
+ * `marks`, when given, is filled with where each node's command landed. An
+ * out-parameter rather than a second return value, so every render and every
+ * export pays nothing for a feature only the source drawer uses. §36.
  */
 export function serialisePath(
   subpaths: Subpath[],

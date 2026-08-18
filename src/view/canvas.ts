@@ -533,28 +533,17 @@ export class Canvas {
     const dotR = 3.5 * k;
     const sel = state.selection;
 
-    /* Markers are drawn for every node in the document, whether or not the
-       camera is anywhere near it -- which is fine at the fifty nodes a drawn
-       shape has and ruinous at the twenty-three thousand a traced photograph
-       has. Two rules, in this order:
+    /* Two rules, in this order. Off-screen markers are not drawn, with a
+       margin of the marker's own size so one straddling the edge still appears.
+       Above `MARKER_CAP` in view, none are: at 2 microseconds each the
+       overlay's share of a render reaches 4 ms and stops fitting a frame.
 
-       Off-screen markers are not drawn. A marker is a thing you aim at, and one
-       outside the camera cannot be aimed at by anybody. The margin is the
-       marker's own size, so one straddling the edge still appears.
+       **All or none, never the first 2 000.** Which nodes you got would follow
+       the order shapes are stored in, and read as the rest of the document
+       having none.
 
-       Above `MARKER_CAP` markers *in view*, none are drawn. Measured at about
-       2 microseconds each in Edge, so 2 000 is the point where the overlay's
-       own share of a render reaches 4 ms and stops fitting in a frame. Drawing
-       the first 2 000 and stopping would be worse than drawing none: which
-       nodes you got would depend on the order shapes happen to be stored in,
-       and a person would read that as the rest of the document having no nodes.
-
-       The cost of the cap is real and worth stating: with markers off, nodes
-       cannot be clicked, because the anchors are the hit targets. At the
-       densities that trigger it they could not be clicked accurately anyway --
-       23 454 anchors over a 1600 px canvas is eight markers deep -- but "could
-       not usefully" and "cannot at all" are different, so the readout says
-       which state it is in. */
+       With markers off, nodes cannot be clicked at all, because the anchors are
+       the hit targets. The readout says which state it is in. §28. */
     const cam = state.camera;
     const pad = anchorSize;
     const inView = (p: Pt): boolean =>

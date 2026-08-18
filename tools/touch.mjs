@@ -1,35 +1,20 @@
 /**
  * How far the interface is from being usable by a finger.
  *
- * The target is 44 px, the touch target minimum in both Apple's and Google's
- * guidance. A count of how many controls miss it is only evidence if the method
- * behind it is written down and repeatable, so this is the method, and the
- * number it prints is the only one worth quoting.
+ * The target is 44 px, the minimum in Apple's and Google's guidance. A count is
+ * evidence only if its method is repeatable, so this is the method.
  *
- * What it counts: every control a person can press, in the toolbar, the status
- * strip and all three inspector tabs. A control is the element that takes the
- * press -- for a checkbox inside a `<label>` that is the label, since clicking
- * the words toggles the box, and measuring the 13 px box would report a target
- * nobody has to hit.
+ * Counts every control a person can press, across the toolbar, the status strip
+ * and all three inspector tabs. A control is the element that takes the press:
+ * for a checkbox in a `<label>` that is the label, not the 13 px box.
  *
- * Three things a sweep like this gets wrong unless it is careful, all of which
- * silently undercount rather than fail:
+ * Three ways such a sweep undercounts, silently rather than failing:
  *
- * - *Collapsed groups.* Every group except Style, Node and Shapes starts shut,
- *   and a shut group is `hidden`, so its controls have no box at all. Open
- *   every group in every tab before measuring, or the markup's 166 controls
- *   report as 37.
- * - *Disabled controls.* 55 of the 166 are disabled with nothing selected, and
- *   a disabled button is laid out at exactly the size it will have when it is
- *   enabled. Counting only the enabled ones measures the state of the document
- *   rather than the size of the interface. They are counted, and reported
- *   separately so the two numbers stay legible.
- * - *Colliding keys.* The sweep dedupes, so two controls that hash alike are
- *   counted once. See the key below for what has to go into it.
+ * - **Collapsed groups** are `hidden` and have no box, so all are opened first.
+ * - **Disabled controls** are laid out at their enabled size, so they count.
+ * - **Colliding keys**, since the sweep dedupes. See the key below.
  *
- * Run it with the dev server up: `node tools/touch.mjs`, or
- * `APP_URL=http://localhost:5177/ node tools/touch.mjs` when it is not on the
- * first port Vite tries.
+ * Run with the dev server up. `APP_URL` moves it.
  */
 
 import { launch, APP_URL } from './browser.mjs';

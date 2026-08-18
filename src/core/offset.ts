@@ -1,33 +1,14 @@
 /**
  * A path parallel to another, at a fixed distance.
  *
- * The exact offset of a cubic is not a cubic -- it is a degree-10 curve in
- * general -- so every editor approximates, and the question is only how. This
- * samples the true offset and fits cubics through the samples, which works here
- * because the editor already owns a good fitter and because offsetting has a
- * property that makes the fitter's job easy:
+ * Samples the true offset and fits cubics through the samples, because the
+ * exact offset of a cubic is not a cubic.
  *
- * **An offset curve is parallel, so it has the same tangent direction as its
- * original at every parameter.** `fitCurve` takes the end tangents as inputs
- * rather than guessing them, so the two ends of every run come out at exactly
- * the right angle, and the fitter is left with only the middle to solve. It
- * also subdivides on its own when it cannot hit the tolerance, so the error
- * control is already written.
- *
- * **The overrun is removed before fitting, by the distance criterion.** Where a
- * corner or a tight curve is offset further than its radius of curvature, the
- * parallel curve runs past itself and doubles back. Chen and McMains (2005)
- * settle what to keep: the invalid parts of a raw offset bound regions of
- * non-positive winding number, and the local test that says the same thing is a
- * distance. A raw-offset point lies on the true offset exactly when it is `|d|`
- * from the original; anything nearer is inside the disc swept along the curve,
- * so it is not on the boundary of the swept region and it is not on the offset.
- *
- * That is why the filtering happens to the *samples* and not to the fitted
- * curves. Fitting first and trimming after was tried twice and neither worked:
- * a curve fitted through a sequence that doubles back does not merely loop, it
- * leaves the offset altogether, so by then there is nothing left to trim that
- * is worth keeping.
+ * **Overrun is filtered out of the samples, before fitting, never after.** A
+ * raw-offset point is on the true offset exactly when it is `|d|` from the
+ * original; anything nearer is inside the swept disc. A curve fitted through
+ * samples that double back leaves the offset altogether, so there is nothing
+ * left to trim by then. §39 of `docs/ARCHITECTURE.md`.
  */
 
 import { cubicAt, cubicDerivAt } from './bezier';
@@ -498,21 +479,14 @@ export function offsetSubpath(sp: Subpath, d: number, tol = 0.05): Subpath[] | n
 /**
  * The outline of a stroked path, as a shape that can be filled.
  *
- * Two offsets, one either side, joined up. Everything hard about it is in
- * `offsetSubpath` -- this is the bookkeeping around it:
+ * Two offsets, one either side, joined up. The hard part is in `offsetSubpath`.
  *
- * **A closed path gives two contours**, not one. The outer offset and the inner
- * one bound a ring, and a ring is two loops with opposite winding, which is why
- * the inner one comes back reversed. Under `nonzero` that draws the band and
- * leaves the middle empty, which is what a stroke looks like.
+ * A closed path gives two contours with opposite winding, which is why the
+ * inner one comes back reversed. An open path gives one, and its two crossings
+ * are the caps.
  *
- * **An open path gives one contour**: out along one side, across the end, back
- * along the other, across the start. The two crossings are the caps.
- *
- * Returns null when either side comes apart. An offset that breaks into pieces
- * has no single "other side" to pair each piece with, and guessing which piece
- * answers which would produce a shape nobody could predict. Refusing says so;
- * the caller reports it.
+ * Returns null when either side comes apart: a broken offset has no single
+ * other side to pair each piece with. §40 of `docs/ARCHITECTURE.md`.
  */
 export function strokeOutline(
   sp: Subpath,

@@ -2,22 +2,17 @@
  * Turning a raster into boundary polylines. The half of tracing we did not
  * already own.
  *
- * A tracer is four stages: quantise the image to a palette, label the regions
- * and walk their boundaries, fit curves through the resulting polylines, and
- * write the result out. Stages three and four have been here since Simplify and
- * the serialiser respectively (`core/fit.ts`, `core/serialise.ts`), and they are
- * the expensive ones. This file is stages one and two, which are exact integer
- * work on a pixel grid: no intersections, no tangent ordering, nothing that can
- * be numerically wrong. That is why it is written here rather than depended on,
- * where booleans went the other way -- see SHOPPING-LIST for both decisions and
- * the measurements behind them.
+ * A tracer is four stages; `core/fit.ts` and `core/serialise.ts` already were
+ * the last two. This is the first two: quantise to a palette, then label the
+ * regions and walk their boundaries. Both are exact integer work on a pixel
+ * grid -- no intersections, no tangent ordering, nothing that can be
+ * numerically wrong -- which is why they are written rather than depended on.
+ * `docs/SHOPPING-LIST.md` has that decision and the one booleans made.
  *
- * The boundary walk and the edge-node scheme are ported from ImageTracerJS by
- * András Jankovics, released into the public domain under the Unlicense. The
- * quantiser is not: an exact colour census suits flat artwork far better than
- * the k-means sampling the original uses, which lost a colour entirely on a
- * three-colour test image. The curve fitting and SVG writing are not ported at
- * all, because this project already has better versions of both.
+ * The boundary walk and edge-node scheme are ported from ImageTracerJS by
+ * András Jankovics (Unlicense). The quantiser is not: an exact colour census
+ * suits flat artwork better than k-means sampling, which lost a colour outright
+ * on a three-colour image.
  */
 
 import type { Pt } from './types';

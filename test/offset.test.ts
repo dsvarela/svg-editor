@@ -158,12 +158,9 @@ describe('what it keeps and what it refuses', () => {
 });
 
 describe('the overrun, and what is left of it', () => {
-  /* Where a corner is offset further than it can hold, the raw offset runs past
-     itself. Chen and McMains (2005) settle what to keep -- the invalid parts
-     bound regions of non-positive winding number -- and the local form of that
-     rule is a distance: a raw-offset point is on the true offset only if it is
-     `|d|` from the original, since anything nearer is inside the disc swept
-     along the curve. The samples are filtered on exactly that. */
+  /* A corner offset further than it can hold runs past itself. The samples are
+     filtered on distance: a raw-offset point is on the true offset only at
+     `|d|` from the original. §39. */
 
   it('is exact on the inside of a corner, which used to be four units out', () => {
     const sp = path('M0 0 H40 V40 H0 Z');
@@ -196,12 +193,10 @@ describe('the overrun, and what is left of it', () => {
   });
 
   it('holds the distance on the pieces too', () => {
-    /* This asserted a residual of 1.14 for a while, and the residual was in
-       the measurement: `NearMap` used one number for its grid cells and for its
-       polyline, so making queries cheap made the source coarse -- a forty-unit
-       edge got seven points along it. The deviation stayed at exactly 1.1349
-       through three attempts to fix the geometry, which is what eventually said
-       the geometry was not what was wrong. */
+    /* The tolerance here measures geometry, so `worstDeviation` has to sample
+       finely enough to see it. `NearMap` sizing its polyline from its grid
+       cells put seven points on a forty-unit edge and read 1.1349 whatever the
+       geometry did. */
     const sp = path('M0 0 L20 30 L40 0 L40 40 L0 40 Z');
     const out = offsetSubpath(sp, -8, 0.02)!;
     let worst = 0;

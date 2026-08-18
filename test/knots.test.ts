@@ -22,7 +22,6 @@ import {
   invisibleAt,
   mergeSegments,
   nodeRemovalCost,
-  removeInvisibleNodes,
   removeRedundantNodes,
   keepOnly,
   reduceToCount,
@@ -388,7 +387,7 @@ describe('the invisible threshold', () => {
        the shared geometry are identical. */
     const original = parsePath(RING)[0];
     const dense = subdivide(original, 2);
-    removeInvisibleNodes(dense, 3);
+    removeRedundantNodes(dense, invisibleAt(3));
     expect(dense.nodes.length).toBe(4);
     expect(serialisePath([dense], { decimals: 3 })).toBe(
       serialisePath([original], { decimals: 3 }),
@@ -401,7 +400,7 @@ describe('the invisible threshold', () => {
     // Move one node well off the curve. At 3 decimals it is far too big to go.
     moveAnchor(dense, 1, [dense.nodes[1].pt[0] + 2, dense.nodes[1].pt[1]]);
     const movedPt: Pt = [...dense.nodes[1].pt];
-    removeInvisibleNodes(dense, 3);
+    removeRedundantNodes(dense, invisibleAt(3));
     // The moved node itself must survive. Counting survivors would pass while
     // the wrong ones went.
     expect(dense.nodes.some((n) => Math.hypot(n.pt[0] - movedPt[0], n.pt[1] - movedPt[1]) < 1e-9)).toBe(true);

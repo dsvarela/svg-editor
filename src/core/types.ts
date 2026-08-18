@@ -1,29 +1,13 @@
 /**
- * The document model.
+ * The document model. §1 of `docs/ARCHITECTURE.md` argues both decisions.
  *
- * The single decision that shapes everything else: a path is stored as NODES,
- * not as commands.
+ * **A path is nodes, not commands.** A subpath is a ring or run of nodes, each
+ * owning its anchor and up to two handles in absolute coordinates. Commands
+ * exist only in `parse.ts` and `serialise.ts`.
  *
- * yqnn's editor stores an array of command objects (MoveTo, CurveTo,
- * EllipticalArcTo...) and derives point positions by walking the whole path.
- * That is why its UI is a command table -- the model *is* a command table.
- * It also means every geometric operation has to special-case ten command
- * types (see its 28-line `EllipticalArcTo.scale` doing conic-section algebra
- * just to keep an ellipse an `A` command).
- *
- * Here, a subpath is a ring/run of nodes. Each node owns its anchor point and
- * up to two handles in ABSOLUTE coordinates. Commands exist only in `parse.ts`
- * (on the way in) and `serialise.ts` (on the way out). Nothing in between
- * knows they exist, so:
- *
- *   - transforms are one matrix applied to every point, no special cases;
- *   - there is no relative/absolute distinction to carry around;
- *   - arcs and shorthands cannot desynchronise from what is drawn.
- *
- * The second decision: a handle is `null` when the segment it governs is
- * straight, rather than a control point collapsed onto its anchor. This keeps
- * "is this segment a line?" an exact boolean instead of a float comparison,
- * which is what lets the serialiser emit `L`/`H`/`V` losslessly.
+ * **A handle is `null` when its segment is straight**, never a control point
+ * collapsed onto the anchor, so "is this a line?" is a boolean rather than a
+ * float comparison and `L`/`H`/`V` serialise losslessly.
  */
 
 /** A point in document space. Tuple, not {x,y}: cheaper to clone, maps cleanly over matrices. */

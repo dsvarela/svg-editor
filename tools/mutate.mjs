@@ -1,36 +1,20 @@
 /**
  * Break the source on purpose and report what the suite still calls green.
  *
- * A passing test proves the code passes the test. It does not prove the test
- * would notice the code being wrong, and the difference is invisible until
- * something ships broken. This edits one character of meaning at a time --
- * a `<` into a `<=`, an `&&` into an `||`, a returned `true` into `false` --
+ * A passing test proves the code passes the test, not that the test would
+ * notice the code being wrong. This edits one character of meaning at a time,
  * runs the tests that import the file, and puts the edit back.
  *
- * A mutation the suite catches says nothing. A SURVIVOR is the finding: a
- * change to what the program does that every test agreed with.
+ * **A survivor is the finding**: a change to what the program does that every
+ * test agreed with. Not all are missing tests -- a clamp whose bound is
+ * unreachable changes no behaviour -- so read each one.
  *
- * Not every survivor is a missing test. Some mutations do not change behaviour
- * at all -- a clamp whose bound is unreachable, a guard the caller already
- * ensures -- and those are equivalent mutants, not gaps. Read each one and
- * decide; the tool cannot.
- *
- *   node tools/mutate.mjs src/model/knots.ts
- *   node tools/mutate.mjs src/core --limit 40
  *   node tools/mutate.mjs src --from 200 --limit 100
  *
- * `--from` and `--limit` cut the site list, which is in file and line order and
- * does not move between runs, so a long sweep can be taken in pieces.
+ * `--from` and `--limit` cut the site list, which is in file and line order.
+ * `--apply N` makes one mutation and stops; `git checkout` puts it back.
  *
- * `--apply N` makes mutation N and stops, which is how a survivor gets read.
- * The report says a test did not disagree; it cannot say whether anything
- * changed, and only one of those is a missing test. Put the file back with
- * `git checkout` when you have looked.
- *
- * **Not at the same time as `drive.mjs`.** The mutation is in the working tree
- * while the tests run, and the dev server serves that same tree, so a browser
- * scenario running alongside a sweep loads whichever mutation is live and
- * fails on it. Run one, then the other.
+ * **Not at the same time as `drive.mjs`**, which serves the same working tree.
  */
 
 import { readFileSync, writeFileSync, statSync, readdirSync, existsSync, rmSync } from 'node:fs';

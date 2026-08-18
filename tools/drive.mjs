@@ -117,19 +117,13 @@ async function counts(page) {
  * Wait for the editor to have drawn whatever the last action asked for.
  *
  * The controller renders one `requestAnimationFrame` after a store
- * notification, so two frames from here is past any render the event just
- * scheduled: the first is the one the controller booked, the second cannot run
- * until that one has finished. Playwright has already delivered the event and
- * run its handler by the time it returns, so there is nothing earlier to wait
- * for.
+ * notification, so two frames is past any render the event scheduled.
  *
- * This replaced most of a set of fixed sleeps. A sleep is a guess about how
- * long a machine takes, so it is either slower than it needs to be or shorter
- * than the thing it waits for, and the second one is a test that fails on a
- * loaded machine and passes on a quiet one.
+ * **Never a fixed sleep**: a guess about how long a machine takes is either
+ * slower than it needs to be or shorter than the thing it waits for.
  *
- * It is not enough where the work continues off the event: a worker, a file
- * read, an image decode. Those wait on their own result, not on a frame.
+ * Not enough where the work continues off the event -- a worker, a file read,
+ * an image decode. Those wait on their own result.
  */
 /**
  * Wait for a control to gain the tooltip that describes it, and return its id.

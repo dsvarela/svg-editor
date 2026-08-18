@@ -8,15 +8,11 @@
  * that overrides everything. That is `model/snapping.ts`'s rule applied, and it
  * is why an angle set once still loses to a vertex you can see.
  *
- * Two things here that look like details and are not. The nearest ray is found
- * by rounding the point's own angle to the nearest multiple, which is also what
- * keeps the projection in front of the origin instead of behind it. And
- * `rayAngles` walks until it has gone round rather than computing `360 / step`,
- * because a step that does not divide 360 is legal: 7 degrees gives 52 rays and
- * a final gap of 4.
- *
- * `docs/ARCHITECTURE.md` §33 has where this came from and why the origin may be
- * implicit.
+ * The nearest ray comes from rounding the point's own angle to a multiple,
+ * which is also what keeps the projection in front of the origin. `rayAngles`
+ * walks until it has gone round rather than computing `360 / step`, because a
+ * step that does not divide 360 is legal: 7 gives 52 rays and a final gap of 4.
+ * §33.
  */
 
 import type { Pt } from '../core/types';

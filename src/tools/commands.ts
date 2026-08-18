@@ -12,7 +12,7 @@
  * that genuinely crosses -- whether a drag is under way -- arrives as `busy`.
  */
 
-import { about, rotate as rotMat, translate } from '../core/affine';
+import { about, flipX, flipY, rotate as rotMat, translate } from '../core/affine';
 import type { Mat } from '../core/affine';
 import { cloneNode, cloneShape, cloneSubpath, continuityOf, segmentCount } from '../core/types';
 import type { Group, NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
@@ -254,13 +254,9 @@ export class Commands {
   /**
    * Turn the selected shapes' strokes into filled outlines.
    *
-   * The width comes from each shape's own style, because that is what is being
-   * converted -- asking for a number would let you convert a 1-unit stroke into
-   * a 4-unit outline and call it the same drawing.
-   *
-   * The result replaces the original and is filled with what the stroke was
-   * coloured, since the outline *is* the stroke. A shape with no stroke has
-   * nothing to convert and is refused rather than silently skipped.
+   * The width comes from each shape's own style, so a 1-unit stroke cannot
+   * become a 4-unit outline. The result replaces the original, filled with the
+   * stroke's colour. No stroke is refused, not skipped. §40.
    */
   strokeToPath(cap: 'butt' | 'round' = 'butt'): boolean {
     const shapes = selectedShapes(this.store.state.doc, this.store.state.selection);
@@ -1202,22 +1198,15 @@ export class Commands {
    * Delete whatever is selected. It always deletes; there is no case where it
    * quietly does less than it was asked.
    *
-   * `state.deleteMode` decides what happens to the path around the node. In
-   * `fuse`, the default, the two segments either side become one, so a pentagon
-   * becomes a quadrilateral -- what every other editor does on Delete, and what
-   * you want when simplifying. In `split` the path is left open at the gap
-   * instead, which is what you want when cutting one apart, and which is exact
-   * because no segment is rebuilt.
+   * `state.deleteMode` decides what happens to the path around the node.
+   * `fuse` makes the two segments either side into one; `split` leaves the path
+   * open at the gap, which is exact because no segment is rebuilt. Neither is
+   * `breakAtSelection`, which keeps the node and duplicates it.
    *
-   * Neither is `breakAtSelection`, on `Shift+B`: that keeps the node and
-   * duplicates it, so the drawing does not change at all. Split delete removes
-   * the node; break does not.
-   *
-   * What is left over is pruned rather than protected: a subpath below two
-   * nodes has no segments, draws nothing and serialises to nothing, so leaving
-   * one behind would be leaving an invisible shape in the document. Only
-   * subpaths this deletion actually touched are pruned -- a one-node subpath
-   * elsewhere is the pen mid-stroke and must survive.
+   * A leftover subpath below two nodes is pruned: it has no segments and
+   * serialises to nothing, so it would be an invisible shape. Only subpaths
+   * this deletion touched -- a one-node subpath elsewhere is the pen
+   * mid-stroke.
    */
   deleteSelection(): { deleted: number; blocked: number } {
     const s = this.store.state;
@@ -1510,9 +1499,9 @@ export class Commands {
       kind === 'rotate'
         ? about(rotMat(amount), cx, cy)
         : kind === 'flipH'
-          ? about([-1, 0, 0, 1, 0, 0], cx, cy)
+          ? about(flipX(), cx, cy)
           : kind === 'flipV'
-            ? about([1, 0, 0, -1, 0, 0], cx, cy)
+            ? about(flipY(), cx, cy)
             : about([amount, 0, 0, amount, 0, 0], cx, cy);
 
     const ids = new Set(targets.map((t) => t.id));
@@ -1580,22 +1569,16 @@ export class Commands {
   /**
    * Put the selected shapes into one shape, without touching their geometry.
    *
-   * The quiet relative of the booleans, and the one people reach for without
-   * knowing it. `Unite` asks what region the shapes cover and rebuilds the
-   * outline from the answer, which destroys every node that fell inside. This
-   * moves the paths and changes nothing about them, so a ring inside a disc
-   * stays two rings and the fill rule decides whether the middle is a hole.
-   * That is the only way to draw a hole here, and no boolean produces one.
+   * Where `Unite` rebuilds the outline and destroys every node that fell
+   * inside, this moves the paths and changes nothing about them. So a ring
+   * inside a disc stays two rings and the fill rule decides whether the middle
+   * is a hole -- the only way to draw one here.
    *
-   * Labelled **Make one shape**, not "Make path". `STYLE.md` reserves "path"
-   * for one continuous run of nodes and "shape" for one entry in the Shapes
-   * list, and this makes one shape out of several paths. A button called Make
-   * path that produces a shape teaches the wrong noun in the one place the
-   * reader is paying attention.
+   * Labelled **Make one shape**, not "Make path": `docs/STYLE.md` reserves
+   * "path" for a run of nodes and "shape" for a row in the list.
    *
-   * Same conventions as `booleanSelection`, deliberately: whole shapes only,
-   * document order, the bottom-most survives with its id, name and style. A
-   * sibling that differed for no reason would read as carelessness.
+   * Same conventions as `booleanSelection`: whole shapes only, document order,
+   * bottom-most survives with its id, name and style.
    */
   makeOneShape(): { ok: boolean; message: string } {
     const s = this.store.state;
@@ -1656,23 +1639,16 @@ export class Commands {
    * Give every path in the selected shapes a shape of its own.
    *
    * The inverse of `makeOneShape`, and the reason that one is safe to use.
-   * Without it the only way back out is undo, which stops being an option the
-   * moment you do anything else, and a door that only opens one way is a trap
-   * however useful the room behind it.
-   *
-   * Not an exact inverse, and cannot be. Splitting a shape that was never made
-   * by combining still works, and `Make one shape` afterwards will not restore
-   * a name or a colour that this discarded. Undo is the exact inverse; this is
-   * the useful one.
+   * Not an exact inverse and cannot be: this works on a shape that was never
+   * combined, and cannot restore a name or colour it discarded. Undo is the
+   * exact inverse.
    *
    * Each new shape takes the original's style, so a ring split out of an
-   * even-odd shape stops being a hole and becomes a filled disc. Nothing else
-   * is honest: a hole is a relationship between two paths in one shape, and
-   * once they are in two shapes the relationship is gone.
+   * even-odd shape becomes a filled disc. A hole is a relationship between two
+   * paths in one shape, and in two shapes there is no relationship left.
    *
-   * The original keeps its id, name and first path, and the rest are inserted
-   * directly behind it so paint order does not change. Same rule as the
-   * booleans and `makeOneShape`, where the first also survives.
+   * The original keeps its id, name and first path; the rest go directly behind
+   * it, so paint order does not change.
    */
   splitShapes(): { ok: boolean; message: string } {
     const s = this.store.state;

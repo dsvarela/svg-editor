@@ -327,26 +327,16 @@ export class Controller {
   /**
    * The lattice shift in force, or zero when pixel-fit is off or undecidable.
    *
-   * **A drawing tool asks the pending style, not the selection.** That one line
-   * is the whole fix for a defect worth stating: `phaseInForce` prefers what is
-   * selected, and a create drag *replaces the selection with the shape it just
-   * made*. So drawing a rectangle while an unstroked shape happened to be
-   * selected snapped the first corner on that shape's lattice and every later
-   * corner on the new shape's, giving a rectangle 20.5 units wide -- two edges
-   * on whole pixels and two not, the exact failure §25 exists to prevent. The
-   * drawn grid moved with it, leaving the committed corner on no gridline.
+   * **A drawing tool asks the pending style, not the selection.**
+   * `phaseInForce` prefers what is selected and a create drag replaces the
+   * selection with the shape it just made, so the phase would change partway
+   * through the gesture: two corners on one lattice and two on another gives a
+   * rectangle 20.5 units wide, which is the failure §25 exists to prevent.
    *
-   * Asking the pending style makes the answer constant for the length of the
-   * gesture, because a tool that is drawing is asking about a shape that does
-   * not exist yet and the pending style is the only honest description of it.
-   *
-   * **There is deliberately no freeze-at-the-press.** One was written first, on
-   * the transform box's principle of capturing at the press. Then it was
-   * measured: with the rule above in place, removing the freeze changed nothing
-   * on any test, because nothing else moves the phase mid-gesture -- a node drag
-   * does not alter the selection, and shape and backdrop drags snap a
-   * displacement, which is phase-invariant. Keeping a guard that cannot be shown
-   * to do anything is the habit this project keeps catching itself in.
+   * **No freeze-at-the-press**, measured rather than assumed: with the rule
+   * above, removing the freeze changed no test. Nothing else moves the phase
+   * mid-gesture, since a node drag does not alter the selection and shape drags
+   * snap a displacement, which is phase-invariant.
    */
   phase(): number {
     const s = this.store.state;
@@ -389,9 +379,7 @@ export class Controller {
    * The guides worth aiming at, which never includes the one being dragged.
    *
    * A guide lies on itself at distance zero, so without the exclusion the first
-   * move would pin it where it already is and it could never be moved again --
-   * the same trap boundary snapping hit with the segments either side of a
-   * dragged node, arriving from a different direction.
+   * move pins it where it already is and it can never be moved again. §31.
    */
   private guideTargets(exclude?: number): Guide[] | undefined {
     const s = this.store.state;
@@ -748,15 +736,12 @@ export class Controller {
   /**
    * Zoom and pan from two fingers moving.
    *
-   * Both at once, because they are one gesture: spreading the fingers zooms in
-   * about the point between them, and moving that point drags the drawing with
-   * it. Doing only the zoom would pin the view to wherever the pinch started,
-   * which on a screen the size of a hand is most of the way to unusable.
+   * One gesture, so both at once: spreading zooms about the point between the
+   * fingers, moving that point pans.
    *
-   * The order matters. The zoom is taken about the document point under the old
-   * midpoint, which leaves that point exactly where it was on screen; the pan
-   * afterwards is then a screen distance in the new scale. Zooming about the
-   * new midpoint instead would move the drawing twice.
+   * **Zoom about the old midpoint, then pan.** That leaves the point under the
+   * fingers where it was and makes the pan a screen distance in the new scale.
+   * About the new midpoint the drawing moves twice. §42.
    */
   private pinchMove(): void {
     const now = this.spread();
@@ -1202,13 +1187,10 @@ export class Controller {
         const raw: Pt = [p[0] - d.from[0], p[1] - d.from[1]];
         const grid: Pt = s2.snapToGrid && s2.gridStep > 0 ? snapTo(raw, s2.gridStep) : raw;
 
-        /* Alignment beats the lattice on whichever axis it found something,
-           and leaves the other axis to the grid. Same reasoning as the snap
-           tiers: a line you can see beats a lattice you cannot, and here you
-           can literally see it, because holding the alignment is what draws
-           it. Computed from the raw translation rather than the snapped one,
-           so the grid does not first pull the box off the edge it was about
-           to meet. */
+        /* Alignment beats the lattice on whichever axis it found something and
+           leaves the other to the grid. Computed from the raw translation, not
+           the snapped one, or the grid pulls the box off the edge it was about
+           to meet. §32. */
         const align =
           s2.smartGuides && d.box
             ? alignmentsFor(

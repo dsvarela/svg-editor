@@ -3,24 +3,16 @@
  *
  * The tokenizer is adapted from Yann Armelin's svg-path-editor
  * (https://github.com/Yqnn/svg-path-editor, `src/lib/path-parser.ts`,
- * Apache-2.0). Its grammar table is a faithful reading of the SVG 1.1 BNF and
- * gets right the two things hand-rolled path parsers almost always get wrong:
+ * Apache-2.0), whose grammar table is a faithful reading of the SVG 1.1 BNF.
+ * Two things it gets right that hand-rolled parsers miss: `M x y x y` is an `M`
+ * and an implicit `L`, and **arc flags are single characters**, so `a1 1 0 011
+ * 1` has seven parameters rather than five numbers.
  *
- *   1. Implicit command repetition, including `M x y x y` meaning an `M`
- *      followed by an implicit `L` -- not a second `M`.
- *   2. Arc flags are single characters, so `a1 1 0 011 1` is
- *      rx=1 ry=1 rot=0 large=0 sweep=1 x=1 y=1 -- not five separate numbers.
- *      Matching flags with a general number regex silently mis-parses any
- *      minified path containing arcs.
+ * Sticky regexes with `lastIndex` rather than `slice().match()`, which is
+ * quadratic on the hundreds of kilobytes map and font data reach.
  *
- * Changed here: the original does `path.slice(cursor).match(re)` on every
- * token, allocating a fresh substring each time -- quadratic on long paths, and
- * map or font data reaches hundreds of kilobytes. Sticky regexes with
- * `lastIndex` match in place instead.
- *
- * Everything downstream of `parse()` is ours: rather than instantiating a class
- * per command, we resolve shorthands, elevate quadratics, flatten arcs, and emit
- * plain nodes.
+ * Downstream of `parse()` is ours: shorthands resolved, quadratics elevated,
+ * arcs flattened, plain nodes out.
  */
 
 import { cubicIsLine, quadToCubic } from './bezier';

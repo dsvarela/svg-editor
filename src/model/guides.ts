@@ -1,23 +1,13 @@
 /**
  * Guides: straight lines you place, and then aim at.
  *
- * **A guide is axis-aligned and infinite.** Not a segment with ends, and not
- * angled: a ruler cannot produce an angled line, and one would want a placement
- * interface of its own. `axis` names the coordinate the guide holds fixed,
- * which is the reading that stays true said out loud -- an `x` guide fixes x,
- * so it draws as a vertical line.
+ * **Axis-aligned and infinite**, because a ruler cannot produce an angled line.
+ * `axis` names the coordinate the guide holds fixed, so an `x` guide draws as a
+ * vertical line.
  *
- * **It is stored, and therefore undoable**, where a keyline is a function of the
- * page and has nothing to undo. That puts guides in the history beside the
- * backdrop rather than among the view switches beside the grid, and out of `Doc`
- * for the two reasons the backdrop is: the export is built from the model, so a
- * guide the model does not carry cannot reach a file; and Apply in the source
- * box replaces the document wholesale, which would throw guides away as a side
- * effect of editing path text.
- *
- * `docs/ARCHITECTURE.md` §31 has the rest: the two snap tiers a guide answers,
- * why `moveGuide` leaves duplicates for `settleGuide` to merge on release, and
- * why a dragged guide is kept out of its own snap targets.
+ * **Stored, and therefore undoable**, where a keyline is a function of the page
+ * and has nothing to undo. Out of `Doc` for the two reasons the backdrop is: it
+ * cannot reach a file, and Apply cannot throw it away. §31.
  */
 
 import type { Pt } from '../core/types';
@@ -67,12 +57,9 @@ export function moveGuide(list: Guide[], i: number, at: number): boolean {
 /**
  * Once a drag is over, drop the guide at `i` if it landed on another one.
  *
- * Deliberately not part of `moveGuide`. Removing it mid-drag would splice the
- * list under the gesture that is holding an index into it, so the drag would
- * carry on moving whichever guide inherited the index -- and passing over
- * another guide is a thing a drag does on its way somewhere else, not a
- * decision. Two in one place is allowed while the pointer is down and settled
- * on release, which is the only moment the answer is known.
+ * Not part of `moveGuide`: splicing mid-drag moves the index out from under the
+ * gesture holding it. Two in one place is allowed while the pointer is down.
+ * §31 of `docs/ARCHITECTURE.md`.
  */
 export function settleGuide(list: Guide[], i: number): boolean {
   const g = list[i];

@@ -126,12 +126,10 @@ export function rectSubpath(x: number, y: number, w: number, h: number, r = 0): 
   n[7].hOut = [x0, ty - k];
   n[0].hIn = [lx - k, y0];
 
-  /* Emit a vanished side's two tangent points as one node. Leaving both put two
-     anchors on the same point and a zero-length command in the exported path,
-     and a path carrying one can never be simplified again: a zero chord gives
-     the fitter no tangent. The pairs are the even-indexed sides, and the
-     survivor takes the arc handle from each direction, which is right
-     geometrically too -- the two arcs meet, so they share the point. */
+  /* A vanished side's two tangent points become one node, taking the arc handle
+     from each direction. Two anchors on one point is a zero-length command that
+     can never be simplified again: a zero chord gives the fitter no tangent.
+     §23. */
   const nodes: PathNode[] = [];
   for (let i = 0; i < 8; i += 2) {
     const a = n[i];

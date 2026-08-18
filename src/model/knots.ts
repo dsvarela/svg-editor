@@ -1,34 +1,19 @@
 /**
- * Remove nodes that are not doing anything.
+ * Remove nodes that are not doing anything: knot removal at `t = 3`.
  *
- * The removal half of Simplify, and the half that always runs. A path of cubic
- * Beziers is a cubic B-spline whose interior knots all have multiplicity equal
- * to the degree, so taking a node out is knot removal at `t = 3`. It is legal
- * exactly when the path is `C3` across the node, which for a cubic means the
- * two segments are pieces of one cubic.
+ * Legal exactly where the path is `C3` across the node, which needs no special
+ * cases -- a corner is `C0` and stays, and collinear nodes fall out of the same
+ * test.
  *
- * That single test needs no special cases. A corner is `C0` and stays. A node
- * from a double-click is `C3` and goes. A node nudged slightly off is nearly
- * `C3`, and how nearly is its price. Collinear nodes fall out of it rather than
- * needing a rule of their own.
+ * **The knot vector comes from the handles**, because a Bezier path carries
+ * none and removability depends on the parameterisation. Splitting at `t`
+ * scales the join handles by `t` and `1 - t`, so `t = a / (a + b)` recovers it.
  *
- * **The knot vector comes from the handles.** Tiller assumes one is given, and a
- * Bezier path carries none, so which nodes are removable depends on the
- * parameterisation: a cubic split at 0.3 is `C3` under knots spaced 0.3 to 0.7
- * and merely `C1` under uniform ones. Splitting at `t` scales the join handles
- * by `t` on the left and `1 - t` on the right, so `t = a / (a + b)` recovers it
- * exactly at any split position. Verified to 7e-15 on control points.
+ * **Local and closed-form**, no sampling or iteration: sampling and projecting
+ * each candidate costs 156 ms on 2000 nodes, measured.
  *
- * **Keep it local and closed-form.** A handful of arithmetic per node, no
- * sampling, no projection, no iteration. Sampling each candidate and projecting
- * the samples costs 156 ms on 2000 nodes, measured.
- *
- * `docs/ARCHITECTURE.md` §19 carries the rest: why a resampler cannot do this
- * job, why the cost is the maximum of three disagreements rather than Tiller's
- * bound alone, why removals are spread within a bucket instead of taken
- * cheapest-first, and why the pass cap is 24. Piegl and Tiller, *The NURBS
- * Book*, section 5.4 has the removability condition and the inward-from-both-
- * ends reconstruction.
+ * §19 of `docs/ARCHITECTURE.md` has the rest. Piegl and Tiller, *The NURBS
+ * Book*, 5.4 has the removability condition.
  */
 
 import { cubicAt } from '../core/bezier';
@@ -169,30 +154,6 @@ export interface RemovalResult {
 }
 
 /**
- * Take out every node whose removal costs less than `tol`.
- *
- * Ordering follows Lyche and Morken rather than a plain heap. Sorting by cost
- * and taking the cheapest first "does not work for a circle where all weights
- * are approximately equal": a uniformly subdivided ring has identical costs
- * everywhere, and strict order eats it from one end, leaving a shape that is
- * dense on one side and bare on the other. Their fix is to bucket the costs by
- * powers of two of the tolerance and spread the removals across each bucket,
- * which is what `pickSpread` does.
- *
- * Costs are recomputed each pass rather than tracked incrementally, because a
- * removal changes both its neighbours' handles and therefore their prices.
- *
- * The paper advises capping the passes at five, and that advice does not
- * transfer. Their pass removes many knots at once through a binary search on
- * the count; this one takes no two adjacent nodes in a round, so it removes at
- * most every other candidate and needs about log2(n) rounds. Measured on a ring
- * subdivided repeatedly: 64 nodes reach the answer in five passes, 128 need six
- * and 256 need seven, and a cap of five left 128 nodes stranded at 5 and 256 at
- * 9 when the answer was 4 in both cases. The cap here is a runaway guard, not a
- * budget. It costs nothing to raise: each pass has half the nodes of the one
- * before, so the whole loop is under twice the work of the first pass.
- */
-/**
  * Bucket priced nodes by how many doublings their cost is above the cheapest.
  *
  * The partition `reduceToCount` and `keepOnly` share. Neither has a tolerance
@@ -240,6 +201,19 @@ function pickRemovals(buckets: Map<number, number[]>, n: number, keepAtLeast: nu
   return doomed;
 }
 
+/**
+ * Take out every node whose removal costs less than `tol`.
+ *
+ * Ordering follows Lyche and Morken: cheapest-first "does not work for a circle
+ * where all weights are approximately equal", because strict order eats a
+ * uniform ring from one end. `pickSpread` buckets by powers of two of the
+ * tolerance and spreads removals across each bucket. Costs are recomputed each
+ * pass, since a removal reprices both neighbours.
+ *
+ * **Their cap of five passes does not transfer**: this takes no two adjacent
+ * nodes per round, so it needs about log2(n). Five stranded 256 nodes at 9
+ * where the answer was 4, so the cap here is a runaway guard.
+ */
 export function removeRedundantNodes(sp: Subpath, tol: number, maxPasses = 24): RemovalResult {
   const before = sp.nodes.length;
   let worst = 0;
@@ -361,11 +335,6 @@ function applyMerge(sp: Subpath, i: number, cubic: Cubic): void {
  */
 export const invisibleAt = (decimals: number): number =>
   0.5 * Math.pow(10, -Math.max(0, Math.min(9, decimals)));
-
-/** Convenience: nodes that cannot affect the exported file, at any tolerance. */
-export function removeInvisibleNodes(sp: Subpath, decimals: number): RemovalResult {
-  return removeRedundantNodes(sp, invisibleAt(decimals));
-}
 
 /**
  * Remove nodes until only `target` are left, whatever it costs.

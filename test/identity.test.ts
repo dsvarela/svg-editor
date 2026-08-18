@@ -17,7 +17,8 @@
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
-import { emptyDoc, emptySelection, nodeIdAt, resolveNodes, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, emptySelection, resolveNodes, shapeFromPath } from '../src/model/doc';
+import { nodeIdAt } from './helpers';
 import { breakAt } from '../src/model/ops';
 import type { Doc } from '../src/core/types';
 

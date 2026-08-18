@@ -18,9 +18,8 @@ import type { Doc, ViewBox } from '../core/types';
 /**
  * The document as a URI a browser can draw.
  *
- * Written with the document's own output settings, so a preview shows what the
- * exported file draws rather than what the editor holds. Dropping decimals to
- * nothing visibly rounds the drawing, and seeing that is the point.
+ * Written with the output settings, so this shows what the exported file draws
+ * rather than what the editor holds. §53 of `docs/ARCHITECTURE.md`.
  */
 export function svgDataUri(doc: Doc, o: ExportOptions = {}): string {
   /* Percent-encoded rather than pasted in raw: a data URI ends at the first
@@ -44,14 +43,11 @@ export function pngSize(vb: ViewBox, width: number): { w: number; h: number } {
 }
 
 /**
- * Draw the document into a PNG of the given width.
+ * Draw the document into a PNG of the given width. Background stays
+ * transparent.
  *
- * The background stays transparent, which is what an icon wants and what the
- * SVG itself says: nothing is painted where no shape is.
- *
- * Rejects rather than resolving with a blank image when the browser declines to
- * decode or to encode. A silently empty PNG is the worst outcome available --
- * the download succeeds and the file is blank.
+ * Rejects rather than resolving blank when the browser declines to decode or
+ * encode: a blank PNG downloads successfully and is found later. §53.
  */
 export async function renderPng(doc: Doc, width: number, o: ExportOptions = {}): Promise<Blob> {
   const { w, h } = pngSize(doc.viewBox, width);

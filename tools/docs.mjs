@@ -2,44 +2,19 @@
 /**
  * The checks on the documentation that a machine can settle.
  *
- * Two of them. The tell sweep from `docs/STYLE.md`, whose "before it ships" list
- * ended with "search for the em-dash and the banned vocabulary" and was
- * therefore skipped, which is why three reviews in a row found user-facing text
- * breaking the rule. And the links, because the docs tree was rearranged on
- * 2026-08-12 and ten links were repaired by hand, which is the operation a
- * checker exists to catch.
+ * Two of them: the tell sweep from `docs/STYLE.md`, and every link in the docs
+ * tree.
  *
- * ## What is an error and what is a warning
+ * **Errors** exit non-zero and need no judgement: a link resolves or it does
+ * not. **Warnings** need a person, because every banned word has a legitimate
+ * sense, and failing the build on those trains everyone to pass `--force`.
  *
- * **Errors** are decidable without judgement, and exit non-zero. A link either
- * resolves or it does not. An em-dash is either in user-facing text or it is
- * not, and STYLE.md names exactly which documents are exempt.
+ * **The word list is parsed out of STYLE.md**, the document people read; a copy
+ * here drifted within the hour. An empty parse is a hard failure, since
+ * reformatting that section breaks it.
  *
- * **Warnings** need a person. Every banned word has a legitimate sense: "just
- * outside a corner" is spatial, "actually stored" is contrastive, and the test
- * harness is a harness. Making those fail the build would train everyone to
- * pass `--force`, so they are printed with their line and left alone.
- *
- * ## Why the word list is read out of STYLE.md
- *
- * It was duplicated here first, and the duplicate was wrong within the hour:
- * this file grew `harness` and `landscape`, which STYLE.md does not ban, and the
- * two lists would have drifted apart for as long as anyone kept editing either.
- * STYLE.md is the document people read, so STYLE.md is where the list lives, and
- * this parses it. The cost is that reformatting the vocabulary section breaks
- * the parse, which is why an empty list is a hard failure rather than a quiet
- * pass.
- *
- * ## What this does not check
- *
- * The status-line rules (sentence case, full stop, two sentences) are not
- * checked. Deciding which string literal reaches a user needs the call graph,
- * and a checker that guesses would either miss most of them or shout about
- * every internal string. Those stay a reading job.
- *
- * External URLs are not fetched. A link checker that makes network calls fails
- * on a train, and a check that fails for reasons unrelated to the change gets
- * turned off.
+ * Not checked: the status-line rules, which need the call graph, and external
+ * URLs, because a checker that makes network calls fails on a train.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';

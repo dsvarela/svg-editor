@@ -105,25 +105,16 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
 /**
  * What to tick and what to label on a ruler, along one axis.
  *
- * A ruler is a measurement scale, not a claim about snapping, so unlike the
- * grid it exists when there is no snap step -- the axes take the same position
- * for the same reason. When there *is* a grid it borrows that grid's step and
- * labels on its major lines, so the numbers along the edge fall on lines drawn
- * across the canvas instead of running past them at their own rhythm.
+ * A ruler is a measurement scale rather than a claim about snapping, so it
+ * exists with no snap step. Where there is a grid it borrows that grid's step
+ * and labels its major lines, so the edge numbers fall on lines drawn across
+ * the canvas.
  *
- * **One axis at a time.** `span` is the camera's extent along the strip and
- * `lengthPx` is the strip's own length in pixels, because the two rulers do not
- * measure the same thing: handing this the camera and letting it read `camera.w`
- * made the vertical ruler compute its spacing from the horizontal span, which is
- * out by the aspect ratio. It survived a screenshot because the 1-2-5 ladder
- * quantises both to the same rung at most zooms; on a 1290 by 772 stage the two
- * disagree first at a camera 129 units wide, where the ruler ticks every 2 and
- * the grid draws every 1.
+ * **One axis at a time.** `span` and `lengthPx` are the strip's own, never the
+ * camera's: reading `camera.w` gives the vertical ruler the horizontal span,
+ * out by the aspect ratio. The 1-2-5 ladder hides it at most zooms.
  *
- * `minPx` defaults to the grid's own, so borrowing the grid's step actually
- * agrees with what the grid drew. Asking for a finer minimum here would have
- * produced ruler ticks between the drawn lines, which is the disagreement this
- * exists to avoid.
+ * `minPx` defaults to the grid's, or ruler ticks land between drawn lines.
  */
 export function rulerTicksFor(
   snapStep: number,
@@ -145,23 +136,15 @@ export function rulerTicksFor(
 /**
  * Choose what grid to draw, given the step the editor actually snaps to.
  *
- * **Every drawn line is a snap position.** That is the whole contract, and the
- * reason this takes `snapStep` rather than deriving a step from the camera
- * alone. Draw an adaptive decade step while the tools snap to the user's fixed
- * step and at most zoom levels you are aiming at a lattice that is not on
- * screen, which undermines the premise of a grid editor.
+ * **Every drawn line is a snap position**, which is why this takes `snapStep`
+ * rather than deriving one from the camera. Zooming out thins the grid to every
+ * 2nd, 5th, 10th snap position rather than changing lattice, and zooming in
+ * stops at multiple 1: some snap positions stop being drawn, but nothing drawn
+ * is ever un-snappable.
  *
- * Zooming out therefore thins the grid to every 2nd, 5th, 10th … snap position
- * rather than switching to a different lattice: some snap positions stop being
- * drawn, but nothing drawn is ever un-snappable. Zooming in stops at multiple
- * 1, because subdividing further would draw lines you cannot snap to, which is
- * the same lie in the other direction.
- *
- * Returns `null` when there is nothing honest to draw — no snap step, or no
- * measured width yet.
- *
- * The 1-2-5 ladder and the `minPx` idea come from svg-path-editor's
- * `refreshGrid` (Apache-2.0); the anchoring to the snap step does not.
+ * `null` when there is nothing honest to draw. The 1-2-5 ladder and `minPx`
+ * come from svg-path-editor's `refreshGrid` (Apache-2.0); the anchoring to the
+ * snap step does not. §9.
  */
 export function gridDisplayFor(
   snapStep: number,

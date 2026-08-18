@@ -6,22 +6,14 @@
  *
  *     x ≡ w/2  (mod 1)
  *
- * Half-integers for a width of 1 or 3, integers for 2 or 4, zero phase for a
- * shape with no stroke at all. That is the ordinary lattice shifted by a
- * **phase**, not a second kind of snapping, which is why `snap` takes one
- * optional argument and nothing else had to change.
+ * Half-integers for a width of 1 or 3, integers for 2 or 4, zero with no
+ * stroke. That is the ordinary lattice shifted by a **phase**, not a second
+ * kind of snapping, which is why `snap` took one optional argument.
  *
- * **One phase is in force at a time, and both callers read it from here.** The
- * phase belongs to a shape's stroke width, so shapes of different widths want
- * different lattices. §9's rule is that every drawn gridline is a position the
- * pointer can land on, and a grid drawn unshifted while the tools snap shifted
- * breaks that in the least visible way there is: half a pixel, on a lattice
- * nobody would think to check. `phaseInForce` is called by the snapper and by
- * the grid renderer, so there is nothing for them to keep in sync.
- *
- * `docs/ARCHITECTURE.md` §25 has the rest: why a mixed-width selection returns
- * `null` instead of choosing a lattice, and why a fractional width can only
- * ever align one of its two edges.
+ * **One phase at a time, and both callers read it from `phaseInForce`.** §9
+ * wants every drawn gridline to be a position the pointer can reach, and a grid
+ * drawn unshifted while the tools snap shifted breaks that by half a pixel, on
+ * a lattice nobody would check. §25.
  */
 
 import { findShape, resolveNodes } from './doc';

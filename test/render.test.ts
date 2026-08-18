@@ -15,7 +15,8 @@ import { Controller } from '../src/tools/controller';
 import { Commands } from '../src/tools/commands';
 import { bindKeys } from '../src/tools/keys';
 import { Store } from '../src/model/store';
-import { emptyDoc, nodeIdAt, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, shapeFromPath } from '../src/model/doc';
+import { nodeIdAt } from './helpers';
 import { parsePath } from '../src/core/parse';
 import { exportSvg } from '../src/io/svg';
 

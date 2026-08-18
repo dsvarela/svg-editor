@@ -1,32 +1,15 @@
 /**
  * The icon keyline grid: a circle, a square and two rectangles, centred.
  *
- * Material's 24dp system-icon grid, held as ratios because a document here is
- * whatever size someone made it:
+ * Material's 24dp system-icon grid as ratios rather than units, all exact in
+ * thirds and sixths, so any canvas size reproduces it. The five are below.
  *
- *   live area           20 of 24, so 2 of padding on every side
- *   square              18 x 18
- *   circle              20 across
- *   vertical rectangle  16 x 20
- *   horizontal          20 x 16
+ * **Square even when the canvas is not**, inscribed on the shorter side: a
+ * circle stretched to an 88 by 64 page is not round.
  *
- * Every one of those is exact in thirds and sixths -- 20/24 is 5/6, 18/24 is
- * 3/4, 16/24 is 2/3 -- so a 24-unit canvas reproduces the published grid to the
- * unit and a 48-unit one doubles it. Hard-coding 18 and 20 would work on one
- * document size only.
- *
- * **The grid is square even when the canvas is not**, inscribed on the shorter
- * side and centred. Stretching the set to an 88 by 64 page puts the circle out
- * of round, and a circle that is not round is not the thing the grid exists to
- * give you.
- *
- * **Nothing here is part of `Doc`.** The subpaths are built on demand from the
- * viewBox, so there is no state to keep in step with the canvas and no path at
- * all from a keyline to an exported file. They are real `Subpath`s even so,
- * which is what lets the snapper treat them as targets like any other outline.
- *
- * `docs/ARCHITECTURE.md` §30 has why this is derived where the backdrop, which
- * looks like the same question, is stored.
+ * **Not part of `Doc`.** Built on demand from the viewBox, so nothing has to be
+ * kept in step and no keyline can reach an exported file. Real `Subpath`s even
+ * so, which is what lets the snapper treat them as targets. §30.
  */
 
 import { ellipseSubpath, rectSubpath } from '../core/primitives';

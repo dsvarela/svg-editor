@@ -197,6 +197,14 @@ between the engines.** Each looked like the second and was the first:
   A 10 ms interval measuring its own lateness reads 800 ms on a thread blocked
   for 800, on both engines, over an 11 ms idle floor.
 
+**No source file may contain a NUL byte.** `rg` treats one as binary and skips
+the whole file, and three of this project's own instruments run on `rg`:
+`code/unreached.mjs` reported every name in `src/model/snapping.ts` as
+unreferenced because it could not read the file that used them. The sentinel
+that caused it is `#guides` now. Any id that cannot collide works, because every
+shape id comes from `nextId` as `prefix-n` and an imported `id` attribute becomes
+the shape's name rather than its id.
+
 **Nothing may edit `src/` while `npm run drive` is running.** The dev server
 reloads the page on a save, and a scenario mid-step dies with `Execution context
 was destroyed, most likely because of a navigation`. That message means an edit

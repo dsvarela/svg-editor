@@ -9,15 +9,9 @@
  * takes boxes and returns an offset, and the priority rule in
  * `model/snapping.ts` has nothing here to arbitrate.
  *
- * Nine candidates per axis: each of the moving box's near edge, centre and far
- * edge against each of the static box's three. Comparing only like with like
- * would miss butting one shape's left against another's right, and it is why a
- * shape can line up with another's centre without either being centred on
- * anything.
- *
- * `docs/ARCHITECTURE.md` §32 has what this file cannot show: why the page counts
- * as a static box, why the caller freezes the moving box at the press, and which
- * gestures are not covered at all.
+ * Nine candidates per axis, every edge and centre of the moving box against
+ * every edge and centre of the static one. Like against like alone would miss
+ * butting one shape's left to another's right. §32.
  */
 
 import type { Box } from '../core/bezier';

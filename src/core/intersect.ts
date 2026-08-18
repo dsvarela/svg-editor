@@ -1,17 +1,9 @@
 /**
- * Where two cubics cross.
+ * Where two cubics cross, by subdivision on the control hulls.
  *
- * By recursive subdivision on the control hulls, not algebraically. A cubic
- * against a cubic is a degree-9 polynomial system, and the closed forms for it
- * are famously unstable near tangency -- which is exactly the case that matters
- * here, because two curves that nearly touch are two curves someone is trying
- * to snap to. Subdivision has no such cliff: a Bézier lies inside the box of
- * its control points, so two boxes that do not overlap contain no crossing, and
- * halving until the boxes are smaller than the tolerance converges on every
- * crossing at the same rate whatever the angle between them.
- *
- * The cost is that a tangency reports a small cluster rather than one point,
- * which is why the results are merged at the end.
+ * A tangency reports a cluster rather than one point, which is why the results
+ * are merged at the end. §34 of `docs/ARCHITECTURE.md` argues subdivision
+ * against the algebraic form.
  */
 
 import type { Cubic, Pt } from './types';

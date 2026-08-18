@@ -156,17 +156,12 @@ window.addEventListener('keydown', (e) => {
 /* ------------------------------------------------------------ rail tabs */
 
 /**
- * Three tabs over eleven groups, because a single scrolling column had become
- * a list to hunt through rather than a panel to read.
+ * Three tabs over eleven groups, split by what a control acts on: a shape, a
+ * node, or the document.
  *
- * The split is by what a control acts on: a whole shape, a node, or the
- * document. Nothing switches tab on its own. An inspector that jumped to Node
- * the moment you clicked a point would move the button you were reaching for,
- * and the cost of a wrong guess is higher than the cost of one click.
- *
- * `hidden` rather than a class, so a control in a tab you cannot see is also out
- * of the tab order and out of the accessibility tree, the same reasoning as
- * `inert` on a closed panel.
+ * Nothing switches tab on its own -- a panel that jumps moves the button you
+ * are reaching for. `hidden` rather than a class, so a control you cannot see
+ * is out of the tab order too. §22 of `docs/ARCHITECTURE.md`.
  */
 const tabs = [...document.querySelectorAll<HTMLButtonElement>('.tab')];
 
@@ -780,15 +775,11 @@ document.querySelectorAll<HTMLButtonElement>('[data-di]').forEach((b) =>
   b.addEventListener('click', () => commands.distributeSelection(b.getAttribute('data-di') as 'h' | 'v')),
 );
 
-/* The selection's box as four numbers, committed on `change` rather than
-   streamed on `input` like the canvas fields above.
-
-   The matrix is derived from the box as it is, every time, so a stream of
-   keystrokes would scale from each intermediate width to the next. That reaches
-   the right answer, but it passes through the widths a half-typed number spells:
-   typing 120 squashes the selection to 1 unit wide on the way, and a selection
-   already below `FLAT` on an axis cannot be scaled back. One edit per committed
-   value avoids the whole question. */
+/* Committed on `change`, not streamed on `input` like the canvas fields above.
+   The matrix is derived from the box each time, so a stream of keystrokes
+   scales through the widths a half-typed number spells: typing 120 passes
+   through 1, and a selection below `FLAT` on an axis cannot be scaled back.
+   §52. */
 const boundFields: [string, 'x' | 'y' | 'w' | 'h'][] = [
   ['#selX', 'x'],
   ['#selY', 'y'],
@@ -1261,10 +1252,9 @@ function refreshPreview(): void {
      the same position for the same reason: a panel nobody is looking at should
      not cost a redraw.
 
-     Held still during a drag as well. Pointing an `<img>` at a new data URI is a
-     parse and a raster of the whole document, four times over, and doing that on
-     every pointermove stutters the drag it is meant to illustrate. The drag ends
-     with a notification like any other, which is what redraws these. */
+     Held still during a drag too: pointing an `<img>` at a new data URI parses
+     and rasters the whole document four times over, which stutters the drag it
+     illustrates. The drag ends with a notification, which redraws these. §53. */
   if (!previewOpen() || controller.busy) return;
   const uri = svgDataUri(s.doc, { decimals: s.decimals, minify: s.minify });
   for (const [img, px] of previewImgs) {
@@ -1932,10 +1922,7 @@ function rowAtCursor(rows: ListRow[]): number {
 /**
  * Whether a group reads as selected: every shape in it is.
  *
- * Derived, not stored, for the reason §47 gives about paths. A `groups` set on the
- * selection would be a second statement of the same fact, and the two would disagree
- * the first time a shape was deleted out of a selected group. It also means selecting
- * a group's shapes any other way lights the group's row.
+ * Derived rather than stored, so it cannot disagree with the shapes. §49.
  */
 function groupIsSelected(id: string): boolean {
   const ids = shapesInGroup(store.state.doc, id);
@@ -2762,16 +2749,12 @@ paintPalette();
  * -- so shutting Grid every time Guides opened would be the interface arguing
  * with the feature.
  *
- * Session state, not document state: which groups are open is how you are
- * working, so it is not in the store and not in the history, the same as which
- * panels are open. It is not persisted across a reload either, because nothing
- * in this editor is and one thing that was would be a surprise.
+ * Session state: which groups are open is how you are working, so it is not in
+ * the store, the history, or storage.
  *
- * Collapsing takes controls out of the tab order as well as off the screen,
- * because `hidden` does both -- so a shut group costs one Tab stop instead of
- * however many controls it holds. `tools/keys.mjs` is what checks that nothing
- * becomes unreachable: it walks the order and reports any live control it never
- * arrives at.
+ * `hidden` takes a shut group's controls out of the tab order as well as off
+ * the screen, so it costs one Tab stop rather than however many it holds.
+ * `tools/keys.mjs` checks nothing became unreachable. §41.
  */
 for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')) {
   const body = head.nextElementSibling as HTMLElement | null;

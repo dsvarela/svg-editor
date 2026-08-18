@@ -1,27 +1,17 @@
 /**
  * Fitting cubics through a run of points. Pure geometry, no model awareness.
  *
- * This is Schneider's algorithm from Graphics Gems (1990), the same one behind
- * Inkscape's simplify and paper.js's `Path.simplify`. It is worth knowing why a
- * least-squares fit is not enough on its own, because the two extra ideas are
- * where the quality comes from.
+ * Schneider's algorithm, Graphics Gems (1990).
  *
- * Fitting one cubic to n points needs each point to be assigned a parameter
- * along the curve. Nobody knows those parameters up front, so the first guess
- * is chord length: a point a third of the way along the polyline is assumed to
- * be at t = 1/3. That is wrong wherever the curve's speed is uneven, and the
- * error it causes looks exactly like the curve being unfittable.
+ * A least-squares solve needs each point's parameter along the curve, and the
+ * chord-length first guess is wrong wherever the curve's speed is uneven --
+ * which looks exactly like the curve being unfittable. So the solve is followed
+ * by Newton's method walking each parameter towards its true nearest point, and
+ * only when that stops helping is the run split at its worst point.
  *
- * So the fit runs twice over. First the least-squares solve, which is exact
- * given the parameters. Then, if the result is close but not close enough,
- * Newton's method walks each point's parameter towards the true nearest point
- * and the solve is repeated. Only when that stops helping is the run split at
- * its worst point and each half fitted on its own.
- *
- * Reparameterisation is skipped when the error is large, which is not an
- * optimisation. Newton's method converges towards a *local* nearest point, and
- * from far away that is as likely to be the wrong lobe of the curve as the
- * right one. Splitting is the honest answer there.
+ * **Reparameterisation is skipped when the error is large**, and not as an
+ * optimisation: Newton converges on a *local* nearest point, which from far
+ * away is as likely to be the wrong lobe. Splitting is the honest answer there.
  */
 
 import { cubicAt, cubicDerivAt, cubicSecondDerivAt } from './bezier';

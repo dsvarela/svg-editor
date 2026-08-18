@@ -1,24 +1,15 @@
 /**
  * Path data, serialised only when the geometry behind it changed.
  *
- * A render asks for each shape's `d` string twice, once for the artwork and
- * once for the overlay's hit target, and most renders follow something that
- * moved nothing. Serialising on every ask costs 112 ms of the 131 ms a render
- * takes on a traced document of 23 454 nodes, so panning, hovering and reading
- * the coordinates would all pay for rebuilding text that is already correct.
+ * Serialising on every ask costs 112 ms of the 131 ms a render takes on 23 454
+ * nodes, and most renders follow something that moved nothing.
  *
- * **Compare the numbers. Never object identity, never a revision counter.**
- * `Store.edit` and `Store.update` mutate the live document in place, so a
- * dragged node is the same `PathNode` object carrying different numbers, and
- * identity says nothing. A counter would depend on every call site that touches
- * geometry remembering to bump it, which is a contract nobody enforces and
- * whose failure mode is a canvas that silently stops matching its own model.
- *
- * Comparing is affordable enough that it needs no help: about 0.5 ms across
- * 23 454 nodes against 56 ms to serialise them, so it pays even when it fails.
- *
- * `docs/ARCHITECTURE.md` §29 has the per-render measurements behind all of
- * this, and why the comparison is exact rather than a checksum.
+ * **Compare the numbers. Never object identity, never a revision counter.** The
+ * store mutates in place, so a dragged node is the same object with different
+ * numbers. A counter would need every call site touching geometry to bump it,
+ * and its failure mode is a canvas that stops matching its own model.
+ * Comparing costs 0.5 ms against 56 ms to serialise, so it pays even when it
+ * fails. §29.
  */
 
 import { serialisePath } from '../core/serialise';
@@ -44,10 +35,9 @@ function sigLength(subpaths: Subpath[]): number {
 /**
  * Flatten the geometry a `d` string is built from, and nothing else.
  *
- * Style, id and name are excluded deliberately: they do not appear in path
- * data, so a colour change must not throw the string away. Handle presence is
- * carried as a flag rather than as `NaN` coordinates, because `NaN !== NaN`
- * would make every straight segment compare as changed for ever.
+ * Style, id and name are excluded: they are not in path data, so a colour
+ * change must not throw the string away. Handle presence is a flag, not `NaN`
+ * coordinates, or `NaN !== NaN` marks every straight segment changed. §29.
  */
 function signature(subpaths: Subpath[]): Float64Array {
   const out = new Float64Array(sigLength(subpaths));

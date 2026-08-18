@@ -31,7 +31,7 @@ import type { AlignMode } from './ops';
  */
 export type AlignTo = 'selection' | 'canvas';
 
-export const isHorizontal = (edge: AlignMode): boolean =>
+const isHorizontal = (edge: AlignMode): boolean =>
   edge === 'left' || edge === 'hcenter' || edge === 'right';
 
 /**
@@ -76,15 +76,12 @@ export const viewBoxAsBox = (vb: ViewBox): Box => ({
 /**
  * Gather the selected shapes into the things that move.
  *
- * A group whose every shape is selected is one unit, so aligning a selection
- * that includes a group slides the group about instead of collapsing it onto its
- * own left edge. Selecting only some of a group's shapes moves those on their
- * own, which is the only reading that lets you nudge one shape inside a group.
+ * A wholly selected group is one unit, so aligning slides it rather than
+ * collapsing it onto its own left edge. Part of a group moves on its own, which
+ * is what lets you nudge one shape inside one.
  *
- * The unit a shape joins is its *outermost* wholly selected ancestor. Whole-ness
- * is inherited downwards -- if every shape of a group is selected then so is
- * every shape of the groups inside it -- so the outermost is the largest thing
- * the selection can be said to have chosen.
+ * A shape joins its *outermost* wholly selected ancestor, that being the
+ * largest thing the selection can be said to have chosen. §50.
  */
 export function arrangeUnits(doc: Doc, ids: ReadonlySet<string>): Unit[] {
   const whole = new Set<string>();
@@ -149,7 +146,7 @@ const childKey = (c: Child): string => c.group ?? c.shape!.id;
  * begins. That only reads as a position because a group's shapes are contiguous,
  * so this function and §49's invariant hold each other up.
  */
-export function childrenOf(doc: Doc, parent: string | null): Child[] {
+function childrenOf(doc: Doc, parent: string | null): Child[] {
   const out: Child[] = [];
   const seen = new Set<string>();
   for (const sh of doc.shapes) {
@@ -270,7 +267,7 @@ export function unitsBox(units: Unit[]): Box | null {
 }
 
 /** Move a unit and keep its cached box true. */
-export function translateUnit(u: Unit, dx: number, dy: number): void {
+function translateUnit(u: Unit, dx: number, dy: number): void {
   if (dx === 0 && dy === 0) return;
   const m = translate(dx, dy);
   for (const sh of u.shapes) transformShape(sh, m);

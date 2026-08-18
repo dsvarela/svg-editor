@@ -48,22 +48,14 @@ export type DeleteMode = 'fuse' | 'split';
  * **Not part of `Doc`, but it is part of the history.** Those are separate
  * questions, and conflating them once cost this editor an undoable backdrop.
  *
- * Out of `Doc`, because the export is built from the model rather than from the
- * screen: a backdrop the model does not know about *cannot* leak into a saved
- * file, which is a structural guarantee rather than a rule someone has to
- * remember. And because Apply in the source box replaces the document wholesale,
- * so a backdrop living there would be thrown away as a side effect of editing
- * the path text.
+ * Out of `Doc`, so it *cannot* leak into an export and cannot be thrown away by
+ * Apply replacing the document. In the history anyway, because `src` is an
+ * object URL rather than the bytes: cloning this costs the same as cloning a
+ * node.
  *
- * In the history anyway, because the reason not to -- 200 snapshots each
- * carrying a copy of a 2 MB image -- was never true here. `src` is an object
- * URL, a sixty-character string pointing at bytes the browser holds exactly
- * once. Cloning this record costs the same as cloning a node.
- *
- * `opacity`, `visible` and `locked` are the exception: they ride along in the
- * snapshot but are overlaid with their current values on the way out. Undoing a
- * node move should not flip a checkbox you set afterwards, any more than it
- * should move the camera.
+ * `opacity`, `visible` and `locked` ride along in the snapshot but are overlaid
+ * with their current values on the way out. Undoing a node move should not flip
+ * a checkbox you set afterwards.
  */
 export interface Backdrop {
   /** Object URL for the loaded file. Revoked once no snapshot mentions it. */
@@ -447,24 +439,17 @@ export class Store {
   /**
    * Checkpoint, mutate, notify. The normal way to make a discrete change.
    *
-   * The auto-smooth sweep runs on the way out, here rather than at each site
-   * that could invalidate an auto node. Moving one, deleting one, inserting one,
-   * reversing a path, fusing two, applying a boolean: every one of them disturbs
-   * a neighbour, and each would otherwise have to work out which indices it
-   * touched. Getting that wrong leaves a stale handle, which reads as a
-   * rendering bug rather than as a missed call. It is one pass over nodes that
-   * are about to be walked to redraw anyway, and it skips every node in one
-   * comparison.
+   * The auto-smooth sweep runs here rather than at each of the several sites
+   * that can disturb an auto node's neighbour, because a site that gets its
+   * indices wrong leaves a stale handle that reads as a rendering bug. One pass
+   * over nodes about to be redrawn anyway.
    *
-   * `update` deliberately does not sweep: it is for the state around the
-   * document -- camera, tool, selection -- and the geometry it would walk has
-   * not changed.
+   * `pruneGroups` is here for the same reason: eight places remove shapes, any
+   * can empty a group, and an empty group is a row in the list and a `<g>` in
+   * the export.
    *
-   * `pruneGroups` is here for the same reason and against the same alternative.
-   * Eight places remove shapes, any of them can take the last shape out of a group,
-   * and a group naming nothing shows as an empty row in the list and writes an empty
-   * `<g>` on export. It returns on its first line for a document with no groups, so
-   * it costs nothing where there are none.
+   * `update` does not sweep -- it is for camera, tool and selection, and the
+   * geometry has not changed.
    */
   edit(fn: (s: EditorState) => void): void {
     this.checkpoint();

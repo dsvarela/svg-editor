@@ -66,9 +66,6 @@ export function groupWithin(doc: Doc, id: string | null | undefined, ancestor: s
 export const shapesInGroup = (doc: Doc, id: string): Shape[] =>
   doc.shapes.filter((sh) => groupWithin(doc, sh.group, id));
 
-/** The groups directly inside `id`, or the outermost ones for `null`. */
-export const groupsDirectlyIn = (doc: Doc, id: string | null): Group[] =>
-  (doc.groups ?? []).filter((g) => (g.parent ?? null) === id);
 
 /**
  * Drop groups that hold no shapes.
@@ -133,7 +130,7 @@ export const findShape = (doc: Doc, id: string): Shape | undefined =>
 
 /* ------------------------------------------------------------------ bounds */
 
-export function subpathBBox(sp: Subpath): Box | null {
+function subpathBBox(sp: Subpath): Box | null {
   let box: Box | null = null;
   const n = segmentCount(sp);
   if (n === 0) {
@@ -182,22 +179,6 @@ export interface NodeRef {
 
 export type HandlePart = 'anchor' | 'in' | 'out';
 
-/**
- * Find where a node is now, or learn that it has gone.
- *
- * Linear in the document. Every caller that wants more than one node should ask
- * `resolveNodes` instead, which walks it once for the whole set.
- */
-export function findNode(doc: Doc, id: string): NodeRef | null {
-  for (const shape of doc.shapes) {
-    for (let sp = 0; sp < shape.subpaths.length; sp++) {
-      const i = shape.subpaths[sp].nodes.findIndex((n) => n.id === id);
-      if (i >= 0) return { shape: shape.id, sp, i };
-    }
-  }
-  return null;
-}
-
 /** The node a ref points at, if it still points at one. */
 export function nodeAt(doc: Doc, r: NodeRef): PathNode | null {
   return findShape(doc, r.shape)?.subpaths[r.sp]?.nodes[r.i] ?? null;
@@ -238,12 +219,6 @@ export function resolveNodes(doc: Doc, sel: Selection): { ref: NodeRef; pt: Pt }
  * The id of the node at a position, for the callers that have a position and
  * need an identity: a hit test, a freshly split segment, a test fixture.
  */
-export function nodeIdAt(doc: Doc, shape: string, sp: number, i: number): string {
-  const node = findShape(doc, shape)?.subpaths[sp]?.nodes[i];
-  if (!node) throw new Error(`no node at ${shape}/${sp}/${i}`);
-  return node.id;
-}
-
 /** The same, when only the positions are wanted. */
 export const selectedRefs = (doc: Doc, sel: Selection): NodeRef[] =>
   resolveNodes(doc, sel).map((r) => r.ref);

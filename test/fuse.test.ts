@@ -1,10 +1,8 @@
 /**
  * Fusing nodes, and the generators that must not need it.
  *
- * The defect being closed: two anchors on the same point export a zero-length
- * command, and a path carrying one can never be simplified again, because a zero
- * chord leaves the fitter with no tangent to work from. So every test here that
- * claims a repair also checks the repaired path can still be simplified.
+ * Every test claiming a repair also simplifies the repaired path, because a
+ * zero-length command is what makes a path unsimplifiable. §24.
  */
 
 import { describe, expect, it } from 'vitest';
