@@ -232,6 +232,9 @@ input[type='number'],
   height: var(--h);
   font: inherit;
   font-size: 12px;
+  /* 450 rather than 400: the middle rung of the ladder above, so a thing you
+     press sits between the header that names it and the value it reads. */
+  font-weight: 450;
   color: var(--ink-2);
   background: transparent;
   border: 1px solid transparent;
@@ -300,6 +303,7 @@ input[type='number'],
   height: calc(var(--h) - 2px);
   font: inherit;
   font-size: 12px;
+  font-weight: 450;
   padding: 0 10px;
   background: transparent;
   color: var(--ink-2);
@@ -307,7 +311,9 @@ input[type='number'],
   border-right: 1px solid var(--edge);
   cursor: pointer;
 }
-.seg.spread button { flex-direction: column; gap: 2px; height: auto; padding: 5px 4px 6px; font-size: 11.5px; }
+/* Its own size was 11.5px, which put a fifth step on the ladder for the sake of
+   four labels. They fit at 12 in a 64px column; `keys.mjs` and a wrap check say so. */
+.seg.spread button { flex-direction: column; gap: 2px; height: auto; padding: 5px 4px 6px; }
 #tool button { width: 30px; padding: 0; }
 .seg button:last-child { border-right: 0; }
 .seg button:hover { background: var(--sunk); color: var(--ink); }
@@ -616,37 +622,49 @@ input[type='number']:disabled { opacity: 0.4; }
 .rail::-webkit-scrollbar { width: 9px; }
 .rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; }
 
+/* The spacing ladder: 4px inside a control block, 12px between blocks, 34px and
+   a rule between groups. It was 5, 7 and 24, which is a 1.4x step between
+   related and unrelated -- too small to group anything, so the panel read as one
+   undifferentiated column. Proximity is the cheapest hierarchy there is. */
 .group {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
   width: 100%;
-  padding: 10px 13px 14px;
+  padding: 15px 14px 19px;
   border-bottom: 1px solid var(--line-soft);
 }
 .group:last-child { border-bottom: 0; padding-bottom: 24px; }
 .group.disabled { opacity: 0.42; pointer-events: none; }
 
+/* Three roles in the rail, separated by weight rather than by size: a header at
+   600, a control at 450, a value at 400. Before this the header was 10.5px and a
+   hint 11px, both at `--ink-3`, which made a section title and a throwaway
+   sentence the same typographic object. Half a pixel is not a distinction a
+   reader can use; a weight is. */
 .glabel {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.11em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 /* Only the section's own header sticks; the sub-headings inside it scroll,
    or two of them would pile up at the same offset. */
+/* The negative margin and the padding here are the group's own, inverted, so a
+   sticky header covers the full width of the panel. They have to move together. */
 .group > .glabel:first-child,
 .group > button.glabel:first-child {
   position: sticky;
   top: 0;
   z-index: 1;
-  margin: -10px -13px 0;
-  padding: 10px 13px 7px;
+  margin: -15px -14px 0;
+  padding: 15px 14px 8px;
   background: var(--panel);
 }
 /* A header that is also a button: it keeps every one of the styles above and
@@ -659,7 +677,7 @@ button.glabel {
   cursor: pointer;
   text-align: left;
 }
-button.glabel:hover { color: var(--ink-2); }
+button.glabel:hover { color: var(--ink); }
 /* The marker is the header's own state, drawn rather than written: a group with
    nothing showing has to say so, and `expanded`/`collapsed` in words would be
    two more words in a panel this is trying to take words out of. */
@@ -676,19 +694,36 @@ button.glabel::after {
 }
 button.glabel[aria-expanded='false']::after { transform: rotate(-45deg); }
 button.glabel[aria-expanded='false'] { color: var(--ink-3); }
+/* The blocks of a group live in here, not in `.group`, so this is where the
+   middle rung of the ladder has to go. It had no layout rule at all: two
+   consecutive `.grid2` blocks sat at 0px and their buttons touched, while the
+   4px inside each block made a run of rows read as one undivided slab. The
+   `[hidden]` rule below is more specific and still wins. */
+.gbody { display: flex; flex-direction: column; gap: 12px; }
 .gbody[hidden] { display: none; }
 /* Room between a shut group's header and the next one. An open group's body
    provides it; without this a run of collapsed groups reads as one block. */
 .group:has(> .gbody[hidden]) { padding-bottom: 4px; }
 
-.glabel.sub { margin-top: 7px; }
+/* A sub-heading is the same size as the group's own and lighter, so the two read
+   as two levels. The asymmetric margin binds it to what it introduces: 18px of
+   air above it, 6px below, against the group's flat 12. */
+.glabel.sub { margin: 6px 0 -6px; font-weight: 400; color: var(--ink-3); }
 .hint {
-  margin: 7px 0 0;
+  margin: 0;
   font-size: 11px;
   line-height: 1.4;
   color: var(--ink-3);
 }
-.gval { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--measure); }
+/* 400 inside a 600 header: a value is data the header names, not part of it. */
+.gval {
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--measure);
+}
 .gval.warn { color: var(--warn); }
 
 /* --- inspector tabs ---------------------------------------------------- */
@@ -757,8 +792,8 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    fill-rule buttons rendered nine pixels shorter than the fields above them. */
 .row .seg button { min-width: 0; height: var(--h); padding: 0 6px; }
 
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 5px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
 
 /* The palette: a row of swatches that say what they will do. Each is fill over
    stroke, because those are the two values you pick one by. */
@@ -814,9 +849,14 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    a nested grid and spanned its buttons across the outer one. */
 .grid2 > .wide { grid-column: 1 / -1; }
 .row { display: flex; align-items: center; gap: 7px; }
-.row label { font-size: 12px; color: var(--ink-2); min-width: 50px; }
+.row label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  min-width: 54px;
+}
 .row input { flex: 1; }
-.coords { display: grid; grid-template-columns: auto 1fr 1fr; gap: 5px; align-items: center; }
+.coords { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
 .coords label { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
 .coords input,
 .coords .btn { width: 100%; }
@@ -838,7 +878,7 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .aligns button:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink); }
 .aligns button:disabled { opacity: 0.34; cursor: default; }
 
-.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; }
+.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
 .checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
 .checks input { accent-color: var(--accent); cursor: pointer; }
 
