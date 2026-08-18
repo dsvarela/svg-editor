@@ -516,13 +516,21 @@ will give you thousands of nodes in a handful of flat colours.
 
 | Control | Does |
 |---|---|
-| **Import SVG** | Open an SVG file and make it the document |
+| **Add an SVG** | Read an SVG file and add its shapes to this document |
+
+Dropping an SVG file on the canvas does the same. Dropping any other image loads
+it as a backdrop to trace over.
 
 It reads the file the way pasting it into the source drawer does: the same
 importer, the same refusal of anything that draws nothing, and one undo step.
-Group transforms are baked into the points, primitives become paths, and the
-file's own `viewBox` becomes the canvas. It replaces what is open, so what is
-open goes.
+Group transforms are baked into the points and primitives become paths.
+
+**It adds; it does not replace.** What was open stays, the shapes that arrive are
+selected so you can move them straight away, and the canvas keeps its own size:
+the file's `viewBox` is not adopted, because the page belongs to the drawing you
+already have. The view re-fits, so artwork that landed outside the page is at
+least on screen. To replace the document instead, paste the file's text into the
+source drawer and press **Apply**.
 
 ### Canvas
 

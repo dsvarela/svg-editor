@@ -300,7 +300,8 @@ for example `1 · every 5 drawn`.
 ## Trace over an image
 
 Drop an image file onto the canvas, or press **Load image** in the **Backdrop**
-panel.
+panel. An SVG dropped there is opened as shapes instead, since it is something
+this editor can edit rather than something to copy by hand.
 
 It appears under the drawing, scaled to fit the document and at half opacity, so
 you can draw over it with the pen. **Opacity** dims it further; **Show** hides it

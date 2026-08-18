@@ -1164,6 +1164,57 @@ function replaceDocumentFrom(text: string, what: string): boolean {
 }
 
 /**
+ * Add the shapes from SVG or path-data text to the document.
+ *
+ * What a file does, where the source box replaces. The box shows the whole
+ * document, so Apply meaning "the document is now this" is the only reading it
+ * can have; a file is something you brought to a drawing you are already
+ * working on, and replacing it threw that drawing away.
+ *
+ * Ids need no repair. `nextId` and `nextNodeId` are monotonic counters shared by
+ * the importer and the document, so what arrives cannot collide with what is
+ * here. Groups come with the shapes for the reason they do in `replaceDocument
+ * From`: `Shape.group` names ids that exist only in that list.
+ *
+ * The viewBox is not taken. The document's own page is the one thing on screen
+ * that an import has no claim on, and adopting the file's would resize the page
+ * around whatever was already drawn on it. The camera is re-fitted instead, so
+ * artwork that landed outside the page is at least visible.
+ */
+function addShapesFrom(text: string, what: string): boolean {
+  try {
+    const r = importSvg(text);
+    if (!drawsSomething(r.shapes)) {
+      say(`${what} draws nothing, so nothing was added.`, false);
+      return false;
+    }
+
+    store.edit((s) => {
+      s.doc.shapes.push(...r.shapes);
+      if (r.groups.length) s.doc.groups = [...(s.doc.groups ?? []), ...r.groups];
+      // Selected, because the next thing anyone does is move what just arrived.
+      s.selection.nodes.clear();
+      s.selection.shapes.clear();
+      for (const sh of r.shapes) s.selection.shapes.add(sh.id);
+      s.sourceError = null;
+    });
+    const n = r.shapes.length;
+    say(
+      `Added ${n} shape${n === 1 ? '' : 's'} from ${what}` +
+        (r.warnings.length ? `. ${r.warnings.join('; ')}` : '.'),
+      r.warnings.length === 0,
+    );
+    fit();
+    return true;
+  } catch (err) {
+    const msg =
+      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    say(msg, false);
+    return false;
+  }
+}
+
+/**
  * Replace the document from the source box.
  *
  * `importSvg` sniffs the input, so either a bare `d` string or a whole `<svg>`
@@ -1211,12 +1262,11 @@ let loadedName: string | null = null;
 const importFile = $('#importFile') as HTMLInputElement;
 on('#importSvg', () => importFile.click());
 /**
- * Open an SVG file and make it the document.
+ * Read an SVG file and add its shapes to the document.
  *
- * The same route as pasting one into the source box, which is deliberate: a
- * file has no more claim on the document than text does, and it goes through
- * the same importer, the same refusal to accept something that draws nothing,
- * and the same single undo step. What it adds is only the reading.
+ * The same importer as the source box, the same refusal of something that draws
+ * nothing, and the same single undo step. What differs is only that this one
+ * adds: see `addShapesFrom`.
  */
 importFile.addEventListener('change', () => {
   const f = importFile.files?.[0];
@@ -1226,12 +1276,13 @@ importFile.addEventListener('change', () => {
   if (!f) return;
   f.text()
     .then((text) => {
-      /* Named before the import, not after. `replaceDocumentFrom` notifies the
+      /* Named before the import, not after. `addShapesFrom` notifies the
          store, which repaints the panel -- so setting it afterwards left the
          header saying `none opened` beside a document that had just been read
          from a file. Cleared again if the import refused. */
+      const was = loadedName;
       loadedName = f.name;
-      if (!replaceDocumentFrom(text, f.name)) loadedName = null;
+      if (!addShapesFrom(text, f.name)) loadedName = was;
     })
     .catch(() => {
       say(`Could not read ${f.name}.`, false);
@@ -1543,6 +1594,9 @@ backFile.addEventListener('change', () => {
   backFile.value = '';
 });
 
+/** An SVG by type or by name: a file dragged from some places arrives typeless. */
+const isSvgFile = (f: File): boolean => f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
+
 // Dropping onto the canvas is the gesture people try first.
 canvasRoot.addEventListener('dragover', (e) => {
   if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
@@ -1551,10 +1605,21 @@ canvasRoot.addEventListener('drop', (e) => {
   const f = e.dataTransfer?.files?.[0];
   if (!f) return;
   e.preventDefault();
-  if (f.type.startsWith('image/')) loadBackdrop(f);
-  else {
-    say('Only image files can be used as a backdrop.', false);
+  /* An SVG is editable, so it comes in as shapes. It is an `image/` type too --
+     `image/svg+xml` -- so the test for it has to come first, or the one thing
+     this program can actually open arrives as a picture to trace over. */
+  if (isSvgFile(f)) {
+    f.text()
+      .then((text) => {
+        const was = loadedName;
+        loadedName = f.name;
+        if (!addShapesFrom(text, f.name)) loadedName = was;
+      })
+      .catch(() => say(`Could not read ${f.name}.`, false));
+    return;
   }
+  if (f.type.startsWith('image/')) loadBackdrop(f);
+  else say('Drop an SVG to open it, or an image to trace over.', false);
 });
 
 /**

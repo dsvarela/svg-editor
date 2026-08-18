@@ -3798,12 +3798,15 @@ const scenarios = {
   },
 
   /**
-   * Import an SVG file.
+   * Add an SVG file to the document.
    *
    * The importer is unit-tested against text. What only a browser has is a file
    * input, and what only this can show is that the file's contents reach the
-   * same route a paste does -- group transforms baked, viewBox adopted, one
-   * undo step -- rather than a second import path that drifts from it.
+   * same importer a paste does -- group transforms baked, one undo step --
+   * rather than a second path that drifts from it.
+   *
+   * It adds rather than replaces, and keeps the page it was given: a file is
+   * something you brought to a drawing you are already working on.
    */
   async importFile(page, check) {
     const dir = process.env.SCRATCH ?? '/tmp';
@@ -3829,20 +3832,24 @@ const scenarios = {
     await settle(page);
 
     const stats = (await page.textContent('#stats')).trim();
-    check(/3 shapes/.test(stats), `after importing: "${stats}"`);
-    // The file's own viewBox, not the one that was open.
-    check(/100 × 50/.test(stats), `the canvas reads "${stats}"`);
+    // Three from the file, on top of the starter that was already there.
+    check(/4 shapes/.test(stats), `after adding: "${stats}"`);
+    // The document's own page, not the file's 100 by 50.
+    check(/88 × 64/.test(stats), `the canvas reads "${stats}"`);
     const info = (await page.textContent('#fileinfo')).trim();
     check(/drive-import\.svg/.test(info), `the panel header says "${info}"`);
 
     /* The group transform is baked, which is the thing that separates reading a
        file from displaying one: the rect is 20 wide inside a scale(2) inside a
        translate(10 5), so it arrives 40 wide at x = 10. */
-    const first = await page.$eval('.artwork path', (el) => el.getAttribute('d'));
+    const first = await page.$eval('.artwork path:nth-child(2)', (el) => el.getAttribute('d'));
     check(/^M 10 5 H 50 V 25/.test(first), `the rect came in as "${first}"`);
     // And a primitive that was never a path is one now.
     const all = await page.$$eval('.artwork path', (els) => els.length);
-    check(all === 3, `${all} paths drawn`);
+    check(all === 4, `${all} paths drawn`);
+    // What arrived is selected, because moving it is the next thing anyone does.
+    const picked = await page.$$eval('#shapelist li.shape[aria-selected="true"]', (els) => els.length);
+    check(picked === 3, `${picked} shape rows are selected, want the three that arrived`);
 
     // One undo step, not one per shape.
     await undo(page);
@@ -3857,8 +3864,42 @@ const scenarios = {
     const refused = (await page.textContent('#status')).trim();
     check(/draws nothing/.test(refused), `the refusal reads "${refused}"`);
     check(/1 shape/.test(await page.textContent('#stats')), 'the refused import changed the document');
+    check(
+      /drive-import\.svg/.test((await page.textContent('#fileinfo')).trim()),
+      'a refused file took the name of the one that worked',
+    );
 
-    return { stats, info, first };
+    /* Dropping one on the canvas is the same operation. `image/svg+xml` starts
+       with `image/`, so the drop used to hand the one format this program can
+       open to the backdrop, which traces pictures it cannot edit. */
+    const { readFileSync } = await import('node:fs');
+    await page.evaluate(
+      ([text, name]) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([text], name, { type: 'image/svg+xml' }));
+        document
+          .querySelector('#stage')
+          .dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      [readFileSync(file, 'utf8'), 'dropped.svg'],
+    );
+    await settle(page);
+    /* The drop reads the file through a promise, so there is nothing to settle
+       on. Bounded and swallowed: a drop that never lands should fail on the
+       check below, which says what happened, rather than on a 30-second
+       timeout, which says only that something did not. */
+    await page
+      .waitForFunction(() => /4 shapes/.test(document.querySelector('#stats').textContent), null, {
+        timeout: 4000,
+      })
+      .catch(() => {});
+
+    const dropped = (await page.textContent('#stats')).trim();
+    check(/4 shapes/.test(dropped), `after dropping an SVG: "${dropped}"`);
+    const backdrop = (await page.textContent('#backinfo')).trim();
+    check(/none/.test(backdrop), `the dropped SVG became a backdrop: "${backdrop}"`);
+
+    return { stats, info, first, dropped };
   },
 
   /**
