@@ -2757,8 +2757,11 @@ paintPalette();
  * `tools/keys.mjs` checks nothing became unreachable. §41.
  */
 for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')) {
-  const body = head.nextElementSibling as HTMLElement | null;
-  if (!body?.classList.contains('gbody')) continue;
+  /* By relationship, not by position. This read `head.nextElementSibling`, which
+     was true only while the header was the body's immediate sibling, and stopped
+     being true the moment the header gained a `?` beside it in a `.ghead`. */
+  const body = head.closest('.group')?.querySelector<HTMLElement>(':scope > .gbody') ?? null;
+  if (!body) continue;
   /* Open where the group acts on what is selected, shut otherwise. Everything
      shut is an empty rail and everything open is what we already had. */
   const group = head.closest('.group');
@@ -2770,6 +2773,28 @@ for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')
   set(keepOpen);
   head.addEventListener('click', () => set(head.getAttribute('aria-expanded') !== 'true'));
   void group;
+}
+
+/**
+ * The `?` beside a group's name, which discloses the sentence explaining it.
+ *
+ * Those sentences were 573 px of the rail across the three tabs, permanently on
+ * screen, and every one of them is read once. They are not deleted, because the
+ * manual does not carry most of them and the build is one file that opens from
+ * `file://` with no manual to link to. So they are hidden and one press away.
+ *
+ * A press, never a hover: a tooltip may enrich and must never inform, and this
+ * is the only place several of these facts are written down.
+ */
+for (const help of document.querySelectorAll<HTMLButtonElement>('button.ghelp')) {
+  const id = help.getAttribute('aria-controls');
+  const hint = id ? document.getElementById(id) : null;
+  if (!hint) continue;
+  help.addEventListener('click', () => {
+    const open = help.getAttribute('aria-expanded') !== 'true';
+    help.setAttribute('aria-expanded', String(open));
+    hint.hidden = !open;
+  });
 }
 
 installTooltips();

@@ -201,7 +201,7 @@
 
           <div class="tabpanel" id="panel-shape" role="tabpanel" aria-labelledby="tab-shape">
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Shapes</span><span class="gval" id="shapecount"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Shapes</span><span class="gval" id="shapecount"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-shapes" aria-label="What Shapes is for">?</button></div>
               <div class="gbody">
             <!-- A tree, not a listbox: a shape holding more than one path opens to
                  show them, and a path is selectable on its own. -->
@@ -228,11 +228,11 @@
               <button class="btn" id="pasteSel" title="Put the last copy back, offset from the one before it (Ctrl+V)">Paste</button>
             </div>
           
-              <p class="hint">Newest last. Double-click a name to rename it.</p>
+              <p class="hint" id="hint-shapes" hidden>Newest last. Double-click a name to rename it.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Style</span><span class="gval" id="styleinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Style</span><span class="gval" id="styleinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-style" aria-label="What Style is for">?</button></div>
               <div class="gbody">
             <div class="row">
               <label for="fillColour">Fill</label>
@@ -262,11 +262,11 @@
               <button class="btn" id="paletteDrop" type="button" title="Forget the selected saved style">Forget</button>
             </div>
           
-              <p class="hint">With nothing selected, sets what you draw next.</p>
+              <p class="hint" id="hint-style" hidden>With nothing selected, sets what you draw next.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Combine</span><span class="gval" id="boolinfo">needs 2+</span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Combine</span><span class="gval" id="boolinfo">needs 2+</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-combine" aria-label="What Combine is for">?</button></div>
               <div class="gbody">
             <div class="grid2">
               <button class="btn" data-bool="unite" title="Everything either shape covers">Unite</button>
@@ -279,11 +279,11 @@
               <button class="btn" id="splitshape" title="Split into shapes (Shift+K). Gives each path a shape of its own">Split into shapes</button>
             </div>
           
-              <p class="hint">Booleans need two shapes. Make one shape keeps every node.</p>
+              <p class="hint" id="hint-combine" hidden>Make one shape keeps every node.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Draw</span><span class="gval" id="drawinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Draw</span><span class="gval" id="drawinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-draw" aria-label="What Draw is for">?</button></div>
               <div class="gbody">
             <div class="row">
               <label for="cornerRadius">Corner</label>
@@ -321,11 +321,11 @@
               <svg class="ico"><use href="#i-reverse" /></svg>Reverse
             </button>
           
-              <p class="hint">Within is how far Simplify may move things; Keep is how many nodes to leave.</p>
+              <p class="hint" id="hint-draw" hidden>Within is how far Simplify may move things; Keep is how many nodes to leave.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Transform</span><span class="gval" id="selinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Transform</span><span class="gval" id="selinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-transform" aria-label="What Transform is for">?</button></div>
               <div class="gbody">
             <!-- The same box the handles are drawn on, so the panel and the
                  canvas cannot disagree about what is being measured. -->
@@ -354,11 +354,11 @@
               <button class="btn" id="scaleGo">Scale</button>
             </div>
           
-              <p class="hint">Applies to the selection, about its own centre.</p>
+              <p class="hint" id="hint-transform" hidden>Applies to the selection, about its own centre.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Arrange</span><span class="gval" id="arrangeinfo">needs 2+</span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Arrange</span><span class="gval" id="arrangeinfo">needs 2+</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-arrange" aria-label="What Arrange is for">?</button></div>
               <div class="gbody">
             <!-- Whole shapes, not nodes. The Align in the Node panel moves anchors
                  inside one path; this moves paths around each other. -->
@@ -394,14 +394,14 @@
               <button class="btn" data-ssp="v" title="Put the same gap between the shapes, top to bottom">Space V</button>
             </div>
 
-              <p class="hint">A group moves as one. An empty Gap spreads them to fill.</p>
+              <p class="hint" id="hint-arrange" hidden>A group moves as one. An empty Gap spreads them to fill.</p>
               </div>
             </div>
           </div>
 
           <div class="tabpanel" id="panel-node" role="tabpanel" aria-labelledby="tab-node" hidden>
           <div class="group" id="nodegroup">
-              <button class="glabel" type="button" aria-expanded="true"><span>Node</span><span class="gval" id="nodeinfo">none</span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Node</span><span class="gval" id="nodeinfo">none</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-node" aria-label="What Node is for">?</button></div>
               <div class="gbody">
             <div class="coords">
               <label for="nx">pos</label>
@@ -483,7 +483,7 @@
               <button type="button" data-di="v" title="Distribute vertically">Space V</button>
             </div>
           
-              <p class="hint">Corner, Smooth and Symm read the handles. Auto keeps re-deriving them.</p>
+              <p class="hint" id="hint-node" hidden>Corner, Smooth and Symm read the handles. Auto keeps re-deriving them.</p>
               </div>
             </div>
 
@@ -492,30 +492,29 @@
                which would make the setting unreachable exactly when you want to
                change it before deleting something. -->
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Delete</span><span class="gval" id="delmodeinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Delete</span><span class="gval" id="delmodeinfo"></span></button></div>
               <div class="gbody">
             <div class="seg spread" id="delmode" role="group" aria-label="What Delete does to the path">
               <button type="button" data-dm="fuse" title="Join the two neighbouring segments; the path stays whole">Heal</button>
               <button type="button" data-dm="split" title="Leave the path open where the node was">Split</button>
             </div>
           
-              <p class="hint">What happens to the path where a node is removed.</p>
               </div>
             </div>
           </div>
 
           <div class="tabpanel" id="panel-doc" role="tabpanel" aria-labelledby="tab-doc" hidden>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>File</span><span class="gval" id="fileinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>File</span><span class="gval" id="fileinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-file" aria-label="What File is for">?</button></div>
               <div class="gbody">
             <button class="btn wide" id="importSvg" type="button" title="Open an SVG file and make it the document">Import SVG</button>
             <input type="file" id="importFile" accept=".svg,image/svg+xml" hidden />
           
-              <p class="hint">Replaces the document, in one undo step.</p>
+              <p class="hint" id="hint-file" hidden>Replaces the document, in one undo step.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Canvas</span><span class="gval" id="canvasinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Canvas</span><span class="gval" id="canvasinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-canvas" aria-label="What Canvas is for">?</button></div>
               <div class="gbody">
             <div class="coords">
               <label for="vbx">origin</label>
@@ -529,11 +528,11 @@
               Fit canvas to drawing
             </button>
           
-              <p class="hint">The page the drawing sits on, and the viewBox the export writes.</p>
+              <p class="hint" id="hint-canvas" hidden>The page the drawing sits on, and the viewBox the export writes.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Angles</span><span class="gval" id="angleinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Angles</span><span class="gval" id="angleinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-angles" aria-label="What Angles is for">?</button></div>
               <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="snapAngles" title="Hold the pointer to rays at a fixed angle" /> Snap to angles</label>
@@ -551,11 +550,11 @@
               <button class="btn" id="angleClear" type="button" title="Go back to radiating from wherever the gesture starts">Origin free</button>
             </div>
           
-              <p class="hint">Rays to hold a direction on. Beaten by a node, beats the grid.</p>
+              <p class="hint" id="hint-angles" hidden>Rays to hold a direction on. Beaten by a node, beats the grid.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Guides</span><span class="gval" id="guideinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Guides</span><span class="gval" id="guideinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-guides" aria-label="What Guides is for">?</button></div>
               <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="showRulers" title="Show the rulers, which is where a guide is dragged from" /> Rulers</label>
@@ -574,21 +573,21 @@
             </div>
             <button class="btn wide" id="guideClear" type="button" title="Remove every guide">Clear guides</button>
           
-              <p class="hint">Lines you place and aim at. Smart guides appear while you drag.</p>
+              <p class="hint" id="hint-guides" hidden>Lines you place and aim at. Smart guides appear while you drag.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Keylines</span><span class="gval" id="keylineinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Keylines</span><span class="gval" id="keylineinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-keylines" aria-label="What Keylines is for">?</button></div>
               <div class="gbody">
             <div class="checks">
               <label><input type="checkbox" id="showKeylines" title="Draw the icon keyline grid, and let the tools snap to it" /> Show keylines</label>
             </div>
           
-              <p class="hint">The icon grid, worked out from the canvas. Never in the export.</p>
+              <p class="hint" id="hint-keylines" hidden>The icon grid, worked out from the canvas. Never in the export.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Grid</span><span class="gval" id="gridreadout"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Grid</span><span class="gval" id="gridreadout"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-grid" aria-label="What Grid is for">?</button></div>
               <div class="gbody">
             <div class="row">
               <label for="gridStep">Step</label>
@@ -611,7 +610,7 @@
             </div>
             <button class="btn wide" id="fitPixels" type="button" hidden title="Move the selected shape's nodes onto the pixel lattice shown">Fit selection to pixels</button>
           
-              <p class="hint">Every drawn line is a snap position.</p>
+              <p class="hint" id="hint-grid" hidden>Every drawn line is a snap position.</p>
               <p class="note" id="pixelnote" hidden>
               A stroke is painted centred on its path, so a 1-unit stroke on a whole coordinate
               covers half of two pixels instead of all of one. Pixel fit shifts the grid by half the
@@ -621,7 +620,7 @@
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Backdrop</span><span class="gval" id="backinfo">none</span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Backdrop</span><span class="gval" id="backinfo">none</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-backdrop" aria-label="What Backdrop is for">?</button></div>
               <div class="gbody">
             <button class="btn wide" id="backPick" type="button" title="Choose an image to trace over">Load image</button>
             <input type="file" id="backFile" accept="image/*" hidden />
@@ -661,11 +660,11 @@
             </div>
             <button class="btn wide" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
           
-              <p class="hint">A reference to trace over. Never part of the export.</p>
+              <p class="hint" id="hint-backdrop" hidden>A reference to trace over. Never part of the export.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="true"><span>Output</span><span class="gval" id="outval"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Output</span><span class="gval" id="outval"></span></button></div>
               <div class="gbody">
             <div class="row">
               <label for="decimals">Decimals</label>
@@ -675,11 +674,10 @@
               <label><input type="checkbox" id="minify" /> Minify</label>
             </div>
           
-              <p class="hint">How the exported path data is written.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="false"><span>Preview</span><span class="gval" id="previewinfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="false"><span>Preview</span><span class="gval" id="previewinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-preview" aria-label="What Preview is for">?</button></div>
               <div class="gbody">
             <!-- The drawing at the sizes an icon ships at. Rendered from the
                  exported SVG, so the Output settings above show in it. -->
@@ -690,11 +688,11 @@
               <figure><img id="prev48" alt="The drawing at 48 pixels" width="48" height="48" /><figcaption>48</figcaption></figure>
             </div>
 
-              <p class="hint">Held still during a drag, and redrawn when it ends.</p>
+              <p class="hint" id="hint-preview" hidden>Held still during a drag, and redrawn when it ends.</p>
               </div>
             </div>
           <div class="group">
-              <button class="glabel" type="button" aria-expanded="false"><span>PNG</span><span class="gval" id="pnginfo"></span></button>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="false"><span>PNG</span><span class="gval" id="pnginfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-png" aria-label="What PNG is for">?</button></div>
               <div class="gbody">
             <div class="row">
               <label for="pngWidth">Width</label>
@@ -702,7 +700,7 @@
             </div>
             <button class="btn wide primary" id="downloadPng" type="button" title="Save the drawing as a PNG at this width. The height follows the canvas proportions">Download PNG</button>
 
-              <p class="hint">Transparent where nothing is painted. Height follows the canvas.</p>
+              <p class="hint" id="hint-png" hidden>Transparent where nothing is painted. Height follows the canvas.</p>
               </div>
             </div>
           </div>
