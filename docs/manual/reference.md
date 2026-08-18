@@ -295,6 +295,10 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
 
 ### Path
 
+Reverse acts on the path as a whole. The two headings under it sort the rest by
+what they do: take nodes out of the path, or make a second path from it.
+
+- **Reverse** (`Shift+R`) walks the selected paths the other way round.
 - **Offset** with **by** draws a path parallel to each selected shape, as a new
   shape beside it, or several if the shape cannot hold the distance and the offset
   comes apart. A negative distance goes the other way, and one that would consume
@@ -334,11 +338,11 @@ Undo is the exact inverse of **Make one shape**; this is the useful one.
   Corners are never removed whatever you choose. No single curve replaces two
   sides of a corner, so no tolerance makes one redundant.
 
-- **Reverse** (`Shift+R`) walks the selected paths the other way round. The
-  drawing does not move. Direction is what decides winding under `nonzero`, and
-  which end of a path a marker lands on. A closed path keeps its start node, so
-  only the direction changes; an open one swaps its ends, because that is what
-  reversing it means. Whatever you had selected stays selected.
+**Reverse in full.** The drawing does not move. Direction is what decides
+winding under `nonzero`, and which end of a path a marker lands on. A closed path
+keeps its start node, so only the direction changes; an open one swaps its ends,
+because that is what reversing it means. Whatever you had selected stays
+selected.
 
 ### Node
 

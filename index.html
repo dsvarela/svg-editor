@@ -330,10 +330,19 @@
           <div class="group">
               <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Path</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-draw" aria-label="What Path is for">?</button></div>
               <div class="gbody">
-            <!-- Three clusters, because these eight do three different things to
-                 a path: take nodes out of it, make a second path from it, or
-                 turn it round. The number each one reads sits inside its own
-                 row, so no field can be mistaken for the operation above it. -->
+            <!-- Reverse first, and outside both clusters: it acts on the path as
+                 a whole and reads no number, so it belongs to the group rather
+                 than to either heading under it. A heading over one button is
+                 the clutter the clusters exist to remove.
+
+                 Two clusters, because the rest do two different things to a
+                 path: take nodes out of it, or make a second path from it. The
+                 number each one reads sits inside its own row, so no field can
+                 be mistaken for the operation above it. -->
+            <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
+              <svg class="ico"><use href="#i-reverse" /></svg>Reverse
+            </button>
+
             <div class="glabel sub"><span>Fewer nodes</span></div>
             <div class="act">
               <button class="btn" id="simplify" title="Remove nodes from the selected paths, moving the outline no further than this"><svg class="ico"><use href="#i-simplify" /></svg>Simplify</button>
@@ -361,11 +370,6 @@
               <button class="btn" id="strokeButt" type="button" title="Turn the stroke into a filled outline, cut square at the ends">Outline</button>
               <button class="btn" id="strokeRound" type="button" title="Turn the stroke into a filled outline, rounded at the ends">Outline round</button>
             </div>
-
-            <div class="glabel sub"><span>Direction</span></div>
-            <button class="btn wide" id="reverse" title="Walk the selected paths the other way round (Shift+R)">
-              <svg class="ico"><use href="#i-reverse" /></svg>Reverse
-            </button>
 
               <p class="hint" id="hint-draw" hidden>Offset and Outline leave the path alone and make a new one. Everything else here rewrites it.</p>
               </div>
