@@ -2582,3 +2582,36 @@ behaves everywhere else.
 taken while it existed, and they stay as they are: the reason `setContinuity`
 returns a boolean is not changed by the fact that the other example of it is
 gone.
+
+## 56. A destination is a step with the arithmetic done once
+
+Dragging a row in the shape list is the same reordering the four tiles do, with
+the destination named rather than walked to. `dropShapes` sits beside
+`reorderShapes` in `src/model/arrange.ts` and ends where it ends: the tree of
+per-parent orders is rebuilt and `flattenOrders` walks it back into one flat
+paint order. So §49's contiguity holds for a drop for the reason it holds for a
+step, which is that neither of them writes `doc.shapes` directly.
+
+**The index is taken among the rows that are staying.** Taking it in the list as
+it stands counts the rows that are about to leave, so a row dragged downward past
+its own neighbours lands short of the line that was drawn for it -- by one for
+each row moving with it. That is the whole of the arithmetic and it is the whole
+of what can go wrong in it.
+
+**A drop lands only among siblings, and the interface is what makes that true.**
+The drag collects its targets from the `<ul>` the row is already in, so there is
+no pointer position that asks for a shape to leave its group. The model does not
+have to refuse anything, because nothing can express it. A shape leaves a group
+by being ungrouped, which is the same answer §49 gives to every other route.
+
+**Pointer events, not HTML drag and drop**, which no touch screen implements. The
+cost is that a press has to be read twice over: a mouse begins the drag on
+movement past four pixels, and a finger begins it on a four-hundred-millisecond
+hold, because a finger that moves straight away is scrolling a list that is 170px
+tall and usually taller than that inside.
+
+**Selecting happens before the rows are captured.** Selecting notifies the store,
+the list rebuilds itself from scratch on a notification, and rows captured before
+that are detached nodes by the time the pointer moves. The row is found again by
+its key afterwards, which is the same rule §43 states for nodes: build a
+reference, use it, throw it away.

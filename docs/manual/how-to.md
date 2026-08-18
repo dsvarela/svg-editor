@@ -12,6 +12,7 @@ route to finishing it.
 - [Join two ends back together](#join-two-ends-back-together)
 - [Carry on drawing a path you already finished](#carry-on-drawing-a-path-you-already-finished)
 - [Delete a node without breaking the path](#delete-a-node-without-breaking-the-path)
+- [Put one shape in front of another](#put-one-shape-in-front-of-another)
 - [Draw a rounded rectangle](#draw-a-rounded-rectangle)
 - [Combine two shapes](#combine-two-shapes)
 - [Punch a hole in a shape](#punch-a-hole-in-a-shape)
@@ -134,6 +135,17 @@ originals curved the same way. Across an inflection it will visibly differ.
 
 Set the mode to **Split** instead and the same key leaves two ends, with every
 surviving curve untouched.
+
+## Put one shape in front of another
+
+Drag its row in the **Shapes** list. The list is the paint order: the last row is
+painted last, so it is the one in front. The line shows where the row will land.
+
+A row lands only among the rows beside it, so a shape in a group stays in that
+group. **Ungroup** it first to move it out.
+
+`Ctrl+]` and `Ctrl+[` move the selection one step, and `Ctrl+Shift+]` and
+`Ctrl+Shift+[` take it all the way.
 
 ## Draw a rounded rectangle
 

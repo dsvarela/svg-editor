@@ -64,6 +64,7 @@ import {
   alignUnits,
   arrangeUnits,
   distributeUnits,
+  dropShapes,
   reorderShapes,
   spaceUnits,
   unitsBox,
@@ -2129,6 +2130,21 @@ export class Commands {
     }
     const ids = new Set(s.selection.shapes);
     return this.store.tryEdit((st) => reorderShapes(st.doc, ids, move));
+  }
+
+  /**
+   * Drop the selected shapes before `before` among `parent`'s children.
+   *
+   * The other half of `reorderSelection`: that one steps, this one lands. The
+   * list's own drag calls it with a target it took from the row's siblings, so
+   * nothing here has to decide what a legal drop is -- there is no position in
+   * one parent's list that breaks §49.
+   */
+  dropSelection(parent: string | null, before: string | null): boolean {
+    const s = this.store.state;
+    if (s.selection.shapes.size === 0) return false;
+    const ids = new Set(s.selection.shapes);
+    return this.store.tryEdit((st) => dropShapes(st.doc, ids, parent, before));
   }
 
   /** Whether the selection could move through the paint order at all. */

@@ -215,6 +215,58 @@ export function reorderShapes(doc: Doc, ids: ReadonlySet<string>, move: ZMove): 
   return true;
 }
 
+/**
+ * Move the chosen children of one parent to sit immediately before `before`.
+ *
+ * What dragging a row in the shape list means, where `reorderShapes` is what the
+ * four buttons and `Ctrl+[` mean. Both end at `flattenOrders`, so both preserve
+ * §49's invariant the same way: the tree is reordered and the flat paint order
+ * is rebuilt from it, rather than each caller remembering to keep a group's
+ * shapes together.
+ *
+ * `parent` names the list being reordered and `before` a key in it, or `null`
+ * for the end of it. **Nothing crosses a parent**, which is the same rule stated
+ * the same way: a drop outside the moving row's own list is not a legal drop,
+ * and the caller is expected to have clamped the pointer to that list rather
+ * than to pass a target from another one. A key that is not in `parent`'s list
+ * lands at the end of it rather than nowhere.
+ */
+export function dropShapes(
+  doc: Doc,
+  ids: ReadonlySet<string>,
+  parent: string | null,
+  before: string | null,
+): boolean {
+  const units = arrangeUnits(doc, ids);
+  if (units.length === 0) return false;
+
+  const orders = new Map<string | null, Child[]>();
+  const parents: (string | null)[] = [null, ...(doc.groups ?? []).map((g) => g.id)];
+  for (const p of parents) orders.set(p, childrenOf(doc, p));
+
+  const list = orders.get(parent);
+  if (!list) return false;
+
+  const keys = new Set<string>();
+  for (const u of units) keys.add(u.group ?? u.shapes[0].id);
+
+  const picked = list.filter((c) => keys.has(childKey(c)));
+  if (picked.length === 0) return false;
+  const rest = list.filter((c) => !keys.has(childKey(c)));
+  /* The index is taken in `rest`, not in `list`. Taking it in `list` counts the
+     rows that are about to leave, so dragging a row downward past its own
+     neighbours lands it one place short of where the line was drawn. */
+  const at = before === null ? rest.length : rest.findIndex((c) => childKey(c) === before);
+  const cut = at < 0 ? rest.length : at;
+
+  const next = [...rest.slice(0, cut), ...picked, ...rest.slice(cut)];
+  if (next.every((c, i) => childKey(c) === childKey(list[i]))) return false;
+
+  orders.set(parent, next);
+  doc.shapes = flattenOrders(orders);
+  return true;
+}
+
 /** One list reordered: the chosen entries move, the rest close up around them. */
 function stepped(list: Child[], keys: ReadonlySet<string>, move: ZMove): Child[] {
   const chosen = (c: Child): boolean => keys.has(childKey(c));

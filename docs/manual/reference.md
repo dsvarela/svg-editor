@@ -169,7 +169,15 @@ Grouping a few shapes that are already in one group makes a group inside it rath
 than taking them out of it. Groups nest as deeply as you like, and **Ungroup**
 unwraps one level per press.
 
-**Forward**, **Backward**, **To front** and **To back** move the selection through
+**Drag a row to move it through the paint order.** The line shows where it will
+land, and it lands only among the rows it is already beside: a shape cannot be
+dragged out of a group, because a group's shapes are one unbroken run of the
+order. Ungroup is how a shape leaves. On a touch screen, hold the row for a
+moment first; a finger that moves straight away is scrolling the list.
+
+**Forward**, **Backward**, **To front** and **To back** do the same one step at a
+time. They are `Ctrl+]`, `Ctrl+[`, `Ctrl+Shift+]` and `Ctrl+Shift+[`, so the four
+buttons appear only when **Touch buttons** is on. They move the selection through
 the paint order, which is the order of the list. A shape in a group moves among the
 shapes of that group and stops at its edges, and a whole selected group moves as
 one; a shape leaves a group by being ungrouped. A press with nowhere left to go
@@ -197,9 +205,9 @@ one shape overlap, and two separate shapes cannot do it. **Unite** on two shapes
 that do not touch produces one shape of two paths for the same reason, and so does
 **Make one shape**. Use **Split into shapes** to give each path a shape of its own
 when that is what you wanted.
-**Duplicate**, **Delete**, **Copy**, **Cut** and **Paste** are the five buttons
-that also have keys, so they appear only when **Touch buttons** is on in the
-**Controls** panel. That is the default wherever the pointer is a finger. On a
+**Duplicate**, **Delete**, **Copy**, **Cut**, **Paste** and the four paint-order
+tiles are the buttons that also have keys, so they appear only when **Touch
+buttons** is on in the **Controls** panel. That is the default wherever the pointer is a finger. On a
 mouse the keys below are the whole of it.
 
 - **Duplicate** (`Ctrl+D`) copies the selected shapes, offset by two grid steps
@@ -244,7 +252,8 @@ is not an edit to the drawing, so it records no undo step, and the header says
 **Saved** keeps styles you want again. **Save style** stores the four values
 above under a name made from the colours; double-click the name to change it.
 Clicking a swatch puts that style on the selected shapes, or on what you draw
-next if nothing is selected. **Forget** drops the highlighted one.
+next if nothing is selected. **Delete style** removes the highlighted one, and
+so does the `Delete` key while the swatches have focus.
 
 A saved style is part of how you are working rather than part of the drawing. It
 is not in the file, and it is not in the history: what the export carries is the
@@ -712,8 +721,8 @@ decides the frame, not the drawing, so padding you left around a shape is kept.
 ### Controls
 
 - **Touch buttons** shows the buttons for the operations a keyboard already
-  reaches: **Duplicate**, **Delete**, **Copy**, **Cut**, **Paste**, and stepping
-  and deleting nodes. It is on wherever the pointer is a finger and off on a
+  reaches: **Duplicate**, **Delete**, **Copy**, **Cut**, **Paste**, the four
+  paint-order tiles, and stepping and deleting nodes. It is on wherever the pointer is a finger and off on a
   mouse, and either can be changed here.
 
 Nothing else moves with it. Every operation still has a button; this decides

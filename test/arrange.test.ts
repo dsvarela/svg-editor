@@ -19,6 +19,7 @@ import {
   arrangeUnits,
   distributeUnits,
   edgeOf,
+  dropShapes,
   reorderShapes,
   spaceUnits,
   unitsBox,
@@ -504,6 +505,98 @@ describe('paint order', () => {
     expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['b', 'c', 'd', 'a']);
     store.undo();
     expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  /* Dropping is the same reordering with the destination named outright, which
+     is what dragging a row in the list means. Every case here also asserts
+     contiguity, because that is the invariant a destination could break and a
+     step never could. */
+  describe('dropShapes', () => {
+    const idOf = (doc: Doc, name: string): string => named(doc, name).id;
+
+    it('lands a shape immediately before the row it was dropped on', () => {
+      const doc = flat();
+      expect(dropShapes(doc, idsOf(doc, 'd'), null, idOf(doc, 'b'))).toBe(true);
+      expect(order(doc)).toEqual(['a', 'd', 'b', 'c']);
+    });
+
+    it('lands at the end when there is no row after the drop', () => {
+      const doc = flat();
+      expect(dropShapes(doc, idsOf(doc, 'a'), null, null)).toBe(true);
+      expect(order(doc)).toEqual(['b', 'c', 'd', 'a']);
+    });
+
+    it('counts the destination among the rows that are staying', () => {
+      /* Two rows dragged down past a third. Taking the destination's index in
+         the list as it stands counts the two that are about to leave, so the
+         insertion point is two too far along and the pair lands at the end:
+         `c d a b` rather than in front of `d` where the line was drawn. */
+      const doc = flat();
+      expect(dropShapes(doc, idsOf(doc, 'a', 'b'), null, idOf(doc, 'd'))).toBe(true);
+      expect(order(doc)).toEqual(['c', 'a', 'b', 'd']);
+    });
+
+    it('keeps the relative order of what it moves', () => {
+      const doc = flat();
+      expect(dropShapes(doc, idsOf(doc, 'd', 'b'), null, idOf(doc, 'a'))).toBe(true);
+      expect(order(doc)).toEqual(['b', 'd', 'a', 'c']);
+    });
+
+    it('declines a drop that changes nothing', () => {
+      const doc = flat();
+      expect(dropShapes(doc, idsOf(doc, 'b'), null, idOf(doc, 'c'))).toBe(false);
+      expect(order(doc)).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('moves a group as one child of its parent', () => {
+      const doc = docOf(['a', 0, 0, 10, 10], ['b', 20, 0, 10, 10], ['c', 40, 0, 10, 10]);
+      doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+      named(doc, 'b').group = 'g1';
+      named(doc, 'c').group = 'g1';
+
+      expect(dropShapes(doc, idsOf(doc, 'b', 'c'), null, idOf(doc, 'a'))).toBe(true);
+      expect(order(doc)).toEqual(['b', 'c', 'a']);
+      expect(contiguous(doc)).toBe(true);
+    });
+
+    it('reorders inside a group without taking the shape out of it', () => {
+      const doc = docOf(
+        ['a', 0, 0, 10, 10],
+        ['b', 20, 0, 10, 10],
+        ['c', 40, 0, 10, 10],
+        ['d', 60, 0, 10, 10],
+      );
+      doc.groups = [{ id: 'g1', name: 'three', parent: null }];
+      for (const n of ['a', 'b', 'c']) named(doc, n).group = 'g1';
+
+      expect(dropShapes(doc, idsOf(doc, 'c'), 'g1', idOf(doc, 'a'))).toBe(true);
+      expect(order(doc)).toEqual(['c', 'a', 'b', 'd']);
+      expect(named(doc, 'c').group).toBe('g1');
+      expect(contiguous(doc)).toBe(true);
+    });
+
+    it('keeps every shape, and only those shapes', () => {
+      const doc = flat();
+      dropShapes(doc, idsOf(doc, 'c'), null, idOf(doc, 'a'));
+      expect(order(doc).slice().sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('does nothing with nothing selected', () => {
+      const doc = flat();
+      expect(dropShapes(doc, new Set(), null, null)).toBe(false);
+      expect(order(doc)).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('undoes a drop in one step', () => {
+      const doc = flat();
+      const { store, commands } = editor(doc);
+      const target = store.state.doc.shapes.find((sh) => sh.name === 'a')!.id;
+      select(store, 'd');
+      expect(commands.dropSelection(null, target)).toBe(true);
+      expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['d', 'a', 'b', 'c']);
+      store.undo();
+      expect(store.state.doc.shapes.map((sh) => sh.name)).toEqual(['a', 'b', 'c', 'd']);
+    });
   });
 });
 

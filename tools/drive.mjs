@@ -3565,7 +3565,7 @@ const scenarios = {
   },
 
   /**
-   * The saved-styles palette: save, apply, rename, forget.
+   * The saved-styles palette: save, apply, rename, delete.
    *
    * The state is a plain array and the interesting behaviour is all in the
    * panel -- whether applying one actually reaches the selected shape, and
@@ -3630,7 +3630,18 @@ const scenarios = {
 
     await page.click('#paletteDrop');
     await settle(page);
-    check((await swatches()) === 0, `Forget left ${await swatches()} swatches`);
+    check((await swatches()) === 0, `Delete style left ${await swatches()} swatches`);
+
+    /* The key does what the button does. A swatch is a selected thing, and
+       Delete is what removes a selected thing everywhere else here. */
+    await page.click('#paletteSave');
+    await settle(page);
+    check((await swatches()) === 1, 'the second save did not land');
+    await page.click('#palette button');
+    await settle(page);
+    await page.locator('#palette').press('Delete');
+    await settle(page);
+    check((await swatches()) === 0, `the Delete key left ${await swatches()} swatches`);
 
     return { name };
   },
@@ -4480,7 +4491,8 @@ const scenarios = {
   },
 
   /**
-   * Paint order: the four buttons, the two chords, and the list that shows it.
+   * Paint order: the four buttons, the two chords, dragging a row, and the list
+   * that shows all four.
    *
    * Measured on the order of the `<path>` elements in the artwork, which is what
    * decides what covers what. The shape list is asserted alongside it because the
@@ -4511,6 +4523,14 @@ const scenarios = {
     );
     await page.click('#apply');
     await closeSource(page);
+
+    /* The four buttons are behind the touch setting, because dragging a row does
+       what they do and both of them repeat `Ctrl+[`. They still have to work, so
+       this turns them on the way a phone gets them. */
+    await tab(page, 'doc');
+    check(!(await page.isVisible('#orderForward')), 'the order tiles are on screen with Touch buttons off');
+    await page.check('#touchButtons');
+    await settle(page);
     await tab(page, 'shape');
     await settle(page);
 
@@ -4590,11 +4610,54 @@ const scenarios = {
     out.chordFront = await painted();
     check(out.chordFront[2] === '#111111', 'Ctrl+Shift+] did not bring the shape to the front');
 
+    /* Dragging a row, which is the same reordering with the destination named
+       rather than stepped. Here rather than after the grouping below, because
+       these three rows are the plain case: siblings of one list, no group in
+       the way of the arithmetic. */
+    await undo(page);
+    await undo(page);
+    await settle(page);
+    out.beforeDrag = await painted();
+
+    const rowBox = (n) => page.locator(`#shapelist > li.shape:nth-child(${n})`).boundingBox();
+    const first = await rowBox(1);
+    const last = await rowBox(3);
+    check(!!first && !!last, 'the list is not three loose rows');
+
+    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+    await page.mouse.down();
+    // Past the last row's midpoint, which is the gap after it: the end of the
+    // list, which is the front of the paint order.
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(
+        first.x + first.width / 2,
+        first.y + ((last.y + last.height - first.y) * i) / 6,
+      );
+    }
+    const line = await page.locator('.dropline').count();
+    check(line === 1, 'no drop line was drawn while dragging a row');
+    await page.mouse.up();
+    await settle(page);
+
+    out.dragged = await painted();
+    check(
+      out.dragged[2] === out.beforeDrag[0],
+      `dragging the back row to the end of the list painted ${JSON.stringify(out.dragged)}`,
+    );
+    check((await page.locator('.dropline').count()) === 0, 'the drop line outlived the drag');
+
+    // One undo step: the drag must not leave a selection change behind it that
+    // a second undo would have to take back as well.
+    await undo(page);
+    await settle(page);
+    check(
+      JSON.stringify(await painted()) === JSON.stringify(out.beforeDrag),
+      'one undo did not take the drag back',
+    );
+
     /* Past a group, not into it. The two remaining shapes are grouped, so the
        shape at the back has to clear both of them in one step or the group's run
        is broken and the export writes two `<g>`. */
-    await undo(page);
-    await undo(page);
     await settle(page);
     await page.click('#shapelist li.shape:nth-child(2)');
     await page.click('#shapelist li.shape:nth-child(3)', { modifiers: ['Shift'] });

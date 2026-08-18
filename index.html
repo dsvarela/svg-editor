@@ -257,8 +257,10 @@
               <button class="btn" id="ungroupShapes" title="Take the selected shapes out of their group, one level (Ctrl+Shift+G)">Ungroup</button>
             </div>
             <!-- Paint order. The list above is that order, so a press here moves
-                 the selected row as well as what it draws. -->
-              <div class="tiles">
+                 the selected row as well as what it draws -- and so does dragging
+                 the row itself, which is why these four are behind the touch
+                 setting with the rest of the keyboard's duplicates. -->
+              <div class="tiles tonly">
                 <button class="tile" type="button" id="orderBack" data-z="back" aria-label="To back: paint this first of all, behind everything (Ctrl+Shift+[)" title="To back: paint this first of all, behind everything (Ctrl+Shift+[)"><svg class="ico"><use href="#i-zback" /></svg><span>to back</span></button>
                 <button class="tile" type="button" id="orderBackward" data-z="backward" aria-label="Backward: paint this one step earlier, so the shape in front of it covers it (Ctrl+[)" title="Backward: paint this one step earlier, so the shape in front of it covers it (Ctrl+[)"><svg class="ico"><use href="#i-zbwd" /></svg><span>backward</span></button>
                 <button class="tile" type="button" id="orderForward" data-z="forward" aria-label="Forward: paint this one step later, so it covers the shape it was behind (Ctrl+])" title="Forward: paint this one step later, so it covers the shape it was behind (Ctrl+])"><svg class="ico"><use href="#i-zfwd" /></svg><span>forward</span></button>
@@ -302,7 +304,7 @@
             <div class="palette" id="palette" role="listbox" aria-label="Saved styles"></div>
             <div class="grid2">
               <button class="btn" id="paletteSave" type="button" title="Save the style shown above under a name">Save style</button>
-              <button class="btn" id="paletteDrop" type="button" title="Forget the selected saved style">Forget</button>
+              <button class="btn" id="paletteDrop" type="button" title="Delete the highlighted saved style (Delete)">Delete style</button>
             </div>
           
               <p class="hint" id="hint-style" hidden>With nothing selected, sets what you draw next.</p>

@@ -1023,7 +1023,33 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .note { margin: 3px 0 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
 .note b { color: var(--ink-2); font-weight: 600; }
 
-.shapelist { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow-y: auto; }
+/* `position: relative` for the drop line below, which is positioned against the
+   list and has to scroll with it. */
+.shapelist {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+/* Where a dragged row will land. A line rather than a gap that opens up: the
+   rows are 24px and shifting them all by one row height while the pointer is
+   still moving reads as the list rearranging itself under the drag. */
+.dropline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+/* The rows travelling, dimmed where they are so the line is the only thing
+   claiming to say where they will be. */
+.shapelist li.lifted { opacity: 0.45; }
 .shapelist li {
   display: flex;
   align-items: center;

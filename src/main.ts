@@ -498,7 +498,7 @@ const styleShown = (): Style => {
 
 /* ------------------------------------------------------------- the palette */
 
-/** Which saved style is highlighted, so Forget knows what to forget. */
+/** Which saved style is highlighted, so Delete style knows what to delete. */
 let paletteAt = -1;
 
 const paletteEl = $('#palette');
@@ -628,7 +628,19 @@ on('#paletteDrop', () => {
   store.update((st) => st.palette.splice(at, 1));
   paletteAt = -1;
   paintPalette();
-  say(`Forgot ${gone}.`, true);
+  say(`Deleted ${gone}.`, true);
+});
+
+/* The key as well as the button, since a highlighted swatch is a selected thing
+   and Delete is what removes a selected thing everywhere else here. Guarded on
+   the palette having focus, or Delete anywhere in the panel would take a style
+   away while you were looking at the canvas. */
+paletteEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  if (paletteAt < 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  ($('#paletteDrop') as HTMLButtonElement).click();
 });
 
 // Dragging inside a colour picker fires `input` per pixel, so both of these go
@@ -1792,6 +1804,202 @@ shapeList.addEventListener('click', (e) => {
     else s.selection.shapes.add(id);
   });
 });
+
+/* ------------------------------------------ reordering a row by dragging it */
+
+/**
+ * Paint order, dragged. The four tiles and `Ctrl+[` do the same one step at a
+ * time, and this is the same operation with the destination named directly.
+ *
+ * **A drop lands only among the row's own siblings.** The targets are the rows
+ * in the `<ul>` the dragged row already sits in, so there is no gesture here
+ * that takes a shape out of a group and §49's contiguity is never at risk.
+ * Ungroup is how a shape leaves.
+ *
+ * Pointer events rather than HTML drag and drop, which no touch screen
+ * implements. A finger has to be able to scroll this list as well as reorder it,
+ * so a mouse starts the drag on movement and a finger on a hold.
+ */
+const ROW_HOLD_MS = 400;
+const ROW_SLOP = 4;
+
+const dropLine = document.createElement('div');
+dropLine.className = 'dropline';
+dropLine.setAttribute('aria-hidden', 'true');
+
+/** A row's key in `doc.shapes` terms: a group id, or a shape id. */
+const rowKey = (li: HTMLElement): string | null =>
+  li.getAttribute('data-group') ?? li.getAttribute('data-id');
+
+interface RowDrag {
+  rows: HTMLElement[];
+  parent: string | null;
+  /** Client y of each boundary: `gaps[i]` is the line above `rows[i]`. */
+  gaps: number[];
+  at: number;
+}
+let rowDrag: RowDrag | null = null;
+let armed: { key: string; y: number; pointer: number; timer: number } | null = null;
+
+const disarm = (): void => {
+  if (armed) clearTimeout(armed.timer);
+  armed = null;
+};
+
+/** Where the line goes for a pointer at `y`, and drawing it there. */
+function aimRowDrag(d: RowDrag, y: number): void {
+  let best = 0;
+  for (let i = 1; i < d.gaps.length; i++) {
+    if (Math.abs(d.gaps[i] - y) < Math.abs(d.gaps[best] - y)) best = i;
+  }
+  d.at = best;
+  const box = shapeList.getBoundingClientRect();
+  dropLine.style.top = `${d.gaps[best] - box.top + shapeList.scrollTop}px`;
+}
+
+function beginRowDrag(key: string, y: number): void {
+  /* Selected first, and the row found again afterwards: selecting notifies the
+     store, and the list rebuilds itself from scratch on a notification. Rows
+     captured before that are detached nodes by the time the pointer moves. */
+  const first = shapeList.querySelector<HTMLElement>(`li[data-group="${key}"], li.shape[data-id="${key}"]`);
+  if (!first) return;
+  const already = rowShapes(rowOf(first)).every((id) => store.state.selection.shapes.has(id));
+  if (!already) selectRow(rowOf(first), false);
+
+  const row = shapeList.querySelector<HTMLElement>(`li[data-group="${key}"], li.shape[data-id="${key}"]`);
+  const container = row?.parentElement;
+  if (!row || !container) return;
+
+  const rows = [...container.children].filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && el.matches('li.shape, li.group'),
+  );
+  if (rows.length < 2) return;
+
+  const gaps = rows.map((r) => r.getBoundingClientRect().top);
+  gaps.push(rows[rows.length - 1].getBoundingClientRect().bottom);
+
+  rowDrag = {
+    rows,
+    // The `<ul>` a group owns lives inside that group's own row.
+    parent: container.closest<HTMLElement>('li.group')?.getAttribute('data-group') ?? null,
+    gaps,
+    at: 0,
+  };
+  for (const r of rows) {
+    if (rowShapes(rowOf(r)).every((id) => store.state.selection.shapes.has(id))) r.classList.add('lifted');
+  }
+  shapeList.append(dropLine);
+  aimRowDrag(rowDrag, y);
+}
+
+/**
+ * Keep the pointer reporting to the list once the drag has begun.
+ *
+ * Without capture, a pointer that leaves the list stops sending it moves, and
+ * the drag freezes with the line wherever the pointer crossed the edge -- while
+ * the release, delivered somewhere else entirely, never ends it at all.
+ */
+function captureRow(pointerId: number): void {
+  try {
+    shapeList.setPointerCapture(pointerId);
+  } catch {
+    // A pointer that has already gone. Nothing to capture and nothing to say.
+  }
+}
+
+/** The `ListRow` a DOM row stands for, which is what the selection helpers take. */
+function rowOf(li: HTMLElement): ListRow {
+  const group = li.getAttribute('data-group');
+  if (group) return { id: group, sp: null, group: true };
+  return { id: li.getAttribute('data-id') ?? '', sp: null, group: false };
+}
+
+shapeList.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || renaming) return;
+  const target = e.target as HTMLElement;
+  // The disclosure triangle and the rename box own their own presses, and a
+  // modifier means the press is extending a selection rather than moving one.
+  if (target.closest('.twist') || target.closest('.rename')) return;
+  if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+  /* A path row carries its shape's `data-id` and sits inside the shape's own
+     row, so `closest` would read a press on a path as a press on the shape.
+     A path is not a thing paint order holds. */
+  if (target.closest('li.path')) return;
+  const row = target.closest<HTMLElement>('li.shape, li.group');
+  const key = row ? rowKey(row) : null;
+  if (!key) return;
+
+  disarm();
+  const y = e.clientY;
+  const id = e.pointerId;
+  armed = {
+    key,
+    y,
+    pointer: e.pointerId,
+    /* A finger that stays put means to move the row; one that travels means to
+       scroll the list, which is why touch waits and a mouse does not. */
+    timer:
+      e.pointerType === 'touch'
+        ? window.setTimeout(() => {
+            beginRowDrag(key, y);
+            if (rowDrag) captureRow(id);
+          }, ROW_HOLD_MS)
+        : 0,
+  };
+});
+
+shapeList.addEventListener('pointermove', (e) => {
+  if (rowDrag) {
+    e.preventDefault();
+    aimRowDrag(rowDrag, e.clientY);
+    return;
+  }
+  if (!armed || e.pointerId !== armed.pointer) return;
+  if (Math.abs(e.clientY - armed.y) < ROW_SLOP) return;
+  // A finger past the slop is scrolling, so it gives up its hold rather than
+  // starting a drag it did not ask for.
+  if (e.pointerType === 'touch') {
+    disarm();
+    return;
+  }
+  const { key, y } = armed;
+  disarm();
+  beginRowDrag(key, y);
+  if (!rowDrag) return;
+  captureRow(e.pointerId);
+  aimRowDrag(rowDrag, e.clientY);
+});
+
+/** Set by a drag that ended, and read by the click that follows it. */
+let dragged = false;
+
+const endRowDrag = (drop: boolean): void => {
+  disarm();
+  const d = rowDrag;
+  rowDrag = null;
+  if (!d) return;
+  for (const r of d.rows) r.classList.remove('lifted');
+  dropLine.remove();
+  dragged = true;
+  if (!drop) return;
+  const before = d.at < d.rows.length ? rowKey(d.rows[d.at]) : null;
+  commands.dropSelection(d.parent, before);
+};
+
+shapeList.addEventListener('pointerup', () => endRowDrag(true));
+shapeList.addEventListener('pointercancel', () => endRowDrag(false));
+/* A press that became a drag must not also arrive as a click, or the row now
+   under the pointer takes the selection the drag just moved. Captured, so it
+   never reaches the handler above rather than being undone by it. */
+shapeList.addEventListener(
+  'click',
+  (e) => {
+    if (!dragged) return;
+    dragged = false;
+    e.stopPropagation();
+  },
+  true,
+);
 
 on('#delShape', () => {
   const ids = new Set(store.state.selection.shapes);
