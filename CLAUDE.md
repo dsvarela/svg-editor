@@ -248,6 +248,14 @@ landed during the run and says nothing about the code. Re-run the scenario on a
 still tree before believing it. This is the same constraint `mutate.mjs` has, for
 the same reason, and it applies to a hand edit just as much.
 
+**And it runs the other way, which is the direction that bites.** `mutate.mjs`
+rewrites the file it is measuring and puts it back between sites, so an edit
+made while a sweep is up is reverted by the sweep, silently, with the editor
+none the wiser. A sweep outlives the session that started it. Before touching
+`src/`, `pgrep -af mutate.mjs`; if one is up, kill it, run `mutate.mjs --recover`
+and check `git diff src/` is empty. Two edits were lost that way on 2026-08-19
+and both had to be made twice.
+
 **A survivor count is not a finding until someone has read the survivors.** In
 `offsetSubpath` it went from 29 of 92 to 26 of 87 while the gap closed, because
 most survivors change nothing observable and no test could have caught them.

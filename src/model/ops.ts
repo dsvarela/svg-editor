@@ -32,6 +32,9 @@ import type { NodeRef } from './doc';
 const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 const len = (a: Pt): number => Math.hypot(a[0], a[1]);
+/** Lengthen a handle about the anchor it belongs to, keeping its direction. */
+const stretchHandle = (anchor: Pt, h: Pt, k: number): Pt =>
+  add(anchor, [(h[0] - anchor[0]) * k, (h[1] - anchor[1]) * k]);
 
 /**
  * Where a missing handle would sit: one third along the segment it governs.
@@ -42,12 +45,14 @@ const len = (a: Pt): number => Math.hypot(a[0], a[1]);
 export function latentHandle(sp: Subpath, i: number, which: 'in' | 'out'): Pt | null {
   const n = sp.nodes.length;
   if (n < 2) return null;
-  const hasSegment = which === 'out' ? sp.closed || i < n - 1 : sp.closed || i > 0;
-  if (!hasSegment) return null;
 
-  const other = which === 'out' ? (i + 1) % n : (i - 1 + n) % n;
+  // The neighbour across the governed segment. Past the end of an open subpath
+  // there is no such segment; a closed one wraps round to the far end.
+  const other = i + (which === 'out' ? 1 : -1);
+  if (!sp.closed && (other < 0 || other >= n)) return null;
+
   const a = sp.nodes[i].pt;
-  const b = sp.nodes[other].pt;
+  const b = sp.nodes[(other + n) % n].pt;
   return [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
 }
 
@@ -276,8 +281,7 @@ export function deleteNode(sp: Subpath, i: number): boolean {
   const prev = sp.nodes[prevI];
   const next = sp.nodes[nextI];
 
-  const wasLine =
-    segmentIsLine(sp, prevI) && segmentIsLine(sp, i < n ? i : 0) && prev.hOut === null;
+  const wasLine = segmentIsLine(sp, prevI) && segmentIsLine(sp, i) && prev.hOut === null;
 
   if (wasLine) {
     prev.hOut = null;
@@ -292,8 +296,8 @@ export function deleteNode(sp: Subpath, i: number): boolean {
   const k1 = Math.min(3, total / Math.max(l1, 1e-9));
   const k2 = Math.min(3, total / Math.max(l2, 1e-9));
 
-  if (prev.hOut) prev.hOut = add(prev.pt, [(prev.hOut[0] - prev.pt[0]) * k1, (prev.hOut[1] - prev.pt[1]) * k1]);
-  if (next.hIn) next.hIn = add(next.pt, [(next.hIn[0] - next.pt[0]) * k2, (next.hIn[1] - next.pt[1]) * k2]);
+  if (prev.hOut) prev.hOut = stretchHandle(prev.pt, prev.hOut, k1);
+  if (next.hIn) next.hIn = stretchHandle(next.pt, next.hIn, k2);
 
   sp.nodes.splice(i, 1);
   return true;
@@ -1220,12 +1224,16 @@ export function nearestOnPath(
         const hi0 = Math.max(c[0][0], c[1][0], c[2][0], c[3][0]);
         const lo1 = Math.min(c[0][1], c[1][1], c[2][1], c[3][1]);
         const hi1 = Math.max(c[0][1], c[1][1], c[2][1], c[3][1]);
+        /* One bound, read once: the distance a segment has to beat to win. The
+           box test and the win test below are the same predicate at two
+           resolutions, so stating it twice is a way for them to disagree, and a
+           reject looser than the win test drops a segment that would have won. */
         const reach = best?.d ?? maxDist;
         if (p[0] < lo0 - reach || p[0] > hi0 + reach) continue;
         if (p[1] < lo1 - reach || p[1] > hi1 + reach) continue;
 
         const pr = projectToCubic(c, p);
-        if (pr.d < (best?.d ?? maxDist)) {
+        if (pr.d < reach) {
           best = { shape: shape.id, sp: spI, seg, t: pr.t, d: pr.d, pt: pr.pt };
         }
       }

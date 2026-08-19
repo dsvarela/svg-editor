@@ -1868,17 +1868,16 @@ const scenarios = {
 
     const worker = await run();
     check(worker.added > 0, 'the worker run added no shapes');
-    /* A responsiveness bound, and nothing more. The block is not zero even with
-       the worker, and cannot be: committing the shapes, serialising them and
-       rendering 3695 paths are all main-thread work. What it no longer contains
-       is the walk.
 
-       450 ms against 274, 310 and 353 measured over three runs on Firefox. Do
-       not read this as the check that the worker is being used -- it is not,
-       and the fallback lands at 470 to 530 on the same machine, which is only
-       just the other side of it. That discrimination is the difference check
-       below, which compares the two runs instead of trusting one number. */
-    check(worker.block < 450, `${worker.block} ms of blocked thread during a ${worker.ms} ms trace`);
+    /* That a worker did the walk, said as a fact rather than inferred from a
+       duration. Built, given the job, and heard back from: a build that
+       constructs one and then traces on the main thread anyway satisfies none
+       of the three, and blocks for a time well inside the spread a real worker
+       run has. */
+    const used = await page.evaluate(() => ({ ...window.__workers }));
+    check(used.made >= 1, 'the trace built no worker at all');
+    check(used.posted >= 1, `a worker was built but given no job (${JSON.stringify(used)})`);
+    check(used.replied >= 1, `a worker was given the job and never answered (${JSON.stringify(used)})`);
 
     /* The overlay stops drawing markers rather than putting one on each of
        23 000 nodes, and says so where the node count is. Checked here because
@@ -1906,17 +1905,32 @@ const scenarios = {
     check(blocked > 0, 'the fallback run never tried to build a worker, so it proves nothing');
     check(fallback.added === worker.added, `fallback added ${fallback.added}, worker added ${worker.added}`);
     check(fallback.status === worker.status, `fallback says "${fallback.status}"`);
+    /* `worker.block` is reported and never gated on alone. It reads 290 to
+       527 ms on one machine and one commit, so any absolute bound lands inside
+       its own spread and flips for reasons outside the repository; scaling it
+       by the machine's idle floor does not rescue it either, because the
+       interference arrives during the trace rather than before it. Both runs
+       below are measured under whatever the machine is doing at the time, which
+       is what makes their difference worth gating and either one alone not.
+
+       The plain comparison first: moving the walk off this thread leaves less
+       on it. */
+    check(
+      worker.block < fallback.block,
+      `the worker run blocked ${worker.block} ms and the fallback ${fallback.block}, so moving the walk off the thread bought nothing`,
+    );
     /* A difference rather than a ratio. Both runs pay the same commit and
        render on this thread; only the walk moves. So what separates them is a
        fixed few hundred milliseconds of walk, not a multiple, and asserting a
-       multiple would tighten as the shared cost falls. */
+       multiple would tighten as the shared cost falls. 292, 454 and 594 ms
+       measured over three runs. */
     check(
       fallback.block - worker.block > 100,
       `the fallback blocked ${fallback.block} ms against the worker's ${worker.block}, so this is not measuring the worker`,
     );
     await undo(page);
 
-    return { worker, fallback };
+    return { worker, fallback, used };
   },
 
   /**
@@ -6534,12 +6548,24 @@ page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
    page that runs the scenario. */
 await page.addInitScript(() => {
   const Real = window.Worker;
+  /* Counted as well as watched, so `traceWorker` can state that a worker did
+     the work rather than infer it from a duration. A build that constructs one
+     and then walks on the main thread anyway leaves `posted` and `replied` at
+     zero while blocking for a time inside the 290 to 527 ms spread a real
+     worker run has on one machine. */
+  window.__workers = { made: 0, posted: 0, replied: 0 };
   window.Worker = class extends Real {
     constructor(...args) {
       super(...args);
+      window.__workers.made++;
+      this.addEventListener('message', () => window.__workers.replied++);
       this.addEventListener('error', (e) => {
         console.error(`[worker] ${e.message || 'threw with no message'} at ${e.filename || '?'}:${e.lineno ?? '?'}`);
       });
+    }
+    postMessage(...args) {
+      window.__workers.posted++;
+      return super.postMessage(...args);
     }
   };
 });

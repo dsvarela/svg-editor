@@ -66,6 +66,80 @@ describe('measuring a corner', () => {
     const which = sp.nodes.map((_, i) => cornerAt(sp, i)).filter((c) => c === 'curved');
     expect(which.length).toBeGreaterThan(0);
   });
+
+  /**
+   * Each of the four handles that makes a corner curved, one at a time.
+   *
+   * The guard is a run of `||` over four of them, and a run of `||` is only
+   * measured by a case where exactly one alternative is true. The test above
+   * rounds a corner, which sets several at once, so narrowing the first `||` to
+   * `&&` left three of the four deciding nothing. Found by `tools/mutate.mjs`.
+   */
+  it.each([
+    ['the handle leaving the node before', 0, 'hOut'],
+    ['the handle arriving at this node', 1, 'hIn'],
+    ['the handle leaving this node', 1, 'hOut'],
+    ['the handle arriving at the node after', 2, 'hIn'],
+  ])('refuses a corner because of %s', (_what, node, part) => {
+    const sp = square();
+    expect(cornerAt(sp, 1)).not.toBe('curved');
+    (sp.nodes[node] as unknown as Record<string, unknown>)[part] = [5, 5];
+    expect(cornerAt(sp, 1)).toBe('curved');
+  });
+
+  /**
+   * The refusals nothing reached, and the index bound in both directions.
+   *
+   * `i >= n` narrowed to `i > n` reads one node past the end, which is
+   * `undefined` and a throw rather than an answer. Every fixture asked only for
+   * indices that exist.
+   */
+  it.each([
+    ['an index past the end', 4],
+    ['an index before the start', -1],
+    ['an index that is not whole', 1.5],
+  ])('refuses %s rather than reading off the end of the list', (_what, i) => {
+    expect(cornerAt(square(), i)).toBe('tiny');
+  });
+
+  it('refuses a subpath too short to have an interior corner', () => {
+    expect(cornerAt(shapeFromPath('M0 0 L40 0 Z').subpaths[0], 1)).toBe('tiny');
+  });
+
+  /* Either side alone, which is what the `||` needs. A zero-length edge gives
+     the corner no direction to measure from, and only one of the two was ever
+     degenerate in a fixture. */
+  it.each([
+    ['the side arriving', 'M0 0 L0 0 L40 0 L20 30 Z', 1],
+    ['the side leaving', 'M0 0 L40 0 L40 0 L20 30 Z', 1],
+  ])('refuses a corner whose %s edge has no length', (_which, d, i) => {
+    expect(cornerAt(shapeFromPath(d).subpaths[0], i)).toBe('tiny');
+  });
+
+  it('refuses a node the path runs straight through', () => {
+    expect(cornerAt(shapeFromPath('M0 0 L20 0 L40 0 L40 40 Z').subpaths[0], 1)).toBe('straight');
+  });
+
+  it('refuses a node the path folds back on', () => {
+    // Out to 40 and straight back to 20: the two sides leave along the same ray.
+    expect(cornerAt(shapeFromPath('M0 0 L40 0 L20 0 L20 40 Z').subpaths[0], 1)).toBe('straight');
+  });
+
+  /* A corner with no axis-aligned side.
+   *
+   * `u[0] * v[0] + u[1] * v[1]` is the dot product, and on every fixture above
+   * one of the four factors is zero: a square's sides run along the axes, and
+   * even the wedge's node 1 arrives along -x, so `u[1]` is zero there. With one
+   * term always vanishing the sum and the difference are the same number, and
+   * the sign could be either. Here both terms carry weight. */
+  it('measures a corner with neither side along an axis', () => {
+    const c = cornerAt(shapeFromPath('M0 0 L40 10 L10 40 Z').subpaths[0], 1);
+    if (typeof c === 'string') throw new Error(c);
+    const a = [-40, -10];
+    const b = [-30, 30];
+    const dot = (a[0] * b[0] + a[1] * b[1]) / (Math.hypot(...a) * Math.hypot(...b));
+    expect(c.alpha).toBeCloseTo(Math.acos(dot), 12);
+  });
 });
 
 describe('reading a fillet back', () => {

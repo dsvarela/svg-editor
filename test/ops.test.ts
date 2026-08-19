@@ -10,6 +10,7 @@ import {
   connectEnds,
   mergeEnds,
   deleteNode,
+  latentHandle,
   moveAnchor,
   moveHandle,
   reshapeSegment,
@@ -25,6 +26,7 @@ import {
 } from '../src/model/ops';
 import { emptyDoc, shapeFromPath, shapeBBox, selectedNodes, emptySelection } from '../src/model/doc';
 import type { NodeRef } from '../src/model/doc';
+import type { AlignMode } from '../src/model/ops';
 import type { Doc } from '../src/core/types';
 import { KAPPA } from '../src/core/primitives';
 import { Store } from '../src/model/store';
@@ -140,6 +142,34 @@ describe('moving', () => {
     const sp = parsePath('M0 0 L10 0 C15 0 20 5 20 10')[0];
     moveHandle(sp, 1, 'out', [15, -5]);
     expect(sp.nodes[1].hIn).toBeNull();
+  });
+});
+
+describe('where a missing handle would sit', () => {
+  /* Two nodes is the smallest subpath that has a segment, and `deleteNode`
+     produces one whenever a ring of three loses a node -- so the floor below
+     which there is no neighbour to point at is one node, not two. */
+  it('answers on the smallest subpath that has a segment', () => {
+    const open = parsePath('M4 6 L34 6')[0];
+    expect(latentHandle(open, 0, 'out')).toEqual([14, 6]);
+    expect(latentHandle(open, 1, 'in')).toEqual([24, 6]);
+    expect(latentHandle(open, 0, 'in')).toBeNull();
+    expect(latentHandle(open, 1, 'out')).toBeNull();
+  });
+
+  it('wraps on a closed pair, where both sides lead to the same neighbour', () => {
+    const ring = parsePath('M4 6 L34 6 Z')[0];
+    expect(latentHandle(ring, 0, 'out')).toEqual([14, 6]);
+    expect(latentHandle(ring, 0, 'in')).toEqual([14, 6]);
+  });
+
+  it('has nothing to point at when a subpath is down to one node', () => {
+    const lone = parsePath('M4 6 L34 6')[0];
+    lone.nodes.length = 1;
+    expect(latentHandle(lone, 0, 'out')).toBeNull();
+    expect(latentHandle(lone, 0, 'in')).toBeNull();
+    lone.closed = true;
+    expect(latentHandle(lone, 0, 'out')).toBeNull();
   });
 });
 
@@ -406,6 +436,31 @@ describe('deleting', () => {
     expect(deleteNode(sp, 2)).toBe(true);
     expect(sp.nodes).toHaveLength(2);
     expect(sp.nodes[1].hOut).toBeNull();
+  });
+
+  it('clears the handle facing the end that was removed, at either end', () => {
+    // The new end has no segment beyond it, and a handle there would make
+    // `segmentIsLine` disagree with the fact that nothing is drawn past it.
+    const head = parsePath('M0 0 C0 10 10 10 10 0 C10 -10 20 -10 20 0')[0];
+    expect(deleteNode(head, 0)).toBe(true);
+    expect(head.nodes[0].pt).toEqual([10, 0]);
+    expect(head.nodes[0].hIn).toBeNull();
+    expect(head.nodes[0].hOut).not.toBeNull();
+
+    const tail = parsePath('M0 0 C0 10 10 10 10 0 C10 -10 20 -10 20 0')[0];
+    expect(deleteNode(tail, 2)).toBe(true);
+    expect(tail.nodes[1].pt).toEqual([10, 0]);
+    expect(tail.nodes[1].hOut).toBeNull();
+    expect(tail.nodes[1].hIn).not.toBeNull();
+  });
+
+  it('refuses an index the subpath does not have, and changes nothing', () => {
+    // The caller loops over a selection and reads the answer to decide whether
+    // to record an undo entry, so a refusal has to be both reported and true.
+    const sp = parsePath('M0 0 C0 10 10 10 10 0 L20 0')[0];
+    const before = JSON.stringify(sp);
+    for (const i of [-1, 3, 99]) expect(deleteNode(sp, i)).toBe(false);
+    expect(JSON.stringify(sp)).toBe(before);
   });
 });
 
@@ -1231,6 +1286,63 @@ describe('aligning and distributing anchors', () => {
     expect(xs(doc)).toEqual([0, 10, 20]);
   });
 
+
+  /* Every mode, not just one. `top` alone leaves `horizontal` false whatever
+     the disjunction says, so `left || right || hcenter` narrowed to `&&` made
+     every mode vertical and nothing disagreed. And the two centring modes are
+     the only place a midpoint is computed, so `(min + max) / 2` could be a
+     difference. Found by `tools/mutate.mjs`. */
+  it.each([
+    ['left', 'x', [0, 0, 0]],
+    ['right', 'x', [20, 20, 20]],
+    ['hcenter', 'x', [10, 10, 10]],
+    ['top', 'y', [1, 1, 1]],
+    ['bottom', 'y', [9, 9, 9]],
+    ['vcenter', 'y', [5, 5, 5]],
+  ])('aligns %s', (mode, axis, want) => {
+    const { doc, refs } = fixture('M0 4 L10 9 L20 1');
+    expect(alignNodes(doc, refs, mode as AlignMode)).toBe(true);
+    expect(axis === 'x' ? xs(doc) : ys(doc)).toEqual(want);
+  });
+
+  /* Two is the smallest number of anchors with something to align to, and the
+     bound was only ever exercised from above: widened to `<= 2` a pair is
+     refused, and every fixture here had three. */
+  it('aligns exactly two anchors, which is the smallest that has a common box', () => {
+    const { doc, refs } = fixture('M0 4 L10 9');
+    expect(alignNodes(doc, refs, 'top')).toBe(true);
+    expect(ys(doc)).toEqual([4, 4]);
+  });
+
+  /* One anchor, and the answer is the boolean rather than the geometry. This
+     test was written, judged unfalsifiable and deleted earlier the same day, on
+     the argument that removing the guard leaves the function returning false
+     anyway. That is true of removing the guard and false of the mutation the
+     tester actually makes, which is to the returned value: `return true` here
+     reports a move that did not happen, and `tryEdit` files an entry for it. */
+  it('declines one anchor, and says so rather than filing an edit', () => {
+    const { doc, refs } = fixture('M0 4 L10 9 L20 1');
+    expect(alignNodes(doc, refs.slice(0, 1), 'top')).toBe(false);
+    expect(ys(doc)).toEqual([4, 9, 1]);
+  });
+
+  it('declines two anchors to distribute, for the same reason', () => {
+    const { doc, refs } = fixture('M0 0 L3 0 L20 0');
+    expect(distributeNodes(doc, refs.slice(0, 2), 'h')).toBe(false);
+    expect(xs(doc)).toEqual([0, 3, 20]);
+  });
+
+  /* Anchors arriving in an order that is not their order along the axis, which
+     is what the sort is for. Every fixture handed them over already sorted, so
+     the comparator could have added the two coordinates instead of subtracting
+     them. */
+  it('spaces anchors that arrive out of order along the axis', () => {
+    const { doc, refs } = fixture('M20 0 L0 0 L3 0');
+    expect(distributeNodes(doc, refs, 'h')).toBe(true);
+    // Sorted they are 0, 3, 20; the middle one belongs at 10. Read back in
+    // node order, which is the order the path declares them.
+    expect(xs(doc)).toEqual([20, 0, 10]);
+  });
 
   /* The refs these two are handed come from `selectedNodes`, which is where a
      shape's own nodes and a separate node selection are put together. A node
