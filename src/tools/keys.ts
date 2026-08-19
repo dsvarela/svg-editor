@@ -156,7 +156,7 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
        what `keyboard guard` in `test/controller.test.ts` now watches for. */
     const rewrites = [
       'Delete', 'Backspace',
-      'A', 'B', 'C', 'F', 'I', 'J', 'K', 'M', 'P', 'R', 'S', 'Y',
+      'A', 'B', 'C', 'F', 'G', 'I', 'J', 'K', 'M', 'P', 'R', 'S', 'Y',
     ];
     if (controller.busy && rewrites.includes(e.key)) {
       e.preventDefault();
@@ -214,6 +214,15 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
         return;
       }
       // Shift+I, the keyboard's version of double-clicking an outline.
+      /* Shift+G, beside Ctrl+G and Ctrl+Shift+G, which group and ungroup. It
+         changes the selection rather than the document, and is in the guard
+         above anyway: a drag holds refs into the selection it started with, and
+         widening that mid-drag hands the gesture shapes it never picked up. */
+      case 'G': {
+        e.preventDefault();
+        commands.selectGroup();
+        break;
+      }
       case 'I': {
         if (!e.shiftKey) return;
         e.preventDefault();

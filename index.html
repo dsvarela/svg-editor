@@ -256,6 +256,10 @@
               <button class="btn" id="groupShapes" title="Put the selected shapes in a group. They keep their own coordinates: a group says what belongs together, not where it is (Ctrl+G)">Group</button>
               <button class="btn" id="ungroupShapes" title="Take the selected shapes out of their group, one level (Ctrl+Shift+G)">Ungroup</button>
             </div>
+            <!-- The way back up. Clicking a shape in a group selects that shape,
+                 which is what lets one shape inside a group be nudged, and left
+                 the group itself reachable only by its row here. §61. -->
+            <button class="btn wide" id="selectGroup" title="Widen the selection to the group it is in, one level per press (Shift+G)">Select group</button>
             <!-- Paint order. The list above is that order, so a press here moves
                  the selected row as well as what it draws -- and so does dragging
                  the row itself, which is why these four are behind the touch

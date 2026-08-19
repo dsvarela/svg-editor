@@ -1109,6 +1109,7 @@ function refreshInspector(): void {
   // Both derived from the selection, which every notification carries.
   ($('#groupShapes') as HTMLButtonElement).disabled = !commands.canGroup;
   ($('#ungroupShapes') as HTMLButtonElement).disabled = !commands.canUngroup;
+  ($('#selectGroup') as HTMLButtonElement).disabled = !commands.canSelectGroup;
   /* Live for any selected shape, including one already at the front. Whether
      there is room to move is a question about the whole tree, and a button that
      greys out on the answer would flicker as the selection changed; pressing it
@@ -2235,6 +2236,7 @@ on('#delShape', () => {
 on('#dupShape', () => commands.duplicateSelection());
 on('#groupShapes', () => commands.groupSelection());
 on('#ungroupShapes', () => commands.ungroupSelection());
+on('#selectGroup', () => commands.selectGroup());
 on('#copySel', () => commands.copySelection());
 on('#cutSel', () => commands.cutSelection());
 on('#pasteSel', () => commands.paste());

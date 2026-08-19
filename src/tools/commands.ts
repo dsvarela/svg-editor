@@ -21,6 +21,7 @@ import {
   emptySelection,
   findGroup,
   findShape,
+  groupChain,
   makeShape,
   pruneGroups,
   nextId,
@@ -29,6 +30,7 @@ import {
   selectedRefs,
   selectedSubpaths,
   selectedShapes,
+  shapesInGroup,
   selectionBBox,
 } from '../model/doc';
 import type { HandlePart, NodeRef } from '../model/doc';
@@ -1735,6 +1737,83 @@ export class Commands {
       true,
     );
     return true;
+  }
+
+  /**
+   * Widen the selection to the group it is in, one level per press.
+   *
+   * The one thing a click on the canvas could not do. A shape inside a group
+   * selects as itself here, which is what makes nudging one shape inside a
+   * group possible and is deliberately not Illustrator's default -- and it left
+   * the group reachable only by its row in the list. This is the way back up.
+   *
+   * **The level is derived, not stored.** Illustrator keeps a mode: you are
+   * inside a group until you press Escape, and what a click means depends on
+   * where you have been. Here the answer comes from the selection itself -- the
+   * nearest ancestor group that is not already wholly selected -- so pressing it
+   * again goes one level further out and nothing has to be remembered between
+   * presses. Selecting by hand and pressing this gives the same result as
+   * arriving at that selection any other way, which a mode cannot promise.
+   *
+   * Not an edit: the document is untouched, so this takes no undo step, the same
+   * as clicking a shape.
+   */
+  selectGroup(): boolean {
+    const s = this.store.state;
+    const chosen = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
+    if (!chosen.length) {
+      this.onMessage?.('Select group needs a shape selected.', false);
+      return false;
+    }
+
+    const ids = new Set(chosen.map((sh) => sh.id));
+    const widened = new Set(ids);
+    const levels = new Set<string>();
+    for (const sh of chosen) {
+      const chain = groupChain(s.doc, sh.group);
+      const g = chain.find((grp) => !shapesInGroup(s.doc, grp.id).every((m) => ids.has(m.id)));
+      if (!g) continue;
+      levels.add(g.id);
+      for (const m of shapesInGroup(s.doc, g.id)) widened.add(m.id);
+    }
+
+    if (!levels.size) {
+      const anyGroup = chosen.some((sh) => sh.group);
+      this.onMessage?.(
+        anyGroup ? 'That is already the whole group.' : 'Nothing selected is in a group.',
+        false,
+      );
+      return false;
+    }
+
+    this.store.update((st) => {
+      st.selection.shapes = widened;
+      /* Cleared, because the node selection was about the shapes you had. The
+         node panel reading a shape you did not choose is worse than it reading
+         nothing. */
+      st.selection.nodes.clear();
+    });
+    const n = widened.size;
+    this.onMessage?.(
+      levels.size === 1
+        ? `Selected the group: ${n} shape${n === 1 ? '' : 's'}.`
+        : `Selected ${levels.size} groups: ${n} shapes.`,
+      true,
+    );
+    return true;
+  }
+
+  /** Whether Select group would widen anything, for the button that offers it. */
+  get canSelectGroup(): boolean {
+    const s = this.store.state;
+    const ids = s.selection.shapes;
+    return s.doc.shapes.some(
+      (sh) =>
+        ids.has(sh.id) &&
+        groupChain(s.doc, sh.group).some(
+          (g) => !shapesInGroup(s.doc, g.id).every((m) => ids.has(m.id)),
+        ),
+    );
   }
 
   /** Whether Group would do anything, for the button that offers it. */

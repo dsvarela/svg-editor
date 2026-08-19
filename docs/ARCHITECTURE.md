@@ -2824,3 +2824,51 @@ that wrote `opacity` only below 1 would leave the last value on the element and 
 shape brought back to 100% would stay faded. The browser scenario checks exactly
 that, because it is invisible in a unit test of the exporter and it is the only
 half of the pair that a person would report as a bug.
+
+## 61. The way back up from a shape to its group, without a mode
+
+Clicking a shape inside a group selects that shape. Illustrator selects the
+group, and you double-click to go inside it. The difference is deliberate and
+§49 is why: a group here is a relation and not a container, so a shape in one is
+an ordinary shape, and nudging one shape inside a group should not require
+taking it out first.
+
+What that cost was the other direction. A group was selectable only by its row in
+the shape list, so a drawing on screen had no handle for the thing it belonged
+to.
+
+**Select group** (`Shift+G`) widens the selection to the group its shapes are in,
+one level per press.
+
+### The level is derived, not stored
+
+Illustrator's version is a mode: you are inside a group until you press Escape,
+and what a click means depends on where you have been. That is a second piece of
+state describing the selection, and it can disagree with the selection -- the
+same objection §6 makes to a stored node type and §5 to a stored transform.
+
+Here the level is read off the selection at the moment of the press: the nearest
+ancestor group that is not **already wholly selected**. Pressing again goes one
+further out, because the group you just selected now is wholly selected. Nothing
+is remembered between presses, so a selection made by hand behaves exactly like
+the same selection arrived at by pressing, which a mode cannot promise.
+
+`canSelectGroup` asks the same question and is what greys the button out at the
+top level, so a press that would report success and change nothing is not
+offered.
+
+### The style on a group stays refused
+
+The shopping list carried **a style on a group** beside this, and building it
+would undo §49. An SVG `<g>` can hold a `fill` for everything inside it, and a
+`<g>` imported here has its fill pushed down onto the shapes. Keeping it on the
+group instead would mean a shape's painted colour is not a property of the shape:
+two places for one fact, which is §5's objection to a stored transform and §6's
+to a stored node type, arriving a third time.
+
+The entry set its own condition -- "worth doing only with an answer to which of
+the two wins when they disagree" -- and there is no answer that is not a rule the
+panel would have to teach. Meanwhile the operation people actually want already
+works: selecting a group selects its shapes, so setting a colour on a group
+colours them. What is missing is only the inheritance, and the inheritance is the
+part that costs.

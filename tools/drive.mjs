@@ -4396,6 +4396,35 @@ const scenarios = {
     out.selinfo = (await page.textContent('#selinfo')).trim();
     check(/2 shapes/.test(out.selinfo), `the readout says ${JSON.stringify(out.selinfo)}`);
 
+    /* Select group, which is the way back from a shape to the group it is in.
+       Driven from the canvas, because the list already had this: clicking the
+       group's row selects it, and the gap was that a click on the drawing could
+       only ever reach the shape. The blur is so the key goes to the document
+       rather than to the list that was last focused. */
+    await page.click('#shapelist li.shape');
+    await settle(page);
+    check(!(await page.isDisabled('#selectGroup')), 'Select group was dead on a shape inside a group');
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('Shift+G');
+    await settle(page);
+    const widened = await rows();
+    check(widened[0].selected, 'Shift+G did not select the group');
+    check(widened[1].selected && widened[2].selected, 'Shift+G left one of the group behind');
+    check(!widened[3].selected, 'Shift+G reached a shape outside the group');
+    out.selectGroup = (await page.textContent('#status')).trim();
+    check(/Selected the group/.test(out.selectGroup), `Select group said "${out.selectGroup}"`);
+    /* Nowhere further out, so the button goes dead rather than reporting a
+       success that changed nothing. */
+    check(await page.isDisabled('#selectGroup'), 'Select group stayed live on the outermost group');
+    /* The loose shape, named by its level rather than by its position: the rows
+       nest, so `nth-child` counts inside whichever list its parent is. */
+    await page.click('#shapelist li.shape[aria-level="1"]');
+    await settle(page);
+    check(await page.isDisabled('#selectGroup'), 'Select group was live on a shape in no group');
+
+    await page.click('#shapelist li.group');
+    await settle(page);
+
     // Shut it: the rows inside go, and the group's own row stays.
     await page.click('#shapelist li.group > .twist');
     await settle(page);

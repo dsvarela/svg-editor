@@ -415,3 +415,119 @@ describe('a copy of something in a group', () => {
     expect(svg.match(/<\/g>/g) ?? []).toHaveLength(1);
   });
 });
+
+/**
+ * Getting back from a shape to the group it is in.
+ *
+ * A click on the canvas selects the shape, never the group, which is what makes
+ * one shape inside a group nudgeable and is deliberately not Illustrator's
+ * default. The cost was that the group had no canvas-side handle at all: the
+ * only way to select one was its row in the list.
+ *
+ * The level is derived from the selection rather than remembered, so these check
+ * the same press twice in a row goes two levels out, and that arriving at a
+ * selection by hand behaves the same as arriving at it by pressing.
+ */
+describe('selecting the group a shape is in', () => {
+  /** The names of the selected shapes, sorted so the assertion is about the set. */
+  const picked = (store: Store): string[] =>
+    store.state.doc.shapes
+      .filter((sh) => store.state.selection.shapes.has(sh.id))
+      .map((sh) => sh.name)
+      .sort();
+
+  it('refuses with nothing selected', () => {
+    const { commands } = editor();
+    expect(commands.selectGroup()).toBe(false);
+  });
+
+  it('refuses when the selection is in no group', () => {
+    const { store, commands } = editor();
+    select(store, 's0');
+    expect(commands.selectGroup()).toBe(false);
+    expect(picked(store)).toEqual(['s0']);
+  });
+
+  it('widens one shape to the whole group', () => {
+    const { store, commands } = editor();
+    select(store, 's0', 's1');
+    commands.groupSelection();
+    select(store, 's0');
+    expect(commands.selectGroup()).toBe(true);
+    expect(picked(store)).toEqual(['s0', 's1']);
+  });
+
+  it('goes one level further out on the next press', () => {
+    const { store, commands } = editor(3);
+    /* Outer first, then a subset of it: that is the only way to nest here.
+       `groupSelection` nests when every chosen shape is already in one group
+       together, and otherwise puts the new group at the top -- so grouping the
+       inner pair first and the three second flattens the pair rather than
+       wrapping it. */
+    select(store, 's0', 's1', 's2');
+    commands.groupSelection();
+    select(store, 's0', 's1');
+    commands.groupSelection();
+
+    select(store, 's0');
+    expect(commands.selectGroup()).toBe(true);
+    expect(picked(store)).toEqual(['s0', 's1']);
+    expect(commands.selectGroup()).toBe(true);
+    expect(picked(store)).toEqual(['s0', 's1', 's2']);
+    // And there is nowhere left to go.
+    expect(commands.selectGroup()).toBe(false);
+    expect(picked(store)).toEqual(['s0', 's1', 's2']);
+  });
+
+  /* The level is read off the selection, so how you arrived at it cannot
+     matter. A stored level is exactly what would make these two disagree. */
+  it('does not care how the selection was arrived at', () => {
+    const { store, commands } = editor(3);
+    select(store, 's0', 's1', 's2');
+    commands.groupSelection();
+    select(store, 's0', 's1');
+    commands.groupSelection();
+
+    select(store, 's0', 's1');
+    expect(commands.selectGroup()).toBe(true);
+    expect(picked(store)).toEqual(['s0', 's1', 's2']);
+  });
+
+  it('takes no undo step, because it edits nothing', () => {
+    const { store, commands } = editor();
+    select(store, 's0', 's1');
+    commands.groupSelection();
+    const before = store.canUndo;
+    select(store, 's0');
+    commands.selectGroup();
+    expect(store.canUndo).toBe(before);
+    /* Undoing once has to land on the pre-group document, not on a selection
+       change that got its own entry. */
+    store.undo();
+    expect(store.state.doc.groups ?? []).toHaveLength(0);
+  });
+
+  it('drops the node selection, which was about the shapes you had', () => {
+    const { store, commands } = editor();
+    select(store, 's0', 's1');
+    commands.groupSelection();
+    select(store, 's0');
+    store.update((s) => {
+      const sh = s.doc.shapes.find((x) => x.name === 's0')!;
+      s.selection.nodes.add(sh.subpaths[0].nodes[0].id);
+    });
+    commands.selectGroup();
+    expect(store.state.selection.nodes.size).toBe(0);
+  });
+
+  it('says whether it would do anything, for the button', () => {
+    const { store, commands } = editor();
+    expect(commands.canSelectGroup).toBe(false);
+    select(store, 's0', 's1');
+    commands.groupSelection();
+    select(store, 's0');
+    expect(commands.canSelectGroup).toBe(true);
+    commands.selectGroup();
+    expect(commands.canSelectGroup).toBe(false);
+  });
+});

@@ -227,6 +227,19 @@ A shape inside a group moves among the shapes of that group and stops at its
 edges, because a group is drawn as one run. Select the whole group to move it
 past other shapes, or ungroup the shape to take it out.
 
+## Select a whole group from the canvas
+
+Click any shape in it, then press `Shift`+`G`, or **Select group** in the
+**Shapes** panel.
+
+Clicking a shape on the canvas selects that shape and not its group, which is
+what lets you nudge one shape inside a group without taking it out. `Shift`+`G`
+is the way back up. Press it again for the group above that, until there is
+nowhere left to go and the button goes dead.
+
+The group's row in the shape list does the same thing in one click, if the list
+is where you are already looking.
+
 ## Line up and space out shapes
 
 Select two or more shapes, open the **Shape** tab and use the **Arrange** panel.

@@ -76,6 +76,7 @@ treat those two rows as untried rather than as reported working.
 | `Ctrl`+`V` | Put the last copy back, offset from the one before it |
 | `Ctrl`+`G` | Put the selected shapes in a group |
 | `Ctrl`+`Shift`+`G` | Take the selected shapes out of their group, one level |
+| `Shift`+`G` | Widen the selection to the group it is in, one level |
 | `Ctrl`+`]` `[` | Move the selection one step later or earlier in the paint order |
 | `Ctrl`+`Shift`+`]` `[` | Move it in front of or behind everything |
 | `Ctrl`+`E` | Open or close the source drawer |
@@ -169,6 +170,21 @@ Grouping a few shapes that are already in one group makes a group inside it rath
 than taking them out of it. Groups nest as deeply as you like, and **Ungroup**
 unwraps one level per press.
 
+**Clicking a shape on the canvas selects that shape, not its group.** That is what
+lets you nudge one shape inside a group without taking it out. **Select group**
+(`Shift+G`) is the way back: it widens the selection to the group the shapes are
+in, and pressing it again goes one level further out. It goes dead when there is
+nowhere left to go, and it changes nothing in the drawing, so it takes no undo
+step.
+
+**A group has no style of its own.** An SVG `<g>` can carry a fill for everything
+inside it; a `<g>` you import has its fill pushed down onto the shapes instead,
+and what you export is the style on each shape. Selecting a group and setting a
+colour does what you would expect, because selecting a group selects its shapes.
+What does not exist is a colour stored on the group and inherited: that would put
+a shape's painted colour in two places, and the whole editor is built on there
+being one. See [Explanation](explanation.md).
+
 **Drag a row to move it through the paint order.** The line shows where it will
 land, and it lands only among the rows it is already beside: a shape cannot be
 dragged out of a group, because a group's shapes are one unbroken run of the
@@ -215,6 +231,8 @@ mouse the keys below are the whole of it.
 - **Delete** (`Delete`) removes them.
 - **Group** puts the selected shapes in a group, and **Ungroup** takes them out
   again one level at a time. Two or more shapes are needed to group.
+- **Select group** (`Shift+G`) widens the selection to the group it is in, one
+  level per press.
 - **Copy** (`Ctrl+C`) holds the selection for a later paste. With shapes selected it takes
   them whole. With only nodes selected it takes each run of two or more adjacent
   ones as its own open path, which is how you lift a piece of an outline. A
