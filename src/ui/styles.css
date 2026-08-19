@@ -17,6 +17,21 @@
    colour sits on which, and `npm run check:contrast` does the arithmetic.
    --------------------------------------------------------------------------- */
 
+/* The user agent's `[hidden] { display: none }` is the weakest rule there is,
+   so ANY author rule setting `display` beats it and the attribute stops working.
+   That was patched four times, one class at a time -- `.gbody`, `.tabpanel`,
+   `.row`, `.rd` -- and a fifth escaped: `.btn` is `display: inline-flex`, so
+   `#fitPixels` sat on screen and ENABLED while Pixel fit was off, and pressing
+   it moved every node onto a lattice that was not drawn.
+
+   One rule instead of a growing list. `!important` is the whole point rather
+   than a shortcut: it has to outrank whatever a component sets, including a
+   rule written next year by somebody who has not read this. `hidden` means the
+   element is not for the reader, which is not a claim any layout should be able
+   to overrule. Anything that wants to hide and stay laid out has `visibility`
+   or a class of its own. */
+[hidden] { display: none !important; }
+
 :root {
   --canvas: #f7f9fb;
   --panel: #ffffff;
@@ -755,9 +770,8 @@ button.glabel[aria-expanded='false'] { color: var(--ink-3); }
    middle rung of the ladder has to go. It had no layout rule at all: two
    consecutive `.grid2` blocks sat at 0px and their buttons touched, while the
    4px inside each block made a run of rows read as one undivided slab. The
-   `[hidden]` rule below is more specific and still wins. */
+   `[hidden]` rule at the top of this file outranks it when the group is shut. */
 .gbody { display: flex; flex-direction: column; gap: 12px; }
-.gbody[hidden] { display: none; }
 /* Room between a shut group's header and the next one. An open group's body
    provides it; without this a run of collapsed groups reads as one block. */
 .group:has(> .gbody[hidden]) { padding-bottom: 4px; }
@@ -824,7 +838,6 @@ button.glabel[aria-expanded='false'] { color: var(--ink-3); }
 .tab[aria-selected='true'] { color: var(--accent-ink); background: var(--accent); }
 /* Groups bring their own separators, so the panel adds no gap of its own. */
 .tabpanel { display: flex; flex-direction: column; }
-.tabpanel[hidden] { display: none; }
 
 /* --- style controls ---------------------------------------------------- */
 
@@ -970,11 +983,9 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    element travels with the clone and beats the inherited `fill: none` above. */
 
 .row { display: flex; align-items: center; gap: 7px; }
-/* `display: flex` beats the user agent's `[hidden] { display: none }`, so a row
-   hidden from script stays on screen. Three rules in this file already exist for
-   the same reason -- `.gbody`, `.tabpanel`, `.rd` -- and every new display rule
-   on something script hides needs its own. */
-.row[hidden] { display: none; }
+/* A row is laid out as a flex line. It needs no `[hidden]` companion of its own:
+   the rule at the top of this file covers every element at once, which is what
+   replaced the four that were written one class at a time. */
 .row label {
   font-family: var(--mono);
   font-size: 11px;
@@ -1213,7 +1224,6 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rd.xy { width: 19ch; justify-content: flex-start; overflow: hidden; }
 /* `.rd` sets `display: flex`, which beats the `hidden` attribute's own
    `display: none` on specificity. Without this the slot would never hide. */
-.rd[hidden] { display: none; }
 /* Fixed, for the reason `.rd.xy` is fixed: this one appears and disappears
    mid-drag, and a slot that resizes as the digits grow drags the coordinates
    sideways exactly while you are trying to read them. */
