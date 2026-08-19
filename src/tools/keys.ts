@@ -156,7 +156,7 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
        what `keyboard guard` in `test/controller.test.ts` now watches for. */
     const rewrites = [
       'Delete', 'Backspace',
-      'A', 'B', 'C', 'F', 'G', 'I', 'J', 'K', 'M', 'P', 'R', 'S', 'Y',
+      'A', 'B', 'C', 'F', 'G', 'I', 'J', 'K', 'M', 'P', 'R', 'S', 'T', 'Y',
     ];
     if (controller.busy && rewrites.includes(e.key)) {
       e.preventDefault();
@@ -221,6 +221,14 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
       case 'G': {
         e.preventDefault();
         commands.selectGroup();
+        break;
+      }
+      /* Shift+T, and not Ctrl+D, which is what Illustrator uses for this and
+         what Duplicate already uses here. Duplicate is the one you press first
+         and far more often, so it keeps the binding every editor shares. */
+      case 'T': {
+        e.preventDefault();
+        commands.repeatTransform();
         break;
       }
       case 'I': {

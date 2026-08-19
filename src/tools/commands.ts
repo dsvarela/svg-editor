@@ -1124,6 +1124,7 @@ export class Commands {
         if (!sp?.nodes[r.i]) continue;
         moveAnchor(sp, r.i, [sp.nodes[r.i].pt[0] + d[0], sp.nodes[r.i].pt[1] + d[1]]);
       }
+      st.lastTransform = { m: translate(d[0], d[1]), what: `move ${fmt(d[0])}, ${fmt(d[1])}` };
     });
   }
 
@@ -1401,10 +1402,65 @@ export class Commands {
 
     const saved = captureNodes(s.doc, selectedNodes(s.doc, s.selection));
     if (!saved.length) return false;
+    const what =
+      part === 'x' || part === 'y'
+        ? `move ${part === 'x' ? 'X' : 'Y'} to ${value}`
+        : `set ${part === 'w' ? 'width' : 'height'} to ${value}`;
     return this.store.tryEdit((st) => {
       transformCaptured(st.doc, saved, m);
+      st.lastTransform = { m, what };
       return true;
     });
+  }
+
+  /**
+   * Do the last transform again, to whatever is selected now.
+   *
+   * Duplicate, move, repeat is how a row of things is built, and duplicate,
+   * rotate, repeat is how a radial one is. Both are cheap here precisely because
+   * §5 bakes transforms into coordinates: the last matrix is the whole of what
+   * has to be remembered, and applying it again is the same call.
+   *
+   * **The matrix, not the gesture.** Illustrator's Transform Again repeats what
+   * you did; this repeats the matrix that came out of it, which is the same
+   * thing for a rotate about a centre and deliberately not the same thing for a
+   * scale typed as a width. `set width to 40` on a 20-wide selection produced a
+   * doubling, and doing it again doubles whatever is selected now rather than
+   * setting it to 40. The label says which one you have.
+   *
+   * Applied through the node capture rather than `transformShape`, so it moves
+   * exactly what a drag would: the selected nodes, which for a selected shape is
+   * all of them. A whole-shape version would silently widen a node selection.
+   */
+  repeatTransform(): boolean {
+    const s = this.store.state;
+    const last = s.lastTransform;
+    if (!last) {
+      this.onMessage?.('Nothing to repeat: move, rotate or scale something first.', false);
+      return false;
+    }
+    const saved = captureNodes(s.doc, selectedNodes(s.doc, s.selection));
+    if (!saved.length) {
+      this.onMessage?.('Repeat needs something selected.', false);
+      return false;
+    }
+    /* Read before the edit and put back after it. `store.edit` is what records
+       the history entry, and the matrix has to survive that entry so a run of
+       presses keeps repeating the same thing rather than the last one being
+       overwritten by nothing. It is not overwritten by anything here, but
+       saying so is cheaper than the next reader wondering. */
+    const done = this.store.tryEdit((st) => {
+      transformCaptured(st.doc, saved, last.m);
+      return true;
+    });
+    if (done) this.onMessage?.(`Again: ${last.what}.`, true);
+    return done;
+  }
+
+  /** Whether Repeat would do anything, for the button that offers it. */
+  get canRepeatTransform(): boolean {
+    const s = this.store.state;
+    return !!s.lastTransform && selectedNodes(s.doc, s.selection).length > 0;
   }
 
   /* ---------------------------------------------------------- whole shapes */
@@ -1440,6 +1496,17 @@ export class Commands {
     const ids = new Set(targets.map((t) => t.id));
     this.store.edit((st) => {
       for (const shape of st.doc.shapes) if (ids.has(shape.id)) transformShape(shape, m);
+      st.lastTransform = {
+        m,
+        what:
+          kind === 'rotate'
+            ? `rotate ${amount}°`
+            : kind === 'scale'
+              ? `scale ${amount}`
+              : kind === 'flipH'
+                ? 'flip across the vertical'
+                : 'flip across the horizontal',
+      };
     });
   }
 

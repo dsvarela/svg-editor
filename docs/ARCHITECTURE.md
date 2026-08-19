@@ -2872,3 +2872,64 @@ panel would have to teach. Meanwhile the operation people actually want already
 works: selecting a group selects its shapes, so setting a colour on a group
 colours them. What is missing is only the inheritance, and the inheritance is the
 part that costs.
+
+## 62. Repeat remembers the matrix, not the gesture
+
+Duplicate, move, repeat is how a row of things gets built, and duplicate, rotate,
+repeat is how a radial one does. Both are cheap here for the reason §5 predicted:
+transforms are baked into coordinates, so there is no transform stack to walk
+back. The last matrix is the whole of what has to be remembered, and applying it
+again is the same call.
+
+**`Shift`+`T`, not `Ctrl`+`D`.** Illustrator binds Transform Again to `Ctrl`+`D`
+and Duplicate to `Ctrl`+`Alt`+`D`. Duplicate here is `Ctrl`+`D`, which is what
+Figma and Inkscape use, and it is the one people press first and far more often.
+Moving it to free up its key for the operation that follows it would be the wrong
+way round.
+
+### What it repeats is not always what you did
+
+The matrix that came out of a gesture and the gesture are the same thing for a
+rotate about a centre, a nudge, and a drag of the selection. They are not the
+same thing for a size typed into the transform box. `set width to 40` on a
+20-wide selection is a doubling, and repeating it doubles whatever is selected
+now rather than setting it to 40 again.
+
+That is the right answer -- a repeat is a repeat of an operation, not a re-run of
+a command with the same argument -- and it is surprising enough that the readout
+beside the button names what is stored. A button called **Repeat** with nothing
+beside it is a button you have to press to find out what it does.
+
+The label travels with the matrix in one field rather than being derived from it,
+because a matrix cannot say whether `[1,0,0,1,20,0]` was a nudge, a drag or a
+typed X. Two fields would be two facts; one object holding both is one.
+
+### What counts as a transform
+
+The typed rotate, scale and flips; the four numbers of the transform box; an
+arrow-key nudge; a drag of a box handle; and a drag of the selection.
+
+**Not a drag of a node.** Dragging an anchor moves each selected node through its
+own snap, so there is no single translation that describes the gesture, and
+inventing one would repeat something that did not happen. `body` and `anchor` are
+different drags for exactly this reason.
+
+The matrix for a box drag is built at the release from the whole gesture, not
+accumulated per frame. Every frame already recomputes it against the geometry as
+it was at the press -- that is how the drag avoids stacking rounding -- so the
+matrix at the release is the whole drag by construction.
+
+### Where it lives, and what undo does to it
+
+`EditorState`, beside the palette and the grid step: session state, not document
+state. It describes the gesture you just made, not the drawing.
+
+**Undo does not clear it.** Undo takes back what happened; what you were about to
+do again is a different question, and a person who undoes a repeat and presses
+again means to do it again. Both the unit test and the browser scenario check
+that, because the opposite is the obvious implementation.
+
+The controller writes it directly through `store.update` rather than through
+`Commands`, which it does not hold. The two are siblings given the same store,
+and threading one into the other to reach one setter would be a dependency for
+the sake of an assignment.

@@ -1110,6 +1110,8 @@ function refreshInspector(): void {
   ($('#groupShapes') as HTMLButtonElement).disabled = !commands.canGroup;
   ($('#ungroupShapes') as HTMLButtonElement).disabled = !commands.canUngroup;
   ($('#selectGroup') as HTMLButtonElement).disabled = !commands.canSelectGroup;
+  ($('#repeatTransform') as HTMLButtonElement).disabled = !commands.canRepeatTransform;
+  $('#repeatinfo').textContent = store.state.lastTransform?.what ?? 'nothing yet';
   /* Live for any selected shape, including one already at the front. Whether
      there is room to move is a question about the whole tree, and a button that
      greys out on the answer would flicker as the selection changed; pressing it
@@ -2237,6 +2239,7 @@ on('#dupShape', () => commands.duplicateSelection());
 on('#groupShapes', () => commands.groupSelection());
 on('#ungroupShapes', () => commands.ungroupSelection());
 on('#selectGroup', () => commands.selectGroup());
+on('#repeatTransform', () => commands.repeatTransform());
 on('#copySel', () => commands.copySelection());
 on('#cutSel', () => commands.cutSelection());
 on('#pasteSel', () => commands.paste());

@@ -77,6 +77,7 @@ treat those two rows as untried rather than as reported working.
 | `Ctrl`+`G` | Put the selected shapes in a group |
 | `Ctrl`+`Shift`+`G` | Take the selected shapes out of their group, one level |
 | `Shift`+`G` | Widen the selection to the group it is in, one level |
+| `Shift`+`T` | Do the last move, rotate or scale again |
 | `Ctrl`+`]` `[` | Move the selection one step later or earlier in the paint order |
 | `Ctrl`+`Shift`+`]` `[` | Move it in front of or behind everything |
 | `Ctrl`+`E` | Open or close the source drawer |
@@ -495,6 +496,19 @@ horizontal line has no height to grow from.
 **Rotate −90°**, **Rotate +90°**, **Flip horizontal**, **Flip vertical**, plus an
 **Angle** field with **Rotate**, and a **Factor** field with **Scale**. All work
 about the centre of the selection, and all are baked into the coordinates.
+
+**Repeat** (`Shift`+`T`) does the last move, rotate or scale again, to whatever
+is selected now. Duplicate, move, repeat builds a row; duplicate, rotate, repeat
+builds a radial pattern. The heading beside it says what a press will do, and
+reads `nothing yet` until something has been transformed.
+
+It remembers the matrix, not the gesture. That is the same thing for a rotate and
+deliberately not the same thing for a typed size: setting the width of a 20-wide
+selection to 40 produces a doubling, and repeating it doubles again rather than
+setting 40. A drag of the box counts, and so does an arrow-key nudge.
+
+Undo takes back a repeat and does not forget what to repeat, so pressing undo and
+then repeat again does the same thing a second time.
 
 ### Arrange
 

@@ -15,6 +15,7 @@ import { reflowDoc } from './auto';
 import { emptySelection, pruneGroups } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
+import type { Mat } from '../core/affine';
 
 /** One entry in the palette: a name and the four style values it stands for. */
 export interface NamedStyle {
@@ -95,6 +96,20 @@ export interface EditorState {
    * the media query at startup and a checkbox after that.
    */
   touchButtons: boolean;
+  /**
+   * The last matrix put on the selection, and what to call it.
+   *
+   * Session state, not document state: it describes the gesture you just made,
+   * not the drawing. Undoing that gesture leaves it here on purpose -- undo
+   * takes back what happened, and what you were about to do again is a
+   * different question.
+   *
+   * The label travels with the matrix rather than being derived from it. A
+   * matrix cannot say whether `[1,0,0,1,20,0]` was a nudge, a drag or a typed
+   * X, and the readout beside the button is the only thing telling you what a
+   * press is about to do.
+   */
+  lastTransform: { m: Mat; what: string } | null;
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   /**
@@ -287,6 +302,7 @@ export class Store {
       tool: 'select',
       deleteMode: 'fuse',
       touchButtons: false,
+      lastTransform: null,
       gridStep: 1,
       nudgeBig: 10,
       wireframe: false,

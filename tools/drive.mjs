@@ -2221,6 +2221,30 @@ const scenarios = {
     await page.keyboard.press('Control+z');
     await settle(page);
 
+    /* Repeat, which is the drag half of it: a matrix built from a gesture
+       rather than from a typed number, which no unit test can reach. Rotate,
+       then repeat, and a quarter turn twice is a half turn -- back to the
+       starting extents, which no single quarter turn produces. */
+    await drag(ne, to, 10, 'Shift');
+    await settle(page);
+    const repeatWhat = (await page.textContent('#repeatinfo')).trim();
+    check(/rotate/.test(repeatWhat), `after a rotate drag the readout says "${repeatWhat}"`);
+    check(!(await page.isDisabled('#repeatTransform')), 'Repeat was dead after a rotate drag');
+    await page.click('#repeatTransform');
+    await settle(page);
+    const halfTurn = await bbox();
+    check(
+      Math.abs(halfTurn.w - start.w) < 0.05 && Math.abs(halfTurn.h - start.h) < 0.05,
+      `two quarter turns gave ${halfTurn.w} × ${halfTurn.h}, want ${start.w} × ${start.h}`,
+    );
+    /* Undo takes back the repeat and not the memory of it: what you did is a
+       different question from what you were about to do again. */
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    check(!(await page.isDisabled('#repeatTransform')), 'undo forgot what to repeat');
+    await page.keyboard.press('Control+z');
+    await settle(page);
+
     /* The question the padding exists to answer. A rectangle's corner node sits
        exactly on the bounding box, so an unpadded handle would be on top of it
        and would take every click aimed at the node. */
@@ -2230,6 +2254,33 @@ const scenarios = {
     await page.click('#apply');
     await settle(page);
     await closeSource(page);
+    /* Repeat by key, on a drag that moved the selection rather than rotating
+       it. On this rectangle rather than the starter, because "drag the body"
+       means pressing the outline -- the hit target is a wide invisible stroke
+       along the path, not the filled interior -- and the middle of a straight
+       top edge is a point that is certainly on it -- a quarter along rather
+       than at the midpoint, where the segment's bend dot sits and takes the
+       press. The blur is so Shift+T reaches the document and not the shape
+       list. */
+    await drag([30, 20], [40, 20]);
+    await settle(page);
+    const movedOnce = await bbox();
+    check(Math.abs(movedOnce.x - 30) < 0.05, `the move drag put x at ${movedOnce.x}, want 30`);
+    const repeatMove = (await page.textContent('#repeatinfo')).trim();
+    check(/^move 10, 0$/.test(repeatMove), `after a move drag the readout says "${repeatMove}"`);
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('Shift+T');
+    await settle(page);
+    check(Math.abs((await bbox()).x - 40) < 0.05, `repeat put x at ${(await bbox()).x}, want 40`);
+    /* Undo takes back the repeat and not the memory of it: what you did is a
+       different question from what you were about to do again. */
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    check(!(await page.isDisabled('#repeatTransform')), 'undo forgot what to repeat');
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    check(Math.abs((await bbox()).x - 20) < 0.05, 'two undos did not put the rectangle back');
+
     await page.click('#shapelist li');
     await settle(page);
 

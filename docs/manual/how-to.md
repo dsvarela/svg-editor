@@ -259,6 +259,20 @@ the top.
 A group counts as one shape here and slides about without coming apart. To move
 one shape inside a group, select only that shape.
 
+## Build a row or a ring of copies
+
+Make one, then repeat the step that placed the second.
+
+For a row: press `Ctrl`+`D` to duplicate, drag the copy where you want it, then
+press `Shift`+`T` for each further copy. Each press moves the selection by the
+same amount the drag did.
+
+For a ring: duplicate, rotate the copy by the angle you want in the **Transform**
+panel, then press `Shift`+`T` for each further copy.
+
+**Repeat** in the **Transform** panel does the same as the key, and the heading
+above it says what the next press will do.
+
 ## Centre a shape on the canvas
 
 Select the shape, then set **Relative to** to **Canvas** in the **Arrange** panel.

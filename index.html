@@ -415,6 +415,11 @@
               <input type="number" id="scale" value="1.1" step="0.05" min="0.05" />
               <button class="btn" id="scaleGo">Scale</button>
             </div>
+            <!-- The readout says what a press will do, because a button called
+                 Again with nothing beside it is a button you have to press to
+                 find out. §62. -->
+            <div class="glabel sub"><span>Again</span><span class="gval" id="repeatinfo">nothing yet</span></div>
+            <button class="btn wide" id="repeatTransform" title="Do the last move, rotate or scale again, to whatever is selected now (Shift+T)">Repeat</button>
           
               <p class="hint" id="hint-transform" hidden>Applies to the selection, about its own centre.</p>
               </div>

@@ -91,7 +91,7 @@ Four pieces are in place, all from 2026-08-13:
   the overlay sets `touch-action: none`.
 - **Size.** A `@media (pointer: coarse)` block at the end of
   `src/ui/styles.css` raises `--h` and the handful of controls that do not take
-  their height from it, so **every one of the 223 controls is at least 44 px to
+  their height from it, so **every one of the 224 controls is at least 44 px to
   a finger, and none of them changed for a mouse**.
 - **Zoom.** Two fingers zoom about the point between them and pan as that point
   moves: `Controller.pinchMove`.

@@ -11,6 +11,7 @@
  */
 
 import { translate } from '../core/affine';
+import type { Mat } from '../core/affine';
 import type { Box } from '../core/bezier';
 import { cloneSubpath, continuityOf, makeNode, segmentCount } from '../core/types';
 import type { Pt, Subpath } from '../core/types';
@@ -1475,12 +1476,35 @@ export class Controller {
         if (d.mode === 'rotate') {
           const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), this.shift(e) ? 15 : 0);
           this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
+          this.remember(r.m, `rotate ${fmt(r.deg)}°`);
         } else if (now) {
           this.onMessage?.(
             `Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`,
             true,
           );
+          /* The matrix from the whole drag, not from the last frame. Every
+             frame recomputes it against `d.saved`, which is the geometry as it
+             was at the press, so the one built here is the whole gesture. */
+          this.remember(
+            scaleMatrix(d.box, d.part, [this.pt(e)[0] - d.grab[0], this.pt(e)[1] - d.grab[1]], {
+              fromCentre: this.alt(e),
+              keepAspect: this.shift(e),
+            }),
+            'scale',
+          );
         }
+      }
+
+      /* Moving a selection is a translation, and repeating it is how a row of
+         things gets built. `applied` rather than the pointer: it is the total
+         after snapping, so a repeat lands on the same lattice the drag did.
+
+         `body` and not `anchor`: dragging a node moves each selected node
+         through its own snap, so there is no one translation that describes the
+         gesture, and inventing one would repeat something that did not happen. */
+      if (this.drag.kind === 'body' && (this.drag.applied[0] || this.drag.applied[1])) {
+        const d = this.drag;
+        this.remember(translate(d.applied[0], d.applied[1]), `move ${fmt(d.applied[0])}, ${fmt(d.applied[1])}`);
       }
 
       /* In a `finally` because everything above runs listeners: the marquee's
@@ -1503,6 +1527,20 @@ export class Controller {
       this.schedule();
     }
   };
+
+  /**
+   * Keep the matrix a gesture produced, so `Repeat` can apply it again.
+   *
+   * Written straight into the store rather than routed through `Commands`,
+   * which the controller does not hold: the two are siblings, both given the
+   * store, and threading one into the other to set one field would be a
+   * dependency for the sake of a setter. `update` and not `edit`, because this
+   * is not a change to the document -- and it runs after the gesture's own
+   * batch has closed, so it cannot fold into that history entry.
+   */
+  private remember(m: Mat, what: string): void {
+    this.store.update((st) => (st.lastTransform = { m, what }));
+  }
 
   /** Abandon the gesture, leaving the document as it was before the press. */
   abortDrag(): void {
