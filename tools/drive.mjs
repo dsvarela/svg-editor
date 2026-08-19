@@ -4785,10 +4785,50 @@ const scenarios = {
       JSON.stringify(out.previews.map((p) => p.w)) === JSON.stringify([16, 24, 32, 48]),
       `the previews are ${JSON.stringify(out.previews.map((p) => p.w))} px wide`,
     );
-    const drawnColour = await page.evaluate(
-      () => decodeURIComponent(document.querySelector('#prev32').getAttribute('src')).includes('#2563d8'),
+    /* That the preview holds THIS document, not any document. It looked for
+       `#2563d8`, which is `defaultStyle().stroke` and therefore present in
+       every drawing this editor makes, including the starter -- so a preview
+       frozen at the first document it ever serialised passed. The viewBox is
+       what separates them: the starter's is `0 0 88 64` and this fixture sets
+       its own. */
+    out.previewUri = await page.evaluate(() =>
+      decodeURIComponent(document.querySelector('#prev32').getAttribute('src')),
     );
-    check(drawnColour, 'the preview URI does not hold the fill the document does');
+    check(
+      /viewBox="0 0 100 50"/.test(out.previewUri),
+      `the preview is not of this document: ${JSON.stringify(out.previewUri.slice(0, 120))}`,
+    );
+
+    /* And that it FOLLOWS the document. A preview built once and never repointed
+       satisfies everything above. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 22">' +
+        '<path d="M0 0 H33 V22 H0 Z" fill="#0a5" stroke="none"/></svg>',
+    );
+    await page.click('#apply');
+    await settle(page);
+    out.previewAfter = await page.evaluate(() =>
+      decodeURIComponent(document.querySelector('#prev32').getAttribute('src')),
+    );
+    check(
+      /viewBox="0 0 33 22"/.test(out.previewAfter),
+      `the preview did not follow the document: ${JSON.stringify(out.previewAfter.slice(0, 120))}`,
+    );
+
+    // Back to the fixture, so the PNG assertions below measure what they name.
+    await undo(page);
+    await settle(page);
+    check(
+      /viewBox="0 0 100 50"/.test(
+        await page.evaluate(() =>
+          decodeURIComponent(document.querySelector('#prev32').getAttribute('src')),
+        ),
+      ),
+      'undoing the second document did not put the preview back',
+    );
 
     /* Keep the blob the button makes. `revokeObjectURL` runs immediately after
        the click, which frees the URL and not the blob, so this reference stays
@@ -5355,7 +5395,31 @@ const scenarios = {
 
     /* An empty Gap asks for the gap that fills the selection's own box, so the
        outer two stay put. A Gap of 5 packs them from the left edge instead, and
-       the two answers have to differ or the field is doing nothing. */
+       the two answers have to differ or the field is doing nothing.
+
+       The middle shape is moved off its even spacing FIRST. Without that it
+       arrives here already evenly spaced -- the distribute above put it there,
+       and with three shapes of equal width even centres and even gaps are the
+       same layout -- so both checks below held on the state they inherited and
+       the whole `gap === null` branch of `spaceUnits` could be deleted with the
+       scenario still green. */
+    await page.click('#shapelist li.shape:nth-child(2)');
+    await settle(page);
+    const midBefore = Number(await page.inputValue('#selX'));
+    await page.fill('#selX', String(midBefore + 7));
+    await page.press('#selX', 'Enter');
+    await settle(page);
+    await page.click('#shapelist li.shape:nth-child(1)');
+    await page.click('#shapelist li.shape:nth-child(2)', { modifiers: ['Shift'] });
+    await page.click('#shapelist li.shape:nth-child(3)', { modifiers: ['Shift'] });
+    await settle(page);
+    const uneven = (await boxes()).sort((a, b) => a.x - b.x);
+    const unevenGaps = uneven.slice(1).map((b, i) => b.x - (uneven[i].x + uneven[i].w));
+    check(
+      Math.abs(unevenGaps[0] - unevenGaps[1]) > 1e-6,
+      `the middle shape did not move off its even spacing: gaps ${JSON.stringify(unevenGaps)}`,
+    );
+
     const before = (await boxes()).sort((a, b) => a.x - b.x);
     await page.click('[data-ssp="h"]');
     await settle(page);
