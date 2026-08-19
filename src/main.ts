@@ -1216,7 +1216,6 @@ function roundability(sp: Subpath, i: number): string | null {
   if (typeof c !== 'string') return null;
   return {
     end: 'No corner here: this node ends the path, so it has only one side.',
-    curved: 'No corner here: Round needs a straight segment on both sides.',
     straight: 'No corner here: the path runs straight through this node.',
     tiny: 'No corner here: the sides are too short to cut.',
   }[c];
@@ -1335,9 +1334,9 @@ function refreshInspector(): void {
     }
     /* A handle that is not there reads exactly like one that is, because
        `latentHandle` fills the field with where it would go. Two identically
-       drawn shapes then differ for a reason nothing on this panel shows, and
-       Round refuses one of them: `cornerAt` wants both sides straight, and a
-       straight side is one with no handle on it. */
+       drawn shapes then differ for a reason nothing on this panel shows: the
+       one with handles exports as `C` where the other exports as `L`, and
+       Round cuts a curved side where the other has a straight one. */
     f.input.classList.toggle('ghost', !real);
     if (!real) latent = true;
     f.input.disabled = false;

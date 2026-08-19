@@ -409,16 +409,21 @@ themselves are unaffected.
 Select the corner node, set **Radius** in the **Node** panel to the radius you
 want, and press **Round**.
 
-The node is replaced by two, one where the arc meets each side, and the sides
-stay exactly straight. Select several corners and they are all rounded at once.
+The node is replaced by two, one where the arc meets each side. Select several
+corners and they are all rounded at once.
 
-A fillet is defined by touching two lines, so both sides of the node have to be
-straight. There is no honest version of it against a curve, so it refuses and
-says why rather than leaving a kink where the arc nearly meets the curve.
+**Either side may be a curve.** What **Round** needs is a corner, meaning the
+path turns at the node, and not two straight sides. The arc touches whatever the
+sides are, and each side is cut where the arc reaches it, so what is left of a
+curved side still lies on the curve you drew. A straight side stays straight.
 
-**A corner that already holds an arc is not a curve for this purpose.** It is
-put back to a corner and cut again, so the radius field works on a rectangle
-drawn with rounded corners and on anything the canvas control has rounded.
+If the path runs smoothly through the node there is nothing to round, and
+**Round** says so instead of placing an arc where no corner is.
+
+**A corner that already holds an arc is put back to a corner and cut again**, so
+the radius field works on a rectangle drawn with rounded corners and on anything
+the canvas control has rounded. Without that step there would be nothing to do:
+an arc joins each side smoothly, so neither of the nodes it left is a corner.
 
 If the radius is larger than a side can hold it is cut down to fit, and the
 status line says so. To round every corner of a rectangle evenly, select all four

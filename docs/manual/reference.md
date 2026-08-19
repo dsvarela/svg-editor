@@ -424,14 +424,16 @@ to set it exactly.
 
 **A dimmed, italic number is a handle that does not exist**, shown where one
 would go if you pulled it out. The canvas draws the same thing as a hollow
-circle. The difference matters: a side with no handle on it is straight, and a
-straight side is what **Round** cuts its arc from.
+circle. The difference matters: a side with no handle on it is straight, so it
+stays straight when **Round** cuts an arc from it and exports as a line rather
+than a curve.
 
 - **Cusp**, **Smooth**, **Symm** show how the selected node's handles are set,
   and change it when pressed. **Cusp** means the two handles are not in line, so
   the path turns at the node; it is the word Inkscape uses, and it is deliberately
-  not "corner" -- **Round** below asks a different question, and a node can be a
-  cusp with no corner to round and a corner with no cusp.
+  not "corner". Every corner **Round** can cut is a cusp, but not every cusp is
+  one: the end of an open path has only one side, and a node with three points in
+  a line does not turn.
 - **Auto** (`Shift+A`) is different in kind: it does not set the handles once, it
   keeps re-deriving them from the two neighbours, so moving a nearby node re-aims
   this one and the curve stays fair. Press it again to hand control back, which
@@ -446,8 +448,8 @@ straight side is what **Round** cuts its arc from.
   **A corner that is already rounded can be rounded again**, to a larger or a
   smaller radius, which is what makes the field usable on a rectangle drawn with
   one. Pressing it twice at the same radius says **Already rounded** and costs no
-  undo step. What it cannot do is round a node whose sides are genuinely curved:
-  there is no corner there to replace.
+  undo step. Either side may be a curve; what it cannot do is round a node the
+  path runs smoothly through, because there is no corner there to replace.
 
   **Every corner gets the same radius.** A radius larger than one of them can
   hold reduces the whole request to the largest that fits everywhere, and the
@@ -464,8 +466,8 @@ straight side is what **Round** cuts its arc from.
   selected nodes when some are.
 
   **The largest radius the sides can hold is where the corner ends.** At that
-  size the arc runs from one neighbour to the other, the two straight sides are
-  used up, and there is no corner left: the control goes, and the status line
+  size the arc runs from one neighbour to the other, the two sides are used up,
+  and there is no corner left: the control goes, and the status line
   says so. Undo brings the corner back. A rectangle rounded to its limit is a
   stadium, which is the drawing you asked for and not a corner any more.
 

@@ -803,24 +803,86 @@ One process note. A batch of scenarios run immediately after editing
 green batch taken straight after a markup change as unproven, and re-run the
 scenarios that touch what changed.
 
-## 23. Rounding a corner refuses rather than approximates
+## 23. A corner is a cusp, and rounding one is tangent to whatever its sides are
 
 `roundCorner` replaces a corner node with two, one at each tangent point, and an
 arc between them. It is the operation the rectangle tool performs while drawing,
 available afterwards on anything.
 
-**Both sides have to be straight, and a curved side is refused.** A fillet is
-defined by being tangent to two lines. Against a curve you can put an arc
-somewhere near the corner, but it will not meet the curve smoothly, and a corner
-operation that leaves a kink has not done its job. This is the opposite call from
-§13, where **Heal** approximates rather than refusing, and the difference is
-what the user can tell: a healed segment that differs is visible and undoable
-straight away, while a fillet that is a fraction of a degree off tangent looks
-right and is wrong.
+**What decides that there is a corner is the cusp, not the sides.** `cornerAt`
+reads the two tangents at the node and reports a corner when they are not
+opposed. Whether the segments either side happen to be straight decides how the
+arc is found, and never whether there is one to find.
+
+**Until 2026-08-20 a curved side was refused**, on the argument that a fillet is
+defined by being tangent to two lines, so against a curve an arc could only be
+put somewhere near the corner and would leave a kink. The first half of that is
+true of the method it was written about and not of fillets. A fillet is defined
+by being tangent to its two sides, and a circle can be tangent to two curves
+just as well as to two lines. What a curve costs is that the tangent point stops
+being a distance anybody can write down.
+
+### Two lines have a closed form, and everything else is solved
+
+For two straight sides the tangent points sit `r / tan(alpha / 2)` along each,
+which is one division. That path is kept, and not as an optimisation: it is
+exact where a search only converges, and every rectangle in the program goes
+through it.
+
+Otherwise `tangentCircle` places the circle. Two equations, because the centre
+reached from one side has to be the centre reached from the other; two unknowns,
+one per side, saying where it touches. Newton from the answer two straight sides
+would give, which is what any pair of sides looks like close enough to a corner,
+so the iteration count stays small rather than growing with how hard the sides
+bend. The Jacobian is exact, including the term for how the normal turns as the
+touch point slides, and dropping that term moves where the solve lands at the
+clamp.
+
+The parameters are held on `[0, 1]` while it runs. Past either end the cubic
+keeps going as a polynomial but the side has stopped, so a step out there would
+converge on a circle touching geometry that is not in the path. Pinned at an
+end the residual stays large and the solve refuses, which is exactly the radius
+being too big for the corner.
+
+### What is left of a side is a piece of that side
+
+A curved side is split at its tangent point and the outer piece kept, so what
+remains lies on the curve it was cut from rather than near it. That is what
+`test/corner-curved.test.ts` projects back to check, because an arc placed near
+a corner with the sides redrawn to meet it would pass a tangency test and fail
+this one.
+
+Splitting a curved side moves the handle at its **far** end as well as the near
+one, so `roundCorner` writes back to the neighbour's handle too. A straight side
+keeps both handles absent, which is how the model says "line" and what keeps a
+rectangle exporting as one.
+
+### The clamp
 
 The radius is clamped to what the shorter side can hold, and the clamp is
-reported. Rounding the four corners of a rectangle one at a time works because
-each one sees the sides the previous ones left behind.
+reported. For two lines that is the shorter side read as a radius. For a curved
+side there is no formula, because how far out the touch point travels for a
+given radius depends on how the side bends the whole way there, so
+`maxCornerRadius` bisects. Bisection is the right tool because the relation is
+monotone: a larger circle always touches further from the corner.
+
+Rounding the four corners of a rectangle one at a time works because each one
+sees the sides the previous ones left behind.
+
+### The arc, and how round it is
+
+The arc turns through the angle its own ends subtend at the centre, which is the
+exterior angle when both sides are straight and is not otherwise, so the handle
+length comes from that measured turn rather than from `alpha`. Inkscape's
+fillet effect uses the quarter-turn constant at every angle, which is tangent
+but not circular away from a right angle; here the turn is measured and
+`arcHandle` is given it.
+
+The remaining error is the cubic's own approximation to a circle: 0.027 % of the
+radius over a quarter turn (§12), and more over a longer one. Measured at 0.12 %
+on a 112-degree turn. A handle length that ignored the turn would be out by
+about a quarter and shows as several percent, which is what the half-percent
+floor in the test separates.
 
 **Where a fillet lands exactly on its neighbour, the neighbour is reused.** Two
 routes get there: the clamp, and two arcs meeting in the middle of a side they
@@ -838,9 +900,9 @@ Two things the caller has to get right, and `roundSelection` does:
   every index after it shifts. Ascending order rounds the wrong points from the
   second corner on, and the failure is quiet: you still get eight nodes out of a
   rectangle, they are just not where you asked.
-- **The refusals are named.** `end`, `curved`, `straight` and `tiny` are all
-  things the person pressing the button can act on, and "it did not work" is the
-  least useful thing to tell them.
+- **The refusals are named.** `end`, `straight` and `tiny` are all things the
+  person pressing the button can act on, and "it did not work" is the least
+  useful thing to tell them.
 
 The arc is the same cubic approximation used everywhere else. Measured on a
 quarter turn it sits 0.0272 % of the radius off a true circle, which is what
@@ -2275,25 +2337,51 @@ a second statement of something the geometry already says, and the two disagree 
 first time anything else moves one of the arc's nodes. The path would then be
 carrying a claim about itself that is false, with nothing to detect it.
 
-**So it is recovered.** A fillet's two tangent nodes carry exactly one handle each,
-and each handle points along the side it came from -- which means both handle rays
-pass through the corner the fillet was cut from. The corner is where they cross, the
-cut is the distance to it, and the radius is `cut * tan(alpha / 2)`. Nothing is
-stored and nothing can disagree.
+**So it is recovered.** The arc between the two tangent nodes carries its own
+radius: a circular arc is the one curve whose handles have a fixed length for the
+angle it turns through, so the radius follows from the geometry and nothing can
+disagree with it.
 
-`filletAt` does that recovery, and it *measures* rather than assuming. Two nodes with
-one handle each are not necessarily a fillet, so it checks four things: one handle
-each and both facing the arc, equal handle lengths, equal cuts on the two sides, and
-a handle of the length a circular arc through that angle actually needs. Dropping any
-one of the four admits something that is not a fillet, and `test/fillet.test.ts` has
-a case for each.
+`filletAt` does that recovery, and it *measures* rather than assuming. It checks
+that the span between the two nodes is a curve at all, that the two handles are
+the same length, that the tangent rays cross ahead of the first node, and that
+the handle is the length a circular arc through that angle actually needs.
+`test/fillet.test.ts` has a case for each. Equal cuts on the two sides is checked
+as well, but it is a numerical guard rather than an independent condition:
+tangent lengths from one point to one circle are always equal, so an arc that
+passes the other tests passes this one too.
 
-**Which makes the widget's limit honest and visible.** The control appears while the
-corner is a circular arc tangent to two straight sides, and stops appearing when it
-is not. Move one of the arc's nodes and the corner becomes an ordinary pair of
-curves; the mark goes, and it should, because there is no longer a radius to change.
-That is a real difference from Illustrator, and it is the difference between reading
-the drawing and trusting a note attached to it.
+**Recovering the corner is the harder half, and what it takes depends on the
+sides.** Two straight sides meet where their tangent rays cross, which is one
+division. A curved side has to be put back, and it can be: the trimmed piece is
+an exact restriction of the curve it was cut from, so the same polynomial
+evaluated past its end reproduces what was discarded rather than guessing at it.
+That is `cubicOver`. The corner is where the two continuations meet, found by
+Newton from the tangent-ray crossing, and for two straight sides that seed is
+already the answer so the general path costs one residual.
+
+Because the cut moved the handle at the far end of a curved side too,
+`unroundCorner` puts the neighbours' handles back along with the corner's own.
+A `Fillet` carries the two restored sides for exactly that reason.
+
+**Two things it will not do**, both stated rather than guarded. It takes the
+first crossing Newton reaches from that seed, so two sides that cross more than
+once ahead of their tangent points could in principle recover the wrong corner.
+And a curved side has to run into the arc along the arc's own tangent, which is
+what says the arc was cut from that side; a kink there means no fillet, whatever
+else the shape is.
+
+**Which makes the widget's limit honest and visible.** The control appears while
+the corner is a circular arc that its two sides run into, and stops appearing
+when it is not. Move one of the arc's nodes and the corner becomes an ordinary
+pair of curves; the mark goes, and it should, because there is no longer a radius
+to change. A circle drawn as four arcs is the case worth naming: every node is
+smooth and every segment is a circular arc, so each pair passes everything the
+arc itself can be put to, and none of them is a fillet. What refuses is that the
+sides carried past their ends curl away from each other and never meet, so there
+is no crossing to call a corner. That is a real difference from Illustrator, and
+it is the difference between reading the drawing and trusting a note attached
+to it.
 
 **The drag rebuilds from a sharp copy every frame.** On the press the subpath is
 cloned and `unroundCorner` puts the corner back; every move clones that copy and
@@ -2304,15 +2392,17 @@ nothing. `cornerAt` is shared for the same reason: the canvas and the button hav
 agree about which corners are roundable.
 
 **The button does the same, and did not.** `roundSelection` went straight to
-`roundCorner`, which met the two curved sides of an existing fillet and refused
-with `curved`. So the radius field was dead on anything the drag had already
-rounded, and on every rectangle drawn with a corner radius: the one control that
-lets you type an exact number could not touch the corners that most wanted one.
-It un-rounds first now, on a copy, exactly as the press does.
+`roundCorner`, which found no corner at either end of an existing fillet: an arc
+leaves a smooth node where it meets each side, and a smooth node is not a cusp.
+So the radius field was dead on anything the drag had already rounded, and on
+every rectangle drawn with a corner radius: the one control that lets you type an
+exact number could not touch the corners that most wanted one. It un-rounds
+first now, on a copy, exactly as the press does.
 
 The limit is measured on that copy too, and the number that made the case for
 it was invented. `sharedCornerRadius` asked of a *fully* rounded square returns
-**0**, not a smaller positive limit: every node reports `curved`, so the old
+**0**, not a smaller positive limit: every node is smooth and reports no corner,
+so the old
 `if (fits > 0)` skipped the clamp entirely. The configuration where the live
 limit is wrong and non-zero is a **mixed** path -- a 40-unit square with two
 opposite corners rounded to 4 gives 18 where the corners hold 20. The defect is

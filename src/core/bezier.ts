@@ -72,6 +72,81 @@ export function splitCubic(b: Cubic, t: number): [Cubic, Cubic] {
 }
 
 /**
+ * The cubic tracing `b` over the parameter range `[t0, t1]`, as its own cubic.
+ *
+ * Inside `[0, 1]` this is what `splitCubic` produces, by a different route.
+ * Outside it the polynomial keeps going, and that continuation is the curve the
+ * original was cut from: a cubic restricted to part of its range is the same
+ * polynomial, so evaluating past the end reproduces the piece that was
+ * discarded rather than guessing at one. That is what lets a trimmed side be
+ * put back exactly, which is the whole of a corner's undo.
+ *
+ * Power basis rather than de Casteljau, because de Casteljau's interpolation
+ * only reaches within the range it is given.
+ */
+export function cubicOver(b: Cubic, t0: number, t1: number): Cubic {
+  const h = t1 - t0;
+  const out: Pt[] = [];
+  for (let axis = 0; axis < 2; axis++) {
+    const p0 = b[0][axis];
+    const p1 = b[1][axis];
+    const p2 = b[2][axis];
+    const p3 = b[3][axis];
+
+    // C(t) = a0 + a1 t + a2 t^2 + a3 t^3.
+    const a0 = p0;
+    const a1 = 3 * (p1 - p0);
+    const a2 = 3 * (p0 - 2 * p1 + p2);
+    const a3 = -p0 + 3 * p1 - 3 * p2 + p3;
+
+    // D(s) = C(t0 + h s), expanded in s.
+    const c0 = a0 + a1 * t0 + a2 * t0 * t0 + a3 * t0 * t0 * t0;
+    const c1 = h * (a1 + 2 * a2 * t0 + 3 * a3 * t0 * t0);
+    const c2 = h * h * (a2 + 3 * a3 * t0);
+    const c3 = h * h * h * a3;
+
+    // Back to Bernstein.
+    const q = [c0, c0 + c1 / 3, c0 + (2 * c1) / 3 + c2 / 3, c0 + c1 + c2 + c3];
+    for (let k = 0; k < 4; k++) {
+      if (axis === 0) out.push([q[k], 0]);
+      else out[k][1] = q[k];
+    }
+  }
+  return [out[0], out[1], out[2], out[3]];
+}
+
+/** A cubic traced backwards, so `t` runs from its end point to its start. */
+export const reverseCubic = (b: Cubic): Cubic => [
+  [b[3][0], b[3][1]],
+  [b[2][0], b[2][1]],
+  [b[1][0], b[1][1]],
+  [b[0][0], b[0][1]],
+];
+
+/**
+ * Unit tangent at `t`, or `null` where the curve has no direction at all.
+ *
+ * The derivative vanishes at an end whose control point sits on the anchor,
+ * which is how the model stores a straight segment and how a hand-dragged
+ * handle can be left. The limit direction there is the first control point that
+ * differs from the anchor, so the fallbacks are the curve's own answer rather
+ * than a substitute for it.
+ */
+export function cubicUnitTangent(b: Cubic, t: number): Pt | null {
+  const candidates: Pt[] = [cubicDerivAt(b, t)];
+  // Past a vanishing derivative the direction is set by the next control that
+  // has moved, taken from whichever end `t` is at.
+  if (t <= 0.5) candidates.push([b[2][0] - b[0][0], b[2][1] - b[0][1]], [b[3][0] - b[0][0], b[3][1] - b[0][1]]);
+  else candidates.push([b[3][0] - b[1][0], b[3][1] - b[1][1]], [b[3][0] - b[0][0], b[3][1] - b[0][1]]);
+
+  for (const d of candidates) {
+    const len = Math.hypot(d[0], d[1]);
+    if (len > 1e-12) return [d[0] / len, d[1] / len];
+  }
+  return null;
+}
+
+/**
  * Exact bounding box, via the roots of the derivative rather than by sampling.
  * Sampling would under-report the box on tight curves, which matters because
  * this drives the selection rectangle and "fit to view".

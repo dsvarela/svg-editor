@@ -1359,16 +1359,16 @@ export class Controller {
           const h = this.snap(p, d.ref);
 
           /* **A handle on top of its own anchor is not a handle.** It draws
-             nothing, `continuityOf` reads it as a corner, and yet `cornerAt`
-             sees a non-null handle and refuses to round the node -- so the
-             corner control never appears and nothing says why.
+             nothing and `continuityOf` reads the node as a corner, but the
+             model still counts the segment as a curve: `segmentIsLine` is
+             false, the export writes `C` rather than `L`, and Round cuts a
+             curved side where the shape on screen has a straight one. Two
+             identically drawn shapes otherwise differ for a reason invisible
+             on the canvas and in the panel alike.
 
-             This is what a hand produces. Any movement between press and
-             release used to pull handles out, and snap-to-points drags a
-             one-pixel drift straight back onto the node, so tapping the pen
-             wrote `C x y  x y  x y` with every control on its endpoint. Two
-             identically drawn shapes then behaved differently for a reason
-             invisible on the canvas and in the panel alike.
+             A hand produces this. Snap-to-points drags a one-pixel drift back
+             onto the node, so tapping the pen writes every control onto its
+             own endpoint.
 
              `invisibleAt` rather than an arbitrary epsilon: below half a unit
              in the last exported place, a handle cannot change one character
@@ -1469,9 +1469,9 @@ export class Controller {
          screen into a record of what was done. */
       /* A corner dragged to the limit of what its sides can hold is a corner
          that has ceased to exist: the arc's tangent points land on the
-         neighbours, `roundCorner` reuses them, and the two straight sides that
-         defined the corner are gone. Nothing stores a radius (§48), so there is
-         nothing left for `filletAt` to recover and the control goes with it.
+         neighbours, `roundCorner` reuses them, and the sides that defined the
+         corner are used up. Nothing stores a radius (§48), so there is nothing
+         left for `filletAt` to recover from and the control goes with it.
          Undo brings it back; without a word here, it looks like the control
          broke. */
       if (this.drag.kind === 'corner') {

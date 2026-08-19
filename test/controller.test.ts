@@ -1205,15 +1205,31 @@ describe('rounding corners', () => {
   });
 
   it('explains a refusal instead of doing nothing quietly', () => {
-    const h = harness('M0 0 L40 0 C50 10 50 30 40 40 L0 40 Z');
+    // Three points on one line: node 1 has no corner to cut, and saying so is
+    // the whole job here.
+    const h = harness('M0 0 L20 0 L40 0 L40 40 Z');
     const id = ids(h);
     h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
     const said: string[] = [];
     h.commands.onMessage = (m) => said.push(m);
 
     expect(h.commands.roundSelection(5)).toBe(false);
-    expect(said.join(' ')).toMatch(/straight segment on both sides/i);
+    expect(said.join(' ')).toMatch(/runs straight through/i);
     expect(h.store.canUndo).toBe(false);
+  });
+
+  it('rounds a corner with a curve on one of its sides', () => {
+    // Node 1 has a line arriving and a curve leaving, and is a cusp between
+    // them, which is the only thing that decides.
+    const h = harness('M0 0 L40 0 C50 10 50 30 40 40 L0 40 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 1)));
+    const said: string[] = [];
+    h.commands.onMessage = (m) => said.push(m);
+
+    expect(h.commands.roundSelection(5)).toBe(true);
+    expect(said.join(' ')).toMatch(/Rounded 1 corner/);
+    expect(h.store.canUndo).toBe(true);
   });
 
   it('refuses a radius of zero and an empty selection', () => {
@@ -1268,10 +1284,10 @@ describe('rounding corners', () => {
   });
 
   /* The corner control's drag un-rounds a corner before rounding it again, on a
-     copy taken at the press. The button went straight to `roundCorner`, which
-     met the two curved sides of the existing fillet and refused with `curved`.
-     So the radius field was dead on anything the drag had already rounded, and
-     on every rectangle drawn with a corner radius. */
+     copy taken at the press, and the button does the same. Without it the arc
+     already there leaves a smooth node at each of its ends, neither of which is
+     a cusp, so `cornerAt` finds no corner and the radius field is dead on
+     anything already rounded and on every rectangle drawn with a radius. */
   it('changes a radius it has already set, rather than refusing the fillet', () => {
     const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
     const id = ids(h);

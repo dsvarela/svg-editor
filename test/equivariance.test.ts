@@ -87,6 +87,8 @@ function sameGeometry(a: number[], b: number[], shiftBy: Pt): void {
 const CURVE = 'M0 0 C0 20 40 20 40 0 C40 -20 80 -20 80 0';
 const RECT = 'M0 0 L40 0 L40 25 L0 25 Z';
 const SKEW = 'M0 0 L40 10 L10 40 Z';
+/** Cusps with a curve on each side, where the arc is solved for rather than measured out. */
+const LEAF = 'M0 50 C0 10 30 -10 70 -10 C60 15 55 30 90 55 C60 65 20 65 0 50 Z';
 
 interface Op {
   name: string;
@@ -113,6 +115,11 @@ const OPS: Op[] = [
   { name: 'reshapeSegment', d: CURVE, run: (sp, mv) => reshapeSegment(sp, 0, 0.4, mv([18, 31])) },
   { name: 'roundCorner on a rectangle', d: RECT, run: (sp) => roundCorner(sp, 1, 7) },
   { name: 'roundCorner on a skew corner', d: SKEW, run: (sp) => roundCorner(sp, 1, 5) },
+  /* The solved fillet, not the measured one. Newton runs on absolute
+     coordinates, so a step that is right at the origin and wrong out here is
+     exactly what this table exists to catch. */
+  { name: 'roundCorner between two curves', d: LEAF, run: (sp) => roundCorner(sp, 1, 9) },
+  { name: 'roundCorner with one curved side', d: LEAF, run: (sp) => roundCorner(sp, 2, 6) },
   { name: 'fuseNodes', d: CURVE, run: (sp) => fuseNodes(sp, 1, 2) },
 ];
 
@@ -121,9 +128,14 @@ describe('an edit commutes with moving the drawing', () => {
     const here = parsePath(d)[0];
     const there = shift(parsePath(d)[0]);
 
+    const untouched = coords(here);
     run(here, (p) => p);
     run(there, moved);
 
+    /* An operation that declined to act agrees with itself perfectly, on both
+       copies, and says nothing about anything. Every entry in the table has to
+       move the geometry before its agreement is worth reading. */
+    expect(coords(here)).not.toEqual(untouched);
     sameGeometry(coords(here), coords(there), V);
   });
 
@@ -174,7 +186,8 @@ describe('what a reading of the geometry reports', () => {
     const there = cornerAt(shift(parsePath(SKEW)[0]), 1);
     if (typeof here === 'string' || typeof there === 'string') throw new Error('refused');
     expect(there.alpha).toBeCloseTo(here.alpha, 12);
-    expect(there.reach).toBeCloseTo(here.reach, 9);
+    expect(there.lengths[0]).toBeCloseTo(here.lengths[0], 9);
+    expect(there.lengths[1]).toBeCloseTo(here.lengths[1], 9);
     expect(there.u[0]).toBeCloseTo(here.u[0], 12);
     expect(there.v[1]).toBeCloseTo(here.v[1], 12);
     expect(there.at[0]).toBeCloseTo(here.at[0] + V[0], 9);

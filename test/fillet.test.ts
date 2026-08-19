@@ -50,7 +50,7 @@ describe('measuring a corner', () => {
     expect(c.at).toEqual([40, 0]);
     // The sides run back along -x and on along +y, so a right angle.
     expect(c.alpha).toBeCloseTo(Math.PI / 2, 12);
-    expect(c.reach).toBeCloseTo(40, 12);
+    expect(c.lengths).toEqual([40, 40]);
     expect(maxCornerRadius(c)).toBeCloseTo(40, 12);
   });
 
@@ -59,32 +59,35 @@ describe('measuring a corner', () => {
     expect(cornerAt(open(), 2)).toBe('end');
   });
 
-  it('refuses a corner with a curve on either side', () => {
-    const sp = square();
-    roundCorner(sp, 1, 8);
-    // Node 0 now has a curve arriving at it from the fillet just placed.
-    const which = sp.nodes.map((_, i) => cornerAt(sp, i)).filter((c) => c === 'curved');
-    expect(which.length).toBeGreaterThan(0);
-  });
-
   /**
-   * Each of the four handles that makes a corner curved, one at a time.
+   * A curve on a side is not what decides. A cusp is.
    *
-   * The guard is a run of `||` over four of them, and a run of `||` is only
-   * measured by a case where exactly one alternative is true. The test above
-   * rounds a corner, which sets several at once, so narrowing the first `||` to
-   * `&&` left three of the four deciding nothing. Found by `tools/mutate.mjs`.
+   * The four handles are set one at a time, because setting several at once
+   * cannot tell which of them the answer turned on. Each makes a side curve
+   * without straightening the corner, so each still leaves a corner to round.
    */
   it.each([
     ['the handle leaving the node before', 0, 'hOut'],
     ['the handle arriving at this node', 1, 'hIn'],
     ['the handle leaving this node', 1, 'hOut'],
     ['the handle arriving at the node after', 2, 'hIn'],
-  ])('refuses a corner because of %s', (_what, node, part) => {
+  ])('still finds the corner with a curve from %s', (_what, node, part) => {
     const sp = square();
-    expect(cornerAt(sp, 1)).not.toBe('curved');
-    (sp.nodes[node] as unknown as Record<string, unknown>)[part] = [5, 5];
-    expect(cornerAt(sp, 1)).toBe('curved');
+    // Pulled off the corner's own two rays, so the node stays a cusp: the
+    // square's node 1 has its sides along -x and +y.
+    (sp.nodes[node] as unknown as Record<string, unknown>)[part] = [26, 9];
+    const c = cornerAt(sp, 1);
+    expect(typeof c).not.toBe('string');
+  });
+
+  it('has no corner where the two sides meet smoothly', () => {
+    /* The gate, stated from the other side. Rounding node 1 leaves an arc that
+       joins each side along its own tangent, so neither node the arc left is a
+       cusp and neither reports a corner. */
+    const sp = square();
+    roundCorner(sp, 1, 8);
+    expect(cornerAt(sp, 1)).toBe('straight');
+    expect(cornerAt(sp, 2)).toBe('straight');
   });
 
   /**

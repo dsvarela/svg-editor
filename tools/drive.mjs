@@ -6157,6 +6157,128 @@ const scenarios = {
   },
 
   /**
+   * The corner control on a cusp between two curves.
+   *
+   * What decides that a node offers one is whether the path turns there, and not
+   * whether the segments either side are straight. The unit suite measures the
+   * arc's tangency and the recovery; this is the wiring, which nothing else
+   * reaches: the control has to appear on a curved corner, round it, and still be
+   * there afterwards to grab again.
+   */
+  async curvedCorner(page, check) {
+    const d = () => drawnPath(page, 0);
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 140">
+  <path d="M40 90 C40 50 70 30 110 30 C100 55 95 70 130 95 C100 105 60 105 40 90 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await page.click('#shapelist li.shape');
+    await settle(page);
+
+    const leaf = await d();
+    out.leaf = leaf;
+    check(/C/.test(leaf), `the curved shape came out as ${leaf}`);
+
+    await page.mouse.move(700, 400);
+    await laidOut(page);
+    await settle(page);
+
+    const controls = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.overlay [data-hit="corner"]')].map((e) => {
+          const b = e.getBoundingClientRect();
+          return {
+            i: Number(e.getAttribute('data-i')),
+            rounded: /rounded/.test(e.getAttribute('class') ?? ''),
+            x: b.x + b.width / 2,
+            y: b.y + b.height / 2,
+          };
+        }),
+      );
+
+    /* Node 1 is the cusp with a curve on each side. Before 2026-08-20 no control
+       was offered anywhere on this shape, because every node had a handle. */
+    const sharp = await controls();
+    out.controls = sharp.length;
+    check(sharp.length > 0, 'a cusp between two curves offered no corner control');
+    const grab = sharp.find((c) => c.i === 1) ?? sharp[0];
+    check(
+      sharp.every((c) => !c.rounded),
+      'a corner with no arc in it was drawn as though it had one',
+    );
+
+    const under = await page.evaluate(([x, y]) => {
+      const e = document.elementsFromPoint(x, y)[0];
+      return e ? e.getAttribute('data-hit') : null;
+    }, [grab.x, grab.y]);
+    check(under === 'corner', `the topmost element at the control is ${JSON.stringify(under)}`);
+
+    /* Along the bisector, away from the node. The control is drawn on that line
+       just inside the corner, so the direction from the anchor to the control is
+       the direction a larger radius lies in. A fixed offset would be a guess
+       about which way this particular corner opens. */
+    const anchor = await page.evaluate((i) => {
+      const a = document.querySelector(`.overlay [data-hit="anchor"][data-i="${i}"]`);
+      if (!a) return null;
+      const b = a.getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    }, grab.i);
+    check(!!anchor, `no anchor drawn for node ${grab.i} to take a direction from`);
+    const away = Math.hypot(grab.x - anchor.x, grab.y - anchor.y);
+    check(away > 1, `the control sits ${away.toFixed(2)} px from its anchor, with no direction in it`);
+    const step = 26;
+    const toX = grab.x + ((grab.x - anchor.x) / away) * step;
+    const toY = grab.y + ((grab.y - anchor.y) / away) * step;
+
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(toX, toY, { steps: 8 });
+    out.readout = await page.evaluate(() => {
+      const el = document.querySelector('#measure');
+      return el.hidden ? null : el.textContent.trim();
+    });
+    check(
+      /radius/.test(out.readout ?? ''),
+      `the drag reported ${JSON.stringify(out.readout)} rather than a radius`,
+    );
+    await page.mouse.up();
+    await settle(page);
+
+    const rounded = await d();
+    out.rounded = rounded;
+    check(rounded !== leaf, 'dragging the control on a curved corner changed nothing');
+    // A node went in, so the path carries one more curve than it did.
+    const curves = (s) => (s.match(/C/g) ?? []).length;
+    out.curvesBefore = curves(leaf);
+    out.curvesAfter = curves(rounded);
+    check(
+      curves(rounded) > curves(leaf),
+      `rounding added no segment: ${curves(leaf)} curves became ${curves(rounded)}`,
+    );
+
+    /* The recovery, end to end. Nothing stores the radius, and with a curved side
+       the corner is only reachable by running each trimmed side past its end, so a
+       control here is the whole of §48 working. */
+    await laidOut(page);
+    const after = await controls();
+    out.roundedControls = after.filter((c) => c.rounded).length;
+    check(out.roundedControls > 0, 'the rounded curved corner offered no control to grab again');
+
+    await undo(page);
+    check((await d()) === leaf, `undo left ${await d()} rather than the shape it started as`);
+
+    return out;
+  },
+
+  /**
    * A shape holding more than one path, and the list saying so.
    *
    * The complaint this answers: two disjoint paths in one shape, with the list

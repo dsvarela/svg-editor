@@ -735,10 +735,11 @@ export class Commands {
     }
 
     /* A corner that already holds an arc goes back to being a corner before it
-       can be rounded to a different radius. The drag does this on a copy at the
-       press; without it here, `roundCorner` met the two curved sides of the
-       existing fillet and refused, so the radius field was dead on anything the
-       drag had already rounded and on every rectangle drawn with one.
+       can be rounded to a different radius. The arc left a smooth node at each
+       end and neither is a cusp, so `cornerAt` reports no corner there and the
+       radius field would be dead on anything the drag had already rounded and
+       on every rectangle drawn with one. The drag does the same on a copy at
+       the press.
 
        The limit is measured on the un-rounded copy too. An existing fillet has
        already eaten into the sides it sits between, so a limit read off the
@@ -778,7 +779,7 @@ export class Commands {
        changed, which is what decides whether this is an edit. */
     let cut = 0;
     let done = 0;
-    const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
+    const refused: Record<RoundRefusal, number> = { end: 0, straight: 0, tiny: 0 };
 
     this.store.tryEdit((st) => {
       for (const [key, ids] of byPath) {
@@ -841,13 +842,11 @@ export class Commands {
     if (!done) {
       // One reason, chosen by what actually happened, rather than a list of
       // everything that could have gone wrong.
-      const why = refused.curved
-        ? 'Round needs a straight segment on both sides of the node.'
-        : refused.end
-          ? 'That node ends the path, so it has only one side.'
-          : refused.straight
-            ? 'The path runs straight through that node. There is no corner to round.'
-            : 'Those nodes cannot be rounded.';
+      const why = refused.end
+        ? 'That node ends the path, so it has only one side.'
+        : refused.straight
+          ? 'The path runs straight through that node. There is no corner to round.'
+          : 'Those nodes cannot be rounded.';
       this.onMessage?.(why, false);
       return false;
     }

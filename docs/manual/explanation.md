@@ -130,18 +130,24 @@ coordinate system, and no numbers that only make sense after a matrix you cannot
 see. The cost is that rotating by ten degrees and back is not exactly the
 identity. Undo is exact; arithmetic is not.
 
-## Rounding refuses where healing approximates
+## Rounding is exact where healing approximates
 
 Two operations that both rebuild a corner, and they answer the same question
 differently. **Heal** approximates: it rebuilds one segment from two and the
-result can visibly differ. **Round** refuses outright if either side of the node
-is a curve.
+result can visibly differ. **Round** does not: the arc it places touches each
+side exactly, and the sides keep the shape they had.
 
 The difference is what you can tell. A healed segment that came out wrong is
-visible immediately and one keystroke away from being undone. A fillet that is a
-fraction of a degree off tangent looks correct at every zoom you are likely to
-check, and shows up later as a seam in the finished artwork. So one is allowed to
-be approximate and the other is not.
+visible immediately and one keystroke away from being undone. A rounded corner
+that is a fraction of a degree off tangent looks correct at every zoom you are
+likely to check, and shows up later as a seam in the finished artwork. So one is
+allowed to be approximate and the other is not.
+
+This is why **Round** works on a corner between two curves as readily as on one
+between two straight sides. The arc is placed against whatever the sides are,
+and each side is cut at the point the arc touches it, so what is left of a side
+still lies on the curve you drew. What decides is whether the path turns at the
+node, not what the segments either side are made of.
 
 ## Delete never refuses, and healing is approximate
 

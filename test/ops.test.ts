@@ -1004,10 +1004,6 @@ describe('roundCorner', () => {
     expect(roundCorner(open, 0, 5)).toBe('end');
     expect(roundCorner(open, 2, 5)).toBe('end');
 
-    // A curve on one side has no line for an arc to be tangent to.
-    const curved = parsePath('M0 0 C10 0 20 10 20 20 L40 20 L40 0 Z')[0];
-    expect(roundCorner(curved, 1, 5)).toBe('curved');
-
     const flat = parsePath('M0 0 L20 0 L40 0 L40 20 Z')[0];
     expect(roundCorner(flat, 1, 5)).toBe('straight');
 
