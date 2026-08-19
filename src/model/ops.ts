@@ -281,11 +281,12 @@ export function deleteNode(sp: Subpath, i: number): boolean {
   const prev = sp.nodes[prevI];
   const next = sp.nodes[nextI];
 
-  const wasLine = segmentIsLine(sp, prevI) && segmentIsLine(sp, i) && prev.hOut === null;
-
-  if (wasLine) {
-    prev.hOut = null;
-    next.hIn = null;
+  /* A shortcut, not a second behaviour. Both segments being straight means
+     `prev.hOut` and `next.hIn` are already null -- that is what `segmentIsLine`
+     reads -- so the rescale below would find nothing to rescale and reach the
+     same splice. What this saves is two `cubicLength` walks per node, which a
+     marquee delete over a traced drawing pays thousands of times. */
+  if (segmentIsLine(sp, prevI) && segmentIsLine(sp, i)) {
     sp.nodes.splice(i, 1);
     return true;
   }
