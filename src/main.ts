@@ -111,6 +111,17 @@ function applySession(sn: Session): void {
     s.selection.shapes.clear();
     s.selection.nodes.clear();
     s.sourceError = null;
+    /* Everything below belongs to the document being REPLACED, and a session
+       carries none of it. Left alone, each outlived its drawing: the backdrop
+       stayed on screen positioned in the old document's coordinates, with
+       `whatIsMissing` warning the person who SAVED that the file does not carry
+       one and nothing warning the person who opens it; and Repeat's matrix was
+       computed about a centre in a document that is no longer here. */
+    if (s.backdrop) {
+      store.onOrphanImage?.(s.backdrop.src);
+      s.backdrop = null;
+    }
+    s.lastTransform = null;
     Object.assign(s, sn.view);
   });
 }
@@ -361,6 +372,26 @@ on('#scaleGo', () => {
 
 /* ------------------------------------------------------------- checkboxes */
 
+/**
+ * How a control that reads the store ONCE is told to read it again.
+ *
+ * A checkbox is set at bind time and never re-read: the subscriber redraws the
+ * canvas and the readouts, not the controls, and nothing else has to, because a
+ * checkbox is the only thing that writes the value it displays. Opening a
+ * workspace broke that assumption -- it writes all 28 view fields at once -- and
+ * 22 controls were left describing the session that had been replaced. Two of
+ * them were worse than cosmetic: a box shown ticked over a store that said false
+ * turned the first press into one that did nothing, and a restored
+ * `touchButtons` put the touch row on screen with its own checkbox unticked.
+ *
+ * A registry rather than a rebuild, because the binding already knows how to
+ * read its own value and nothing else does.
+ */
+const resyncers: (() => void)[] = [];
+const resyncControls = (): void => {
+  for (const r of resyncers) r();
+};
+
 const bindCheck = (
   id: string,
   key:
@@ -385,7 +416,9 @@ const bindCheck = (
   const input = $(id) as HTMLInputElement;
   input.checked = store.state[key];
   input.addEventListener('change', () => store.update((s) => ((s[key] as boolean) = input.checked)));
+  resyncers.push(() => (input.checked = store.state[key]));
 };
+
 bindCheck('#showGrid', 'showGrid');
 bindCheck('#showKeylines', 'showKeylines');
 bindCheck('#showRulers', 'showRulers');
@@ -412,11 +445,13 @@ bindCheck('#touchButtons', 'touchButtons');
    legitimate place for the first one. */
 const angleStep = $('#angleStep') as HTMLInputElement;
 angleStep.value = String(store.state.angleStep);
+resyncers.push(() => (angleStep.value = String(store.state.angleStep)));
 angleStep.addEventListener('input', () =>
   store.update((s) => (s.angleStep = Math.max(0, Number(angleStep.value) || 0))),
 );
 const angleBase = $('#angleBase') as HTMLInputElement;
 angleBase.value = String(store.state.angleBase);
+resyncers.push(() => (angleBase.value = String(store.state.angleBase)));
 angleBase.addEventListener('input', () =>
   store.update((s) => (s.angleBase = Number(angleBase.value) || 0)),
 );
@@ -443,12 +478,14 @@ bindCheck('#minify', 'minify');
 
 const gridInput = $('#gridStep') as HTMLInputElement;
 gridInput.value = String(store.state.gridStep);
+resyncers.push(() => (gridInput.value = String(store.state.gridStep)));
 gridInput.addEventListener('input', () =>
   store.update((s) => (s.gridStep = Math.max(0, Number(gridInput.value) || 0))),
 );
 
 const nudgeBigInput = $('#nudgeBig') as HTMLInputElement;
 nudgeBigInput.value = String(store.state.nudgeBig);
+resyncers.push(() => (nudgeBigInput.value = String(store.state.nudgeBig)));
 nudgeBigInput.addEventListener('input', () =>
   // Floored at 1: a multiplier below one would make Shift move things *less*
   // than a bare arrow key, which is the opposite of what the key is for.
@@ -854,6 +891,7 @@ on('#reverse', () => commands.reverseSelection());
 
 const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
+resyncers.push(() => (decInput.value = String(store.state.decimals)));
 decInput.addEventListener('input', () =>
   store.update((s) => (s.decimals = Math.min(9, Math.max(0, Number(decInput.value) || 0)))),
 );
@@ -1635,8 +1673,20 @@ workspaceFile.addEventListener('change', () => {
         say(`${f.name} is not a workspace this build can open: ${r}.`, false);
         return;
       }
-      applySession(r);
+      /* Named BEFORE the apply, not after. `#fileinfo` is only ever written
+         inside the store subscriber, so the notification `applySession` raises
+         would carry the previous name and the panel would say the wrong file
+         until some later unrelated edit. The import path two hundred lines up
+         already had this rule and spells it out; this handler broke it. */
       loadedName = f.name;
+      applySession(r);
+      /* The rest of the reset lives here rather than in `applySession`, because
+         it is only true of a session replacing a LIVE editor. At startup there
+         is nothing to clear, and every name below is declared further down this
+         file than the startup restore runs. */
+      expanded.clear();
+      seenGroups.clear();
+      resyncControls();
       const n = r.doc.shapes.length;
       say(`Opened ${f.name}: ${n} shape${n === 1 ? '' : 's'}, and the session around them.`, true);
     },

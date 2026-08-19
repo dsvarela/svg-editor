@@ -4164,6 +4164,18 @@ const scenarios = {
     await settle(page);
     check(/none/.test(await page.textContent('#guideinfo')), 'Clear guides left one behind');
 
+    /* And something a CONTROL shows, moved the other way after the save. Without
+       this the field and the readout agree whatever the open does, and the two
+       checks below cannot fail -- which is how they were first written. */
+    const savedGrid = await page.inputValue('#gridStep');
+    await page.fill('#gridStep', savedGrid === '9' ? '3' : '9');
+    await page.press('#gridStep', 'Enter');
+    await settle(page);
+    check(
+      (await page.inputValue('#gridStep')) !== savedGrid,
+      'the grid step did not move, so reopening proves nothing about the controls',
+    );
+
     const wfile = `${dir}/drive-workspace.json`;
     writeFileSync(wfile, text);
     await page.setInputFiles('#workspaceFile', wfile);
@@ -4175,6 +4187,38 @@ const scenarios = {
       'the guide did not come back with the workspace',
     );
     check(/3 shapes/.test(await page.textContent('#stats')), 'the workspace opened the wrong drawing');
+
+    /* The controls, which are the half of a session nothing was re-reading. A
+       checkbox is set once at bind time and never again, because a checkbox is
+       normally the only thing that writes what it displays -- and a workspace
+       writes all 28 view fields at once. 22 controls were left describing the
+       session that had just been replaced, and two of those were worse than
+       cosmetic: a box shown ticked over a store that said false makes the first
+       press do nothing, and a restored `touchButtons` puts the touch row on
+       screen with its own box unticked.
+
+       Measured against the READOUTS, which the subscriber does rewrite. The two
+       disagreeing is the defect stated exactly: the panel showing one thing and
+       the drawing obeying another. */
+    out.controls = await page.evaluate(() => ({
+      showGrid: document.querySelector('#showGrid').checked,
+      gridField: document.querySelector('#gridStep').value,
+      gridReadout: document.querySelector('#gridval').textContent.trim(),
+      decimalsField: document.querySelector('#decimals').value,
+    }));
+    check(
+      out.controls.gridField === out.controls.gridReadout,
+      `the grid field says ${JSON.stringify(out.controls.gridField)} and the readout ` +
+        `beside it says ${JSON.stringify(out.controls.gridReadout)}`,
+    );
+
+    /* The file name, written only inside the store subscriber. Assigned after
+       the apply, the notification carried the previous name and the panel named
+       the wrong file until some later unrelated edit. */
+    check(
+      (await page.textContent('#fileinfo')).trim() === 'drive-workspace.json',
+      `after opening it, the panel names "${(await page.textContent('#fileinfo')).trim()}"`,
+    );
 
     // A file that is not one is refused by name, and changes nothing.
     const bad = `${dir}/drive-workspace-bad.json`;
