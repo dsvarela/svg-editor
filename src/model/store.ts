@@ -28,7 +28,7 @@ export interface NamedStyle {
  * are tools rather than buttons because the size comes from the drag, and
  * because holding the tool lets you place several without going back to a menu.
  */
-export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect' | 'hand';
+export type ToolName = 'select' | 'pen' | 'ellipse' | 'rect' | 'poly' | 'hand';
 
 /**
  * What deleting a node does to the path around it.
@@ -110,6 +110,17 @@ export interface EditorState {
    * press is about to do.
    */
   lastTransform: { m: Mat; what: string } | null;
+  /**
+   * What the polygon tool draws next: how many corners, and whether it is a star.
+   *
+   * The style-for-new-shapes argument (see `style`): carried in the editor so
+   * choosing a hexagon once draws three hexagons, and out of the history because
+   * setting it is not an edit to the drawing. A shape already drawn keeps no
+   * memory of these -- it is nodes and handles from the moment it exists, the
+   * same as the ellipse and the rectangle -- so there is nothing here that can
+   * disagree with what is on the canvas.
+   */
+  polygon: { corners: number; star: boolean; ratio: number };
   /** Grid step in document units; 0 disables both grid and snapping. */
   gridStep: number;
   /**
@@ -303,6 +314,9 @@ export class Store {
       deleteMode: 'fuse',
       touchButtons: false,
       lastTransform: null,
+      // Five points at 0.382 is the star everybody draws; the polygon half of
+      // the tool ignores the ratio until Star is on.
+      polygon: { corners: 5, star: false, ratio: 0.382 },
       gridStep: 1,
       nudgeBig: 10,
       wireframe: false,

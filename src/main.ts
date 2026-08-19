@@ -256,7 +256,7 @@ for (const [i, tab] of tabs.entries()) {
 
 /* ------------------------------------------------------------------ tools */
 
-const TOOLS = ['select', 'pen', 'ellipse', 'rect', 'hand'] as const;
+const TOOLS = ['select', 'pen', 'ellipse', 'rect', 'poly', 'hand'] as const;
 type Tool = (typeof TOOLS)[number];
 const isTool = (v: string | null | undefined): v is Tool => TOOLS.includes(v as Tool);
 
@@ -752,6 +752,34 @@ streamed(opacityInput, () => {
   const v = Number(opacityInput.value);
   if (!Number.isFinite(v)) return;
   commands.setStyle({ opacity: Math.min(1, Math.max(0, v / 100)) });
+});
+
+/* ------------------------------------------------------------- polygon */
+
+/**
+ * What the polygon tool draws next.
+ *
+ * The ratio is typed as a percentage and stored as the fraction SVG geometry
+ * wants, the same split as Opacity. Both numbers are clamped here as well as by
+ * the element, because `min` and `max` bind the spinner and not a paste.
+ */
+const polyCorners = $('#polyCorners') as HTMLInputElement;
+const polyRatio = $('#polyRatio') as HTMLInputElement;
+const polyRatioRow = $('#polyRatioRow');
+
+$('#polyKind').addEventListener('click', (e) => {
+  const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-pk');
+  if (v === 'poly' || v === 'star') store.update((st) => (st.polygon.star = v === 'star'));
+});
+streamed(polyCorners, () => {
+  const v = Number(polyCorners.value);
+  if (!Number.isFinite(v)) return;
+  store.update((st) => (st.polygon.corners = Math.max(3, Math.min(60, Math.round(v)))));
+});
+streamed(polyRatio, () => {
+  const v = Number(polyRatio.value);
+  if (!Number.isFinite(v)) return;
+  store.update((st) => (st.polygon.ratio = Math.max(0.01, Math.min(1, v / 100))));
 });
 
 $('#fillRule').addEventListener('click', (e) => {
@@ -3017,6 +3045,20 @@ store.subscribe((s) => {
   }
   // On the collapsed header, so the setting reads without being opened.
   fillruleinfo.textContent = shown.fillRule === 'evenodd' ? 'even-odd' : 'nonzero';
+
+  const poly = s.polygon;
+  for (const b of $('#polyKind').querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String((b.getAttribute('data-pk') === 'star') === poly.star));
+  }
+  /* Hidden rather than disabled while Star is off: a disabled number is a
+     control that looks like it has something to say, and the inner radius has
+     nothing to say about a polygon. */
+  polyRatioRow.hidden = !poly.star;
+  if (document.activeElement !== polyCorners) polyCorners.value = String(poly.corners);
+  if (document.activeElement !== polyRatio) polyRatio.value = String(Math.round(poly.ratio * 100));
+  $('#polyinfo').textContent = poly.star
+    ? `${poly.corners}-point star`
+    : `${poly.corners} sides`;
 
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
   /* Here rather than only on `input`, because the line above sets the value

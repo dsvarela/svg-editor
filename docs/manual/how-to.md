@@ -407,6 +407,19 @@ If the radius is larger than a side can hold it is cut down to fit, and the
 status line says so. To round every corner of a rectangle evenly, select all four
 and press **Round** once.
 
+## Draw a polygon or a star
+
+Open the **Polygon** group on the **Shape** tab, set **Corners**, then take the
+polygon tool (`N`) and drag on the canvas.
+
+Press **Star** for a star and set **Inner**, which is the waist as a per cent of
+the outer radius. 38 is the five-pointed star everybody draws.
+
+The shape follows the box you drag, so a wide drag gives a wide pentagon; hold
+`Shift` to keep it regular, and `Alt` to drag out from the centre. What you get is
+an ordinary path with straight sides, so you can drag its corners about, or round
+them with **Round**, straight away.
+
 ## Colour a shape
 
 Select it, then set **Fill**, **Stroke**, **Width** and **Opacity** in the

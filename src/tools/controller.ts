@@ -62,7 +62,7 @@ import type { Guide, GuideAxis } from '../model/guides';
 import type { SnapResult } from '../model/snapping';
 import { boxCentre, handlePoint, rotateMatrix, scaleMatrix } from '../model/transform';
 import type { TransformPart } from '../model/transform';
-import { ellipseSubpath, rectSubpath } from '../core/primitives';
+import { ellipseSubpath, polygonSubpath, rectSubpath } from '../core/primitives';
 import type { Store } from '../model/store';
 import { CORNER_DOT_PX } from '../view/canvas';
 import type { Canvas, OverlayExtras } from '../view/canvas';
@@ -103,7 +103,7 @@ type DragKind =
   /* Drawing a primitive. `id` is null until the drag is big enough to be worth
      a shape, so a stray click on the canvas leaves no empty one behind and no
      history entry either. */
-  | { kind: 'create'; tool: 'ellipse' | 'rect'; from: Pt; id: string | null }
+  | { kind: 'create'; tool: 'ellipse' | 'rect' | 'poly'; from: Pt; id: string | null }
   /* `free` picks the edit: the two-number symmetric bend, or moving the point
      under the pointer with both handles. Frozen at the press, like
      `looseness`. */
@@ -381,7 +381,7 @@ export class Controller {
   phase(): number {
     const s = this.store.state;
     if (!s.pixelFit) return 0;
-    const creating = s.tool === 'pen' || s.tool === 'ellipse' || s.tool === 'rect';
+    const creating = s.tool === 'pen' || s.tool === 'ellipse' || s.tool === 'rect' || s.tool === 'poly';
     if (creating) return phaseOf(s.style);
     return phaseInForce(s.doc, s.selection, s.style) ?? 0;
   }
@@ -872,7 +872,7 @@ export class Controller {
       return;
     }
 
-    if (s.tool === 'ellipse' || s.tool === 'rect') {
+    if (s.tool === 'ellipse' || s.tool === 'rect' || s.tool === 'poly') {
       this.drag = { kind: 'create', tool: s.tool, from: this.snap(p), id: null };
       return;
     }
@@ -1687,10 +1687,24 @@ export class Controller {
        and the pointer can always grow it again. */
     if (Math.abs(w) < 1e-9 || Math.abs(h) < 1e-9) return;
 
+    const poly = this.store.state.polygon;
     const build = (): Subpath =>
       d.tool === 'ellipse'
         ? ellipseSubpath(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2)
-        : rectSubpath(x, y, w, h);
+        : d.tool === 'poly'
+          ? /* Inscribed in the drag's box, and signed radii rather than
+               absolute: dragging up or left has to put the shape where the
+               pointer is, and a polygon reflected through its centre is the
+               same polygon, so nothing looks upside down. */
+            polygonSubpath(
+              x + w / 2,
+              y + h / 2,
+              w / 2,
+              h / 2,
+              poly.corners,
+              poly.star ? poly.ratio : null,
+            )
+          : rectSubpath(x, y, w, h);
 
     if (!d.id) {
       this.openBatch();

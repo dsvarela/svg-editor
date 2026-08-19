@@ -970,6 +970,11 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    element travels with the clone and beats the inherited `fill: none` above. */
 
 .row { display: flex; align-items: center; gap: 7px; }
+/* `display: flex` beats the user agent's `[hidden] { display: none }`, so a row
+   hidden from script stays on screen. Three rules in this file already exist for
+   the same reason -- `.gbody`, `.tabpanel`, `.rd` -- and every new display rule
+   on something script hides needs its own. */
+.row[hidden] { display: none; }
 .row label {
   font-family: var(--mono);
   font-size: 11px;

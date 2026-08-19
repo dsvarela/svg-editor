@@ -333,6 +333,15 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
         controller.finishPen();
         return;
       }
+      /* `n`, for n-gon. Not `g`, which would sit one Shift away from Select
+         group and mean something unrelated -- and not `s`, which is one Shift
+         away from Smooth. The five tool keys are all initials except this one,
+         and every initial it could have had was already a Shift+letter. */
+      case 'n': {
+        store.update((st) => (st.tool = 'poly'));
+        controller.finishPen();
+        return;
+      }
       case 'ArrowLeft':
       case 'ArrowRight':
       case 'ArrowUp':

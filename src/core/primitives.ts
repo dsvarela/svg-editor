@@ -80,3 +80,52 @@ export function rectSubpath(x: number, y: number, w: number, h: number): Subpath
     closed: true,
   };
 }
+
+/**
+ * A regular polygon or a star, inscribed in the box `(cx, cy)` with radii
+ * `rx, ry`, first point at the top.
+ *
+ * `inner` is the star's spoke ratio: `null` for a polygon, otherwise the inner
+ * radius as a fraction of the outer, which gives `corners * 2` nodes alternating
+ * out and in. A five-pointed star is `corners = 5, inner = 0.382`, which is the
+ * ratio that makes the points meet at the golden angle and is what everybody
+ * draws when they draw a star.
+ *
+ * **Points, not arcs.** Every node comes out with no handles, so every side is
+ * straight and stays straight under later edits -- and Round can reach the
+ * corners, which needs both sides of a node to be straight (§48). An ellipse has
+ * to be four cubics because a circle is not a polygon; this has no such excuse.
+ *
+ * **First point at the top**, which is where a star has to have one: a
+ * five-pointed star rotated by a tenth of a turn reads as a wrong star rather
+ * than as a rotated one. The polygon inherits the same rule for free, and it is
+ * the reason the angle starts at `-π/2` rather than at 0 the way `ellipseSubpath`
+ * does.
+ *
+ * The radii are separate, so the shape follows the drag's box rather than being
+ * forced circular. A pentagon in a wide box is a wide pentagon, which is what
+ * dragging a wide box asks for; Shift during the drag is what makes it regular.
+ */
+export function polygonSubpath(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  corners: number,
+  inner: number | null = null,
+): Subpath {
+  /* Clamped rather than refused. The count reaches this from a number field
+     somebody can type -1 into, and a polygon of two sides is a line drawn twice.
+     The ceiling is where the sides stop being distinguishable from the circle
+     they approximate at any size this editor draws. */
+  const n = Math.max(3, Math.min(60, Math.round(corners)));
+  const k = inner === null ? 1 : Math.max(0.01, Math.min(1, inner));
+  const nodes = [];
+  const steps = inner === null ? n : n * 2;
+  for (let i = 0; i < steps; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / steps;
+    const r = inner === null || i % 2 === 0 ? 1 : k;
+    nodes.push(makeNode([cx + rx * r * Math.cos(a), cy + ry * r * Math.sin(a)]));
+  }
+  return { nodes, closed: true };
+}

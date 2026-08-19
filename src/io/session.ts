@@ -72,6 +72,7 @@ export type SessionView = Pick<
   | 'minify'
   | 'sourceMode'
   | 'style'
+  | 'polygon'
 >;
 
 export interface Session {
@@ -133,6 +134,7 @@ export function toSession(s: EditorState): Session {
       minify: s.minify,
       sourceMode: s.sourceMode,
       style: { ...s.style },
+      polygon: { ...s.polygon },
     },
   };
 }
@@ -328,6 +330,17 @@ function readView(v: unknown, now: SessionView): SessionView {
     minify: bool('minify', now.minify),
     sourceMode: o.sourceMode === 'svg' || o.sourceMode === 'd' ? o.sourceMode : now.sourceMode,
     style: readStyle(o.style) ?? { ...now.style },
+    polygon: readPolygon(o.polygon) ?? { ...now.polygon },
+  };
+}
+
+/** What the polygon tool draws next. Clamped to the range the generator accepts. */
+function readPolygon(v: unknown): SessionView['polygon'] | null {
+  if (!isObj(v) || !isNum(v.corners) || !isNum(v.ratio) || !isBool(v.star)) return null;
+  return {
+    corners: Math.max(3, Math.min(60, Math.round(v.corners))),
+    star: v.star,
+    ratio: Math.max(0.01, Math.min(1, v.ratio)),
   };
 }
 

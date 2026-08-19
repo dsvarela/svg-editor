@@ -29,6 +29,11 @@
         <symbol id="i-rect" viewBox="0 0 16 16">
           <rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.4" />
         </symbol>
+        <!-- A pentagon, point up, which is what the tool draws by default. A
+             star would be the other half of it and reads as busy at 16px. -->
+        <symbol id="i-poly" viewBox="0 0 16 16">
+          <path d="M8 2.2 L13.5 6.2 L11.4 12.7 L4.6 12.7 L2.5 6.2 Z" />
+        </symbol>
         <!-- The clipboard four. Each is the same 6.6-unit square moved or cut,
              so the row reads as one family rather than four drawings. -->
         <symbol id="i-duplicate" viewBox="0 0 16 16">
@@ -155,6 +160,12 @@
           </button>
           <button type="button" data-v="rect" title="Rectangle. Shift for a square, Alt from the centre (R)" aria-label="Rectangle">
             <svg class="ico"><use href="#i-rect" /></svg>
+          </button>
+          <!-- Its corner count and whether it is a star are in the Polygon
+               group on the Shape tab, beside the style for new shapes and for
+               the same reason: they describe what you are about to draw. -->
+          <button type="button" data-v="poly" title="Polygon or star, with as many corners as the Polygon group says. Shift for a regular one, Alt from the centre (N)" aria-label="Polygon">
+            <svg class="ico"><use href="#i-poly" /></svg>
           </button>
           <button type="button" data-v="hand" title="Pan the view. Space-drag does the same from any tool (H)" aria-label="Hand">
             <svg class="ico"><use href="#i-hand" /></svg>
@@ -320,6 +331,31 @@
             </div>
           
               <p class="hint" id="hint-style" hidden>With nothing selected, sets what you draw next.</p>
+              </div>
+            </div>
+          <!-- What the polygon tool draws next, beside the style for new shapes
+               and on the same argument: it describes what you are about to
+               draw. Nothing here is stored on a shape -- a pentagon is five
+               nodes from the moment it exists, the same as a rectangle -- so
+               there is no second copy that could disagree with the canvas. §63. -->
+          <div class="group">
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="false"><span>Polygon</span><span class="gval" id="polyinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-poly" aria-label="What Polygon is for">?</button></div>
+              <div class="gbody">
+            <div class="seg spread" id="polyKind" role="group" aria-label="Polygon or star">
+              <button type="button" data-pk="poly" aria-pressed="true">Polygon</button>
+              <button type="button" data-pk="star" aria-pressed="false">Star</button>
+            </div>
+            <div class="row">
+              <label for="polyCorners">Corners</label>
+              <input type="number" id="polyCorners" value="5" min="3" max="60" step="1" />
+            </div>
+            <div class="row" id="polyRatioRow">
+              <label for="polyRatio">Inner</label>
+              <input type="number" id="polyRatio" value="38" min="1" max="100" step="1" aria-label="Inner radius, per cent of the outer" />
+              <span class="unit">%</span>
+            </div>
+
+              <p class="hint" id="hint-poly" hidden>Sets what the polygon tool draws next. Shift while drawing keeps it regular.</p>
               </div>
             </div>
           <div class="group">

@@ -1003,6 +1003,86 @@ const scenarios = {
     const [rw, rh] = await extent('.artwork path:nth-child(2)');
     check(Math.abs(rw - 24) < 0.5 && Math.abs(rh - 25) < 0.5, `rect is ${rw} x ${rh}, want 24 x 25`);
 
+    /* A polygon and a star. Both are ordinary paths from the moment they exist,
+       which is the claim the two tools above already make good on, so what only
+       a browser can show is that the panel's numbers reach the generator: the
+       corner count, the star toggle and the inner ratio are three controls and
+       a drag, and every one of them was correct in the unit tests. */
+    await tab(page, 'shape');
+    await page.fill('#polyCorners', '6');
+    await settle(page);
+    check(
+      /6 sides/.test((await page.textContent('#polyinfo')).trim()),
+      `the polygon header says "${await page.textContent('#polyinfo')}"`,
+    );
+    check(await page.locator('#polyRatioRow').isHidden(), 'the star ratio is showing for a polygon');
+
+    await page.click('#tool button[data-v="poly"]');
+    await drag([10, 40], [40, 55]);
+    await settle(page);
+    const hex = await page.getAttribute('.artwork path:nth-child(3)', 'd');
+    /* Six points and the close, counted as commands that place one: `M`, `L`,
+       `H` and `V` each do, and which of the three a side gets depends on
+       whether it happens to be axis-aligned. Not one curve, because Round needs
+       straight sides on both edges of a node. */
+    check((hex.match(/[MLHVZ]/g) ?? []).length === 7, `the hexagon reads "${hex}"`);
+    check(!/[CQA]/.test(hex), `a polygon should have no curves in it: ${hex}`);
+    /* Inscribed in the drag's box, not filling it. A hexagon with a point at
+       the top has its widest vertices 30° off vertical, so a 30-wide drag gives
+       a 30·cos(30°) = 25.98 wide shape and the full 15 of height. The same is
+       true in Inkscape, and it is the reason this is measured against the
+       arithmetic rather than against the drag. */
+    const [hw, hh] = await extent('.artwork path:nth-child(3)');
+    const want = 30 * Math.cos(Math.PI / 6);
+    check(
+      Math.abs(hw - want) < 0.6 && Math.abs(hh - 15) < 0.6,
+      `hexagon is ${hw} x ${hh}, want ${want.toFixed(2)} x 15`,
+    );
+
+    await page.click('#polyKind button[data-pk="star"]');
+    await settle(page);
+    check(await page.locator('#polyRatioRow').isVisible(), 'the star ratio stayed hidden under Star');
+    check(
+      /6-point star/.test((await page.textContent('#polyinfo')).trim()),
+      `the star header says "${await page.textContent('#polyinfo')}"`,
+    );
+    // By key this time, which is the other half of the tool being reachable.
+    await page.click('#tool button[data-v="select"]');
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('n');
+    check(
+      (await page.getAttribute('#tool button[data-v="poly"]', 'aria-pressed')) === 'true',
+      'pressing n did not select the polygon tool',
+    );
+    await drag([50, 40], [80, 55]);
+    await settle(page);
+    const star = await page.getAttribute('.artwork path:nth-child(4)', 'd');
+    // Twice the corners, because a star alternates out and in.
+    check((star.match(/[MLHVZ]/g) ?? []).length === 13, `the star reads "${star}"`);
+    /* The ratio is a live control, so a tighter one has to reach the geometry.
+       Measured as the shortest distance from the centre to any node, which is
+       the waist: the star's extent barely moves, so a bounding box would report
+       the same shape for 38% and 15%. */
+    const waist = async (sel) =>
+      page.$eval(sel, (el) => {
+        const b = el.getBBox();
+        const cx = b.x + b.width / 2;
+        const cy = b.y + b.height / 2;
+        const nums = (el.getAttribute('d').match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        let least = Infinity;
+        for (let i = 0; i + 1 < nums.length; i += 2) {
+          least = Math.min(least, Math.hypot(nums[i] - cx, nums[i + 1] - cy));
+        }
+        return least;
+      });
+    const fat = await waist('.artwork path:nth-child(4)');
+    await page.fill('#polyRatio', '15');
+    await settle(page);
+    await drag([50, 40], [80, 55]);
+    await settle(page);
+    const thin = await waist('.artwork path:nth-child(5)');
+    check(thin < fat * 0.6, `the ratio did not reach the shape: waist went ${fat} to ${thin}`);
+
     // The keyboard reaches the tools too.
     await page.keyboard.press('e');
     const toolAfterKey = await page.getAttribute('#tool button[data-v="ellipse"]', 'aria-pressed');

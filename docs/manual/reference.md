@@ -10,11 +10,16 @@ Every control, and what it does. Dry and complete.
 | Pen | `P` | Click to place nodes. Click the first node to close the path, or either end of an existing open path to carry on drawing it |
 | Ellipse | `E` | Drag out an ellipse |
 | Rectangle | `R` | Drag out a rectangle |
+| Polygon | `N` | Drag out a regular polygon or a star |
 | Hand | `H` | Drag to pan. `Space`-drag does the same from any tool |
 
 `Shift` while drawing constrains an ellipse to a circle and a rectangle to a
 square, by taking the shorter span of the drag. `Alt` reads the point you pressed
 as the centre rather than a corner.
+
+The polygon's key is `N`, for n-gon. Its initial was taken twice over: `P` is the
+pen and `Shift`+`G` widens a selection to its group, so `G` one Shift away would
+have meant something unrelated.
 
 ## Pointer
 
@@ -124,7 +129,7 @@ Three tabs, split by what a control acts on.
 
 | Tab | Holds |
 |---|---|
-| **Shape** | Shapes, Style, Combine, Path, Transform, Arrange |
+| **Shape** | Shapes, Style, Polygon, Combine, Path, Transform, Arrange |
 | **Node** | Node, Bend, Align, Delete |
 | **Document** | File, Canvas, Grid, Backdrop, Preview, Controls |
 
@@ -295,6 +300,27 @@ as soon as the style shown stops matching it.
 The colour pickers stay usable while **none** is ticked, and picking a colour
 clears it. A colour the picker cannot show, such as a named colour or a gradient
 from an imported file, is left alone and named in the header instead.
+
+### Polygon
+
+What the polygon tool draws next. Nothing here is stored on a shape: a pentagon
+is five nodes from the moment it exists, the same as a rectangle, so there is
+nothing that can disagree with what is on the canvas.
+
+| Control | Does |
+|---|---|
+| **Polygon** / **Star** | Which of the two the tool draws |
+| **Corners** | Sides for a polygon, points for a star. 3 to 60 |
+| **Inner** | The star's waist, as a per cent of its outer radius. Hidden for a polygon |
+
+**The shape is inscribed in the drag, not stretched to fill it.** A hexagon has
+its widest corners 30 degrees off vertical, so a 30-unit drag gives a shape about
+26 units wide and the full height. The first corner is always at the top, because
+a star turned a tenth of a turn reads as a wrong star rather than a rotated one.
+
+Every side is straight and every node is handle-free, so **Round** reaches any
+corner of a polygon. `Shift` while drawing keeps it regular; without it the shape
+follows the box, so a pentagon in a wide drag is a wide pentagon.
 
 ### Combine
 

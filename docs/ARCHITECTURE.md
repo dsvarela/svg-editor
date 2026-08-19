@@ -2933,3 +2933,55 @@ The controller writes it directly through `store.update` rather than through
 `Commands`, which it does not hold. The two are siblings given the same store,
 and threading one into the other to reach one setter would be a dependency for
 the sake of an assignment.
+
+## 63. A polygon is a generator, and that is the whole of it
+
+The shopping list predicted this one exactly: "they are ordinary paths from the
+moment they are drawn, which is the claim the ellipse and rectangle tools already
+make good on, so this adds a generator and nothing to the model." It does.
+`polygonSubpath` is forty lines in `core/primitives.ts` beside the other two, and
+nothing anywhere stores a corner count on a shape.
+
+**One tool, not two.** A star is a polygon with a second radius, so making Star a
+toggle rather than a sixth toolbar button keeps the toolbar at six and puts the
+difference where the other two numbers already are. Inkscape does the same.
+
+### Three decisions the geometry made
+
+**Every node has no handles.** A polygon of cubics would draw identically and
+quietly refuse Round, because `cornerAt` needs both sides of a node to be
+straight (§48). Straight-sided is also what survives later editing: dragging a
+corner of a hexagon leaves the other five corners square.
+
+**The first corner is at the top**, which is why the angle starts at `-π/2` and
+not at 0 the way `ellipseSubpath` does. A five-pointed star rotated a tenth of a
+turn reads as a wrong star rather than as a rotated one. The polygon inherits the
+rule for free.
+
+**Inscribed in the drag's box, not stretched to fill it.** A hexagon's widest
+corners sit 30 degrees off vertical, so a 30-unit drag gives a shape 25.98 wide.
+Stretching it to the box would mean the shape was no longer regular even with
+Shift held, which is the one thing Shift is for. The radii stay separate and
+signed, so a drag up and to the left puts the shape where the pointer is: a
+polygon reflected through its own centre is the same polygon.
+
+### `N`, and why not its own initial
+
+`P` is the pen. `G` would sit one Shift away from Select group (§61) and mean
+something unrelated, and `S` one Shift away from Smooth. Every initial this tool
+could have had was already a letter or the Shift of one, so it takes `N`, for
+n-gon. The five other tool keys are all initials; this is the exception, and the
+tooltip and the manual both say the word.
+
+### The settings live in the rail, with the style for new shapes
+
+`EditorState.polygon` sits beside `style`, on the same argument: it describes what
+you are about to draw, so choosing a hexagon once draws three hexagons, and
+setting it is not an edit to the drawing and takes no undo step.
+
+The inner ratio's row is **hidden** rather than disabled while Star is off. A
+disabled number is a control that looks like it has something to say; the inner
+radius has nothing to say about a polygon. That hiding needed a CSS rule of its
+own -- `display: flex` beats the user agent's `[hidden]`, and the browser
+scenario is what found it, because the row was still on screen and every unit
+test passed.
