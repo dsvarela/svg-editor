@@ -1778,7 +1778,9 @@ Two details worth keeping:
 
 - **Defaults are the whole design.** Everything shut is an empty rail and
   everything open is what was there before. The groups that act on the current
-  selection open -- Shapes, Style, Node -- and the rest are shut.
+  selection open -- Shapes, Style, Node -- and the rest are shut. File is the one
+  exception, and §58 says why: it acts on no selection, and it is where the
+  drawing leaves the editor.
 - **A shut group has to say what it is doing.** The header readouts already did
   that (`every 45° · origin free`), which is what makes collapsing safe rather
   than a way to lose a control. They were the densest useful thing in the panel
@@ -2641,3 +2643,54 @@ name.
 `writing` rule 9 states the trap in both directions. Two words for one concept is
 the half everybody checks. One word for two concepts is the half that hides,
 because nothing on the screen looks inconsistent.
+
+## 58. One place to get a drawing in, one place to get it out
+
+Saving a drawing meant opening a text box. **Download SVG** sat in the source
+drawer's header, beside **Apply**, **Revert** and **Copy**, and `Ctrl+E` was the
+only way to reach it. **Download PNG** had a group of its own at the far end of
+the Document tab, next to Preview. **Add an SVG** was in Document under File.
+Three places, and the one holding the primary export was a panel whose job is
+editing text.
+
+It was also lying about its scope. The drawer shows one shape's path data when a
+shape is selected, and `Download SVG` writes the whole document regardless. Two
+controls a hand's width apart, one scoped to the selection and one not, with
+nothing on either saying so.
+
+**Everything that moves a drawing across the boundary is in Document under File
+now**, under two sub-headings that say which way it goes:
+
+| | |
+|---|---|
+| Add | **Add an SVG** |
+| Save | **Download SVG**, **Download PNG at N px wide** |
+
+**Output** -- decimals and minify -- is a nested group inside it, one press away
+and shut by default, on the same argument that put Fill rule inside Style: it is
+set once and read rarely, and it governs both downloads and the previews. Its own
+top-level group had been a fourth place to look.
+
+**File is the only group that opens by default without acting on a selection.**
+§41's rule is that a group opens when it acts on what is selected. File acts on
+nothing selected, and shutting it would have put Download SVG two presses from
+anywhere in the app, which is the position this section exists to leave.
+
+**The drawer keeps `Copy`, and it is not an export.** It copies what the box is
+showing, which is path data or a whole SVG depending on the switch beside it, and
+that is the one operation here whose scope really is the drawer's. The title says
+so, because the label cannot.
+
+**Node and shape align now say the same words.** §50 argues the two
+implementations must stay apart, and they do. What was not argued was the
+interface: shapes had **Align shapes** and **Distribute shapes** as two rows of
+six tiles, and nodes had **Align** as six tiles and then two plain buttons
+labelled **Space H** and **Space V**. `Space H` also names one of the shape
+controls, the gap-based one, so the same two words meant two operations depending
+on which panel you were in. The node pair is **Distribute nodes** now, drawn as
+tiles with the same icons and the same word -- `centre` -- as the shape row.
+
+Two tiles where shapes get six, and the sentence under them says why: a node is a
+point with no width, so equal gaps, equal centres and equal edges are one move
+rather than three. Stating the count is the alternative to a reader assuming four
+tiles are missing.

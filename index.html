@@ -524,7 +524,10 @@
               <button class="btn" id="bendFree" title="Release into free handles">Free</button>
             </div>
 
-            <div class="glabel sub"><span>Align</span><span class="gval" id="aligninfo"></span></div>
+            <!-- The same two headings, the same tiles and the same words as
+                 Arrange, which does this to whole shapes. Only the count
+                 differs, and the sentence under it says why. -->
+            <div class="glabel sub"><span>Align nodes</span><span class="gval" id="aligninfo"></span></div>
               <div class="tiles six">
                 <button class="tile" type="button" data-al="left" aria-label="Align nodes: left edges" title="Align nodes: left edges"><svg class="ico"><use href="#i-al-l" /></svg><span>left</span></button>
                 <button class="tile" type="button" data-al="hcenter" aria-label="Align nodes: horizontal centres" title="Align nodes: horizontal centres"><svg class="ico"><use href="#i-al-c" /></svg><span>centre</span></button>
@@ -533,10 +536,12 @@
                 <button class="tile" type="button" data-al="vcenter" aria-label="Align nodes: vertical centres" title="Align nodes: vertical centres"><svg class="ico"><use href="#i-al-cv" /></svg><span>middle</span></button>
                 <button class="tile" type="button" data-al="bottom" aria-label="Align nodes: bottom edges" title="Align nodes: bottom edges"><svg class="ico"><use href="#i-al-rv" /></svg><span>bottom</span></button>
               </div>
-            <div class="aligns two">
-              <button type="button" data-di="h" title="Distribute horizontally">Space H</button>
-              <button type="button" data-di="v" title="Distribute vertically">Space V</button>
-            </div>
+            <div class="glabel sub"><span>Distribute nodes</span></div>
+              <div class="tiles two">
+                <button class="tile" type="button" data-di="h" aria-label="Space evenly: equal centres, left to right" title="Space evenly: equal centres, left to right"><svg class="ico"><use href="#i-di-ctr" /></svg><span>centre</span></button>
+                <button class="tile" type="button" data-di="v" aria-label="Space evenly: equal centres, top to bottom" title="Space evenly: equal centres, top to bottom"><svg class="ico"><use href="#i-di-ctrv" /></svg><span>centre</span></button>
+              </div>
+            <p class="says">Two where Arrange has six: a node is a point, so equal gaps, equal centres and equal edges are the same move.</p>
           
               <p class="hint" id="hint-node" hidden>Cusp, Smooth and Symm read the handles. Auto keeps re-deriving them.</p>
               </div>
@@ -562,10 +567,43 @@
           <div class="group">
               <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>File</span><span class="gval" id="fileinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-file" aria-label="What File is for">?</button></div>
               <div class="gbody">
+            <!-- Everything that moves a drawing in or out of the editor, in one
+                 group. Download SVG used to live in the source drawer's header,
+                 which meant the only way to save was to open a text box, and it
+                 wrote the whole document while the box beside it was showing one
+                 shape's path data. PNG had a group of its own next to Preview.
+                 §58 of docs/ARCHITECTURE.md. -->
+            <div class="glabel sub"><span>Add</span></div>
             <button class="btn wide" id="importSvg" type="button" title="Read an SVG file and add its shapes to this document">Add an SVG</button>
             <input type="file" id="importFile" accept=".svg,image/svg+xml" hidden />
-          
-              <p class="hint" id="hint-file" hidden>Adds to the document, in one undo step. Dropping a file on the canvas does the same.</p>
+
+            <div class="glabel sub"><span>Save</span></div>
+            <button class="btn wide primary" id="download" type="button" title="Save the whole document as an SVG file">Download SVG</button>
+            <div class="act">
+              <button class="btn" id="downloadPng" type="button" title="Save the drawing as a PNG at this width. The height follows the canvas proportions">Download PNG</button>
+              <label for="pngWidth">at</label>
+              <input type="number" id="pngWidth" value="512" min="1" max="8192" step="1" aria-label="PNG width in pixels" />
+              <span class="rlabel">px wide</span>
+            </div>
+
+            <!-- How the text is written rather than what is in it: set once,
+                 read rarely, so one press away. The same argument as Fill rule
+                 inside Style. -->
+            <div class="group inner">
+              <div class="ghead"><button class="glabel sub" type="button" aria-expanded="false"><span>Output</span><span class="gval" id="outval"></span></button></div>
+              <div class="gbody">
+                <div class="row">
+                  <label for="decimals">Decimals</label>
+                  <input type="number" id="decimals" value="3" min="0" max="9" step="1" />
+                </div>
+                <div class="checks">
+                  <label><input type="checkbox" id="minify" /> Minify</label>
+                </div>
+                <p class="says">How both downloads and the previews write the drawing. Fewer decimals make a smaller file and a coarser shape.</p>
+              </div>
+            </div>
+
+              <p class="hint" id="hint-file" hidden>Adding is one undo step, and dropping a file on the canvas does the same. A PNG is transparent where nothing is painted.</p>
               </div>
             </div>
           <div class="group">
@@ -719,23 +757,10 @@
               </div>
             </div>
           <div class="group">
-              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Output</span><span class="gval" id="outval"></span></button></div>
-              <div class="gbody">
-            <div class="row">
-              <label for="decimals">Decimals</label>
-              <input type="number" id="decimals" value="3" min="0" max="9" step="1" />
-            </div>
-            <div class="checks">
-              <label><input type="checkbox" id="minify" /> Minify</label>
-            </div>
-          
-              </div>
-            </div>
-          <div class="group">
               <div class="ghead"><button class="glabel" type="button" aria-expanded="false"><span>Preview</span><span class="gval" id="previewinfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-preview" aria-label="What Preview is for">?</button></div>
               <div class="gbody">
             <!-- The drawing at the sizes an icon ships at. Rendered from the
-                 exported SVG, so the Output settings above show in it. -->
+                 exported SVG, so File's Output settings show in it. -->
             <div class="previews" id="previews">
               <figure><img id="prev16" alt="The drawing at 16 pixels" width="16" height="16" /><figcaption>16</figcaption></figure>
               <figure><img id="prev24" alt="The drawing at 24 pixels" width="24" height="24" /><figcaption>24</figcaption></figure>
@@ -744,18 +769,6 @@
             </div>
 
               <p class="hint" id="hint-preview" hidden>Held still during a drag, and redrawn when it ends.</p>
-              </div>
-            </div>
-          <div class="group">
-              <div class="ghead"><button class="glabel" type="button" aria-expanded="false"><span>PNG</span><span class="gval" id="pnginfo"></span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-png" aria-label="What PNG is for">?</button></div>
-              <div class="gbody">
-            <div class="row">
-              <label for="pngWidth">Width</label>
-              <input type="number" id="pngWidth" value="512" min="1" max="8192" step="1" aria-label="PNG width in pixels" />
-            </div>
-            <button class="btn wide primary" id="downloadPng" type="button" title="Save the drawing as a PNG at this width. The height follows the canvas proportions">Download PNG</button>
-
-              <p class="hint" id="hint-png" hidden>Transparent where nothing is painted. Height follows the canvas.</p>
               </div>
             </div>
           <div class="group">
@@ -785,10 +798,9 @@
           <span id="srchint" class="st"></span>
           <span class="grow"></span>
           <span id="srcinfo" class="st mono"></span>
-          <button class="btn" id="apply" type="button" title="Apply (Ctrl+Enter)">Apply</button>
+          <button class="btn primary" id="apply" type="button" title="Apply (Ctrl+Enter)">Apply</button>
           <button class="btn" id="revertSrc" type="button" title="Put the document's own text back, discarding what is typed here">Revert</button>
-          <button class="btn" id="copy" type="button">Copy</button>
-          <button class="btn primary" id="download" type="button">Download SVG</button>
+          <button class="btn" id="copy" type="button" title="Copy what this box is showing, which is path data or SVG depending on the switch at the left">Copy</button>
           <button class="ib" id="closeSrc" type="button" title="Close (Ctrl+E)" aria-label="Close source">&times;</button>
         </div>
         <textarea id="src" spellcheck="false" aria-label="Path data"></textarea>

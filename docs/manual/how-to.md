@@ -197,9 +197,9 @@ both paths are in one shape.
 
 Select two or more nodes, then use the **Align** panel. Spacing them out needs three.
 
-The six align buttons move the selection to a common left, centre, right, top,
-middle or bottom. **Space H** and **Space V** distribute the middle nodes evenly
-between the two outermost ones, which stay where they are.
+The six **Align nodes** tiles move the selection to a common left, centre, right,
+top, middle or bottom. The two **Distribute nodes** tiles put the middle nodes at
+equal steps between the two outermost ones, which stay where they are.
 
 ## Put something at an exact position or size
 

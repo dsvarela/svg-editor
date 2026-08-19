@@ -3079,9 +3079,12 @@ for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')
   const body = head.closest('.group')?.querySelector<HTMLElement>(':scope > .gbody') ?? null;
   if (!body) continue;
   /* Open where the group acts on what is selected, shut otherwise. Everything
-     shut is an empty rail and everything open is what we already had. */
+     shut is an empty rail and everything open is what we already had. File is
+     the exception: it acts on nothing selected, and it is where the drawing
+     leaves the editor, so landing on the Document tab and finding every group
+     shut would put Download SVG two presses from anywhere. */
   const group = head.closest('.group');
-  const keepOpen = ['Style', 'Node', 'Shapes'].includes(head.querySelector('span')?.textContent ?? '');
+  const keepOpen = ['Style', 'Node', 'Shapes', 'File'].includes(head.querySelector('span')?.textContent ?? '');
   const set = (open: boolean): void => {
     head.setAttribute('aria-expanded', String(open));
     body.hidden = !open;

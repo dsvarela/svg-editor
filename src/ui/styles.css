@@ -718,6 +718,13 @@ body:not(.touchbtns) .tonly { display: none; }
    like the label it replaced rather than like a control. */
 button.glabel {
   width: 100%;
+  /* A button carries the user agent's own padding, and nothing here took it
+     off: every header sat 4px to the right of the labels and controls it named.
+     The sticky rule below pads the `.ghead` around the button rather than the
+     button, so it never reached this. Measured at 1011px against 1007px for a
+     `.glabel.sub` that is a plain div, which is why FILL RULE read as indented
+     from the SAVED heading three rows under it. */
+  padding: 0;
   font-family: var(--mono);
   /* Declared, not inherited from the sticky rule below. That rule only ever
      matched while this was the group's first child, so wrapping it in a
@@ -759,7 +766,12 @@ button.glabel[aria-expanded='false'] { color: var(--ink-3); }
    as two levels. The asymmetric margin binds it to what it introduces: 18px of
    air above it, 6px below, against the group's flat 12. */
 .glabel.sub { margin: 6px 0 -6px; font-weight: 400; color: var(--ink-3); }
-.hint {
+/* A sentence that stays on screen, against a `.hint`, which is behind the `?`.
+   Same size and colour, because the difference is when you see it and not how
+   loudly it speaks: unstyled, these three were 13px panel ink, which made an
+   aside the heaviest text in the group it explained. */
+.hint,
+.says {
   margin: 0;
   font-size: 11px;
   line-height: 1.4;
@@ -914,6 +926,11 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 /* Five across a 288px rail is 55px each, clear of the 44px floor, so this one
    does not wrap under a coarse pointer and needs no second row. */
 .tiles.five { grid-template-columns: repeat(5, 1fr); }
+/* Two, at the width three would be. Distributing nodes has one mode where
+   distributing shapes has three, and stretching the pair across the rail would
+   make two tiles the size of a button and stop them reading as the same control
+   as the six above them. */
+.tiles.two { grid-template-columns: repeat(3, 1fr); }
 .tile {
   display: inline-flex;
   flex-direction: column;
@@ -984,23 +1001,6 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .coords input.ghost { color: var(--ink-3); font-style: italic; }
 .coords input,
 .coords .btn { width: 100%; }
-
-.aligns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.aligns.two { grid-template-columns: 1fr 1fr; }
-.aligns button {
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  height: var(--h);
-  background: var(--panel);
-  color: var(--ink-2);
-  border: 1px solid var(--edge);
-  border-radius: var(--r);
-  cursor: pointer;
-}
-.aligns.two button { font-size: 12px; }
-.aligns button:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink); }
-.aligns button:disabled { opacity: 0.34; cursor: default; }
 
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
 .checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); cursor: pointer; }

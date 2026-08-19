@@ -124,13 +124,13 @@ Three tabs, split by what a control acts on.
 |---|---|
 | **Shape** | Shapes, Style, Combine, Path, Transform, Arrange |
 | **Node** | Node, Bend, Align, Delete |
-| **Document** | Canvas, Grid, Backdrop, Output, Preview, PNG, Controls |
+| **Document** | File, Canvas, Grid, Backdrop, Preview, Controls |
 
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
 focus.
 
-Every group collapses: press its header to open or shut it. Shapes, Style and
-Node start open and the rest start shut, and a shut group still shows its state
+Every group collapses: press its header to open or shut it. Shapes, Style, Node
+and File start open and the rest start shut, and a shut group still shows its state
 beside its name. Groups are independent, so you can have Grid and Guides open
 together. A shut group's controls leave the keyboard's tab order as well as the
 screen, so tabbing reaches the group you want rather than every control before
@@ -431,9 +431,13 @@ still be dragged by its dot.
 
 ### Align
 
-Six align buttons for left, centre, right, top, middle, bottom, which need two
-or more nodes. **Space H** and **Space V** distribute the middle nodes evenly
-between the outermost two, and need three.
+**Align nodes** has the same six tiles as **Arrange** has for shapes: left,
+centre, right, top, middle, bottom. It needs two or more nodes.
+
+**Distribute nodes** has two where Arrange has six, and moves the middle nodes to
+sit at equal steps between the outermost two. It needs three. A node is a point
+with no width, so equal gaps, equal centres and equal edges are one move here
+rather than three.
 
 ### Delete
 
@@ -541,11 +545,29 @@ will give you thousands of nodes in a handful of flat colours.
 
 ### File
 
+Everything that moves a drawing in or out of the editor.
+
 | Control | Does |
 |---|---|
 | **Add an SVG** | Read an SVG file and add its shapes to this document |
+| **Download SVG** | Save the whole document as an SVG file |
+| **Download PNG at N px wide** | Save the drawing as a PNG. The height follows the canvas proportions |
+| **Output** | How the text is written: see below |
 
-Dropping an SVG file on the canvas does the same. Dropping any other image loads
+A PNG is transparent wherever nothing is painted, which is what an icon wants.
+The canvas decides its frame, not the drawing, so padding you left around a shape
+is kept. The width runs from 1 to 8192, and the status line says the size it
+wrote.
+
+**Output** is one press away inside the group, because it is set once and read
+rarely. It governs both downloads and the previews.
+
+- **Decimals** rounds the numbers in the output. This changes the geometry.
+- **Minify** shortens the spelling only. Drops unnecessary separators and leading
+  zeros, drops repeated command letters, and prefers relative commands when they
+  are shorter.
+
+Dropping an SVG file on the canvas does the same as **Add an SVG**. Dropping any other image loads
 it as a backdrop to trace over.
 
 It reads the file the way pasting it into the source drawer does: the same
@@ -709,13 +731,6 @@ selection holds shapes that want different lattices, in which case the plain gri
 stands and **Fit selection to pixels** is unavailable. Otherwise **Fit selection
 to pixels** applies the same lattice to a shape that already exists.
 
-### Output
-
-- **Decimals** rounds the numbers in the output. This changes the geometry.
-- **Minify** shortens the spelling only. Drops unnecessary separators and leading
-  zeros, drops repeated command letters, and prefers relative commands when they
-  are shorter.
-
 ### Preview
 
 The drawing at 16, 24, 32 and 48 pixels wide, on a chequer so a transparent
@@ -727,14 +742,6 @@ set **Decimals** to 0 and the rounding appears here before it appears in a file.
 
 They hold still while you drag and redraw when you let go, and they do nothing at
 all while the group is shut.
-
-### PNG
-
-- **Width** in pixels, from 1 to 8192. The height follows the canvas proportions.
-- **Download PNG** saves it. The status line says the size it wrote.
-
-Transparent wherever nothing is painted, which is what an icon wants. The canvas
-decides the frame, not the drawing, so padding you left around a shape is kept.
 
 ### Controls
 
@@ -789,9 +796,11 @@ Two modes.
 |---|---|
 | **Apply** | Parses the text and applies it. `Ctrl`+`Enter` from inside the box does the same |
 | **Revert** | Puts the document's own text back, to start again |
-| **Copy** | Puts the text on the clipboard |
-| **Download SVG** | Saves a whole SVG document, in either mode |
+| **Copy** | Puts what the box is showing on the clipboard, whichever mode it is in |
 | **Close** | Closes the drawer |
+
+To save a file rather than copy text, use **Download SVG** in **Document → File**.
+It writes the whole document whichever mode this box is in.
 
 **Apply** refuses text that cannot be parsed, and text that parses to nothing
 drawable, such as a lone `M 0 0`. Either way the drawing is left as it was and
