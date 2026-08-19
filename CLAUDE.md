@@ -64,11 +64,16 @@ the three, and `test/identity.test.ts` is what holds the rule.
 paint order, and `Shape.group` points up at a `Group` that points up at its parent.
 No group holds a list of its members. What that costs is one invariant: **a group's
 shapes are contiguous in `doc.shapes`**, because a `<g>` holds its children in one
-run. `Commands.groupSelection` is the only thing that maintains it, and it is the
-only thing that reorders shapes -- everything else appends or filters, and both
-preserve the runs. A copy lands outside any group for the same reason: it is appended,
-and keeping its group would break the run and write the same `<g>` twice. A group
-carries no transform, per §5. §49 of `docs/ARCHITECTURE.md` has the argument.
+run. **Nothing has to remember it: `Store.edit` and `Store.tryEdit` call
+`rebuildPaintOrder` after every edit**, beside `pruneGroups`, so a broken run is a
+state the document cannot be left in rather than a rule each new operation has to
+be told about. That is not how it started. It started as a rule three separate
+functions wrote `doc.shapes` under, and the one named here as its guardian was
+the one that broke it: grouping a loose shape with one taken from the middle of a
+group split that group into two runs, and the export wrote it as two `<g>`
+elements under two different ids. A copy still lands outside any group, because
+keeping its group would write the same `<g>` twice. A group carries no transform,
+per §5. §49 of `docs/ARCHITECTURE.md` has the argument.
 
 **Touch is built but has never been held.** The desktop backlog finished first,
 which is what the three rules below were protecting, and the retrofit they were

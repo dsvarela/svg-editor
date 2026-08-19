@@ -12,6 +12,7 @@
 import { cloneGroup, cloneShape, defaultStyle } from '../core/types';
 import type { Doc, Style, ViewBox } from '../core/types';
 import { reflowDoc } from './auto';
+import { rebuildPaintOrder } from './arrange';
 import { emptySelection, pruneGroups } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
@@ -511,6 +512,7 @@ export class Store {
     fn(this.state);
     reflowDoc(this.state.doc);
     pruneGroups(this.state.doc);
+    rebuildPaintOrder(this.state.doc);
     this.notify();
   }
 
@@ -543,6 +545,7 @@ export class Store {
     if (changed) {
       reflowDoc(this.state.doc);
       pruneGroups(this.state.doc);
+      rebuildPaintOrder(this.state.doc);
       // After the mutation, so an image the edit itself replaced is seen.
       this.reap(orphans);
       this.notify();

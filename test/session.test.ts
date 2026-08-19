@@ -275,6 +275,42 @@ describe('a session it repairs rather than refuses', () => {
     expect(back.doc.shapes[0].group).toBeUndefined();
   });
 
+  /* A group whose parent names nothing, or two groups naming each other, put a
+     shape in a tree whose walk from the root never reaches it -- a shape that
+     paints nowhere and lists nowhere, and that a reorder used to delete
+     outright. Rooting the group is the smallest repair that puts it back. */
+  it('roots a group whose parent is not in the file', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { doc: Record<string, unknown> };
+    s.doc.groups = [{ id: 'g1', name: 'g', parent: 'gone' }];
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.doc.groups?.[0].parent).toBeNull();
+  });
+
+  it('breaks a cycle between two groups', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { doc: Record<string, unknown> };
+    s.doc.groups = [
+      { id: 'g1', name: 'g', parent: 'g2' },
+      { id: 'g2', name: 'h', parent: 'g1' },
+    ];
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    const roots = (back.doc.groups ?? []).filter((g) => g.parent === null);
+    expect(roots.length).toBeGreaterThan(0);
+    // And every group can still be walked to the root without repeating one.
+    for (const g of back.doc.groups ?? []) {
+      const seen = new Set([g.id]);
+      let at = g.parent;
+      while (at) {
+        expect(seen.has(at)).toBe(false);
+        seen.add(at);
+        at = back.doc.groups?.find((o) => o.id === at)?.parent ?? null;
+      }
+    }
+  });
+
   /* A preference reads leniently where the drawing reads strictly: a build that
      adds a switch would otherwise refuse every file written before it. */
   it('falls back to the running editor for a switch that is not in the file', () => {

@@ -24,6 +24,7 @@ import {
   shapeFromPath,
   shapesInGroup,
 } from '../src/model/doc';
+import { reorderShapes } from '../src/model/arrange';
 import { exportSvg, importSvg } from '../src/io/svg';
 import type { Doc } from '../src/core/types';
 
@@ -529,5 +530,118 @@ describe('selecting the group a shape is in', () => {
     expect(commands.canSelectGroup).toBe(true);
     commands.selectGroup();
     expect(commands.canSelectGroup).toBe(false);
+  });
+});
+
+/**
+ * §49's contiguity, as something the store restores rather than something each
+ * operation remembers.
+ *
+ * The invariant was held by asking every operation that writes `doc.shapes` to
+ * preserve it. `groupSelection` did not: grouping a loose shape with one taken
+ * from the middle of a group split that group into two runs, and `exportSvg`
+ * wrote it as two `<g>` elements under two different ids. These measure the
+ * property directly -- for every group, are its shapes an unbroken run -- rather
+ * than measuring any one operation's arithmetic.
+ */
+describe('a group is always one run', () => {
+  /**
+   * Every group whose shapes are not one unbroken run in paint order.
+   *
+   * The whole subtree, not the shapes whose `group` names it directly: a nested
+   * group's shapes sit *between* its parent's own, which is what one `<g>` per
+   * group looks like written out. Counting only direct members calls that
+   * correct nesting a break.
+   */
+  const broken = (doc: Doc): string[] =>
+    (doc.groups ?? [])
+      .filter((g) => {
+        const mine = new Set(shapesInGroup(doc, g.id).map((s) => s.id));
+        const ix = doc.shapes.flatMap((s, i) => (mine.has(s.id) ? [i] : []));
+        return ix.length > 0 && ix[ix.length - 1] - ix[0] + 1 !== ix.length;
+      })
+      .map((g) => g.id);
+
+  const four = (): { store: Store; commands: Commands } => {
+    const doc = emptyDoc();
+    for (const n of ['s0', 's1', 's2', 's3']) doc.shapes.push(shapeFromPath('M0 0 L1 1', n));
+    const store = new Store(doc);
+    return { store, commands: new Commands(store, () => false) };
+  };
+  const pick = (store: Store, ...names: string[]): void =>
+    store.update((s) => {
+      s.selection.shapes.clear();
+      for (const n of names) {
+        const sh = s.doc.shapes.find((x) => x.name === n);
+        if (sh) s.selection.shapes.add(sh.id);
+      }
+    });
+
+  it('survives grouping a loose shape with one from the middle of a group', () => {
+    const { store, commands } = four();
+    pick(store, 's1', 's2', 's3');
+    commands.groupSelection();
+    expect(broken(store.state.doc)).toEqual([]);
+
+    pick(store, 's0', 's2');
+    commands.groupSelection();
+    expect(broken(store.state.doc)).toEqual([]);
+  });
+
+  it('writes one <g> per group, so a round trip keeps the count', () => {
+    const { store, commands } = four();
+    pick(store, 's1', 's2', 's3');
+    commands.groupSelection();
+    pick(store, 's0', 's2');
+    commands.groupSelection();
+
+    const svg = exportSvg(store.state.doc, { decimals: 3 });
+    expect((svg.match(/<g\b/g) ?? []).length).toBe(store.state.doc.groups?.length ?? 0);
+  });
+
+  it('survives grouping across a nested group', () => {
+    const { store, commands } = four();
+    pick(store, 's0', 's1', 's2', 's3');
+    commands.groupSelection();
+    pick(store, 's1', 's2');
+    commands.groupSelection();
+    expect(broken(store.state.doc)).toEqual([]);
+
+    pick(store, 's0', 's2');
+    commands.groupSelection();
+    expect(broken(store.state.doc)).toEqual([]);
+  });
+});
+
+/**
+ * A reorder never loses a shape, whatever shape the group tree is in.
+ *
+ * `flattenOrders` walks from the root, so a shape under a group whose `parent`
+ * names nothing -- or under two groups naming each other -- sat in the map under
+ * a key the walk never visited and was dropped from the document, with the
+ * operation reporting success. A workspace file can carry both, so this is
+ * reachable without any editing mistake.
+ */
+describe('a reorder is total', () => {
+  const withParent = (parent: string): Doc => {
+    const doc = emptyDoc();
+    for (const n of ['s0', 's1', 's2']) doc.shapes.push(shapeFromPath('M0 0 L1 1', n));
+    doc.shapes[0].group = 'g1';
+    doc.groups = [{ id: 'g1', name: 'g', parent }];
+    return doc;
+  };
+  const names = (d: Doc): string[] => d.shapes.map((s) => s.name).sort();
+
+  it('keeps every shape when a group points at a group that is not there', () => {
+    const doc = withParent('gone');
+    reorderShapes(doc, new Set([doc.shapes[1].id]), 'front');
+    expect(names(doc)).toEqual(['s0', 's1', 's2']);
+  });
+
+  it('keeps every shape when two groups point at each other', () => {
+    const doc = withParent('g2');
+    doc.groups!.push({ id: 'g2', name: 'h', parent: 'g1' });
+    reorderShapes(doc, new Set([doc.shapes[1].id]), 'front');
+    expect(names(doc)).toEqual(['s0', 's1', 's2']);
   });
 });

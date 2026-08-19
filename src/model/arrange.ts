@@ -169,6 +169,36 @@ function childrenOf(doc: Doc, parent: string | null): Child[] {
 }
 
 /**
+ * Put every group's shapes back into one run, in place.
+ *
+ * §49's invariant -- a group's shapes are contiguous in `doc.shapes` -- was held
+ * by asking every operation that touches the array to preserve it, and by a note
+ * naming `groupSelection` as the only one that had to think about it. That was
+ * wrong in both halves: `reorderShapes` and `dropShapes` also rebuild the array,
+ * and `groupSelection` was the one operation that could break the invariant.
+ * Grouping a loose shape with one taken from the middle of an existing group
+ * split that group into two runs, and `exportSvg` then wrote it as two `<g>`
+ * elements under two different ids, so the file no longer said what the document
+ * said.
+ *
+ * An invariant every caller has to remember is one a caller will eventually
+ * forget, so this restores it instead. The store runs it after every edit, which
+ * makes a broken run a state the document cannot be left in rather than a rule
+ * each new operation has to be told about.
+ *
+ * A group keeps the position of its first shape, so an arrangement nobody
+ * disturbed is returned unchanged.
+ */
+export function rebuildPaintOrder(doc: Doc): void {
+  if (!doc.groups?.length) return;
+  const orders = new Map<string | null, Child[]>();
+  const parents: (string | null)[] = [null, ...doc.groups.map((g) => g.id)];
+  for (const p of parents) orders.set(p, childrenOf(doc, p));
+  const next = flattenOrders(orders, doc.shapes);
+  if (next.some((s, i) => s !== doc.shapes[i])) doc.shapes = next;
+}
+
+/**
  * Move the selected children one step, or all the way, through their parent.
  *
  * Reordering happens per parent and never across one, which is §49's invariant
@@ -211,7 +241,7 @@ export function reorderShapes(doc: Doc, ids: ReadonlySet<string>, move: ZMove): 
   }
   if (!changed) return false;
 
-  doc.shapes = flattenOrders(orders);
+  doc.shapes = flattenOrders(orders, doc.shapes);
   return true;
 }
 
@@ -263,7 +293,7 @@ export function dropShapes(
   if (next.every((c, i) => childKey(c) === childKey(list[i]))) return false;
 
   orders.set(parent, next);
-  doc.shapes = flattenOrders(orders);
+  doc.shapes = flattenOrders(orders, doc.shapes);
   return true;
 }
 
@@ -291,8 +321,22 @@ function stepped(list: Child[], keys: ReadonlySet<string>, move: ZMove): Child[]
   return out;
 }
 
-/** Walk the tree of orders back into one flat paint order. */
-function flattenOrders(orders: Map<string | null, Child[]>): Shape[] {
+/**
+ * Walk the tree of orders back into one flat paint order.
+ *
+ * **Total: every shape that went in comes out.** The walk starts at the root, so
+ * a shape whose group chain never reaches the root is sitting in the map under a
+ * key nothing visits. That happens for a group whose `parent` names no group and
+ * for two groups naming each other, both of which a workspace file can carry.
+ * Returning the walk's result alone deletes those shapes from the document and
+ * reports success, which is the one outcome no reorder is allowed to have.
+ *
+ * So anything the walk missed is appended in the order it had. It is loose in
+ * the paint order rather than where its broken chain would have put it, which is
+ * the honest answer: there is no such place. `pruneGroups` clears the dangling
+ * parent on the next edit and the shape settles.
+ */
+function flattenOrders(orders: Map<string | null, Child[]>, all: readonly Shape[]): Shape[] {
   const out: Shape[] = [];
   const done = new Set<string>();
   const walk = (parent: string | null): void => {
@@ -308,6 +352,10 @@ function flattenOrders(orders: Map<string | null, Child[]>): Shape[] {
     }
   };
   walk(null);
+
+  if (out.length === all.length) return out;
+  const kept = new Set(out.map((s) => s.id));
+  for (const s of all) if (!kept.has(s.id)) out.push(s);
   return out;
 }
 

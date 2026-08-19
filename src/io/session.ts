@@ -259,6 +259,27 @@ function readDoc(v: unknown): Doc | null {
      person drew, and being loose is a state the document already allows. */
   const known = new Set(groups?.map((g) => g.id) ?? []);
   for (const s of shapes) if (s.group && !known.has(s.group)) delete s.group;
+  /* The same repair one level up, and it is the more important of the two. A
+     `parent` naming no group, or two groups naming each other, puts a shape in a
+     tree whose walk from the root never reaches it -- which is a shape that
+     paints nowhere and lists nowhere. Rooting the group is the smallest repair
+     that puts it back on screen, and it loses only a nesting that was already
+     unreadable. */
+  for (const g of groups ?? []) {
+    if (g.parent && !known.has(g.parent)) g.parent = null;
+  }
+  for (const g of groups ?? []) {
+    const walked = new Set<string>([g.id]);
+    let at = g.parent;
+    while (at) {
+      if (walked.has(at)) {
+        g.parent = null;
+        break;
+      }
+      walked.add(at);
+      at = groups?.find((o) => o.id === at)?.parent ?? null;
+    }
+  }
   return { shapes, viewBox, ...(groups ? { groups } : {}) };
 }
 

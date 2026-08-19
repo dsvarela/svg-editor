@@ -2326,11 +2326,29 @@ reason §46 gives about one statement of an identity.
 
 **The invariant that buys is contiguity.** A `<g>` holds its children in one run, so
 a group's shapes have to be contiguous in `doc.shapes` or the group cannot be written
-without changing what paints over what. `groupSelection` is what maintains it: it
-moves the selected shapes together, to where the topmost of them already was, keeping
-their order among themselves. Nothing else in the editor reorders shapes -- they are
-appended or filtered, and both preserve the runs -- which is why one function can hold
-the invariant. `test/groups.test.ts` asserts it as a property over every group rather
+without changing what paints over what.
+
+**It is restored after every edit, not maintained by the operations.**
+`Store.edit` and `Store.tryEdit` call `rebuildPaintOrder` beside `pruneGroups`: it
+reads the tree out of the parent pointers and writes the flat array back, so a
+group keeps the position of its first shape and a document nobody disturbed comes
+back unchanged.
+
+That is the second design. The first said `groupSelection` maintained it and that
+nothing else reordered shapes. Both halves were wrong. `reorderShapes` and
+`dropShapes` also rebuild the array, and `groupSelection` was the only function in
+the editor that could break the invariant: grouping a loose shape with one taken
+from the middle of an existing group split that group into two runs, `exportSvg`
+wrote it as two `<g>` elements, and `uniqueXmlId` renamed the second, so the
+duplicate was not even detectable as one. Export and re-import turned two groups
+into three.
+
+The lesson is the general one. An invariant every caller has to remember is one a
+caller eventually forgets, and the cost of forgetting here was a file that no
+longer said what the document said. Restoring it centrally costs one walk of the
+shape list per edit and cannot be forgotten by an operation written next year.
+`test/groups.test.ts` asserts it as a property over every group -- the whole
+subtree, since a nested group's shapes sit *between* its parent's own -- rather
 than checking a particular order.
 
 **Selection gains nothing.** A group reads as selected when every shape in it is,
