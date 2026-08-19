@@ -2292,6 +2292,13 @@ function beginRowDrag(key: string, y: number): void {
   gaps.push(rows[rows.length - 1].getBoundingClientRect().bottom);
 
   const lifted = rows.map((r) => rowShapes(rowOf(r)).every((id) => store.state.selection.shapes.has(id)));
+  /* Every row travelling means there is nothing for them to travel past: a drop
+     lands only among siblings (§56), and reordering a list's whole contents
+     among themselves changes nothing. `dropShapes` correctly declined, and the
+     drop line had followed the pointer the whole way there, which promises a
+     move that no position could have produced. No drag, so no line. */
+  if (lifted.every(Boolean)) return;
+
   rowDrag = {
     rows,
     // The `<ul>` a group owns lives inside that group's own row.

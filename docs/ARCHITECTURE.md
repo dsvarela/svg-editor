@@ -2723,6 +2723,14 @@ lines above it. And `dropShapes` refuses a `before` it cannot place instead of
 guessing: `null` is how a caller asks for the end, and that is a different
 question from naming a row that is not there.
 
+**A drag with nowhere to go does not start.** Select a whole group, press a row
+inside it, and every sibling in that group's own list is travelling -- so there
+is nothing left for them to travel past, and reordering a list's whole contents
+among themselves changes nothing. `dropShapes` declined, correctly, and the drop
+line had followed the pointer the whole way there, which promises a move that no
+position could have produced. The line is the promise, so the gesture is refused
+before it is drawn.
+
 **A drop lands only among siblings, and the interface is what makes that true.**
 The drag collects its targets from the `<ul>` the row is already in, so there is
 no pointer position that asks for a shape to leave its group. The model does not

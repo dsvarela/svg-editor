@@ -5569,6 +5569,31 @@ const scenarios = {
     );
 
 
+    /* A drag with nowhere to go draws no line. Selecting a whole group and
+       pressing a row inside it lifts every sibling in that group's own list, so
+       there is nothing left for them to travel past; `dropShapes` declined and
+       the line had followed the pointer the whole way, promising a move no
+       position could have produced. */
+    await page.click('#shapelist li.shape:nth-child(2)');
+    await page.click('#shapelist li.shape:nth-child(3)', { modifiers: ['Shift'] });
+    await settle(page);
+    await page.click('#groupShapes');
+    await settle(page);
+    const inner = await page.locator('#shapelist li.group li.shape').first().boundingBox();
+    check(!!inner, 'the group did not draw its shapes as nested rows');
+    await page.mouse.move(inner.x + inner.width / 2, inner.y + inner.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(inner.x + inner.width / 2, inner.y + inner.height / 2 + 12);
+    out.lineInsideWholeGroup = await page.locator('.dropline').count();
+    await page.mouse.up();
+    await settle(page);
+    check(
+      out.lineInsideWholeGroup === 0,
+      'a drag inside a wholly selected group drew a drop line it could not honour',
+    );
+    await undo(page);
+    await settle(page);
+
     /* Past a group, not into it. The two remaining shapes are grouped, so the
        shape at the back has to clear both of them in one step or the group's run
        is broken and the export writes two `<g>`. */
