@@ -128,3 +128,10 @@ if (dead.length) {
   console.log('\n  not surveyed: disabled or not rendered throughout (needs a state this does not set up)');
   for (const c of dead) console.log(`    ${(c.id ?? '').padEnd(18)} ${c.what}`);
 }
+
+/* An exit code, so this is a gate rather than a number somebody reads.
+   It printed its count and exited 0 whatever the count said, and CI never ran
+   it, so no regression in keyboard reach could turn anything red. A control
+   that a keyboard cannot get to is not reachable at all for the people who
+   depend on it, which is not a thing to notice by eye at review time. */
+if (missed.length) process.exitCode = 1;

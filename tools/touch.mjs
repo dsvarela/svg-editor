@@ -130,3 +130,10 @@ for (const c of worst) {
 }
 
 await browser.close();
+
+/* An exit code, for the same reason `keys.mjs` has one: it printed a count and
+   exited 0 whatever the count said. The figure that matters is the second one --
+   the controls actually enabled with an empty selection -- because a disabled
+   control is laid out at the size it will have when it is enabled, and one that
+   is never rendered in this state was never measured. */
+if (liveSmall.length) process.exitCode = 1;

@@ -36,6 +36,12 @@ jobs:
       - name: Style sweep and link check
         run: npm run check:docs
 
+      # Reads the stylesheet, so it needs no browser and belongs in this job.
+      # It was never run by CI either: the palette could drop below its contrast
+      # floors and nothing would say so until somebody re-ran it by hand.
+      - name: Contrast floors
+        run: npm run check:contrast
+
       - name: Build the single file
         run: npm run build
 
@@ -128,3 +134,15 @@ jobs:
             echo "failed:$failed"
             exit 1
           fi
+
+          # The three surveys of the whole interface. They printed a count and
+          # exited 0 whatever it said, and nothing here ran them, so no
+          # regression in keyboard reach or touch target size could turn a run
+          # red -- they were figures a person read at review time and quoted
+          # afterwards as gates. Both set an exit code now.
+          echo "::group::keyboard reach"
+          node tools/keys.mjs
+          echo "::endgroup::"
+          echo "::group::touch targets"
+          node tools/touch.mjs --coarse
+          echo "::endgroup::"
