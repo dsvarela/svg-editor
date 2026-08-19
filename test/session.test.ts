@@ -222,6 +222,15 @@ describe('a session it will not take', () => {
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
   });
 
+  /* The same, one level up. `readShape` checks four things and every test of it
+     spoiled one of the last two, so an `id` that is not a string went through
+     the first `||` unmeasured. An id is what a selection is made of. */
+  it('refuses a shape whose id is not a string, which a selection is made of', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: Record<string, unknown>[] } };
+    s.doc.shapes[0].id = 7;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
   it('refuses a shape with no name, which every shape has', () => {
     const s = JSON.parse(written(store)) as { doc: { shapes: Record<string, unknown>[] } };
     delete s.doc.shapes[0].name;
@@ -231,6 +240,25 @@ describe('a session it will not take', () => {
   it('refuses a stroke width that is not a number', () => {
     const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
     s.doc.shapes[0].style.strokeWidth = '2px';
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* One bad field at a time, and not always the last one. A guard reading
+     `A || B || C` is only measured by a fixture where exactly one of the three
+     is true: with every field but the last good, widening the first `||` to
+     `&&` leaves the guard answering on `C` alone and the earlier fields go
+     unchecked. Every refusal test above happened to spoil the last field of its
+     guard, so `fill` and `stroke` were unmeasured. Found by
+     `tools/mutate.mjs`. */
+  it('refuses a fill that is not a string, with everything else about it right', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.fill = 42;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a stroke that is not a string, with everything else about it right', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.stroke = 42;
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
   });
 
@@ -474,6 +502,24 @@ describe('a session it repairs rather than refuses', () => {
     if (typeof back === 'string') throw new Error(back);
     expect(back.view.polygon.corners).toBe(60);
     expect(back.view.polygon.ratio).toBe(1);
+  });
+
+  /* And the same class in the lenient half. `readPolygon` checks four fields
+     and the only test that spoiled one spoiled the whole block, so `corners`
+     and `ratio` were never the field that decided it. A preference falls back
+     rather than refusing the session, per §59, so what this reads is the value
+     that was already there. */
+  it.each([
+    ['corners', { corners: 'six', star: true, ratio: 40 }],
+    ['ratio', { corners: 6, star: true, ratio: null }],
+  ])('falls back for a polygon whose %s is not a number', (_which, polygon) => {
+    const store = starter();
+    store.update((s) => (s.polygon.corners = 7));
+    const s = JSON.parse(written(store)) as { view: { polygon: unknown } };
+    s.view.polygon = polygon;
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.polygon.corners).toBe(7);
   });
 
   it('falls back for a polygon block that is not one', () => {

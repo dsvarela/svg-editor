@@ -81,25 +81,81 @@ describe('primitive conversion', () => {
     expect(primitiveToPath(el('<rect x="1" y="2" width="10" height="5"/>'))).toBe('M1 2H11V7H1Z');
   });
 
-  it('converts a rounded rect with arcs', () => {
+  /**
+   * How far the outline keeps away from the corner it rounds.
+   *
+   * The bounding box cannot answer this: a rounded rect and a sharp one share
+   * it exactly, so a box check passes for both. That is what the first of these
+   * three tests did, under a name that says "with arcs", and it passed with the
+   * rounding branch disabled and a plain rectangle coming back. The other two
+   * compared one output against another, and both degrade to the same square
+   * together, so they passed as well.
+   *
+   * A distance from the corner is the thing that differs: zero for a sharp
+   * corner, and `r - r/sqrt(2)` for one cut by an arc of radius r.
+   */
+  const cornerGap = (d: string, corner: Pt): number => {
+    const pts = samplePts({ subpaths: parsePath(d) } as Shape, 64);
+    return Math.min(...pts.map((p) => Math.hypot(p[0] - corner[0], p[1] - corner[1])));
+  };
+
+  it('converts a rounded rect with arcs, which a sharp one shares no outline with', () => {
     const d = primitiveToPath(el('<rect width="10" height="10" rx="2"/>'))!;
     const sp = parsePath(d);
     const b = bbox({ subpaths: sp } as Shape);
     expect(b.x0).toBeCloseTo(0, 6);
     expect(b.x1).toBeCloseTo(10, 6);
     expect(b.y1).toBeCloseTo(10, 6);
+    /* `r * (sqrt(2) - 1)`: the arc's centre sits at [r, r], so it passes the
+       corner at the centre's own distance from it less the radius. */
+    expect(cornerGap(d, [0, 0])).toBeCloseTo(2 * (Math.SQRT2 - 1), 3);
+    expect(cornerGap(primitiveToPath(el('<rect width="10" height="10"/>'))!, [0, 0])).toBeCloseTo(0, 6);
   });
 
   it('takes rx from ry when only ry is given', () => {
-    const a = primitiveToPath(el('<rect width="10" height="10" ry="3"/>'));
-    const b = primitiveToPath(el('<rect width="10" height="10" rx="3" ry="3"/>'));
+    const a = primitiveToPath(el('<rect width="10" height="10" ry="3"/>'))!;
+    const b = primitiveToPath(el('<rect width="10" height="10" rx="3" ry="3"/>'))!;
     expect(a).toBe(b);
+    // And that the pair are rounded, not two squares agreeing with each other.
+    expect(cornerGap(a, [0, 0])).toBeGreaterThan(0.8);
   });
 
   it('clamps radii to half the side', () => {
-    const a = primitiveToPath(el('<rect width="10" height="10" rx="99"/>'));
-    const b = primitiveToPath(el('<rect width="10" height="10" rx="5"/>'));
+    const a = primitiveToPath(el('<rect width="10" height="10" rx="99"/>'))!;
+    const b = primitiveToPath(el('<rect width="10" height="10" rx="5"/>'))!;
     expect(a).toBe(b);
+    expect(cornerGap(a, [0, 0])).toBeGreaterThan(1.4);
+  });
+
+  /* A rect with no height, which is the other half of the guard. Only a
+     zero WIDTH was tried, so the second half of `w <= 0 || h <= 0` never
+     decided anything. */
+  it('yields nothing for a rect with no height either', () => {
+    expect(primitiveToPath(el('<rect width="10" height="0"/>'))).toBe('');
+  });
+
+  /* Two points is the smallest polyline that draws, and it was never tried:
+     only the `< 4` side of the bound was, so widening it to `<= 4` dropped a
+     two-point line with the suite green. The odd-coordinate case is the other
+     half: a trailing number with no partner must not become a point at
+     `undefined`. */
+  it('keeps a polyline of exactly two points, which is the smallest that draws', () => {
+    expect(primitiveToPath(el('<polyline points="1 2 3 4"/>'))).toBe('M1 2L3 4');
+  });
+
+  it('drops the trailing coordinate of an odd list rather than pairing it with nothing', () => {
+    expect(primitiveToPath(el('<polyline points="1 2 3 4 5"/>'))).toBe('M1 2L3 4');
+  });
+
+  /* Either radius at zero draws nothing, and only the both-at-zero case had
+     been tried through `<circle r="0">`. An ellipse with one axis of nothing is
+     a line the arc commands cannot express. */
+  it.each([
+    ['a circle of no radius', '<circle cx="5" cy="5" r="0"/>'],
+    ['an ellipse with no width', '<ellipse cx="5" cy="5" rx="0" ry="4"/>'],
+    ['an ellipse with no height', '<ellipse cx="5" cy="5" rx="4" ry="0"/>'],
+  ])('yields nothing for %s', (_why, markup) => {
+    expect(primitiveToPath(el(markup))).toBe('');
   });
 
   it('converts a circle to something actually round', () => {
@@ -275,6 +331,97 @@ describe('svg import', () => {
     const r = importSvg(`<svg><text x="0" y="0">hi</text><path d="M0 0 L1 1"/></svg>`);
     expect(r.shapes).toHaveLength(1);
     expect(r.warnings.join(' ')).toContain('text');
+  });
+
+  /**
+   * Every name in each list, not just the first.
+   *
+   * Two guards here are a run of `||`, and a run of `||` is only measured by a
+   * fixture where exactly one alternative is true. `<defs>` and `<text>` were
+   * the only two ever tried, so widening either guard's first `||` to `&&` left
+   * the rest of its list deciding nothing and the whole suite green. A `<mask>`
+   * or a `<symbol>` walked into as ordinary markup contributes shapes nobody
+   * drew; a `<use>` skipped in silence is a drawing that arrives incomplete
+   * with no sentence about it. Found by `tools/mutate.mjs`.
+   */
+  it.each(['defs', 'clipPath', 'mask', 'symbol'])(
+    'walks past a <%s> without taking what is inside it',
+    (tag) => {
+      const r = importSvg(
+        `<svg><${tag}><path d="M0 0 L1 1"/></${tag}><path d="M0 0 L2 2"/></svg>`,
+      );
+      expect(r.shapes).toHaveLength(1);
+    },
+  );
+
+  it.each(['text', 'image', 'use'])('says a <%s> was skipped rather than dropping it in silence', (tag) => {
+    const r = importSvg(`<svg><${tag} x="0" y="0"/><path d="M0 0 L1 1"/></svg>`);
+    expect(r.shapes).toHaveLength(1);
+    expect(r.warnings.join(' ')).toContain(tag);
+  });
+
+  /* A `viewBox` guard of four alternatives, of which only "it parses" was ever
+     exercised. A page of no width is a camera that cannot be fitted and a
+     divide by zero downstream; too few numbers is a `viewBox` half read. Each
+     falls back to no viewBox, which the caller already handles. */
+  it.each([
+    ['too few numbers', '0 0 20'],
+    ['a width of nothing', '0 0 0 20'],
+    ['a height of nothing', '0 0 20 0'],
+    ['a negative width', '0 0 -20 20'],
+  ])('refuses a viewBox with %s', (_why, vb) => {
+    expect(importSvg(`<svg viewBox="${vb}"><path d="M0 0 L1 1"/></svg>`).viewBox).toBeNull();
+  });
+
+  it('keeps a viewBox that is well formed, so the refusals above are not refusing everything', () => {
+    expect(importSvg('<svg viewBox="1 2 20 30"><path d="M0 0 L1 1"/></svg>').viewBox).toEqual({
+      x: 1,
+      y: 2,
+      w: 20,
+      h: 30,
+    });
+  });
+
+  /* `inherit` and the empty string both mean "whatever the parent had", which
+     this reader already carries, so both resolve to no opacity of their own.
+     Only one of the two was ever tried. */
+  it.each(['inherit', ''])('reads an opacity of "%s" as nothing of its own', (value) => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" opacity="${value}"/></svg>`);
+    expect(r.shapes[0].style.opacity).toBe(1);
+    expect(r.warnings.join(' ')).not.toContain('opacity');
+  });
+
+  it('ignores a stroke width that is not a number at all', () => {
+    const r = importSvg('<svg><path d="M0 0 L1 1" stroke-width="thin"/></svg>');
+    const plain = importSvg('<svg><path d="M0 0 L1 1"/></svg>');
+    expect(r.shapes[0].style.strokeWidth).toBe(plain.shapes[0].style.strokeWidth);
+  });
+
+  /* Both names the attribute takes. Only `evenodd` was read, so the second
+     alternative of `fr === 'evenodd' || fr === 'nonzero'` decided nothing. */
+  it.each(['evenodd', 'nonzero'])('reads a fill-rule of %s', (rule) => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1 L2 0 Z" fill-rule="${rule}"/></svg>`);
+    expect(r.shapes[0].style.fillRule).toBe(rule);
+  });
+
+  /* A group inside a group, which is what the ancestry walk exists for and what
+     nothing imported. With `g.id === at` inverted the walk climbs to whichever
+     group is not the one it is looking for, and the nesting arrives wrong. */
+  it('keeps a group nested inside another, and points the shape at the inner one', () => {
+    const r = importSvg(
+      '<svg><g id="outer"><g id="inner"><path d="M0 0 L1 1"/></g></g></svg>',
+    );
+    expect(r.groups).toHaveLength(2);
+    const inner = r.groups.find((g) => g.name === 'inner');
+    const outer = r.groups.find((g) => g.name === 'outer');
+    expect(inner?.parent).toBe(outer?.id);
+    expect(outer?.parent).toBeNull();
+    expect(r.shapes[0].group).toBe(inner?.id);
+  });
+
+  it('numbers a group that carries no id, counting from one', () => {
+    const r = importSvg('<svg><g><path d="M0 0 L1 1"/></g><g><path d="M0 0 L2 2"/></g></svg>');
+    expect(r.groups.map((g) => g.name)).toEqual(['group 1', 'group 2']);
   });
 
   /* A negative width is invalid SVG that files nonetheless carry, and this is

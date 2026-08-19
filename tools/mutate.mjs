@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync, statSync, readdirSync, existsSync, rmSync 
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join, relative } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -167,6 +168,82 @@ function typeArgumentCols(line) {
   return cols;
 }
 
+/**
+ * Put the file back even if this process never gets to.
+ *
+ * The mutation lives in the working tree while the tests run, so a sweep that
+ * dies mid-run leaves a broken source file behind, and the damage reads as
+ * something a person typed. A signal handler is not enough on its own: the
+ * test run is synchronous, so the event loop is blocked for all but a sliver
+ * of each iteration and a signal arriving during one is never delivered --
+ * which is how `offset.ts` came back from an interrupted sweep with a `-`
+ * turned into a `+`.
+ *
+ * So the original is on disk before the mutation is, and the next run restores
+ * from it. That survives a kill this process cannot catch at all.
+ *
+ * **The record says what the file was AND what this tool wrote**, and the
+ * restore happens only when the file still holds the second one. Without that
+ * check the record is a claim about the tree that nothing keeps true: `--apply`
+ * leaves one behind on purpose, and the `git checkout` that puts an applied
+ * mutation back does not remove it. The next run then finds a record naming a
+ * mutation that is no longer there and overwrites the file from a copy taken
+ * before every edit made since. That is not a hypothetical: it ate the
+ * `parseTransform` simplification in this session, an hour after the tool's own
+ * sweep had pointed at it.
+ */
+/* Named after the working tree, not after the tool. One record for every
+   checkout made this a lock on the machine rather than on the tree: two sweeps
+   in two `git worktree` copies would each read the other's record, restore a
+   file that belongs to neither, and refuse to start on the "another sweep is
+   running" check that is meant to protect one tree. Per tree, that check still
+   means what it says and the trees do not see each other. */
+const PENDING = join(
+  tmpdir(),
+  `svg-editor-mutate-${createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12)}.json`,
+);
+if (existsSync(PENDING)) {
+  const held = JSON.parse(readFileSync(PENDING, 'utf8'));
+  /* Still running means this is a second sweep, not a crashed one, and two of
+     them share one working tree: each would read the other's mutation as the
+     file it is about to restore, and the survivors of both would be nonsense.
+     `process.kill(pid, 0)` asks whether a process is there without signalling
+     it. */
+  let running = false;
+  try {
+    process.kill(held.pid, 0);
+    running = true;
+  } catch {
+    running = false;
+  }
+  if (running) {
+    console.error(`another sweep is running (pid ${held.pid}); one working tree, one sweep`);
+    process.exit(1);
+  }
+  /* A record older than this check names no `mutated`, so nothing can prove the
+     file still holds it. Dropped rather than acted on: refusing to restore
+     costs one hand-reverted mutation, and restoring wrongly costs whatever was
+     written since. */
+  const onDisk = existsSync(held.file) ? readFileSync(held.file, 'utf8') : null;
+  if (held.mutated === undefined || onDisk !== held.mutated) {
+    rmSync(PENDING);
+    console.log(
+      `ignored a stale record for ${held.file}: it does not hold that mutation any more`,
+    );
+  } else {
+    writeFileSync(held.file, held.original);
+    rmSync(PENDING);
+    console.log(`put back ${held.file}, left mutated by an earlier run`);
+  }
+}
+
+/* Recovery runs before a single source file is read, and that ordering is the
+   whole of what makes the site list mean anything. Built first, it is a list of
+   offsets into a file this block is about to replace: the second `svg.ts` sweep
+   in this session collected 161 sites from an edited file, restored a copy five
+   lines shorter, and then mutated at every offset past the change in the wrong
+   place. It reported 57 survivors and had measured nothing. */
+
 const files = targets.flatMap(sources).filter((f) => !f.endsWith('.d.ts'));
 
 /** Every place a rule matches, in file and then line order. */
@@ -237,43 +314,6 @@ function suiteCatches(file) {
   const { status, output } = runSuite(file);
   return status !== 0 || !reported(output);
 }
-/**
- * Put the file back even if this process never gets to.
- *
- * The mutation lives in the working tree while the tests run, so a sweep that
- * dies mid-run leaves a broken source file behind, and the damage reads as
- * something a person typed. A signal handler is not enough on its own: the
- * test run is synchronous, so the event loop is blocked for all but a sliver
- * of each iteration and a signal arriving during one is never delivered --
- * which is how `offset.ts` came back from an interrupted sweep with a `-`
- * turned into a `+`.
- *
- * So the original is on disk before the mutation is, and the next run restores
- * from it. That survives a kill this process cannot catch at all.
- */
-const PENDING = join(tmpdir(), 'svg-editor-mutate-pending.json');
-if (existsSync(PENDING)) {
-  const held = JSON.parse(readFileSync(PENDING, 'utf8'));
-  /* Still running means this is a second sweep, not a crashed one, and two of
-     them share one working tree: each would read the other's mutation as the
-     file it is about to restore, and the survivors of both would be nonsense.
-     `process.kill(pid, 0)` asks whether a process is there without signalling
-     it. */
-  let running = false;
-  try {
-    process.kill(held.pid, 0);
-    running = true;
-  } catch {
-    running = false;
-  }
-  if (running) {
-    console.error(`another sweep is running (pid ${held.pid}); one working tree, one sweep`);
-    process.exit(1);
-  }
-  writeFileSync(held.file, held.original);
-  rmSync(PENDING);
-  console.log(`put back ${held.file}, left mutated by an earlier run`);
-}
 
 
 /**
@@ -289,8 +329,12 @@ function mutate(site) {
   const lines = original.split('\n');
   const line = lines[site.line];
   lines[site.line] = line.slice(0, site.col) + site.now + line.slice(site.col + site.was.length);
-  writeFileSync(PENDING, JSON.stringify({ file: site.file, original, pid: process.pid }));
-  writeFileSync(site.file, lines.join('\n'));
+  const mutated = lines.join('\n');
+  writeFileSync(
+    PENDING,
+    JSON.stringify({ file: site.file, original, mutated, pid: process.pid }),
+  );
+  writeFileSync(site.file, mutated);
   return { file: site.file, original, line };
 }
 

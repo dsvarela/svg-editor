@@ -64,8 +64,13 @@ export function parseTransform(text: string): Mat {
       case 'matrix':
         if (args.length >= 6) m = mul(m, [a, b, c, d, e, f]);
         break;
+      /* No `args.length` question here, unlike `scale` below: a missing second
+         argument to `translate` means zero, which is what the destructuring
+         above already supplies. The ternary this had was dead, and dead in a
+         way no test could show. `scale`'s is live, because its missing second
+         argument means the FIRST one rather than zero. */
       case 'translate':
-        m = mul(m, translate(a, args.length > 1 ? b : 0));
+        m = mul(m, translate(a, b));
         break;
       case 'scale':
         m = mul(m, scaleMat(a, args.length > 1 ? b : a));
