@@ -79,9 +79,22 @@ describe('parser', () => {
   });
 
   it('drops a redundant final node before Z', () => {
-    // Explicitly returning to the start should not leave a duplicate anchor.
-    const sp = parsePath('M0 0 L10 0 L5 10 L0 0 Z');
+    /* Explicitly returning to the start should not leave a duplicate anchor.
+     *
+     * Away from the origin, and that is the whole of why these numbers are
+     * what they are. At `M0 0 … L0 0 Z` the first point and the last are both
+     * zero, so the difference this compares and the sum a wrong sign would make
+     * of it are the same number: the check held with `first.pt - last.pt`
+     * turned into `first.pt + last.pt`. */
+    const sp = parsePath('M10 10 L20 10 L15 20 L10 10 Z');
     expect(sp[0].nodes).toHaveLength(3);
+    expect(sp[0].nodes[0].pt).toEqual([10, 10]);
+  });
+
+  it('keeps a final node that only looks like the start on one axis', () => {
+    // Same x as the start, different y: not the start, so nothing is dropped.
+    const sp = parsePath('M10 10 L20 10 L15 20 L10 25 Z');
+    expect(sp[0].nodes).toHaveLength(4);
   });
 
   it('splits multiple subpaths', () => {
@@ -120,6 +133,11 @@ describe('parser', () => {
     expect(sp[0].nodes[0].hOut).toEqual([0, 0]);
   });
 
+  /* The quadratics below end at a y that is not the one they started at. Every
+     `Q` and `T` fixture here used to end at y = 0 from a start at y = 0, which
+     makes `oy + args[3]` and `oy - args[3]` the same number: the endpoint's sign
+     was unmeasured on both the `Q` and the `T` branch. Found by
+     `tools/mutate.mjs`. */
   it('elevates Q to an equivalent cubic', () => {
     const sp = parsePath('M0 0 Q5 10 10 0');
     // c1 = p0 + 2/3 (q - p0), c2 = p2 + 2/3 (q - p2)
@@ -135,10 +153,53 @@ describe('parser', () => {
     expect(maxDeviation(a, b)).toBeLessThan(1e-9);
   });
 
+  it('places a Q that ends off the axis it started on', () => {
+    const sp = parsePath('M2 3 Q5 10 12 7');
+    expect(sp[0].nodes[1].pt).toEqual([12, 7]);
+  });
+
+  it('places a T that ends off the axis it started on', () => {
+    const sp = parsePath('M2 3 Q5 10 12 7 T20 11');
+    expect(sp[0].nodes[2].pt).toEqual([20, 11]);
+  });
+
   it('handles relative commands', () => {
     const a = parsePath('m10 10 l10 0 l0 10 z');
     const b = parsePath('M10 10 L20 10 L20 20 Z');
     expect(maxDeviation(a, b)).toBeLessThan(1e-9);
+  });
+
+  /**
+   * Every letter that has a relative spelling, against its absolute twin.
+   *
+   * Only `m`, `l` and `z` were covered, and relative is what a drawing program
+   * writes: Illustrator and Inkscape emit it by default. `const rel = cmd >= 'a'`
+   * narrowed to `>` treats the letter `a` itself as absolute, and a relative arc
+   * then lands somewhere else entirely with the whole suite green.
+   *
+   * Started away from the origin, so the offset a relative command is added to
+   * is not zero, and ended off both axes, so no coordinate can agree with its
+   * own negation.
+   */
+  it.each([
+    ['l', 'm4 3 l7 5', 'M4 3 L11 8'],
+    ['h', 'm4 3 h7', 'M4 3 H11'],
+    ['v', 'm4 3 v5', 'M4 3 V8'],
+    ['c', 'm4 3 c2 4 5 6 7 5', 'M4 3 C6 7 9 9 11 8'],
+    ['s', 'm4 3 c2 4 5 6 7 5 s4 -3 6 2', 'M4 3 C6 7 9 9 11 8 S15 5 17 10'],
+    ['q', 'm4 3 q2 6 7 5', 'M4 3 Q6 9 11 8'],
+    ['t', 'm4 3 q2 6 7 5 t6 3', 'M4 3 Q6 9 11 8 T17 11'],
+    ['a', 'm4 3 a5 4 0 0 1 7 5', 'M4 3 A5 4 0 0 1 11 8'],
+  ])('reads a relative %s the same as the absolute it stands for', (_letter, rel, abs) => {
+    expect(maxDeviation(parsePath(rel), parsePath(abs))).toBeLessThan(1e-9);
+  });
+
+  /* A number may carry an explicit `+`, and an exponent may too. Neither was
+     ever written in a fixture, so both halves of `[+-]?` went unmeasured. */
+  it('reads a number with an explicit plus, and an exponent that carries one', () => {
+    const sp = parsePath('M+2 +3 L1e+1 2.5e+1');
+    expect(sp[0].nodes[0].pt).toEqual([2, 3]);
+    expect(sp[0].nodes[1].pt).toEqual([10, 25]);
   });
 
   it('starts a new subpath at the origin after Z', () => {
@@ -265,6 +326,42 @@ describe('serialiser', () => {
     // `1` then `.5` must not become `1.5`.
     const min = serialisePath(parsePath('M1 0.5 L2 0.25'), { minify: true });
     expect(maxDeviation(parsePath('M1 0.5 L2 0.25'), parsePath(min))).toBeLessThan(1e-9);
+  });
+
+  /**
+   * Which spelling gets chosen, which none of the checks above can see.
+   *
+   * A path round-trips through either one, and the minified string is shorter
+   * than the plain one either way, so `cost(rel) < cost(c.args)` decided nothing
+   * that was measured: breaking the comparison left output that is correct,
+   * parses, and is simply longer than it should be. Two fixtures, because one
+   * has to go each way or this passes on a serialiser that always picks the
+   * same spelling.
+   */
+  /**
+   * The exact spelling, letter for letter, and not merely that the geometry
+   * survives.
+   *
+   * A wrong sign in either relative form does not move the drawing: it makes
+   * the relative number enormous, `cost` then prefers the absolute spelling,
+   * and correct output comes out longer than it should. So a deviation check
+   * cannot see it, and `toMatch(/[a-z]/)` cannot either -- with the `H` branch
+   * broken the `V` beside it is still relative and the pattern still matches.
+   * The string is the contract here, so the string is what these assert.
+   *
+   * `V100` at the end of the third is not an oversight: `v-40` is four
+   * characters and so is `V100`, and the comparison is strict, so the absolute
+   * spelling wins the tie. That is the `<` in `cost(rel) < cost(c.args)` pinned.
+   */
+  it.each([
+    ['a small step from a far-off pen, where relative is much shorter', 'M1000 1000 L1001 1000 L1001 1001', 'M1000 1000h1v1'],
+    ['the same shape near the origin, where relative buys nothing', 'M0 0 L9 0 L9 9', 'M0 0H9V9'],
+    ['a vertical run, which no minified fixture had', 'M100 100 V140 L120 140 V100 Z', 'M100 100v40h20V100Z'],
+    ['horizontal and vertical together, including a backwards one', 'M1000 1000 H1001 V1001 H1000 Z', 'M1000 1000h1v1h-1Z'],
+  ])('spells %s', (_what, d, want) => {
+    const min = serialisePath(parsePath(d), { minify: true, decimals: 6 });
+    expect(min).toBe(want);
+    expect(maxDeviation(parsePath(d), parsePath(min))).toBeLessThan(1e-9);
   });
 
   it('does not drift along a long path of relative commands', () => {

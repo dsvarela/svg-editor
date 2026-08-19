@@ -333,6 +333,18 @@ export function importSvg(text: string): ImportResult {
       for (const child of Array.from(el.children)) walk(child, here, style, inner);
       return;
     }
+    /* Containers whose contents describe something other than the drawing.
+     *
+     * This changes no outcome today, and `tools/mutate.mjs` reports every
+     * alternative in it as a survivor for that reason: only the `<g>` branch
+     * above recurses, so the children of any other element are already never
+     * visited, and a `<defs>` reaching the lines below yields no path and is
+     * dropped anyway. Deleting it passes all 97 of this file's tests.
+     *
+     * Kept, because the day the walk recurses into every child is the day a
+     * `<mask>`'s contents silently become shapes somebody has to find and
+     * delete, and that is the class this project ranks first. One line against
+     * a wrong drawing written to a file. */
     if (tag === 'defs' || tag === 'clippath' || tag === 'mask' || tag === 'symbol') return;
 
     const d = primitiveToPath(el);

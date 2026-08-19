@@ -58,6 +58,15 @@ describe('scaleMatrix', () => {
     expect(applyMat(m, [30, 17])[1]).toBe(17);
   });
 
+  /* Stated as numbers rather than as `boxCentre(box)`, which is what the test
+     below does. That one takes its expectation from this function and hands it
+     to a matrix built from the same function, so the two are wrong together and
+     agree: with `(b.x0 + b.x1)` turned into `(b.x0 - b.x1)` the centre moved 50
+     units and the check still passed. Found by `tools/mutate.mjs`. */
+  it('is the middle of the box, stated without asking the function again', () => {
+    expect(boxCentre(box)).toEqual([30, 15]);
+  });
+
   it('holds the centre still with fromCentre', () => {
     const c = boxCentre(box);
     const m = scaleMatrix(box, 'se', [70, 45], { fromCentre: true });
@@ -114,19 +123,28 @@ describe('scaleMatrix', () => {
 });
 
 describe('rotateMatrix', () => {
-  const c: Pt = [0, 0];
+  /* Not the origin, and that is the whole reason for `off` below.
+   *
+   * With the centre at [0, 0] every `from[0] - centre[0]` in this function is a
+   * number minus zero, so the difference it computes and the sum a wrong sign
+   * would make of it are the same: both radii could be built by adding the
+   * centre instead of subtracting it and every test here passed. Found by
+   * `tools/mutate.mjs`. */
+  const c: Pt = [7, 4];
+  /** A point at an offset from the centre, which is how a grab is described. */
+  const off = (dx: number, dy: number): Pt => [c[0] + dx, c[1] + dy];
 
   it('turns by the angle swept, about the centre', () => {
-    const r = rotateMatrix(c, [10, 0], [0, 10]);
+    const r = rotateMatrix(c, off(10, 0), off(0, 10));
     expect(r.deg).toBeCloseTo(90, 9);
-    near(applyMat(r.m, [10, 0]), [0, 10]);
+    near(applyMat(r.m, off(10, 0)), off(0, 10));
     near(applyMat(r.m, c), c);
   });
 
   it('snaps the turn, not the pointer', () => {
-    const r = rotateMatrix(c, [10, 0], [10, 1.2], 15);
+    const r = rotateMatrix(c, off(10, 0), off(10, 1.2), 15);
     expect(r.deg).toBe(0);
-    const s = rotateMatrix(c, [10, 0], [10, 9], 15);
+    const s = rotateMatrix(c, off(10, 0), off(10, 9), 15);
     expect(s.deg).toBe(45);
   });
 
@@ -137,7 +155,7 @@ describe('rotateMatrix', () => {
        difference is 340, and the honest report is -20. */
     const at = (deg: number): Pt => {
       const r = (deg * Math.PI) / 180;
-      return [Math.cos(r) * 10, Math.sin(r) * 10];
+      return off(Math.cos(r) * 10, Math.sin(r) * 10);
     };
     const r = rotateMatrix(c, at(-170), at(170));
     expect(r.deg).toBeCloseTo(-20, 9);
@@ -147,20 +165,20 @@ describe('rotateMatrix', () => {
   it('calls a half turn +180, not -180', () => {
     // The matrix cannot tell the two apart, so the readout should not claim a
     // direction the drag did not go.
-    expect(rotateMatrix(c, [10, 0], [-10, 0]).deg).toBe(180);
+    expect(rotateMatrix(c, off(10, 0), off(-10, 0)).deg).toBe(180);
   });
 
   it('does nothing when the pointer reaches the centre', () => {
     // `atan2(0, 0)` is 0 rather than undefined, so sweeping the rotate pointer
     // through the middle would apply minus the grab angle in one jump.
-    expect(rotateMatrix(c, [10, 0], c).deg).toBe(0);
-    expect(rotateMatrix(c, c, [10, 0]).deg).toBe(0);
+    expect(rotateMatrix(c, off(10, 0), c).deg).toBe(0);
+    expect(rotateMatrix(c, c, off(10, 0)).deg).toBe(0);
   });
 
   it('does nothing when the pointer has not moved', () => {
-    const r = rotateMatrix(c, [10, 3], [10, 3]);
-    expect(r.deg).toBe(0);
-    near(applyMat(r.m, [7, 11]), [7, 11]);
+    const r = rotateMatrix(c, off(10, 3), off(10, 3)).m;
+    near(applyMat(r, [7, 11]), [7, 11]);
+    expect(rotateMatrix(c, off(10, 3), off(10, 3)).deg).toBe(0);
   });
 });
 

@@ -338,11 +338,18 @@ describe('svg import', () => {
    *
    * Two guards here are a run of `||`, and a run of `||` is only measured by a
    * fixture where exactly one alternative is true. `<defs>` and `<text>` were
-   * the only two ever tried, so widening either guard's first `||` to `&&` left
-   * the rest of its list deciding nothing and the whole suite green. A `<mask>`
-   * or a `<symbol>` walked into as ordinary markup contributes shapes nobody
-   * drew; a `<use>` skipped in silence is a drawing that arrives incomplete
-   * with no sentence about it. Found by `tools/mutate.mjs`.
+   * the only two ever tried, so widening the `text || image || use` guard's
+   * first `||` to `&&` left the rest of its list deciding nothing and the whole
+   * suite green: a `<use>` skipped in silence is a drawing that arrives
+   * incomplete with no sentence about it. Found by `tools/mutate.mjs`.
+   *
+   * **The container half below cannot fail against a swapped operator, and is
+   * kept anyway.** Only the `<g>` branch of `walk` recurses, so the contents of
+   * a `<defs>` are already unreachable and the guard naming it changes no
+   * outcome: deleting it outright leaves every test here green. What these four
+   * pin is the behaviour, not the guard, and the change that would break them
+   * is structural -- a walk that recurses into every child -- which no swap of
+   * one operator can express.
    */
   it.each(['defs', 'clipPath', 'mask', 'symbol'])(
     'walks past a <%s> without taking what is inside it',

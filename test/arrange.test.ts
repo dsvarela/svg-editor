@@ -229,6 +229,60 @@ describe('align', () => {
   });
 });
 
+/**
+ * What these report when there is nothing to do, and the frame they are given.
+ *
+ * The boolean is what `Commands` runs them under `tryEdit` with: reporting a
+ * move that did not happen files an undo entry that appears to do nothing when
+ * somebody reaches it, and throws the redo stack away on the way. Only the
+ * moving case was ever asserted, so both `return false` guards could have been
+ * `return true` with the whole suite green. The same pair one level down, on
+ * nodes rather than shapes, had the same hole and was closed the same day.
+ */
+describe('what they report when there is nothing to move', () => {
+  it('distributes nothing for two units, which are evenly spaced by definition', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 90, 0, 10, 10]);
+    const units = arrangeUnits(doc, idsOf(doc, 'a', 'b'));
+    expect(distributeUnits(units, 'hcenter', unitsBox(units)!)).toBe(false);
+    expect(boxOf(doc, 'b').x0).toBeCloseTo(90, 9);
+  });
+
+  it('spaces nothing for one unit, which has no neighbour to be spaced from', () => {
+    const doc = docOf(['a', 0, 0, 10, 10]);
+    const units = arrangeUnits(doc, idsOf(doc, 'a'));
+    expect(spaceUnits(units, 'h', unitsBox(units)!, null)).toBe(false);
+    expect(boxOf(doc, 'a').x0).toBeCloseTo(0, 9);
+  });
+
+  it('says it moved when it did, so the refusals above are not refusing everything', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 15, 0, 20, 10], ['c', 90, 0, 10, 10]);
+    const units = arrangeUnits(doc, idsOf(doc, 'a', 'b', 'c'));
+    expect(distributeUnits(units, 'hcenter', unitsBox(units)!)).toBe(true);
+  });
+
+  /* A frame that does not begin at zero, and units declared out of order.
+   *
+   * Every fixture in this file starts at x = 0, which makes `frame.x1 -
+   * frame.x0` and `frame.x1 + frame.x0` the same number: the span could be
+   * computed by adding the frame's own left edge and nothing said so. Declaring
+   * the shapes right to left covers the sort beside it, which orders them by
+   * position rather than by the order they arrived in. */
+  it('fills a frame that starts away from zero, whatever order the units arrive in', () => {
+    const doc = docOf(['a', 180, 0, 10, 10], ['b', 100, 0, 10, 10], ['c', 130, 0, 10, 10]);
+    const units = arrangeUnits(doc, idsOf(doc, 'a', 'b', 'c'));
+    const frame: Box = { x0: 100, y0: 0, x1: 190, y1: 10 };
+    expect(spaceUnits(units, 'h', frame, null)).toBe(true);
+
+    // 90 of frame less 30 of shapes, shared between two gaps.
+    const gapAfter = (l: string, r: string): number => boxOf(doc, r).x0 - boxOf(doc, l).x1;
+    expect(gapAfter('b', 'c')).toBeCloseTo(30, 9);
+    expect(gapAfter('c', 'a')).toBeCloseTo(30, 9);
+    // And the outer two sit on the frame's own edges.
+    expect(boxOf(doc, 'b').x0).toBeCloseTo(100, 9);
+    expect(boxOf(doc, 'a').x1).toBeCloseTo(190, 9);
+  });
+});
+
 describe('distribute', () => {
   it('spaces centres evenly and leaves the outer two alone', () => {
     const doc = docOf(['a', 0, 0, 10, 10], ['b', 15, 0, 20, 10], ['c', 90, 0, 10, 10]);

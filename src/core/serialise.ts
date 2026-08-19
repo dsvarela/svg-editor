@@ -219,14 +219,24 @@ function preferRelative(cmds: Cmd[], decimals: number): Cmd[] {
   const round = (v: number): number => parseFloat(formatNumber(v, decimals));
 
   const out: Cmd[] = [];
-  /** Where a parser of the emitted text will believe the pen is. */
+  /**
+   * Where a parser of the emitted text will believe the pen is.
+   *
+   * From the origin, and only within this subpath: the caller runs this over
+   * one subpath's commands at a time, so a `Z` is always the last of them and
+   * the first `M` is always measured from nothing. That costs a few characters
+   * on a document of many subpaths, each of which spells its opening move in
+   * full, and it is what keeps this pass unable to carry a rounding error from
+   * one subpath into the next.
+   *
+   * It also means a `Z` has nothing after it to move: the subpath origin this
+   * used to restore the pen to was written by every `M` and read by nobody.
+   */
   let pen: Pt = [0, 0];
-  let start: Pt = [0, 0];
 
   for (const c of cmds) {
     if (c.letter === 'Z') {
       out.push(c);
-      pen = [start[0], start[1]];
       continue;
     }
 
@@ -260,7 +270,6 @@ function preferRelative(cmds: Cmd[], decimals: number): Cmd[] {
         ? [round(pen[0] + rel[n - 2]), round(pen[1] + rel[n - 1])]
         : [round(c.args[n - 2]), round(c.args[n - 1])];
     }
-    if (c.letter === 'M') start = [pen[0], pen[1]];
   }
   return out;
 }
