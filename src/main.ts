@@ -3,7 +3,7 @@
  */
 
 import './ui/styles.css';
-import { PathSyntaxError } from './core/parse';
+import { reasonFor } from './core/parse';
 import { drawsSomething, exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
 import { PNG_MAX, pngSize, renderPng, svgDataUri } from './io/pixels';
 import type { BooleanOp } from './io/boolean';
@@ -14,6 +14,7 @@ import {
   findShape,
   groupChain,
   dedupeIds,
+  pruneGroups,
   reserveIds,
   selectedRefs,
   selectedShapes,
@@ -48,6 +49,7 @@ import { Controller } from './tools/controller';
 import { Commands } from './tools/commands';
 import { bindKeys } from './tools/keys';
 import type { AlignMode } from './model/ops';
+import { rebuildPaintOrder } from './model/arrange';
 import type { AlignTo, ZMove } from './model/arrange';
 import { $ } from './view/dom';
 import { installTooltips } from './ui/tooltip';
@@ -102,6 +104,15 @@ function applySession(sn: Session): void {
      never before, because a fresh id is only fresh once the counters are past
      what the document already holds. */
   dedupeIds(sn.doc);
+  /* And §49, which `Store.edit` restores after every edit -- but a restore is
+     not an edit. `applySession` goes through `store.update`, so a workspace
+     file whose shapes interleave two groups stayed that way until the next edit
+     happened to fix it, and `exportSvg` in between wrote one group as two `<g>`
+     under two ids. The reader validates dangling parents and cycles and has no
+     opinion about order, which is right: order is the model's invariant, and
+     this is the one place an outside document enters without an edit. */
+  pruneGroups(sn.doc);
+  rebuildPaintOrder(sn.doc);
   /* The history described the document this one replaces, and a snapshot is a
      whole document: undoing into one would put the old drawing back over the
      file that was just opened. Empty at startup, where this is the only
@@ -211,6 +222,19 @@ const toggleRailBtn = $('#toggleRail') as HTMLButtonElement;
 const sourcePanel = $('#sourcepanel') as HTMLElement;
 const rail = $('#rail') as HTMLElement;
 
+/**
+ * Redraw the previews, once there are any.
+ *
+ * A hook rather than a direct call, because `setPanel` runs at module level to
+ * put the two panels into the state the session restored, and that is 230 lines
+ * above where the previews are built. Calling `refreshPreview` from here is a
+ * `ReferenceError` on the `const` it reads and a blank page with no message --
+ * which is what happened, and what the browser audit's `pageerror` check caught.
+ * `null` until the previews exist is the same answer as "nothing to catch up",
+ * so the order stops being something a comment has to ask anyone to preserve.
+ */
+let catchUpPreview: (() => void) | null = null;
+
 function setPanel(which: 'src' | 'rail', open: boolean): void {
   if (which === 'src') {
     app.classList.toggle('src-open', open);
@@ -245,6 +269,13 @@ function setPanel(which: 'src' | 'rail', open: boolean): void {
     toggleRailBtn.setAttribute('aria-pressed', String(open));
     toggleRailBtn.setAttribute('aria-expanded', String(open));
     rail.inert = !open;
+    /* The previews are the other view that skips its work while it cannot be
+       seen, and closing the rail is the fourth way to hide them. Under 860 px
+       the rail is `display: none`, which is exactly what `previewOpen` reads,
+       and reopening notified nothing: at that width the canvas does not resize,
+       so the ResizeObserver chain the source drawer relies on never fires. The
+       group toggle and the tab switch were wired and this one was not. */
+    if (open) catchUpPreview?.();
     if (!open && rail.contains(document.activeElement)) {
       (document.activeElement as HTMLElement).blur();
     }
@@ -290,9 +321,10 @@ function selectTab(id: string): void {
   }
   /* A panel coming into view is the other half of a group being opened: the
      previews stop being drawn while nobody can see them, so arriving at the tab
-     that holds them has to catch them up. Only ever called from a listener, so
-     `refreshPreview` and everything it reads are built by the time this runs. */
-  refreshPreview();
+     that holds them has to catch them up. Through the hook, for the reason
+     given beside it: this one happens to be called only from listeners today,
+     and that is a fact about the call sites rather than about this function. */
+  catchUpPreview?.();
 }
 
 for (const [i, tab] of tabs.entries()) {
@@ -1363,6 +1395,7 @@ srcModeSeg.addEventListener('click', (e) => {
   if (v === 'd' || v === 'svg') store.update((s) => (s.sourceMode = v));
 });
 
+
 /**
  * Replace the whole document from SVG or path-data text.
  *
@@ -1406,8 +1439,7 @@ function replaceDocumentFrom(text: string, what: string): boolean {
     fit();
     return true;
   } catch (err) {
-    const msg =
-      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    const msg = reasonFor(err);
     say(msg, false);
     return false;
   }
@@ -1457,8 +1489,7 @@ function addShapesFrom(text: string, what: string): boolean {
     fit();
     return true;
   } catch (err) {
-    const msg =
-      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    const msg = reasonFor(err);
     say(msg, false);
     return false;
   }
@@ -1500,8 +1531,7 @@ function applySource(): void {
     });
     say(`Updated ${target.name}.`, true);
   } catch (err) {
-    const msg =
-      err instanceof PathSyntaxError ? `${err.message} (at ${err.offset})` : (err as Error).message;
+    const msg = reasonFor(err);
     say(msg, false);
   }
 }
@@ -1634,6 +1664,7 @@ function refreshPreview(): void {
    change. Opening rendered nothing and shutting rendered, which is the two
    listeners in the order they happen to be wired. */
 previewGroup?.addEventListener('grouptoggled', () => refreshPreview());
+catchUpPreview = refreshPreview;
 
 on('#downloadPng', () => {
   const s = store.state;
@@ -1754,7 +1785,7 @@ workspaceFile.addEventListener('change', () => {
       const n = r.doc.shapes.length;
       say(`Opened ${f.name}: ${n} shape${n === 1 ? '' : 's'}, and the session around them.`, true);
     },
-    (err: unknown) => say(`Could not read ${f.name}: ${String(err)}`, false),
+    (err: unknown) => say(`Could not read ${f.name}: ${reasonFor(err)}`, false),
   );
 });
 
@@ -1897,8 +1928,18 @@ function traceOffThread(req: TraceRequest): Promise<TraceResult> | null {
   return new Promise<TraceResult>((resolve, reject) => {
     worker.onmessage = (e: MessageEvent<TraceReply>): void => {
       worker.terminate();
-      if (e.data.ok) resolve(e.data.result);
-      else reject(new Error(e.data.error));
+      if (e.data.ok) {
+        resolve(e.data.result);
+        return;
+      }
+      /* The worker's own reason, to the console and not to the status line. The
+         caller says a written sentence, so this was packaged, sent across and
+         thrown away -- and a tracer that died of a real bug looked exactly like
+         one the browser refused to start. The console is where a developer and
+         the browser harness both look; `tools/voice.mjs` is about what a person
+         reads. */
+      console.error(`trace worker: ${e.data.error}`);
+      reject(new Error(e.data.error));
     };
     worker.onerror = (): void => {
       worker.terminate();
@@ -2928,6 +2969,14 @@ function refreshShapeList(): void {
       gt.type = 'button';
       gt.className = 'twist';
       gt.textContent = '▸';
+      /* Out of the tab order, like every other disclosure in this list. A tree
+         is ONE tab stop with the arrow keys moving inside it, and a focusable
+         button within a treeitem breaks that in the way the pattern exists to
+         prevent: the container reports a virtual cursor through
+         `aria-activedescendant` while real focus sits on a descendant. Left and
+         Right open and shut a row without it, and `tools/keys.mjs` cannot see
+         this because reachability is exactly what made it tabbable. */
+      gt.tabIndex = -1;
       const held = shapesInGroup(s.doc, g.id).length;
       gt.setAttribute('aria-label', `${isOpen ? 'Hide' : 'Show'} the ${held} shapes in ${g.name}`);
 
@@ -2979,6 +3028,8 @@ function refreshShapeList(): void {
     twist.textContent = '▸';
     if (sh.subpaths.length > 1) {
       const open = expanded.has(sh.id);
+      // For the reason the group disclosure above gives.
+      twist.tabIndex = -1;
       li.setAttribute('aria-expanded', String(open));
       twist.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the ${sh.subpaths.length} paths in ${sh.name}`);
     } else {

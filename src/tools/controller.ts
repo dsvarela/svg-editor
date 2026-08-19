@@ -10,7 +10,7 @@
  * a key both ends gestures and runs commands and so belongs to neither.
  */
 
-import { translate } from '../core/affine';
+import { translate, isIdentity } from '../core/affine';
 import type { Mat } from '../core/affine';
 import type { Box } from '../core/bezier';
 import { cloneSubpath, continuityOf, makeNode, segmentCount } from '../core/types';
@@ -97,6 +97,14 @@ type DragKind =
          told from a gesture: it must not record an identity matrix over
          whatever `Repeat` was holding. */
       applied: { m: Mat; what: string; deg: number | null } | null;
+      /* Whether any frame of this drag produced a matrix that is not the
+         identity. `applied` alone answers "did the pointer move", which is a
+         different question: a Shift-held rotate grip moved two units snaps to
+         zero degrees, so the drag moved and the matrix it applied was the
+         identity, and remembering that destroyed what `Repeat` held exactly as
+         a bare click used to. The `body` drag guards on a non-zero delta and
+         this is the same guard, asked of a matrix. */
+      moved: boolean;
     }
   /* `start` is where the grabbed node was at the press, kept only so the
      readout can say how far it has come. Measuring the pointer instead would
@@ -900,6 +908,7 @@ export class Controller {
           // so it wants the raw point.
           grab: hit.kind === 'rotate' ? p : [p[0] - at[0], p[1] - at[1]],
           applied: null,
+          moved: false,
         };
         return;
       }
@@ -1175,6 +1184,7 @@ export class Controller {
           const r = rotateMatrix(boxCentre(d.box), d.grab, p, this.shift(e) ? 15 : 0);
           m = r.m;
           d.applied = { m, what: `rotate ${fmt(r.deg)}°`, deg: r.deg };
+          if (!isIdentity(m)) d.moved = true;
           this.onMessage?.(`Rotate ${fmt(r.deg)}°`, true);
         } else {
           const want: Pt = [p[0] - d.grab[0], p[1] - d.grab[1]];
@@ -1191,6 +1201,7 @@ export class Controller {
             keepAspect: this.shift(e),
           });
           d.applied = { m, what: 'scale', deg: null };
+          if (!isIdentity(m)) d.moved = true;
           this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
         }
         this.store.edit((st) => transformCaptured(st.doc, d.saved, m));
@@ -1484,7 +1495,7 @@ export class Controller {
          matrix would destroy whatever `Repeat` was holding. */
       if (this.drag.kind === 'transform') {
         const d = this.drag;
-        const a = d.applied;
+        const a = d.moved ? d.applied : null;
         if (a) {
           const now = selectionBBox(this.store.state.doc, this.store.state.selection);
           if (d.mode === 'rotate') {

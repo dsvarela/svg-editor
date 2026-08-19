@@ -14,6 +14,7 @@
     "drive": "node tools/drive.mjs",
     "check": "tsc --noEmit",
     "check:docs": "node tools/docs.mjs",
+    "check:voice": "node tools/voice.mjs",
     "check:contrast": "node ../handbook/design/contrast.mjs src/ui/styles.css src/ui/pairs.txt"
   },
   "devDependencies": {

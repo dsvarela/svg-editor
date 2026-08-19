@@ -23,6 +23,7 @@ import {
   nextNodeId,
   segmentAsCubic,
   segmentCount,
+  SAME_PLACE,
   segmentIsLine,
 } from '../core/types';
 import type { Doc, NodeContinuity, PathNode, Pt, Shape, Subpath } from '../core/types';
@@ -1117,16 +1118,6 @@ function resolve(doc: Doc, refs: NodeRef[]): { sp: Subpath; i: number }[] {
   return out;
 }
 
-/**
- * Below this, a node is already where it is being asked to go.
- *
- * Not a tolerance on the alignment: it is the width of the arithmetic. A target
- * computed as a midpoint and then assigned lands within an ulp of itself rather
- * than on it, so a second press would report a move of about 1e-16. Document
- * coordinates are tens to hundreds of units and the serialiser stops at six
- * decimals, so nothing this size can reach a file or a screen.
- */
-const ALIGNED = 1e-9;
 
 /**
  * Align anchors to one edge or centre of their common bounding box.
@@ -1157,7 +1148,7 @@ export function alignNodes(doc: Doc, refs: NodeRef[], mode: AlignMode): boolean 
   let moved = false;
   for (const it of items) {
     const p = it.sp.nodes[it.i].pt;
-    if (Math.abs((horizontal ? p[0] : p[1]) - target) < ALIGNED) continue;
+    if (Math.abs((horizontal ? p[0] : p[1]) - target) < SAME_PLACE) continue;
     moved = true;
     moveAnchor(it.sp, it.i, horizontal ? [target, p[1]] : [p[0], target]);
   }
@@ -1181,7 +1172,7 @@ export function distributeNodes(doc: Doc, refs: NodeRef[], axis: 'h' | 'v'): boo
     if (k === 0 || k === items.length - 1) return;
     const p = it.sp.nodes[it.i].pt;
     const v = first + step * k;
-    if (Math.abs(p[ax] - v) < ALIGNED) return;
+    if (Math.abs(p[ax] - v) < SAME_PLACE) return;
     moved = true;
     moveAnchor(it.sp, it.i, ax === 0 ? [v, p[1]] : [p[0], v]);
   });

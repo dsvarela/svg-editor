@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyMat } from '../src/core/affine';
+import { applyMat, isIdentity, rotate, scale, translate } from '../src/core/affine';
 import {
   anchorPoint,
   boxCentre,
@@ -161,5 +161,34 @@ describe('rotateMatrix', () => {
     const r = rotateMatrix(c, [10, 3], [10, 3]);
     expect(r.deg).toBe(0);
     near(applyMat(r.m, [7, 11]), [7, 11]);
+  });
+});
+
+/**
+ * Whether a gesture happened, asked of the matrix rather than of the pointer.
+ *
+ * Those are different questions, and the transform drag was asking the wrong
+ * one. A snap can hold a drag on the lattice it started from, so the pointer
+ * moves and the matrix is the identity; recording that wiped what Repeat held,
+ * which is the defect a bare click on a grip already had. The bare click was
+ * fixed and this sibling was not.
+ */
+describe('isIdentity', () => {
+  it('is true of the identity, and of a matrix a snap flattened to it', () => {
+    expect(isIdentity([1, 0, 0, 1, 0, 0])).toBe(true);
+    /* A rotate grip moved two units with Shift held: fifteen-degree snapping
+       rounds the turn to none, so the drag moved and did nothing. This is the
+       case measured rather than argued -- it is why the guard exists. */
+    const r = rotateMatrix([50, 50], [100, 50], [100, 52], 15);
+    expect(r.deg).toBe(0);
+    expect(isIdentity(r.m)).toBe(true);
+  });
+
+  it('is false of anything a person could see', () => {
+    expect(isIdentity(translate(0.5, 0))).toBe(false);
+    expect(isIdentity(scale(1.001, 1.001))).toBe(false);
+    // A quarter turn shares the identity's diagonal in absolute value, so a
+    // comparison that forgot the off-diagonal terms would call it nothing.
+    expect(isIdentity(rotate(90))).toBe(false);
   });
 });

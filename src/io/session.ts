@@ -353,6 +353,15 @@ function readView(v: unknown, now: SessionView): SessionView {
   const o = isObj(v) ? v : {};
   const bool = (k: keyof SessionView, d: boolean): boolean => (isBool(o[k]) ? (o[k] as boolean) : d);
   const num = (k: keyof SessionView, d: number): number => (isNum(o[k]) ? (o[k] as number) : d);
+  /* A preference reads leniently, and lenience is a FALLBACK rather than a
+     throw -- which is a rule about the value and not only about its type. A
+     `decimals` of 500 is a number, so `num` accepted it, and `formatNumber` is
+     `toFixed`, which throws a `RangeError` outside 0 to 100. That throw lands
+     one store notification later, inside the refresh that draws the previews,
+     which is the blank editor with no message §59 exists to prevent, arriving
+     by a route §59 did not cover. The bound is the field's own. */
+  const bounded = (k: keyof SessionView, d: number, lo: number, hi: number): number =>
+    isNum(o[k]) ? Math.min(hi, Math.max(lo, o[k] as number)) : d;
   return {
     tool: oneOf(TOOLS, o.tool) ? o.tool : now.tool,
     deleteMode: oneOf(DELETE_MODES, o.deleteMode) ? o.deleteMode : now.deleteMode,
@@ -380,7 +389,7 @@ function readView(v: unknown, now: SessionView): SessionView {
        measured from where the gesture started. So an explicit null is kept and
        anything else unreadable falls back, like every other field. */
     angleOrigin: readPt(o.angleOrigin) ?? (o.angleOrigin === null ? null : now.angleOrigin),
-    decimals: num('decimals', now.decimals),
+    decimals: bounded('decimals', now.decimals, 0, 9),
     minify: bool('minify', now.minify),
     sourceMode: oneOf(SOURCE_MODES, o.sourceMode) ? o.sourceMode : now.sourceMode,
     style: readStyle(o.style) ?? { ...now.style },

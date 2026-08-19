@@ -1302,6 +1302,36 @@ describe('rounding corners', () => {
     expect(radii()).toEqual([2, 2, 2, 2]);
   });
 
+  /* `done > 0` counts corners CUT, not geometry CHANGED. Un-rounding a corner
+     and rounding it to the radius it already had reproduces it exactly, so a
+     second press cut four corners and altered nothing while filing an entry.
+     This is the class the same pass gave `tryEdit` to Align and Distribute for.
+
+     Measured as the path itself and as the depth of the history, because either
+     alone passes for the wrong reason: an entry that restores the same geometry
+     is invisible in the drawing. */
+  it('files no history entry for a second press at the same radius', () => {
+    const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
+    const id = ids(h);
+    const path = (): string => serialisePath(h.store.state.doc.shapes[0].subpaths);
+
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(8)).toBe(true);
+    const once = path();
+
+    const said: string[] = [];
+    h.commands.onMessage = (m) => said.push(m);
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(8)).toBe(true);
+    expect(path()).toBe(once);
+    expect(said.join(' ')).toMatch(/already rounded to r 8\./i);
+
+    // One entry for the one press that changed something.
+    h.store.undo();
+    expect(path()).not.toBe(once);
+    expect(h.store.canUndo).toBe(false);
+  });
+
   /* The limit is read off the un-rounded copy too. An existing fillet has
      already eaten into the sides it sits between, so a limit measured on the
      live path is the room left beside the arc rather than the room the corner

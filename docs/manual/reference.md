@@ -424,8 +424,8 @@ to set it exactly.
 
 **A dimmed, italic number is a handle that does not exist**, shown where one
 would go if you pulled it out. The canvas draws the same thing as a hollow
-circle. The difference matters: a side with no handle on it is straight, and
-**Round** needs a straight side on both sides of the node.
+circle. The difference matters: a side with no handle on it is straight, and a
+straight side is what **Round** cuts its arc from.
 
 - **Cusp**, **Smooth**, **Symm** show how the selected node's handles are set,
   and change it when pressed. **Cusp** means the two handles are not in line, so
@@ -440,8 +440,14 @@ circle. The difference matters: a side with no handle on it is straight, and
   neighbour on the far side to take a direction from, and the setting is not part
   of the export.
 - **Radius** with **Round** replaces the selected corners with an arc of that
-  radius. Both sides of the node have to be straight. With a shape selected and
-  no particular nodes, it rounds every corner the shape has.
+  radius. With a shape selected and no particular nodes, it rounds every corner
+  the shape has.
+
+  **A corner that is already rounded can be rounded again**, to a larger or a
+  smaller radius, which is what makes the field usable on a rectangle drawn with
+  one. Pressing it twice at the same radius says **Already rounded** and costs no
+  undo step. What it cannot do is round a node whose sides are genuinely curved:
+  there is no corner there to replace.
 
   **Every corner gets the same radius.** A radius larger than one of them can
   hold reduces the whole request to the largest that fits everywhere, and the
@@ -667,8 +673,19 @@ editor was given rather than one it holds, and the undo history.
 #### The copy this browser keeps
 
 The same workspace is written into this browser as you work, and read back when
-you return. The reading is silent when there is nothing there and says so when
-there is: **Picked up where you left off** names how many shapes came back.
+you return. The reading is silent when there is nothing there, and says one of three things
+when there is:
+
+| It says | Meaning |
+|---|---|
+| **Picked up where you left off** | The copy is the drawing you had, and it names how many shapes came back |
+| **Restored an earlier copy** | The last save was refused, so this is the drawing as it was before that. What was on screen after it is gone |
+| **Your saved work could not be read** | This build cannot read the copy that is there. It is left alone rather than deleted, and nothing new is saved until you press **Forget saved work** |
+
+The third is the one to know about. A copy this build cannot read may be one a
+different build wrote, so deleting it would throw away work that is still
+readable somewhere; the price of keeping it is that nothing is saved over it in
+the meantime, and the header says so.
 
 The header beside **On this device** says whether it is happening.
 
@@ -676,14 +693,16 @@ The header beside **On this device** says whether it is happening.
 |---|---|
 | `saving` | The work is being kept |
 | `stopped` | You pressed **Forget saved work**. Nothing is kept until you reload |
-| `not saving` | The browser refused. The sentence under it says which of the two reasons |
+| `not saving` | Either the browser refused, or a copy is here that this build could not read. The sentence under it says which |
 
-**It refuses for two reasons, and neither is a fault in the editor.** Opened from
-a `file://` URL, Chromium gives the page an origin with no storage attached and
-every attempt throws; Firefox allows it. And a drawing past about two megabytes
-of text is more than the space a browser gives one page, so it is refused while
-there is still something to say about it. Both cases name a workspace file as
-the answer, because a file has neither limit.
+**Three reasons, and none of them is a fault in the editor.** Opened from a
+`file://` URL, Chromium gives the page an origin with no storage attached and
+every attempt throws; Firefox allows it. A drawing past about two megabytes of
+text is more than the space a browser gives one page, so it is refused while
+there is still something to say about it. And a copy this build cannot read is
+kept rather than overwritten, which stops the saving until you clear it. The
+first two name a workspace file as the answer, because a file has neither limit;
+the third names **Forget saved work**.
 
 **It is not a backup.** Clearing site data removes it, a private window never had
 it, and another browser on the same machine has its own. A workspace file is the

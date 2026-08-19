@@ -277,6 +277,20 @@ describe('svg import', () => {
     expect(r.warnings.join(' ')).toContain('text');
   });
 
+  /* A negative width is invalid SVG that files nonetheless carry, and this is
+     the end of the pipe that produces the value. Imported unguarded, it reached
+     `toSession`, and the session reader's own guard then refused the whole file
+     -- so this build wrote a document this build could not read back. */
+  it('clamps a negative stroke width at import, where the value is made', () => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" stroke="#000" stroke-width="-4"/></svg>`);
+    expect(r.shapes[0].style.strokeWidth).toBe(0);
+  });
+
+  it('keeps an ordinary width exactly', () => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" stroke="#000" stroke-width="2.5"/></svg>`);
+    expect(r.shapes[0].style.strokeWidth).toBe(2.5);
+  });
+
   /* §60 keeps one opacity per shape, so these two have nowhere to land. The
      loss is invisible as a loss: a fill going from 30% to 100% looks like a
      wrong picture rather than like something that was dropped. */
@@ -307,6 +321,43 @@ describe('svg import', () => {
   it('says nothing about a file that carries neither', () => {
     const r = importSvg(`<svg><path d="M0 0 L1 1" fill="#000" opacity="0.3"/></svg>`);
     expect(r.warnings).toEqual([]);
+  });
+
+  /* A warning fires when the value would change something, not when the
+     attribute is present. Illustrator and Inkscape write `fill-opacity:1` into
+     the inline style of nearly every path, and 1 is fully opaque -- so the
+     first form of this reported a loss on almost every file anyone imports,
+     which is how a warning stops being read. */
+  it.each(['1', '1.0', '100%', ' 1 ', '1.5', 'inherit', ''])(
+    'says nothing about a fill-opacity of %j, which loses nothing',
+    (value) => {
+      const r = importSvg(`<svg><path d="M0 0 L1 1" fill="#000" fill-opacity="${value}"/></svg>`);
+      expect(r.warnings).toEqual([]);
+    },
+  );
+
+  /* And only for an element that becomes a shape. `readStyle` runs before the
+     tag dispatch, because a container passes its style down, so recording the
+     loss there warned about elements that never carried a fill anyone saw. */
+  it('says nothing about a property on an element that draws nothing', () => {
+    expect(
+      importSvg(`<svg fill-opacity="0.3"><path d="M0 0 L1 1"/></svg>`).warnings,
+    ).toEqual([]);
+    expect(
+      importSvg(`<svg><defs fill-opacity="0.3"><path d="M0 0 L1 1"/></defs><path d="M0 0 L2 2"/></svg>`)
+        .warnings,
+    ).toEqual([]);
+    expect(
+      importSvg(`<svg><g fill-opacity="0.3"><path d="M0 0 L1 1"/></g></svg>`).warnings,
+    ).toEqual([]);
+  });
+
+  /* `<text>` already reports itself skipped. Warning about its fill-opacity as
+     well is two warnings for one loss that never happened. */
+  it('does not report a second loss for an element it already said it skipped', () => {
+    const r = importSvg(`<svg><text fill-opacity="0.3">hi</text><path d="M0 0 L1 1"/></svg>`);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('text');
   });
 
   it('accepts bare path data too', () => {

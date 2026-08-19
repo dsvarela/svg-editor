@@ -14,6 +14,7 @@
 
 import { about, flipX, flipY, rotate as rotMat, translate } from '../core/affine';
 import type { Mat } from '../core/affine';
+import { reasonFor } from '../core/parse';
 import { cloneNode, cloneShape, cloneSubpath, continuityOf, segmentCount } from '../core/types';
 import type { Group, NodeContinuity, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import {
@@ -91,6 +92,24 @@ import { FLAT } from '../model/transform';
 import type { Store } from '../model/store';
 import type { Bend } from '../core/bend';
 import { fmt } from './readout';
+
+/**
+ * Whether two subpaths are the same geometry, node for node.
+ *
+ * Ids are deliberately not compared: un-rounding a corner and rounding it again
+ * mints new nodes for the two tangent points, so a path that is geometrically
+ * unchanged is never identical by identity. Positions and handles are what a
+ * person can see, and they are what decides whether an edit happened.
+ */
+function samePath(a: Subpath, b: Subpath): boolean {
+  if (a.closed !== b.closed || a.nodes.length !== b.nodes.length) return false;
+  const near = (p: Pt | null, q: Pt | null): boolean =>
+    p === null || q === null ? p === q : Math.abs(p[0] - q[0]) < 1e-9 && Math.abs(p[1] - q[1]) < 1e-9;
+  return a.nodes.every((n, i) => {
+    const m = b.nodes[i];
+    return near(n.pt, m.pt) && near(n.hIn, m.hIn) && near(n.hOut, m.hOut);
+  });
+}
 
 /**
  * How closely a fitted outline has to follow the curve it was derived from.
@@ -753,6 +772,11 @@ export class Commands {
     }
     const held = use < radius;
 
+    /* Two counts, because they answer two questions. `cut` is how many corners
+       the operation could act on at all, which is what decides whether to
+       explain a refusal. `done` is how many sat on a path that actually
+       changed, which is what decides whether this is an edit. */
+    let cut = 0;
     let done = 0;
     const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
 
@@ -784,7 +808,18 @@ export class Commands {
           }
           hit++;
         }
+        cut += hit;
         if (!hit) continue;
+        /* Compared, not counted. `hit` says how many corners were cut, which is
+           not the same question as whether the path changed: un-rounding a
+           corner and rounding it to the radius it already had reproduces it
+           exactly, so a second press at the same radius cut four corners and
+           altered nothing. That is the class this same pass gave `tryEdit` to
+           Align, Distribute and Space for, and it applies here for the same
+           reason -- a press that does nothing must not cost a press of Ctrl+Z
+           that also does nothing. Cheap: this runs once per subpath per press,
+           never per frame. */
+        if (samePath(live, next)) continue;
         live.nodes = next.nodes;
         live.closed = next.closed;
         done += hit;
@@ -792,6 +827,16 @@ export class Commands {
       if (done) st.selection = emptySelection();
       return done > 0;
     });
+
+    /* Cut every corner it was asked to and moved nothing: the shapes are already
+       rounded to this radius. A success, said in one clause, and no history
+       entry -- the same answer `reorderSelection` gives a shape already at the
+       front. Explaining a refusal here would be explaining the wrong thing,
+       since nothing refused. */
+    if (!done && cut) {
+      this.onMessage?.(`Already rounded to r ${(+use.toFixed(3)).toString()}.`, true);
+      return true;
+    }
 
     if (!done) {
       // One reason, chosen by what actually happened, rather than a list of
@@ -1607,7 +1652,7 @@ export class Commands {
     } catch (err) {
       // Either the library threw, or it handed back geometry that failed the
       // finite check. Both leave the document untouched.
-      return { ok: false, message: `${label} failed: ${(err as Error).message}` };
+      return { ok: false, message: `${label} failed: ${reasonFor(err)}` };
     }
     if (!result) {
       return { ok: false, message: `${label} left nothing. The document is unchanged.` };
@@ -1673,7 +1718,7 @@ export class Commands {
     try {
       result = booleanSubpaths(shape, indices, op);
     } catch (err) {
-      return { ok: false, message: `${label} failed: ${(err as Error).message}` };
+      return { ok: false, message: `${label} failed: ${reasonFor(err)}` };
     }
     if (!result) {
       return { ok: false, message: `${label} left nothing. The document is unchanged.` };

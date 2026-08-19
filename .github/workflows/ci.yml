@@ -36,6 +36,13 @@ jobs:
       - name: Style sweep and link check
         run: npm run check:docs
 
+      # An exception's own text in a sentence a person reads. The rule was
+      # recorded in ARCHITECTURE §53 when one such message was rewritten, and
+      # four more were sitting in the same file at the time -- which is the
+      # argument for a check rather than a fifth rewrite.
+      - name: This editor's own voice
+        run: npm run check:voice
+
       # Reads the stylesheet, so it needs no browser and belongs in this job.
       # It was never run by CI either: the palette could drop below its contrast
       # floors and nothing would say so until somebody re-ran it by hand.

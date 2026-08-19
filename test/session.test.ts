@@ -191,6 +191,21 @@ describe('a session it will not take', () => {
 
   /* A width is a length. A negative one is not refused anywhere downstream and
      reaches `exportSvg` as `stroke-width="-4"`, so this reader is the guard. */
+  /* A preference reads leniently, and lenience is a fallback rather than a
+     throw. `decimals` is a number at any magnitude, so the type check passed it
+     and `toFixed` then threw a RangeError one notification later, inside the
+     refresh that draws the previews. */
+  it('bounds a restored decimals to what the field offers', () => {
+    const s = JSON.parse(written(store)) as { view: Record<string, unknown> };
+    s.view.decimals = 500;
+    const back = read(JSON.stringify(s), view(store));
+    expect(typeof back).not.toBe('string');
+    expect((back as Session).view.decimals).toBe(9);
+
+    s.view.decimals = -1;
+    expect(((read(JSON.stringify(s), view(store))) as Session).view.decimals).toBe(0);
+  });
+
   it('refuses a negative stroke width', () => {
     const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
     s.doc.shapes[0].style.strokeWidth = -4;

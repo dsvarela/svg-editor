@@ -15,6 +15,7 @@
  */
 
 import { translate } from '../core/affine';
+import { SAME_PLACE } from '../core/types';
 import { unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
 import type { Doc, Shape, ViewBox } from '../core/types';
@@ -291,11 +292,6 @@ export function dropShapes(
      front of the paint order, reached by a drag that meant to move nothing.
      `null` is how a caller asks for the end, and it is not the same thing as
      asking for a row that is not there. */
-  /* A `before` that names nothing is a question this cannot answer, and the end
-     of the list is the most destructive of the available guesses: it is the
-     front of the paint order, reached by a drag that meant to move nothing.
-     `null` is how a caller asks for the end, and it is not the same thing as
-     asking for a row that is not there. */
   if (before !== null && !rest.some((c) => childKey(c) === before)) return false;
   const cut = before === null ? rest.length : rest.findIndex((c) => childKey(c) === before);
 
@@ -376,21 +372,10 @@ export function unitsBox(units: Unit[]): Box | null {
   return box;
 }
 
-/**
- * Below this, a unit is where it was asked to be.
- *
- * Not a tolerance on the arrangement: it is the width of the arithmetic. A unit
- * already in place is moved by `target - edgeOf(u.box)`, and adding that back
- * lands within an ulp of the target rather than on it, so a second press
- * computes a delta of about 1e-16 and would otherwise count as a move. Document
- * coordinates are tens to hundreds of units and the serialiser stops at six
- * decimals, so nothing this size can reach a file or a screen.
- */
-const STILL = 1e-9;
 
 /** Move a unit and keep its cached box true. Returns whether it went anywhere. */
 function translateUnit(u: Unit, dx: number, dy: number): boolean {
-  if (Math.abs(dx) < STILL && Math.abs(dy) < STILL) return false;
+  if (Math.abs(dx) < SAME_PLACE && Math.abs(dy) < SAME_PLACE) return false;
   const m = translate(dx, dy);
   for (const sh of u.shapes) transformShape(sh, m);
   u.box = { x0: u.box.x0 + dx, y0: u.box.y0 + dy, x1: u.box.x1 + dx, y1: u.box.y1 + dy };

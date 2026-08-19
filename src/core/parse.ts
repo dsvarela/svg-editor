@@ -47,6 +47,23 @@ export interface Token {
   args: number[];
 }
 
+/**
+ * A failure a person can act on, from whatever was thrown.
+ *
+ * **A library's or an engine's own exception text is not this editor's voice.**
+ * It differs by browser and by version, it is not a sentence, and it names
+ * internals into a status line `docs/STYLE.md` governs. `PathSyntaxError` is
+ * the exception, because it is this project's own and its offset points at text
+ * the person is looking at.
+ *
+ * Here rather than beside a caller, because there were five callers and the
+ * rule was applied to one of them. `tools/voice.mjs` is what keeps it that way.
+ */
+export function reasonFor(err: unknown): string {
+  if (err instanceof PathSyntaxError) return `${err.message} (at ${err.offset})`;
+  return 'it could not be read.';
+}
+
 export class PathSyntaxError extends Error {
   constructor(
     message: string,

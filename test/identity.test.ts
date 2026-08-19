@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
-import { dedupeIds, emptyDoc, emptySelection, findShape, reserveIds, resolveNodes, shapeFromPath } from '../src/model/doc';
+import { dedupeIds, emptyDoc, emptySelection, findShape, nextId, reserveIds, resolveNodes, shapeFromPath } from '../src/model/doc';
 import { nodeIdAt } from './helpers';
 import { breakAt } from '../src/model/ops';
 import type { Doc } from '../src/core/types';
@@ -281,22 +281,30 @@ describe('a document from outside', () => {
     expect(findShape(doc, doc.shapes[1].id)).toBe(doc.shapes[1]);
   });
 
-  /* The order matters and nothing about the types says so. The counters start
-     at zero on a fresh page, so a repair that ran first would mint `shape-1`
-     into a document that already holds one, turning one collision into two. */
+  /* The order matters and nothing about the types says so: a repair that ran
+     before `reserveIds` would mint an id the document already holds.
+
+     Aimed at the id the counter would hand out NEXT, which is the only form of
+     this that can fail. `idSeq` is a module global every earlier test in this
+     file has advanced, so a document holding `shape-1` -- or `shape-9000` --
+     cannot collide with a fresh mint however wrong the order is, and both of
+     those forms passed with `reserveIds` deleted. Asking the counter where it
+     is, and then putting that id in the document, is what makes the ordering
+     the thing under test. */
   it('mints an id the document does not already hold', () => {
+    const at = Number(nextId().split('-')[1]);
+    const nextOut = `shape-${at + 1}`;
+
     const doc = emptyDoc();
-    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(OPEN));
-    doc.shapes[0].id = 'shape-1';
-    doc.shapes[1].id = 'shape-1';
-    doc.shapes[0].subpaths[0].nodes[0].id = 'n1';
-    doc.shapes[1].subpaths[0].nodes[0].id = 'n1';
+    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(OPEN), shapeFromPath(OPEN));
+    doc.shapes[0].id = 'shared';
+    doc.shapes[1].id = 'shared';
+    doc.shapes[2].id = nextOut;
     reserveIds(doc);
 
-    dedupeIds(doc);
-    expect(doc.shapes[1].id).not.toBe('shape-1');
-    expect(collisions(doc)).toHaveLength(0);
-    expect(new Set(doc.shapes.map((s) => s.id)).size).toBe(2);
+    expect(dedupeIds(doc)).toBe(1);
+    expect(new Set(doc.shapes.map((s) => s.id)).size).toBe(3);
+    expect(doc.shapes[1].id).not.toBe(nextOut);
   });
 
   it('leaves a document that is already well formed alone', () => {

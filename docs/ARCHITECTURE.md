@@ -957,8 +957,11 @@ Measured in this build rather than estimated:
 | the tracer and its panel | 6.9 kB | 2.3 kB |
 | the same, with the inlined worker that keeps it off the main thread | not measured raw | **4.2 kB** |
 
-**66 times smaller against everything that shipped**, and 120 times against the
-tracer alone. The third row is the one to quote, and this table used to say "all
+**66 times smaller against everything that shipped**, and 121 times against the
+row above it. Not "against the tracer alone": `SHOPPING-LIST.md` measures the
+tracer on its own at 2.0 kB, and the 2.3 kB row here is the tracer with its
+panel. Naming the row rather than paraphrasing it is the whole point of the
+three rows. The third row is the one to quote, and this table used to say "all
 in" beside the second, which is where a single feature acquired two headline
 multiples with nothing saying which covered what. `SHOPPING-LIST.md` and
 `CLAUDE.md` both quote 4.2 kB.
@@ -2182,9 +2185,13 @@ somebody's whole drawing to lose in a refusal. That is the same judgement §59
 makes about a shape pointing at a group that is not there.
 
 **It runs after `reserveIds` and never before.** The counters start at zero on a
-fresh page, so a repair that ran first would mint `shape-1` into a document that
-already holds one, turning one collision into two. Nothing about the types says
-so, which is why `test/identity.test.ts` states it as a case of its own.
+fresh page, so a repair that ran first would mint into a document that already
+holds the id it is about to hand out. Nothing about the types says so, and the
+first test written for it could not fail: `idSeq` is a module global that every
+earlier test in the file has advanced, so a document holding `shape-1` cannot
+collide with a fresh mint however wrong the order is. The case states itself
+against the id the counter would hand out **next**, asked of the counter, which
+is the only form of it that can go red.
 
 ## 47. A path is a row in the list and not a kind of selection
 
@@ -2303,12 +2310,15 @@ rounded, and on every rectangle drawn with a corner radius: the one control that
 lets you type an exact number could not touch the corners that most wanted one.
 It un-rounds first now, on a copy, exactly as the press does.
 
-The limit is measured on that copy too. An existing fillet has already eaten
-into the sides it sits between, so `sharedCornerRadius` read off the live path
-returns the room left beside the arc rather than the room the corner has: a
-40-unit square rounded to 4 could never be rounded past 16, though its corners
-hold 20. Both halves of this are the same mistake, which is asking a rounded
-path a question that is only meaningful about a sharp one.
+The limit is measured on that copy too, and the number that made the case for
+it was invented. `sharedCornerRadius` asked of a *fully* rounded square returns
+**0**, not a smaller positive limit: every node reports `curved`, so the old
+`if (fits > 0)` skipped the clamp entirely. The configuration where the live
+limit is wrong and non-zero is a **mixed** path -- a 40-unit square with two
+opposite corners rounded to 4 gives 18 where the corners hold 20. The defect is
+real and the worked example first written here was not. Both halves are the same
+mistake, which is asking a rounded path a question that is only meaningful about
+a sharp one.
 
 Everything is by node id rather than by index, for §46's reason twice over:
 un-rounding replaces a pair with one node and rounding replaces one with a pair,
@@ -2477,9 +2487,9 @@ answer than refusing, and a much truer one than spilling silently off one end.
 
 **An arrangement that moves nothing is not an edit.** All five of these used
 `store.edit`, so pressing Align Left three times filed three entries, two of them
-describing a document that did not change. §51 argues this case for the paint
-order and reaches the opposite conclusion for the same button, which is two
-answers to one question. Each of the arrange functions returns whether anything
+describing a document that did not change. §51 argued this case for the paint order and
+reached the other conclusion for a neighbouring button, which was two answers to
+one question. Each of the arrange functions returns whether anything
 moved and the callers use `tryEdit`. The press still reports success: the shapes
 are where it was asked to put them, and nothing went wrong.
 
@@ -2718,8 +2728,8 @@ step that looked like a real reorder.
 Two things were wrong and both are fixed, because either alone leaves the other
 loaded. The caller walks past the rows that are travelling, and it now reads
 which those are off the drag rather than off the `lifted` class -- the walk was
-already written and did nothing, because the class is cleared from every row four
-lines above it. And `dropShapes` refuses a `before` it cannot place instead of
+already written and did nothing, because the class is cleared from every row
+four statements above it. And `dropShapes` refuses a `before` it cannot place instead of
 guessing: `null` is how a caller asks for the end, and that is a different
 question from naming a row that is not there.
 
@@ -3217,8 +3227,20 @@ each had their own copy of the numbers: the generator, the field in the rail,
 and a session being restored. Three copies of a bound are three chances for one
 of them to be widened alone, so `clampCorners` and `clampRatio` are exported and
 the other two call them. The `min` and `max` attributes on the number inputs in
-`index.html` are a fourth copy that cannot import anything, and they are the one
-place that still has to be changed by hand.
+`index.html` are a fourth copy that cannot import anything.
+
+**They are no longer the only such copy, and this sentence used to say they
+were.** `#pngWidth`'s `max` is a hand-kept copy of `PNG_MAX` (§53), and
+`#selW`/`#selH` carry a `min` the command decides. Markup cannot import, so the
+class cannot be closed the way the polygon bounds were; what it can have is one
+register rather than a sentence in whichever section noticed last. This is that
+register:
+
+| Markup | Code it copies |
+|---|---|
+| `#polyCorners` `min`/`max`, `#polyRatio` `min`/`max` | `clampCorners`, `clampRatio` in `core/primitives.ts` |
+| `#pngWidth` `max` | `PNG_MAX` in `io/pixels.ts` |
+| `#selW`/`#selH` `min` | the `value <= 0` refusal in `setSelectionBound` |
 
 ## 64. Two paths of one shape are operands, and not by a flag
 

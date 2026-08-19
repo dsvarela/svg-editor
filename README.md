@@ -44,8 +44,10 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **333.7 kB, 95.7 kB
-gzipped** on 2026-08-19, as `npm run build` reports it. Open `dist/index.html`
+The production build is one file, no external requests: **337.4 kB, 97.1 kB
+gzipped**, measured after the review in
+[`docs/reviews/2026-08-19c.md`](docs/reviews/2026-08-19c.md), as `npm run build`
+reports it. Open `dist/index.html`
 from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
 and 1.9 kB for the inlined worker it runs in, measured by building without it.
@@ -159,8 +161,8 @@ src/
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 1 068 tests in 37 files, 14 585 lines on
-2026-08-19, over parsing, serialising, geometry ops, rendering invariants, SVG
+**Unit and DOM tests**, with `npm test`. 1 110 tests in 37 files, 15 119 lines
+after the review in [`docs/reviews/2026-08-19c.md`](docs/reviews/2026-08-19c.md), over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
 transforms, history, tooltips, node identity, the clipboard, corner fillets,
 groups, arranging shapes, paint order, PNG output, the grid and the primitives. The rendering

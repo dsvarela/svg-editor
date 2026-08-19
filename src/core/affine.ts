@@ -77,3 +77,20 @@ export function invert(m: Mat): Mat | null {
     (m[1] * m[4] - m[0] * m[5]) / d,
   ];
 }
+
+/**
+ * Whether a matrix does nothing.
+ *
+ * Asked by a gesture deciding whether it happened. A drag can move the pointer
+ * and still produce this: a snap can hold the result on the lattice it started
+ * from, and a rotation snapped to fifteen degrees rounds a small turn to none.
+ * The tolerance is the width of the arithmetic rather than a threshold on the
+ * gesture, so a transform a person could see is never called nothing.
+ */
+export const isIdentity = (m: Mat): boolean =>
+  Math.abs(m[0] - 1) < 1e-12 &&
+  Math.abs(m[1]) < 1e-12 &&
+  Math.abs(m[2]) < 1e-12 &&
+  Math.abs(m[3] - 1) < 1e-12 &&
+  Math.abs(m[4]) < 1e-9 &&
+  Math.abs(m[5]) < 1e-9;

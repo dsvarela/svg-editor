@@ -227,18 +227,21 @@ describe('a copy left behind by a refused write', () => {
     expect(s.stale).toBe(false);
   });
 
+  /* Read straight out of storage, with no write in between. Written as
+     forget-then-save-then-load it could not fail: a successful write clears the
+     marker itself, so deleting the `removeItem` from `forget` left the whole
+     suite green. `s.stopped = false` was in it too, implying a latch that
+     `SessionStore` does not own -- `forget()` never sets one. */
   it('is cleared with the session it was about', () => {
-    install();
+    const map = install();
     const s = new SessionStore();
     s.save('{"a":1}');
     s.save('x'.repeat(2_000_001));
-    s.forget();
+    expect(map.get('path.session.v1.stale')).toBe('1');
 
-    s.stopped = false;
-    s.save('{"a":2}');
-    const back = new SessionStore();
-    expect(back.load()).toBe('{"a":2}');
-    expect(back.stale).toBe(false);
+    s.forget();
+    expect(map.get('path.session.v1')).toBeUndefined();
+    expect(map.get('path.session.v1.stale')).toBeUndefined();
   });
 });
 

@@ -2752,8 +2752,9 @@ const scenarios = {
     );
 
     // Leave it inverted, so the screenshot shows the other half of the palette.
+    // `settle`: a theme swap repaints and resizes nothing.
     await page.click('#theme');
-    await laidOut(page);
+    await settle(page);
 
     return {
       opened,
@@ -4356,6 +4357,33 @@ const scenarios = {
     check(/is not a workspace this build can open/.test(out.refused), `the refusal reads "${out.refused}"`);
     check(/3 shapes/.test(await page.textContent('#stats')), 'a refused workspace emptied the document');
 
+    /* A workspace whose shapes interleave a group. §49's contiguity is restored
+       by `Store.edit` after every edit -- and a restore is not an edit, so a
+       file like this stayed broken until some later edit happened to fix it,
+       and an export taken in between wrote one group as two `<g>` under two
+       ids. Built from the bytes this editor just wrote, so the version and the
+       schema are its own and only the order is hostile. */
+    const doc = JSON.parse(text);
+    doc.doc.groups = [{ id: 'g-split', name: 'split', parent: null }];
+    doc.doc.shapes[0].group = 'g-split';
+    doc.doc.shapes[2].group = 'g-split';
+    const interleaved = `${dir}/drive-interleaved.json`;
+    writeFileSync(interleaved, JSON.stringify(doc));
+    await page.setInputFiles('#workspaceFile', interleaved);
+    await settle(page);
+    check(/3 shapes/.test(await page.textContent('#stats')), 'the interleaved workspace did not open');
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await settle(page);
+    const exported = await page.inputValue('#src');
+    await closeSource(page);
+    out.groupsInExport = (exported.match(/<g\b/g) ?? []).length;
+    check(
+      out.groupsInExport === 1,
+      `a restored workspace exported one group as ${out.groupsInExport} <g> elements`,
+    );
+
     /* --- forgetting, which has to survive the next reload to mean anything -- */
     await page.click('#forgetSession');
     await settle(page);
@@ -4402,6 +4430,14 @@ const scenarios = {
     await page.mouse.move(700, 400);
     await page.mouse.up();
     await settle(page);
+    /* The precondition, without which this measures nothing: if the rectangle
+       never landed, the store never notified, `sessions.schedule` was never
+       called, and the flush on the way out has nothing pending -- so the bytes
+       survive whether or not anything protects them. */
+    check(
+      /2 shapes/.test(await page.textContent('#stats')),
+      'the rectangle over the unreadable session was not drawn, so nothing tried to save',
+    );
     await page.reload({ waitUntil: 'networkidle' });
     await settle(page);
     out.keptUnread = await page.evaluate(() => localStorage.getItem('path.session.v1'));
@@ -5555,7 +5591,13 @@ const scenarios = {
     const midRow = await rowBox(1);
     await page.mouse.move(midRow.x + midRow.width / 2, midRow.y + 3);
     await page.mouse.down();
-    await page.mouse.move(midRow.x + midRow.width / 2, midRow.y + 7);
+    /* Seven, not four. `ROW_SLOP` is 4 and the guard is `< ROW_SLOP`, so a
+       four-pixel move starts the drag by one unit of margin: raise the slop, or
+       have the browser coalesce a move, and the press never becomes a drag at
+       all -- at which point both assertions below pass with the defect fully
+       restored. Seven is past the slop with room, and still well above the
+       row's midpoint, which is what makes its own top edge the nearest gap. */
+    await page.mouse.move(midRow.x + midRow.width / 2, midRow.y + 10);
     await page.mouse.up();
     await settle(page);
     out.afterTinyDrag = await painted();
@@ -6442,7 +6484,18 @@ const audit = await page.evaluate(() => {
    * Swept over the attributes that carry numbers rather than over `d` alone,
    * for the reason the swallow check gives: a hand-kept list of element types
    * lets the next kind through and says nothing. */
-  const NUMERIC = ['d', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'points', 'transform'];
+  /* `viewBox` and `stroke-width` are the two that matter most and were the two
+     missing. The camera writes `viewBox` on both SVG roots from raw template
+     interpolation, so a NaN reaching it blanks the entire drawing and the whole
+     overlay at once, silently -- the largest blast radius available and exactly
+     the failure this check exists for. Every overlay stroke is derived from
+     document-units-per-pixel, so a NaN there makes every outline, handle line
+     and box edge invisible while the numbers look fine. */
+  const NUMERIC = [
+    'd', 'viewBox', 'stroke-width', 'opacity',
+    'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
+    'width', 'height', 'points', 'transform',
+  ];
   const broken = [];
   for (const el of document.querySelectorAll('svg, svg *')) {
     for (const name of NUMERIC) {

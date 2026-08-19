@@ -13,7 +13,7 @@
 
 import { identity, mul, rotate, scale as scaleMat, skew, translate } from '../core/affine';
 import type { Mat } from '../core/affine';
-import { parsePath } from '../core/parse';
+import { parsePath, reasonFor } from '../core/parse';
 import { formatNumber, serialisePath } from '../core/serialise';
 import type { SerialiseOptions } from '../core/serialise';
 import { OPACITY_DECIMALS, STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
@@ -170,6 +170,17 @@ function styleProp(el: Element, name: string): string | null {
   return el.getAttribute(name);
 }
 
+/** A presentation opacity as a number, or `null` if it says nothing usable. */
+function opacityValue(raw: string | null): number | null {
+  if (raw === null) return null;
+  const text = raw.trim();
+  // `inherit` resolves to whatever the parent had, which this already carries.
+  if (text === '' || text === 'inherit') return null;
+  const n = parseFloat(text);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(1, Math.max(0, text.endsWith('%') ? n / 100 : n));
+}
+
 /**
  * The style an element draws with, and what had to be thrown away to get it.
  *
@@ -178,12 +189,16 @@ function styleProp(el: Element, name: string): string | null {
  * full opacity has nowhere to go. Silence is the wrong answer there: a fill
  * going from 30% to 100% does not look like a loss, it looks like the wrong
  * picture, and the importer already has a channel for saying what it skipped.
+ *
+ * **Recorded when the value would change something, not when the attribute is
+ * present.** Illustrator and Inkscape write `fill-opacity:1` into the inline
+ * style of nearly every path, and 1 is fully opaque: a warning there reports a
+ * loss that did not happen, on almost every file anyone imports. A warning that
+ * fires when nothing happened is a warning people stop reading, which costs
+ * more than the one real case it was written for.
  */
-function readStyle(el: Element, inherited: Style, dropped: Set<string>): Style {
+function readStyle(el: Element, inherited: Style, dropped: Set<string>, drawn: boolean): Style {
   const s: Style = { ...inherited };
-  for (const name of ['fill-opacity', 'stroke-opacity']) {
-    if (styleProp(el, name) !== null) dropped.add(name);
-  }
   const fill = styleProp(el, 'fill');
   const stroke = styleProp(el, 'stroke');
   const sw = styleProp(el, 'stroke-width');
@@ -191,7 +206,12 @@ function readStyle(el: Element, inherited: Style, dropped: Set<string>): Style {
   const op = styleProp(el, 'opacity');
   if (fill) s.fill = fill;
   if (stroke) s.stroke = stroke;
-  if (sw && Number.isFinite(parseFloat(sw))) s.strokeWidth = parseFloat(sw);
+  /* Clamped at zero, because this is the end of the pipe that produces the
+     value. A negative width is invalid SVG that files nonetheless carry, and
+     the session reader refuses one -- so importing it unguarded made a document
+     this build writes a document this build cannot read back. The reader is not
+     on the path from import to export and could never have prevented that. */
+  if (sw && Number.isFinite(parseFloat(sw))) s.strokeWidth = Math.max(0, parseFloat(sw));
   if (fr === 'evenodd' || fr === 'nonzero') s.fillRule = fr;
   /* Multiplied into what was inherited, which is what the renderer does: a
      `<g opacity="0.5">` holding a path at 0.5 draws it at 0.25. A group carries
@@ -201,10 +221,19 @@ function readStyle(el: Element, inherited: Style, dropped: Set<string>): Style {
      A percentage is legal in CSS and not as a presentation attribute, so
      `parseFloat` alone reads "50%" as 50 and clamps to opaque -- right for the
      attribute, wrong for the inline style `styleProp` also reads. */
-  if (op !== null) {
-    const pct = op.trim().endsWith('%');
-    const n = parseFloat(op);
-    if (Number.isFinite(n)) s.opacity *= Math.min(1, Math.max(0, pct ? n / 100 : n));
+  const own = opacityValue(op);
+  if (own !== null) s.opacity *= own;
+
+  /* After the element is known to be one that becomes a shape, and only for a
+     value below full. `readStyle` runs before the tag dispatch, so recording it
+     here would warn for `<defs>`, `<mask>`, the root `<svg>`, an unparseable
+     `<path>` and a `<text>` that already reports itself skipped -- none of
+     which ever carried a fill this editor lost. */
+  if (drawn) {
+    for (const name of ['fill-opacity', 'stroke-opacity']) {
+      const v = opacityValue(styleProp(el, name));
+      if (v !== null && v < 1) dropped.add(name);
+    }
   }
   return s;
 }
@@ -271,8 +300,11 @@ export function importSvg(text: string): ImportResult {
 
     const own = el.getAttribute('transform');
     const here = own ? mul(m, parseTransform(own)) : m;
-    const style = readStyle(el, inherited, dropped);
     const tag = el.tagName.toLowerCase();
+    /* Whether this element is one whose fill anybody will see. The style is read
+       for every element, because a container passes it down; the dropped-property
+       warning is only true of an element that becomes a shape. */
+    const style = readStyle(el, inherited, dropped, primitiveToPath(el) !== null);
 
     if (tag === 'g' || tag === 'svg' || tag === 'a') {
       /* A `<g>` becomes a group; the outer `<svg>` and an `<a>` do not. The first is
@@ -311,7 +343,7 @@ export function importSvg(text: string): ImportResult {
     try {
       subpaths = parsePath(d);
     } catch (err) {
-      warnings.push(`<${tag}>: ${(err as Error).message}`);
+      warnings.push(`<${tag}>: ${reasonFor(err)}`);
       return;
     }
     if (subpaths.length === 0) return;

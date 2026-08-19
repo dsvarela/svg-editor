@@ -48,11 +48,23 @@ export const PNG_MAX = 8192;
  * Height follows the viewBox's proportions, so the PNG cannot be a differently
  * shaped picture from the canvas. At least one pixel each way: a viewBox flat
  * enough to round to zero would give a canvas no browser will draw into.
+ *
+ * **`PNG_MAX` bounds both sides, because the ceiling is about the canvas and a
+ * canvas has two.** Bounding the requested width alone left the height free: a
+ * 10 by 10000 document at the maximum width asked for 8192 by 8 192 000, which
+ * is 67 000 megapixels against the 300 the ceiling was written to refuse. A tall
+ * document is reduced rather than cropped or squashed, so the proportions above
+ * still hold, and the status line names the size that was actually drawn.
  */
 export function pngSize(vb: ViewBox, width: number): { w: number; h: number } {
-  const w = Math.max(1, Math.round(width));
   const ratio = vb.w > 0 ? vb.h / vb.w : 1;
-  return { w, h: Math.max(1, Math.round(w * ratio)) };
+  let w = Math.max(1, Math.min(PNG_MAX, Math.round(width)));
+  let h = Math.max(1, Math.round(w * ratio));
+  if (h > PNG_MAX) {
+    h = PNG_MAX;
+    w = Math.max(1, Math.round(h / ratio));
+  }
+  return { w, h };
 }
 
 /**

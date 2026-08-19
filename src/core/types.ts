@@ -357,3 +357,19 @@ export const defaultStyle = (): Style => ({
   fillRule: 'nonzero',
   opacity: 1,
 });
+
+/**
+ * Below this, two coordinates are the same place.
+ *
+ * Not a tolerance on any operation: it is the width of the arithmetic. Moving a
+ * point to a target computed from it lands within an ulp of the target rather
+ * than on it, so an operation asked whether it moved anything answers yes to a
+ * residue of about 1e-14 at the scale this editor works at. Document
+ * coordinates are tens to hundreds of units and the serialiser stops at nine
+ * decimals, so nothing this size can reach a file or a screen.
+ *
+ * Shared by `alignNodes`/`distributeNodes` in `model/ops.ts` and by
+ * `translateUnit` in `model/arrange.ts`, which had a copy each with the same
+ * eight-line argument written out twice.
+ */
+export const SAME_PLACE = 1e-9;
