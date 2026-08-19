@@ -586,6 +586,24 @@
               <span class="rlabel">px wide</span>
             </div>
 
+            <!-- An SVG is the drawing. A workspace is the drawing and
+                 everything around it that an SVG has nowhere to put. Both
+                 verbs are here rather than under Add and Save, because
+                 opening one replaces the session and adding an SVG does not,
+                 and filing the two under one heading would say they were the
+                 same kind of act. §59. -->
+            <div class="glabel sub"><span>Workspace</span></div>
+            <div class="grid2">
+              <button class="btn" id="saveWorkspace" type="button" title="Save the drawing and everything around it as one file">Save</button>
+              <button class="btn" id="openWorkspace" type="button" title="Open a workspace file, replacing this session">Open</button>
+            </div>
+            <input type="file" id="workspaceFile" accept=".json,application/json" hidden />
+            <p class="says">The drawing, plus the guides, the camera, the saved styles and every switch. An SVG carries none of those. The backdrop image and the undo history do not go in either.</p>
+
+            <div class="glabel sub"><span>On this device</span><span class="gval" id="autosaveinfo">saving</span></div>
+            <button class="btn wide" id="forgetSession" type="button" title="Remove the saved copy, so the next reload starts fresh">Forget saved work</button>
+            <p class="says" id="autosavewhy">The same workspace, kept in this browser and restored when you come back. It is not a backup: clearing site data removes it.</p>
+
             <!-- How the text is written rather than what is in it: set once,
                  read rarely, so one press away. The same argument as Fill rule
                  inside Style. -->

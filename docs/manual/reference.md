@@ -552,12 +552,56 @@ Everything that moves a drawing in or out of the editor.
 | **Add an SVG** | Read an SVG file and add its shapes to this document |
 | **Download SVG** | Save the whole document as an SVG file |
 | **Download PNG at N px wide** | Save the drawing as a PNG. The height follows the canvas proportions |
+| **Workspace: Save** | Write the whole session to a file |
+| **Workspace: Open** | Read one back, replacing this session |
+| **Forget saved work** | Remove the copy this browser holds |
 | **Output** | How the text is written: see below |
 
 A PNG is transparent wherever nothing is painted, which is what an icon wants.
 The canvas decides its frame, not the drawing, so padding you left around a shape
 is kept. The width runs from 1 to 8192, and the status line says the size it
 wrote.
+
+#### A workspace is not an SVG
+
+An SVG is the drawing. A workspace is the drawing and everything around it: the
+canvas, the camera, the guides, the saved styles, the grid and keyline settings,
+and every switch in the three panels. None of that can go in an SVG, because an
+SVG has nowhere to put it.
+
+**Open replaces the session.** That is the opposite of **Add an SVG**, which adds
+to what is there, and it is why the two sit under different headings. Two
+cameras is not a camera, so there is no coherent way to merge two workspaces.
+Opening one does not go into the undo history: `Ctrl`+`Z` afterwards undoes your
+last edit to the workspace you opened, not the open itself.
+
+**Two things do not go in.** The backdrop image, because it is a picture the
+editor was given rather than one it holds, and the undo history.
+
+#### The copy this browser keeps
+
+The same workspace is written into this browser as you work, and read back when
+you return. The reading is silent when there is nothing there and says so when
+there is: **Picked up where you left off** names how many shapes came back.
+
+The header beside **On this device** says whether it is happening.
+
+| It says | Meaning |
+|---|---|
+| `saving` | The work is being kept |
+| `stopped` | You pressed **Forget saved work**. Nothing is kept until you reload |
+| `not saving` | The browser refused. The sentence under it says which of the two reasons |
+
+**It refuses for two reasons, and neither is a fault in the editor.** Opened from
+a `file://` URL, Chromium gives the page an origin with no storage attached and
+every attempt throws; Firefox allows it. And a drawing past about two megabytes
+of text is more than the space a browser gives one page, so it is refused while
+there is still something to say about it. Both cases name a workspace file as
+the answer, because a file has neither limit.
+
+**It is not a backup.** Clearing site data removes it, a private window never had
+it, and another browser on the same machine has its own. A workspace file is the
+thing you keep.
 
 **Output** is one press away inside the group, because it is set once and read
 rarely. It governs both downloads and the previews.

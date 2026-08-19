@@ -2694,3 +2694,80 @@ Two tiles where shapes get six, and the sentence under them says why: a node is 
 point with no width, so equal gaps, equal centres and equal edges are one move
 rather than three. Stating the count is the alternative to a reader assuming four
 tiles are missing.
+
+## 59. Two things a person means by "save my work", and one reader for both
+
+The document lived in memory and nowhere else. A reload lost it, and the editor
+said nothing before or after.
+
+**An SVG is not the answer, because it is only half the work.** It carries the
+drawing. It has nowhere to put the camera, the guides, the saved styles, the
+grid step, the keylines or any of the twenty switches across the three panels,
+and those are what a session is: not what you drew, but where you were.
+
+So there are two formats and one reader. `io/session.ts` turns the editor into
+one JSON value and back. `io/storage.ts` writes that on a timer into
+`localStorage`; **Workspace: Save** writes the same bytes to a file. Two writers
+of one format would disagree the first time either was extended, and the
+disagreement surfaces as a file that opens in one of them.
+
+### Nothing about the read trusts what it is given
+
+`read` rebuilds every object field by field and returns a sentence for anything
+that is the wrong shape. That is stricter than it looks necessary, and the reason
+is where it runs: at startup, on whatever is in storage, before a single pixel is
+on screen. A restore that threw would leave a blank editor with no message, and
+it would do it on every load until somebody cleared the entry by hand.
+
+**The drawing reads strictly and the preferences read leniently.** A coordinate
+that is not a number refuses the whole file; a switch that is missing falls back
+to what the running editor already thinks. A wrong boolean costs one press. A
+wrong coordinate is somebody's drawing. And a build that adds a switch would
+otherwise refuse every file written before it.
+
+`version` is checked against one number and a mismatch is refused rather than
+guessed at. A field that changed meaning reads as perfectly valid and restores
+the wrong thing, which is the failure with no symptom.
+
+### The counters are younger than the document
+
+`nextId` and `nextNodeId` are module-level and start at zero on a fresh page. A
+restored document arrives holding `shape-4` and `n12`, and the next shape drawn
+takes `shape-1` for the second time. That is §46's collision -- an id naming two
+things is two things no selection can separate -- reached from a direction §46
+does not cover, because nothing was copied. `reserveIds` walks the incoming
+document and moves both counters past it.
+
+The symptom is not an exception. It is one click on one row selecting two shapes,
+and the browser scenario checks for exactly that rather than for the ids.
+
+### Order is the whole of the restore
+
+Every checkbox in the rail sets itself from `store.state` once, at the moment it
+is bound. Nothing re-syncs them: the subscriber redraws the canvas and the
+readouts, not the controls. So the restore runs immediately after the store is
+built and before any of the wiring, and a restore that ran later would put the
+drawing back while leaving fourteen switches showing the state it replaced.
+
+Two things then have to know a restore happened. The startup `fit` is skipped,
+because a restored camera is where somebody left the view and fitting the drawing
+over it throws away the one part of the session that took a gesture to set. And
+the `pointer: coarse` default for Touch buttons is skipped, because a media query
+is not entitled to overrule an answer a person gave.
+
+### It says when it is not saving
+
+Opened from a `file://` URL, Chromium gives the page an opaque origin and every
+`localStorage` access throws. A build of this editor is one file you double-click,
+so that is not an edge case. A tick that was always on would be a lie exactly
+where it matters most, so the readout beside **On this device** reads `saving`,
+`stopped` or `not saving`, and the sentence under it names which of the two
+reasons applies. The quota is the other one: a drawing past two megabytes of text
+is refused while there is still something to say about it, rather than silently
+stopping.
+
+**Forget saved work latches rather than storing a preference.** Leaving the
+subscriber running would write the session back inside the second and make the
+button look broken. Storing the choice would turn one press into a promise the
+button does not make. It lasts until the reload, which is when a fresh start
+takes effect anyway.

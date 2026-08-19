@@ -91,7 +91,7 @@ Four pieces are in place, all from 2026-08-13:
   the overlay sets `touch-action: none`.
 - **Size.** A `@media (pointer: coarse)` block at the end of
   `src/ui/styles.css` raises `--h` and the handful of controls that do not take
-  their height from it, so **every one of the 218 controls is at least 44 px to
+  their height from it, so **every one of the 221 controls is at least 44 px to
   a finger, and none of them changed for a mouse**.
 - **Zoom.** Two fingers zoom about the point between them and pan as that point
   moves: `Controller.pinchMove`.
@@ -113,6 +113,14 @@ the rail redesign left it eleven; it skipped disabled ones, which are laid out
 at the size they will have when they are enabled; and its key for a control
 with no id collided, which quietly merged 28 of them into other rows. On the
 markup of that date it had been reporting 37 controls where there were 166.
+
+**A reload is not a reset.** The session is written to `localStorage` on a
+timer and read back on load, and the page flushes it on `pagehide` -- so
+`localStorage.clear()` from a harness does not hold across a reload, because the
+page writes it straight back on the way out. A scenario that wants a fresh
+editor presses **Forget saved work**, which latches for the rest of the session.
+`applyTwoShapes` and `session` are the two that reload. §59 of
+`docs/ARCHITECTURE.md` has the design.
 
 ## Tests
 

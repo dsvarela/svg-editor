@@ -622,6 +622,13 @@ const scenarios = {
     const hintUnscoped = await page.textContent('#srchint');
 
     // Now with one shape selected, `d` mode should touch only that shape.
+    /* Forgotten first, because a reload is not a reset any more: the session is
+       written to storage as you work and read back on load, so this would open
+       on the three shapes above rather than on the starter. §59.
+       The editor's own button rather than `localStorage.clear()`, which does not
+       hold: the page flushes the session on `pagehide`, so a reload writes it
+       straight back over anything the harness removed. Forgetting latches. */
+    await page.evaluate(() => document.querySelector('#forgetSession').click());
     await page.reload({ waitUntil: 'networkidle' });
     await page.click('#tool button[data-v="pen"]');
     const mk2 = await mk(page);
@@ -3822,6 +3829,190 @@ const scenarios = {
     check((await boxes()).length === 2, 'undo did not take back the whole offset');
 
     return { before: before[0], after, status };
+  },
+
+  /**
+   * The work survives a reload, and a workspace file survives a round trip.
+   *
+   * The reader is unit-tested against strings it writes itself. What only a
+   * browser has is the reload: `localStorage`, a second page load, and a wiring
+   * order that decides whether fourteen checkboxes agree with the state they
+   * were restored from. Every one of those was correct in the unit tests and
+   * could still have been wrong here.
+   *
+   * The id collision is the failure worth catching. Both counters start at zero
+   * on a fresh page, so a restored document brings ids the editor is about to
+   * hand out again, and the first symptom is not an error -- it is one click
+   * selecting two shapes.
+   */
+  async session(page, check) {
+    const out = {};
+    const dir = process.env.SCRATCH ?? '/tmp';
+    const { writeFileSync } = await import('node:fs');
+    await page.evaluate(() => localStorage.clear());
+
+    /* Distinctive in four different parts of the state, because each one is
+       restored by a different line and three of them would have gone unnoticed
+       behind the drawing coming back. */
+    await tab(page, 'doc');
+    await page.fill('#guideAt', '33');
+    await page.click('#guideAddV');
+    await page.check('#showKeylines');
+    await page.fill('#decimals', '1');
+    await settle(page);
+
+    await page.click('#tool button[data-v="rect"]');
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(820, 470);
+    await page.mouse.up();
+    await settle(page);
+
+    /* Moved off the fit, which is the only way the camera check can fail: the
+       rectangle was drawn inside the starter's own bounds, so a startup `fit`
+       would land on exactly the camera this scenario had and prove nothing. */
+    await page.click('#zoomin');
+    await page.click('#zoomin');
+    await settle(page);
+
+    const read = async () => ({
+      stats: (await page.textContent('#stats')).trim(),
+      guides: (await page.textContent('#guideinfo')).trim(),
+      keylines: await page.isChecked('#showKeylines'),
+      decimals: await page.inputValue('#decimals'),
+      d: await page.$eval('.artwork path:last-child', (el) => el.getAttribute('d')),
+      camera: (await page.textContent('#zoomval')).trim(),
+    });
+    out.before = await read();
+    check(/2 shapes/.test(out.before.stats), `before the reload: "${out.before.stats}"`);
+
+    /* The write is on a timer, so this waits for the entry rather than for a
+       number of milliseconds. The key is the storage module's, spelled out
+       here on purpose: a scenario that read it from the page would agree with
+       whatever the page did, including nothing. */
+    await page.waitForFunction(() => localStorage.getItem('path.session.v1') !== null);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    await tab(page, 'doc');
+    out.after = await read();
+
+    check(out.after.stats === out.before.stats, `after the reload: "${out.after.stats}"`);
+    check(out.after.d === out.before.d, `the rectangle came back as "${out.after.d}"`);
+    check(out.after.guides === out.before.guides, `the guides read "${out.after.guides}"`);
+    check(out.after.keylines === true, 'Keylines came back off');
+    check(out.after.decimals === '1', `Decimals came back as ${out.after.decimals}`);
+    /* The camera is the one piece a `fit` on startup would have thrown away,
+       and it is set by a gesture rather than by a control, so nothing else
+       would notice it going. */
+    check(out.after.camera === out.before.camera, `the zoom reads ${out.after.camera}, was ${out.before.camera}`);
+    out.opening = (await page.textContent('#status')).trim();
+    check(/Picked up where you left off/.test(out.opening), `the page opened saying "${out.opening}"`);
+
+    /* An id the restored document already holds must not be handed out again.
+       The symptom is not an exception: `resolveNodes` walks every shape, so one
+       id naming two shapes is one row's click selecting both of them. */
+    await page.click('#tool button[data-v="rect"]');
+    await page.mouse.move(400, 560);
+    await page.mouse.down();
+    await page.mouse.move(500, 640);
+    await page.mouse.up();
+    await settle(page);
+    check(/3 shapes/.test(await page.textContent('#stats')), 'the third rectangle was not drawn');
+    await tab(page, 'shape');
+    /* Cleared first: what was just drawn is selected, so a collision would be
+       invisible behind the selection the draw left. */
+    await page.keyboard.press('Escape');
+    await settle(page);
+    await page.click('#shapelist li.shape:last-child');
+    await settle(page);
+    const picked = await page.$$eval('#shapelist li.shape[aria-selected="true"]', (els) => els.length);
+    check(picked === 1, `clicking one row selected ${picked} shapes, so an id names two of them`);
+
+    /* --- the workspace file, which is the same bytes written somewhere else - */
+    await page.evaluate(() => {
+      const made = URL.createObjectURL.bind(URL);
+      window.__blobs = [];
+      URL.createObjectURL = (b) => {
+        window.__blobs.push(b);
+        return made(b);
+      };
+    });
+    await tab(page, 'doc');
+    await page.click('#saveWorkspace');
+    await page.waitForFunction(() => window.__blobs.length > 0);
+    const text = await page.evaluate(() => window.__blobs[window.__blobs.length - 1].text());
+    out.workspaceBytes = text.length;
+    check(text.length > 200, `the workspace file is ${text.length} bytes`);
+
+    // Something to lose, so opening it back has an observable answer.
+    await page.click('#guideClear');
+    await settle(page);
+    check(/none/.test(await page.textContent('#guideinfo')), 'Clear guides left one behind');
+
+    const wfile = `${dir}/drive-workspace.json`;
+    writeFileSync(wfile, text);
+    await page.setInputFiles('#workspaceFile', wfile);
+    await settle(page);
+    out.opened = (await page.textContent('#status')).trim();
+    check(/^Opened drive-workspace\.json/.test(out.opened), `opening it said "${out.opened}"`);
+    check(
+      (await page.textContent('#guideinfo')).trim() === out.before.guides,
+      'the guide did not come back with the workspace',
+    );
+    check(/3 shapes/.test(await page.textContent('#stats')), 'the workspace opened the wrong drawing');
+
+    // A file that is not one is refused by name, and changes nothing.
+    const bad = `${dir}/drive-workspace-bad.json`;
+    writeFileSync(bad, '{"version":1,"doc":{"shapes":"no"}}');
+    await page.setInputFiles('#workspaceFile', bad);
+    await settle(page);
+    out.refused = (await page.textContent('#status')).trim();
+    check(/is not a workspace this build can open/.test(out.refused), `the refusal reads "${out.refused}"`);
+    check(/3 shapes/.test(await page.textContent('#stats')), 'a refused workspace emptied the document');
+
+    /* --- forgetting, which has to survive the next reload to mean anything -- */
+    await page.click('#forgetSession');
+    await settle(page);
+    check(
+      (await page.textContent('#autosaveinfo')).trim() === 'stopped',
+      'Forget saved work left the readout saying it was still saving',
+    );
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    out.fresh = (await page.textContent('#stats')).trim();
+    check(/1 shape/.test(out.fresh), `after forgetting and reloading: "${out.fresh}"`);
+
+    /* A browser that refuses storage, which is the case the shopping-list entry
+       was mostly about: opened from `file://` Chromium gives the page an opaque
+       origin and every access throws. Faked here rather than served from a real
+       `file://` URL, because the engine that does this is not the one these
+       scenarios run on -- what is being checked is that the editor says so
+       instead of showing a reassuring readout with nothing behind it.
+       Last, because an init script stays for every later navigation. */
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get() {
+          throw new Error('SecurityError: storage is not available');
+        },
+      });
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    await tab(page, 'doc');
+    check(/1 shape/.test(await page.textContent('#stats')), 'a blocked storage did not start clean');
+    out.blocked = {
+      info: (await page.textContent('#autosaveinfo')).trim(),
+      why: (await page.textContent('#autosavewhy')).trim(),
+    };
+    check(out.blocked.info === 'not saving', `a blocked storage reads "${out.blocked.info}"`);
+    check(
+      /will not let a page opened from a file keep anything/.test(out.blocked.why),
+      `the reason reads "${out.blocked.why}"`,
+    );
+
+    return out;
   },
 
   /**

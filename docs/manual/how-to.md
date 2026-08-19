@@ -492,9 +492,36 @@ In **Path data** mode with one shape selected, Apply updates that shape. With
 nothing selected it replaces the document, and the hint under the box tells you
 which is about to happen.
 
+## Keep the work between sessions
+
+You do not have to do anything. The editor writes the session into this browser
+as you go and reads it back when you return, and the page says **Picked up where
+you left off** when it has.
+
+Check the header beside **On this device**, in the **File** group of the
+**Document** tab. It reads `saving` when that is happening and `not saving` when
+the browser refused, which it does for a page opened straight off disk in Chrome
+and for a drawing past about two megabytes of text.
+
+**This is not a backup.** Clearing site data removes it, and another browser on
+the same machine has its own. For anything you want to keep, press **Save** under
+**Workspace** and put the file somewhere.
+
+## Save the session, not only the drawing
+
+Press **Save** under **Workspace**, in the **File** group.
+
+An SVG carries the drawing. A workspace carries the drawing and the session
+around it: the canvas, the camera, the guides, the styles you saved, and every
+switch in the three panels. Press **Open** to read one back.
+
+Opening a workspace replaces what you have. That is the difference between it and
+**Add an SVG**, which adds. The backdrop image does not go in, so a traced
+reference has to be loaded again.
+
 ## Save the drawing as a PNG
 
-Open the **Document** tab, then the **PNG** group. Type the width you want and
+Open the **Document** tab, then the **File** group. Type the width you want and
 press **Download PNG**.
 
 The height follows the canvas, so a 100 by 50 canvas at 512 wide gives a 512 by
@@ -516,8 +543,8 @@ rounding spoil a curve before you save a file with it in.
 
 ## Get the smallest possible output
 
-In the **Output** panel, set **Decimals** as low as the drawing tolerates and
-tick **Minify**.
+Open **Output**, inside the **File** group, set **Decimals** as low as the
+drawing tolerates and tick **Minify**.
 
 Decimals rounds the numbers, which does change the geometry, so check the
 drawing afterwards. Minify only changes the spelling: it drops separators where

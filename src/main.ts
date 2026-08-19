@@ -13,11 +13,15 @@ import {
   findGroup,
   findShape,
   groupChain,
+  reserveIds,
   selectedRefs,
   selectedShapes,
   shapeFromPath,
   shapesInGroup,
 } from './model/doc';
+import { encode, read as readSession, toSession, whatIsMissing } from './io/session';
+import type { Session } from './io/session';
+import { SessionStore } from './io/storage';
 /* Aliased: the DOM's own `Selection` is a global type, and an unaliased import
    here shadows it in a file that also uses `getSelection`. */
 import type { Selection as Sel } from './model/doc';
@@ -70,6 +74,69 @@ const commands = new Commands(store, () => controller.busy);
 bindKeys(store, controller, commands);
 const rulers = new Rulers($('#rulerH') as unknown as SVGSVGElement, $('#rulerV') as unknown as SVGSVGElement);
 controller.attachRulers(rulers.h, rulers.v);
+
+/* --------------------------------------------------------------- session */
+
+/**
+ * The session, restored before anything else reads the store.
+ *
+ * Order is the whole of this. Every checkbox below sets itself from
+ * `store.state` once, at the moment it is bound, and never again -- the
+ * subscriber redraws the canvas and the readouts, not the controls. So a
+ * restore that ran after the wiring would put the drawing back and leave
+ * fourteen switches showing the state it replaced.
+ *
+ * The starter document is still built above and still thrown away here when
+ * there is something to restore. Building it either way costs one parse and
+ * keeps the two paths from diverging: a first visit and a failed restore land
+ * in exactly the same editor.
+ */
+const sessions = new SessionStore();
+
+function applySession(sn: Session): void {
+  reserveIds(sn.doc);
+  store.update((s) => {
+    s.doc = sn.doc;
+    s.camera = { ...sn.camera };
+    s.guides = sn.guides;
+    s.palette = sn.palette;
+    /* Not restored: it is where you had got to, not how you work, and putting
+       handles on screen nobody asked for is a worse first frame than none. */
+    s.selection.shapes.clear();
+    s.selection.nodes.clear();
+    s.sourceError = null;
+    Object.assign(s, sn.view);
+  });
+}
+
+/** Held until the status line exists, which is after the panels are wired. */
+let opening: { message: string; ok: boolean } | null = null;
+/* Whether a restore supplied the camera and the switches, which two later
+   decisions turn on: the opening `fit` would throw the camera away, and the
+   coarse-pointer default for Touch buttons would overwrite a restored answer. */
+let restored = false;
+
+{
+  const text = sessions.load();
+  if (text !== null) {
+    const r = readSession(text, toSession(store.state).view);
+    if (typeof r === 'string') {
+      /* Discarded rather than kept: it cannot be read by this build and will
+         not become readable, so leaving it there means refusing the same file
+         on every load and never saving over it. */
+      sessions.forget();
+      opening = { message: `Your saved work could not be read: ${r}. It has been discarded.`, ok: false };
+    } else {
+      applySession(r);
+      restored = true;
+      const n = r.doc.shapes.length;
+      opening = {
+        message: `Picked up where you left off: ${n} shape${n === 1 ? '' : 's'}, and the guides and switches with them.`,
+        ok: true,
+      };
+    }
+  }
+}
 
 /* ------------------------------------------------------------------ theme */
 
@@ -325,8 +392,13 @@ bindCheck('#snapAngles', 'snapToAngles');
    `pointer: coarse` is the primary input being imprecise, which is the same
    condition the 44px targets in `styles.css` answer to: those buttons exist for
    a finger, and a finger has no Ctrl+C. A mouse can turn them on here and a
-   phone can turn them off; neither is guessed at twice. */
-store.update((s) => (s.touchButtons = window.matchMedia('(pointer: coarse)').matches));
+   phone can turn them off; neither is guessed at twice.
+
+   Guessed only on a first visit: a restored session already carries the answer
+   somebody gave, and a media query is not entitled to overrule it. */
+if (!restored) {
+  store.update((s) => (s.touchButtons = window.matchMedia('(pointer: coarse)').matches));
+}
 bindCheck('#touchButtons', 'touchButtons');
 
 /* Angular snap's three numbers. The step is clamped above zero because a step
@@ -1429,6 +1501,125 @@ on('#download', () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+
+/* ------------------------------------------------------- saving the session */
+
+/**
+ * Hand a string to the browser as a file. Three downloads did this by hand.
+ *
+ * The revoke is immediate, which reads wrong and is right: the click has
+ * already started the download and holds its own reference to the blob, so
+ * freeing the URL frees the name and not the bytes. §53 makes the same point
+ * about the PNG, where the scenario reads the blob back after this has run.
+ */
+function download(text: string, name: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+on('#saveWorkspace', () => {
+  download(encode(toSession(store.state)), 'workspace.json', 'application/json');
+  const gone = whatIsMissing(store.state);
+  say(gone ? `Saved the workspace. It does not carry ${gone}.` : 'Saved the workspace.', true);
+});
+
+const workspaceFile = $('#workspaceFile') as HTMLInputElement;
+on('#openWorkspace', () => workspaceFile.click());
+
+/**
+ * Open a workspace, replacing the session.
+ *
+ * Replaces rather than adds, which is the opposite of what **Add an SVG** does
+ * two rows above it, and the reason the two are under different headings. A
+ * workspace is a whole session -- the camera, the guides, every switch -- and
+ * there is no coherent way to merge two of those. Two cameras is not a camera.
+ *
+ * What it does not do is put the old session in the history. `Ctrl`+`Z` after
+ * this opens the drawing this one replaced would be undoing a file open, and
+ * the history is a stack of edits to one document rather than a stack of
+ * documents. The message says the session was replaced so that is not a
+ * surprise.
+ */
+workspaceFile.addEventListener('change', () => {
+  const f = workspaceFile.files?.[0];
+  workspaceFile.value = '';
+  if (!f) return;
+  void f.text().then(
+    (text) => {
+      const r = readSession(text, toSession(store.state).view);
+      if (typeof r === 'string') {
+        say(`${f.name} is not a workspace this build can open: ${r}.`, false);
+        return;
+      }
+      applySession(r);
+      loadedName = f.name;
+      const n = r.doc.shapes.length;
+      say(`Opened ${f.name}: ${n} shape${n === 1 ? '' : 's'}, and the session around them.`, true);
+    },
+    (err: unknown) => say(`Could not read ${f.name}: ${String(err)}`, false),
+  );
+});
+
+/**
+ * Keep a copy in this browser, so a reload does not lose the work.
+ *
+ * On a timer rather than on every notification: the store notifies once per
+ * notch of a drag, and serialising a document sixty times a second is the kind
+ * of autosave people go looking for the switch to turn off. `flush` on the way
+ * out is what makes the last edit before a close the one that is kept, since
+ * that is the edit still sitting in the timer.
+ *
+ * `pagehide` rather than `beforeunload`: the second is ignored on iOS and fires
+ * a dialog nobody wants on the rest. `visibilitychange` catches the tab being
+ * switched away from, which on a phone is how a page usually dies.
+ */
+store.subscribe(() => sessions.schedule(() => encode(toSession(store.state))));
+window.addEventListener('pagehide', () => sessions.flush());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') sessions.flush();
+});
+
+on('#forgetSession', () => {
+  sessions.forget();
+  /* Stopped, not paused: leaving the subscriber running would write the
+     session back within the second and make the button look broken. It comes
+     back on the next reload, which is also when a person would expect a fresh
+     start to have taken effect. */
+  sessions.stopped = true;
+  say('Forgotten. This browser holds no copy, and none will be kept until you reload.', true);
+  refreshSaveState();
+});
+
+const autosaveInfo = $('#autosaveinfo');
+const autosaveWhy = $('#autosavewhy');
+
+/**
+ * Say whether the work is being kept, and never say it is when it is not.
+ *
+ * The whole point of the shopping-list entry this answers: opened from
+ * `file://`, Chromium gives the page an opaque origin and every `localStorage`
+ * access throws, so a tick that is always on would be a lie exactly where it
+ * matters most. The reason is named, because "not saving" with no cause reads
+ * as a bug in the editor rather than a rule of the browser.
+ */
+function refreshSaveState(): void {
+  const state = sessions.stopped ? 'stopped' : sessions.blocked;
+  autosaveInfo.textContent =
+    state === null ? 'saving' : state === 'stopped' ? 'stopped' : 'not saving';
+  autosaveInfo.className = state === null ? 'gval' : 'gval warn';
+  autosaveWhy.textContent =
+    state === null
+      ? 'The same workspace, kept in this browser and restored when you come back. It is not a backup: clearing site data removes it.'
+      : state === 'stopped'
+        ? 'Nothing is being kept until you reload. Save a workspace file if you want this drawing to survive.'
+        : state === 'too-big'
+          ? 'This drawing is too large for the space a browser gives a page. Save a workspace file instead.'
+          : 'This browser will not let a page opened from a file keep anything. Save a workspace file instead.';
+}
 
 /* -------------------------------------------------------------- backdrop */
 
@@ -3118,9 +3309,17 @@ for (const help of document.querySelectorAll<HTMLButtonElement>('button.ghelp'))
 
 installTooltips();
 
+sessions.onState = refreshSaveState;
+refreshSaveState();
+
 requestAnimationFrame(() => {
   store.update((s) => {
     s.camera = fitAspect(s.camera, canvas.overlay);
   });
-  fit();
+  /* A restored camera is where somebody left the view, so fitting the drawing
+     over the top of it would throw away the one piece of the session that took
+     a gesture to set. The aspect correction above still runs, because the
+     window is a different shape from the one that saved it. */
+  if (!restored) fit();
+  if (opening) say(opening.message, opening.ok);
 });

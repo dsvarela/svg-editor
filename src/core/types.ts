@@ -184,6 +184,21 @@ let nodeSeq = 0;
 /** A fresh node identity. Unique within the session, and meaningless outside it. */
 export const nextNodeId = (): string => `n${++nodeSeq}`;
 
+/**
+ * Move the counter past an id that arrived from outside this session.
+ *
+ * The counter starts at zero on a fresh page, so a document restored from
+ * storage or opened from a workspace file brings ids the counter is about to
+ * hand out again. The first node drawn after a restore would be `n1` for the
+ * second time, and §46's rule is that an id naming two nodes is two nodes no
+ * selection can separate. `reserveIds` in `model/doc.ts` walks a whole document
+ * through this and its own counter.
+ */
+export function reserveNodeId(id: string): void {
+  const m = /^n(\d+)$/.exec(id);
+  if (m) nodeSeq = Math.max(nodeSeq, Number(m[1]));
+}
+
 /** Convenience constructor; most nodes are born with no handles. */
 export const makeNode = (pt: Pt, hIn: Pt | null = null, hOut: Pt | null = null): PathNode => ({
   id: nextNodeId(),

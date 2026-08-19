@@ -4,12 +4,37 @@
 
 import { cubicBBox, unionBox } from '../core/bezier';
 import type { Box } from '../core/bezier';
-import { defaultStyle, nextNodeId, segmentAsCubic, segmentCount } from '../core/types';
+import { defaultStyle, nextNodeId, reserveNodeId, segmentAsCubic, segmentCount } from '../core/types';
 import type { Doc, Group, PathNode, Pt, Shape, Style, Subpath } from '../core/types';
 import { parsePath } from '../core/parse';
 
 let idSeq = 0;
 export const nextId = (prefix = 'shape'): string => `${prefix}-${++idSeq}`;
+
+/**
+ * Move both counters past every id in a document that came from outside.
+ *
+ * Called once on whatever a restore or a workspace file hands over, before the
+ * store gets it. Without it the counters are still at zero and the next shape
+ * drawn takes an id the document is already using, which is §46's defect
+ * arriving by a route §46 does not cover: nothing was copied, the collision came
+ * from the counter being younger than the document.
+ *
+ * Reads the trailing number rather than the whole id, because `nextId` spells
+ * one `prefix-n` and the prefix varies. An id in any other shape is left alone:
+ * it cannot collide with `prefix-n`, so there is nothing to reserve.
+ */
+export function reserveIds(doc: Doc): void {
+  const reserve = (id: string): void => {
+    const m = /-(\d+)$/.exec(id);
+    if (m) idSeq = Math.max(idSeq, Number(m[1]));
+  };
+  for (const s of doc.shapes) {
+    reserve(s.id);
+    for (const sp of s.subpaths) for (const n of sp.nodes) reserveNodeId(n.id);
+  }
+  for (const g of doc.groups ?? []) reserve(g.id);
+}
 
 /** `style` defaults to the built-in one; callers pass the editor's current one. */
 export function makeShape(subpaths: Subpath[], name?: string, style?: Style): Shape {
