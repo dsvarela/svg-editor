@@ -5142,6 +5142,7 @@ const scenarios = {
       'one undo did not take the drag back',
     );
 
+
     /* Past a group, not into it. The two remaining shapes are grouped, so the
        shape at the back has to clear both of them in one step or the group's run
        is broken and the export writes two `<g>`. */

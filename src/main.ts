@@ -2265,7 +2265,17 @@ const endRowDrag = (drop: boolean): void => {
   dropLine.remove();
   dragged = true;
   if (!drop) return;
-  const before = d.at < d.rows.length ? rowKey(d.rows[d.at]) : null;
+  /* The first row at or after the gap that is NOT being dragged. `dropShapes`
+     looks its key up among the rows that are STAYING, so naming a row that is
+     itself moving finds nothing, and the not-found fallback drops the selection
+     at the end of the list. Aiming at a lifted row's own edge -- which is what
+     a drag of a few pixels does -- therefore sent the selection to the front of
+     the paint order instead of leaving it where it was, in one undoable step
+     that looked like a real reorder. `null` means the end, which is what it
+     already meant when the gap was past the last row. */
+  let at = d.at;
+  while (at < d.rows.length && d.rows[at].classList.contains('lifted')) at++;
+  const before = at < d.rows.length ? rowKey(d.rows[at]) : null;
   commands.dropSelection(d.parent, before);
 };
 

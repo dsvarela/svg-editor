@@ -831,3 +831,55 @@ describe('the selection box as numbers', () => {
     expect(ys).toEqual([4, 4, 10, 10]);
   });
 });
+
+/**
+ * The gap a drop aims at, when the row that owns it is itself being dragged.
+ *
+ * `dropShapes` takes its index in the rows that are STAYING, which is right --
+ * counting in the whole list puts a row dragged downward one place short. But it
+ * means the key it is given has to be a row that stays. The shape list passed
+ * the row at the gap whether or not that row was one of the lifted ones, so
+ * `findIndex` returned -1 and the not-found fallback landed the selection at the
+ * end of the list.
+ *
+ * These pin `dropShapes`' half of the contract: a `before` naming a moving row
+ * is the caller's mistake, so the caller is where the fix went, and these say
+ * what the function does with a key that IS still there.
+ */
+describe('dropping before a row that stays', () => {
+  const four = (): Doc => {
+    const doc = emptyDoc();
+    for (const n of ['A', 'B', 'C', 'D']) doc.shapes.push(shapeFromPath('M0 0 L1 1', n));
+    return doc;
+  };
+  const order = (d: Doc): string => d.shapes.map((s) => s.name).join('');
+  const idOf = (d: Doc, n: string): string => d.shapes.find((s) => s.name === n)!.id;
+
+  it('puts the selection before the named row', () => {
+    const d = four();
+    dropShapes(d, new Set([idOf(d, 'D')]), null, idOf(d, 'B'));
+    expect(order(d)).toBe('ADBC');
+  });
+
+  it('puts it at the end when the gap is past the last row', () => {
+    const d = four();
+    dropShapes(d, new Set([idOf(d, 'A')]), null, null);
+    expect(order(d)).toBe('BCDA');
+  });
+
+  it('moves a multi-row selection together, keeping their order', () => {
+    const d = four();
+    dropShapes(d, new Set([idOf(d, 'A'), idOf(d, 'C')]), null, idOf(d, 'D'));
+    expect(order(d)).toBe('BACD');
+  });
+
+  /* The shape of the bug, stated against the function rather than the caller:
+     a key that names nothing among the staying rows is the case whose fallback
+     was silently reached. It still falls back -- that is the honest answer for
+     a key it cannot place -- and the caller no longer produces one. */
+  it('falls back to the end for a key that is not among the rows staying', () => {
+    const d = four();
+    dropShapes(d, new Set([idOf(d, 'B')]), null, idOf(d, 'B'));
+    expect(order(d)).toBe('ACDB');
+  });
+});
