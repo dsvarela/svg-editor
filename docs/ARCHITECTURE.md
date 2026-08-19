@@ -954,10 +954,17 @@ Measured in this build rather than estimated:
 | | raw | gzipped |
 |---|---|---|
 | `@visioncortex/vtracer`, WASM | 668.0 kB | 278.3 kB |
-| auto-trace as built here, all in | 6.9 kB | **2.3 kB** |
+| the tracer and its panel | 6.9 kB | 2.3 kB |
+| the same, with the inlined worker that keeps it off the main thread | not measured raw | **4.2 kB** |
 
-120 times smaller, and the larger number would have arrived base64'd inside the
-single HTML file whether anyone traced anything or not.
+**66 times smaller against everything that shipped**, and 120 times against the
+tracer alone. The third row is the one to quote, and this table used to say "all
+in" beside the second, which is where a single feature acquired two headline
+multiples with nothing saying which covered what. `SHOPPING-LIST.md` and
+`CLAUDE.md` both quote 4.2 kB.
+
+Either way the larger number would have arrived base64'd inside the single HTML
+file whether anyone traced anything or not.
 
 Measured by removing the feature from a clone of the tree and rebuilding. The
 figure first published here was 5.6 kB / 2.0 kB with the explanation that it
@@ -1879,8 +1886,10 @@ Recorded because a document listing only the wins is not worth reading.
 segments into one rescales the surviving handles, which preserves the end
 tangents and nothing else. On an S-curve, where the deleted node *is* the
 direction change, no single cubic can replace two. Measured maximum deviation
-is **7.55 on an 80-unit span**. Two tests assert this is both non-zero and
-bounded, rather than one test asserting a flattering number.
+is **7.55 on an 80-unit span**. One test holds both halves of that -- above zero
+and under a bound -- rather than asserting a flattering number. Both are needed:
+the lower expectation is what fails if a future fuse quietly gives up and leaves
+the node in, and the upper is what fails if it gets worse.
 
 **Not every snap position is drawn when zoomed out.** The converse — a drawn
 line you cannot snap to — is impossible by construction, and that is the half
@@ -2073,7 +2082,7 @@ One reviewer of the 2026-08-15 structure review read `tooltip.ts` and concluded
 it wanted a rewrite. The review declined to judge that, calling it a design call
 rather than a defect, and the reading here agrees for a stated reason: **"this
 should be rebuilt" is a claim that needs a specific complaint attached, and
-nobody had one.** 206 lines is not a complaint. Six module-level variables for a
+nobody had one.** Its size is not a complaint. Six module-level variables for a
 single overlay is not a complaint either.
 
 The complaint that *is* attachable is about evidence. The file records six

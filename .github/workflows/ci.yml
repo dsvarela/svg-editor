@@ -124,8 +124,22 @@ jobs:
           # Taken from drive.mjs itself, so adding a scenario there is enough.
           # The loop keeps going after a failure so one run reports every
           # broken scenario instead of only the first.
+          #
+          # The floor is here because a loop over an empty list runs nothing and
+          # succeeds: a `--list` that printed a stack trace, or a rename that
+          # left the export empty, would have turned the whole browser job into
+          # a green step that measured nothing. The number is a floor and not an
+          # equality, so adding a scenario needs no edit here.
+          names=$(node tools/drive.mjs --list)
+          count=$(echo "$names" | grep -c .)
+          if [ "$count" -lt 50 ]; then
+            echo "drive.mjs listed $count scenarios, which is fewer than this repo has"
+            exit 1
+          fi
+          echo "running $count scenarios"
+
           failed=""
-          for s in $(node tools/drive.mjs --list); do
+          for s in $names; do
             echo "::group::$s"
             node tools/drive.mjs "$s" || failed="$failed $s"
             echo "::endgroup::"

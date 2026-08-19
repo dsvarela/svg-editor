@@ -754,63 +754,107 @@ const scenarios = {
     /* The same four operations one level down, between the paths of one shape.
        §64. Only a browser can show this half: the operands are chosen by
        opening a shape's row and clicking the paths inside it, and which of the
-       two readings a selection asks for is decided from that selection. */
-    await openSource(page);
-    await page.click('#srcmode button[data-v="svg"]');
-    await page.fill(
-      '#src',
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40">
-  <path d="M0 0 H20 V20 H0 Z M10 10 H30 V30 H10 Z M60 5 H70 V15 H60 Z" fill="#2563d8"/>
-</svg>`,
-    );
-    await page.click('#apply');
-    await closeSource(page);
-    await tab(page, 'shape');
-    await settle(page);
+       two readings a selection asks for is decided from that selection.
 
+       **Even-odd, and that is what makes the areas measurements.** Under
+       nonzero, two overlapping contours already render as their union, so the
+       area after Unite is the area before it and the check passed whether or
+       not the operation ran. Under even-odd the overlap is a hole to start
+       with, and three of the four results are a different number from the
+       starting picture. */
+    const fixture = async () => {
+      await openSource(page);
+      await page.click('#srcmode button[data-v="svg"]');
+      await page.fill(
+        '#src',
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40">
+  <path d="M0 0 H20 V20 H0 Z M10 10 H30 V30 H10 Z M60 5 H70 V15 H60 Z" fill="#2563d8" fill-rule="evenodd"/>
+</svg>`,
+      );
+      await page.click('#apply');
+      await closeSource(page);
+      await tab(page, 'shape');
+      await settle(page);
+    };
+    const enclosed = () =>
+      page.evaluate(() => {
+        const p = document.querySelector('.artwork path');
+        let n = 0;
+        for (let x = 0.5; x < 80; x++) {
+          for (let y = 0.5; y < 40; y++) if (p.isPointInFill(new DOMPoint(x, y))) n++;
+        }
+        return n;
+      });
+
+    await fixture();
     check(await page.isDisabled('[data-bool="unite"]'), 'Unite was live with nothing selected');
 
-    // Open the shape to reach its paths, which is what makes them selectable.
-    await page.click('#shapelist li.shape > .twist');
-    await settle(page);
-    const paths = await page.locator('#shapelist li.path').count();
-    check(paths === 3, `the shape opened to ${paths} path rows, want 3`);
+    /* The picture before any of them: two 20 by 20 squares overlapping in a
+       10 by 10 corner, drawn even-odd so that corner is a hole, plus a loose
+       10 by 10 square that is never an operand. 600 + 100. */
+    const startArea = await enclosed();
+    check(startArea === 700, `the even-odd fixture encloses ${startArea} square units, want 700`);
 
-    await page.click('#shapelist li.path:nth-child(1)');
-    await settle(page);
-    check(await page.isDisabled('[data-bool="unite"]'), 'Unite was live on one path');
-    await page.click('#shapelist li.path:nth-child(2)', { modifiers: ['Shift'] });
-    await settle(page);
-    check(!(await page.isDisabled('[data-bool="unite"]')), 'Unite stayed dead on two paths of one shape');
-    const header = (await page.textContent('#boolinfo')).trim();
-    check(header === 'paths of one shape', `the Combine header says "${header}"`);
+    /* Three of the four are a different number from that. Exclude is not, and
+       cannot be: even-odd rendering of two overlapping contours IS the
+       symmetric difference, so the operation changes the geometry and not the
+       picture. Its row count is what carries it, and it is named here rather
+       than left to look like the others. */
+    const WITHIN = { unite: 800, subtract: 400, intersect: 200, exclude: 700 };
+    const within = {};
+    let withinStatus = '';
+    let header = '';
+    for (const [op, want] of Object.entries(WITHIN)) {
+      await fixture();
+      // Open the shape to reach its paths, which is what makes them selectable.
+      await page.click('#shapelist li.shape > .twist');
+      await settle(page);
+      const paths = await page.locator('#shapelist li.path').count();
+      check(paths === 3, `the shape opened to ${paths} path rows, want 3`);
 
-    await page.click('[data-bool="unite"]');
-    await settle(page);
-    const withinStatus = (await page.textContent('#status')).trim();
-    check(/^Unite: 2 paths of /.test(withinStatus), `uniting two paths said "${withinStatus}"`);
-    const shapeRows = await page.locator('#shapelist li.shape').count();
-    check(shapeRows === 1, `uniting two paths of one shape left ${shapeRows} shapes`);
+      await page.click('#shapelist li.path:nth-child(1)');
+      await settle(page);
+      check(await page.isDisabled(`[data-bool="${op}"]`), `${op} was live on one path`);
+      await page.click('#shapelist li.path:nth-child(2)', { modifiers: ['Shift'] });
+      await settle(page);
+      check(
+        !(await page.isDisabled(`[data-bool="${op}"]`)),
+        `${op} stayed dead on two paths of one shape`,
+      );
+      header = (await page.textContent('#boolinfo')).trim();
+      check(header === 'paths of one shape', `the Combine header says "${header}"`);
 
-    /* 700 for the two united squares, plus the 100 of the third path, which was
-       not an operand and has to be exactly where it was. Sampled the same way
-       as above, because a `d` string cannot say whether a region survived. */
-    const within = await page.evaluate(() => {
-      const p = document.querySelector('.artwork path');
-      let n = 0;
-      for (let x = 0.5; x < 80; x++) {
-        for (let y = 0.5; y < 40; y++) if (p.isPointInFill(new DOMPoint(x, y))) n++;
-      }
-      return n;
-    });
-    check(within === 800, `the shape encloses ${within} square units, want 700 + 100`);
+      await page.click(`[data-bool="${op}"]`);
+      await settle(page);
+      withinStatus = (await page.textContent('#status')).trim();
+      const name = `${op[0].toUpperCase()}${op.slice(1)}`;
+      check(
+        new RegExp(`^${name}: 2 paths of `).test(withinStatus),
+        `${op} on two paths said "${withinStatus}"`,
+      );
+      const shapeRows = await page.locator('#shapelist li.shape').count();
+      check(shapeRows === 1, `${op} on two paths of one shape left ${shapeRows} shapes`);
 
-    await page.keyboard.press('Control+z');
-    await settle(page);
-    const backTo3 = await page.locator('#shapelist li.path').count();
-    check(backTo3 === 3, `undo left ${backTo3} path rows, want 3`);
+      /* Sampled rather than compared as a `d` string, because a string cannot
+         say whether a region survived: the loose square was not an operand and
+         has to be exactly where it was. */
+      within[op] = await enclosed();
+      check(within[op] === want, `${op} within one shape encloses ${within[op]}, want ${want}`);
 
-    return { disabledWhenIdle, enabledWithTwo, runs, within, withinStatus };
+      /* Two operands become one path, so the row count falls by one whatever
+         the areas say. This is the whole of what separates Exclude from having
+         done nothing. Counted rather than re-opened: which shapes are open is
+         not in the store, so the disclosure survives the edit. */
+      const after = await page.locator('#shapelist li.path').count();
+      check(after === 2, `${op} left ${after} path rows, want 2`);
+
+      await page.keyboard.press('Control+z');
+      await settle(page);
+      const backTo3 = await page.locator('#shapelist li.path').count();
+      check(backTo3 === 3, `undo after ${op} left ${backTo3} path rows, want 3`);
+    }
+
+    return { disabledWhenIdle, enabledWithTwo, runs, startArea, within, withinStatus };
   },
 
   /**
@@ -2927,7 +2971,8 @@ const scenarios = {
 
     await page.click('#makeone');
     await settle(page);
-    out.message = await page.textContent('#status');
+    out.message = (await page.textContent('#status')).trim();
+    check(/now holds 2 paths\./.test(out.message), `Make one shape said "${out.message}"`);
     // One path element now, and no hole: nonzero fills both squares.
     out.nonzero = await painted();
 
@@ -2944,7 +2989,8 @@ const scenarios = {
     out.splitEnabled = !(await page.isDisabled('#splitshape'));
     await page.click('#splitshape');
     await settle(page);
-    out.splitMessage = await page.textContent('#status');
+    out.splitMessage = (await page.textContent('#status')).trim();
+    check(/2 shapes/.test(out.splitMessage), `Split into shapes said "${out.splitMessage}"`);
     // Two elements again, and the hole is gone: an inner path in its own
     // shape is a filled shape, whatever the rule says.
     out.afterSplit = await painted();
@@ -3403,6 +3449,7 @@ const scenarios = {
     const afterDrop = await count();
     check(afterDrop === 1, `dropping a guide on the ruler left ${afterDrop}`);
     const dropMsg = (await page.textContent('#status')).trim();
+    check(/^Guide removed\./.test(dropMsg), `dropping a guide on the ruler said "${dropMsg}"`);
 
     // And it is one undo step, not one per pointermove.
     await undo(page);
@@ -3413,6 +3460,7 @@ const scenarios = {
     await settle(page);
     check((await count()) === 0, `Clear guides left ${await count()}`);
     const clearMsg = (await page.textContent('#status')).trim();
+    check(/^Removed 2 guides\./.test(clearMsg), `Clear guides said "${clearMsg}"`);
     await undo(page);
     check((await count()) === 2, `undoing Clear left ${await count()}`);
 
@@ -4129,7 +4177,12 @@ const scenarios = {
     const out = {};
     const dir = process.env.SCRATCH ?? '/tmp';
     const { writeFileSync } = await import('node:fs');
-    await page.evaluate(() => localStorage.clear());
+    /* Nothing is cleared here, and nothing needs to be: every run gets a fresh
+       browser context. A `localStorage.clear()` stood here and could not have
+       done the job it looked like it was doing anyway, because the page writes
+       the session back on `pagehide` (§59). **Forget saved work** is what holds
+       across a reload, and it is the wrong tool here: it latches, and this
+       scenario goes on to check that the work is being saved. */
 
     /* Distinctive in four different parts of the state, because each one is
        restored by a different line and three of them would have gone unnoticed
@@ -4169,8 +4222,16 @@ const scenarios = {
     /* The write is on a timer, so this waits for the entry rather than for a
        number of milliseconds. The key is the storage module's, spelled out
        here on purpose: a scenario that read it from the page would agree with
-       whatever the page did, including nothing. */
-    await page.waitForFunction(() => localStorage.getItem('path.session.v1') !== null);
+       whatever the page did, including nothing.
+
+       Waited on the CONTENT and not on the key. Any earlier write satisfies
+       "the entry exists", so the reload could happen before the guide and the
+       rectangle had been saved and the checks below would be reading a copy
+       from a moment nobody asked about. The guide at 33 is the first thing this
+       scenario did. */
+    await page.waitForFunction(() =>
+      /"axis":"x","at":33/.test(localStorage.getItem('path.session.v1') ?? ''),
+    );
 
     await page.reload({ waitUntil: 'networkidle' });
     await settle(page);
@@ -4492,7 +4553,35 @@ const scenarios = {
     const backdrop = (await page.textContent('#backinfo')).trim();
     check(/none/.test(backdrop), `the dropped SVG became a backdrop: "${backdrop}"`);
 
-    return { stats, info, first, dropped };
+    /* And the other half, without which the check above is satisfied by a drop
+       that never reaches the backdrop at all. `#backinfo` reads "none" before
+       any of this, so "still none" proves the SVG went the right way only if a
+       raster proves the other way exists. */
+    const raster = png(6, 4, (x) => (x < 3 ? [255, 0, 0, 255] : [0, 0, 255, 255]));
+    await page.evaluate(
+      ([bytes, name]) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([new Uint8Array(bytes)], name, { type: 'image/png' }));
+        document
+          .querySelector('#stage')
+          .dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      [[...raster], 'dropped.png'],
+    );
+    await page
+      .waitForFunction(() => !/none/.test(document.querySelector('#backinfo').textContent), null, {
+        timeout: 4000,
+      })
+      .catch(() => {});
+    const rasterInfo = (await page.textContent('#backinfo')).trim();
+    check(/dropped\.png/.test(rasterInfo), `dropping a PNG left the backdrop reading "${rasterInfo}"`);
+    // And it did not also arrive as shapes, which is the mirror of the check above.
+    check(
+      /4 shapes/.test((await page.textContent('#stats')).trim()),
+      `the dropped PNG was imported as geometry: "${(await page.textContent('#stats')).trim()}"`,
+    );
+
+    return { stats, info, first, dropped, rasterInfo };
   },
 
   /**
@@ -4586,12 +4675,19 @@ const scenarios = {
 
     /* The buttons, which are the other half of the wiring. They are hidden on a
        mouse, so this turns them on the way a person on a phone gets them: the
-       setting, not a class poked into the page. */
-    await tab(page, 'doc');
+       setting, not a class poked into the page.
+
+       The "hidden" half is asked ON THE TAB THAT HOLDS THEM. It was asked from
+       the Document tab, where the whole Shape panel is `hidden` and every
+       control in it is invisible whatever the setting says, so it passed with
+       the rule deleted and the rule was unmeasured in both directions. */
+    await tab(page, 'shape');
+    await settle(page);
     check(
       !(await page.isVisible('#copySel')),
       'the clipboard buttons are on screen with Touch buttons off',
     );
+    await tab(page, 'doc');
     await page.check('#touchButtons');
     await settle(page);
     await tab(page, 'shape');
@@ -4716,6 +4812,7 @@ const scenarios = {
     await page.click('#groupShapes');
     await settle(page);
     out.message = (await page.textContent('#status')).trim();
+    check(/^Grouped 2 shapes\b/.test(out.message), `Group said "${out.message}"`);
     const grouped = await rows();
     out.rows = grouped.map((x) => `${x.kind}${x.level}`);
     check(grouped.length === 4, `grouping two of three drew ${grouped.length} rows, not 4`);
@@ -4825,6 +4922,7 @@ const scenarios = {
     await settle(page);
     const ungrouped = await rows();
     out.ungroupMessage = (await page.textContent('#status')).trim();
+    check(/^Ungrouped\b/.test(out.ungroupMessage), `Ungroup said "${out.ungroupMessage}"`);
     check(
       ungrouped.every((x) => x.kind === 'shape'),
       'ungrouping left a group row behind',
@@ -5157,6 +5255,10 @@ const scenarios = {
     out.refused = (await fields()).map((f) => f.value);
     out.refusedMessage = (await page.textContent('#status')).trim();
     check(
+      /greater than zero/.test(out.refusedMessage),
+      `a width of 0 said "${out.refusedMessage}"`,
+    );
+    check(
       JSON.stringify(out.refused) === JSON.stringify(out.wide),
       `a width of 0 was accepted: the fields read ${JSON.stringify(out.refused)}`,
     );
@@ -5256,8 +5358,13 @@ const scenarios = {
     /* The four buttons are behind the touch setting, because dragging a row does
        what they do and both of them repeat `Ctrl+[`. They still have to work, so
        this turns them on the way a phone gets them. */
-    await tab(page, 'doc');
+    /* Asked on the Shape tab, which is where these live. From the Document tab
+       the whole panel is `hidden`, so every control in it is invisible whatever
+       the setting says and this passed with the rule deleted. */
+    await tab(page, 'shape');
+    await settle(page);
     check(!(await page.isVisible('#orderForward')), 'the order tiles are on screen with Touch buttons off');
+    await tab(page, 'doc');
     await page.check('#touchButtons');
     await settle(page);
     await tab(page, 'shape');
@@ -5374,6 +5481,49 @@ const scenarios = {
       `dragging the back row to the end of the list painted ${JSON.stringify(out.dragged)}`,
     );
     check((await page.locator('.dropline').count()) === 0, 'the drop line outlived the drag');
+
+    /* The end of the list is where `dropShapes` lands anything it cannot place,
+       so a drag aimed there passes whether the destination was computed or
+       guessed. The middle is the only destination that tells the two apart:
+       moving the back row up by one gives BAC, and the fallback gives BCA. */
+    await undo(page);
+    await settle(page);
+    const middleFrom = await rowBox(1);
+    const middleTo = await rowBox(2);
+    await page.mouse.move(middleFrom.x + middleFrom.width / 2, middleFrom.y + middleFrom.height / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 4; i++) {
+      await page.mouse.move(
+        middleFrom.x + middleFrom.width / 2,
+        middleFrom.y + ((middleTo.y + middleTo.height - middleFrom.y) * i) / 4,
+      );
+    }
+    await page.mouse.up();
+    await settle(page);
+    out.draggedMiddle = await painted();
+    check(
+      JSON.stringify(out.draggedMiddle) ===
+        JSON.stringify([out.beforeDrag[1], out.beforeDrag[0], out.beforeDrag[2]]),
+      `dragging the back row up one place painted ${JSON.stringify(out.draggedMiddle)}`,
+    );
+    await undo(page);
+    await settle(page);
+    check(
+      JSON.stringify(await painted()) === JSON.stringify(out.beforeDrag),
+      'one undo did not take the middle drag back',
+    );
+
+    // And back to the state the checks below were written against.
+    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(
+        first.x + first.width / 2,
+        first.y + ((last.y + last.height - first.y) * i) / 6,
+      );
+    }
+    await page.mouse.up();
+    await settle(page);
 
     // One undo step: the drag must not leave a selection change behind it that
     // a second undo would have to take back as well.
@@ -5678,7 +5828,10 @@ const scenarios = {
     await closeSource(page);
     await tab(page, 'shape');
     await page.click('#shapelist li.shape');
-    await laidOut(page);
+    /* A selection is a render, not a re-layout, and `laidOut` with nothing
+       moving is one 25 ms poll: the fixed sleep this harness has none of,
+       wearing a condition wait's name. */
+    await settle(page);
 
     const square = await d();
     check(square === 'M 20 20 H 80 V 80 H 20 Z', `the square came out as ${square}`);
@@ -5760,7 +5913,7 @@ const scenarios = {
 
     /* The control on a corner that already holds an arc. This is what needs the
        radius to be recoverable: there is nowhere it could have been read from. */
-    await laidOut(page);
+    await settle(page);
     const after = await controls();
     const grown = after.find((c) => c.rounded);
     out.roundedControls = after.filter((c) => c.rounded).length;
@@ -5849,7 +6002,6 @@ const scenarios = {
     await page.click('#apply');
     await closeSource(page);
     await tab(page, 'shape');
-    await laidOut(page);
 
     const start = await rows();
     check(start.length === 1, `the list drew ${start.length} rows for one shape`);
@@ -6032,7 +6184,19 @@ const scenarios = {
     out.focusAfterUndo = await page.evaluate(() => document.activeElement.tagName);
     check(out.focusAfterUndo !== 'INPUT', 'focus stayed in the field after undoing from it');
 
-    // Ctrl+C in a spinner belongs to the spinner: the document must not change.
+    /* Ctrl+C in a spinner belongs to the spinner: the document must not change.
+
+       A whole shape is selected first, and that is the whole of what makes this
+       measurable. The selection left by the click above is one node, and
+       `copySelection` refuses a lone node -- it has no segment -- so Ctrl+C and
+       Ctrl+V were no-ops whichever of the two they reached, and this passed with
+       the guard deleted. With a shape selected, a paste that reached the
+       document adds one and `#stats` says so. */
+    await tab(page, 'shape');
+    await page.click('#shapelist li.shape');
+    await settle(page);
+    const canCopy = await page.evaluate(() => document.querySelectorAll('#shapelist li.shape[aria-selected="true"]').length);
+    check(canCopy === 1, `the clipboard block starts with ${canCopy} shapes selected, not 1`);
     await page.evaluate(() => {
       const i = [...document.querySelectorAll('input[type="number"]')].find(
         (x) => !x.disabled && x.offsetParent !== null,
@@ -6112,6 +6276,26 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 860 } });
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+
+/* `pageerror` is the main thread only, and the tracer runs in a worker. An
+   uncaught throw in there fires an `error` event on the `Worker` object and
+   nothing else: the app turns that into a rejected promise and a sentence, so
+   a worker that died of a real bug and a worker the browser refused to start
+   arrive at the harness looking identical. Every worker gets a listener that
+   routes it to the console, which is already read for `[error]` at the end of
+   this file. Installed before the first navigation, so it is in place for the
+   page that runs the scenario. */
+await page.addInitScript(() => {
+  const Real = window.Worker;
+  window.Worker = class extends Real {
+    constructor(...args) {
+      super(...args);
+      this.addEventListener('error', (e) => {
+        console.error(`[worker] ${e.message || 'threw with no message'} at ${e.filename || '?'}:${e.lineno ?? '?'}`);
+      });
+    }
+  };
+});
 
 await page.goto(APP_URL, { waitUntil: 'networkidle' });
 await settle(page);
@@ -6221,10 +6405,34 @@ const audit = await page.evaluate(() => {
     swallow.set(k, (swallow.get(k) ?? 0) + 1);
   }
 
+  /* Every coordinate that reached the DOM, not only the drawing's.
+   *
+   * This read `.artwork path` alone, so a NaN in the corner widget, the
+   * transform box, the smart guides or the marquee was reported by nothing:
+   * those are overlay elements, and an SVG element with a broken number in a
+   * geometry attribute draws nothing and throws nothing. The whole point of
+   * this check is the failure a screenshot is worst at showing, and most of the
+   * geometry this editor computes per frame is on the overlay.
+   *
+   * Swept over the attributes that carry numbers rather than over `d` alone,
+   * for the reason the swallow check gives: a hand-kept list of element types
+   * lets the next kind through and says nothing. */
+  const NUMERIC = ['d', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'points', 'transform'];
+  const broken = [];
+  for (const el of document.querySelectorAll('svg, svg *')) {
+    for (const name of NUMERIC) {
+      const v = el.getAttribute(name);
+      if (v !== null && /NaN|Infinity|undefined/.test(v)) {
+        broken.push(`${el.getAttribute('class') || el.tagName}[${name}]`);
+      }
+    }
+  }
+
   return {
     artworkPaths: artwork.length,
     artworkD: artwork.map((p) => p.getAttribute('d')),
-    badD: artwork.filter((p) => /NaN|Infinity|undefined/.test(p.getAttribute('d') ?? '')).length,
+    badD: broken.length,
+    badWhere: [...new Set(broken)],
     visibleAnchors: anchors.length,
     visibleHandles: handles.length,
     visibleHandleLines: lines.length,
@@ -6241,7 +6449,11 @@ await browser.close();
 /* The audit runs on every scenario, so it is the one check no scenario has to
    remember to write. A coordinate that reached the DOM as NaN draws nothing and
    throws nothing, which is the failure a screenshot is worst at showing. */
-if (audit.badD > 0) failure ??= `${audit.badD} path(s) reached the DOM with NaN, Infinity or undefined in the d`;
+if (audit.badD > 0) {
+  failure ??=
+    `${audit.badD} attribute(s) reached the DOM holding NaN, Infinity or undefined: ` +
+    audit.badWhere.join(', ');
+}
 
 if (audit.swallowers.length) {
   failure ??=
