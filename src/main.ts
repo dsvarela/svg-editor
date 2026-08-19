@@ -560,6 +560,7 @@ const strokeColour = $('#strokeColour') as HTMLInputElement;
 const fillNone = $('#fillNone') as HTMLInputElement;
 const strokeNone = $('#strokeNone') as HTMLInputElement;
 const strokeWidthInput = $('#strokeWidth') as HTMLInputElement;
+const opacityInput = $('#opacity') as HTMLInputElement;
 
 /** What the panel currently describes: the selection, or the next new shape. */
 const styleShown = (): Style => {
@@ -598,7 +599,9 @@ function paintHighlight(): void {
 
 function paintPalette(): void {
   const list = store.state.palette;
-  const sig = list.map((e) => [e.name, e.style.fill, e.style.stroke, e.style.strokeWidth, e.style.fillRule].join('\u0001')).join('\u0002');
+  const sig = list
+    .map((e) => [e.name, e.style.fill, e.style.stroke, e.style.strokeWidth, e.style.fillRule, e.style.opacity].join('\u0001'))
+    .join('\u0002');
   $('#paletteinfo').textContent = list.length ? `${list.length}` : 'none';
   if (sig === paletteSig) {
     paintHighlight();
@@ -611,7 +614,9 @@ function paintPalette(): void {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'option');
-    b.title = `Fill ${entry.style.fill}, stroke ${entry.style.stroke} at ${entry.style.strokeWidth}`;
+    b.title =
+      `Fill ${entry.style.fill}, stroke ${entry.style.stroke} at ${entry.style.strokeWidth}` +
+      (entry.style.opacity < 1 ? `, ${Math.round(entry.style.opacity * 100)}% opaque` : '');
     const sw = document.createElement('span');
     sw.className = 'sw';
     const inner = document.createElement('i');
@@ -679,7 +684,11 @@ on('#paletteSave', () => {
      of the word "Style". */
   const base = `${shown.fill === 'none' ? 'no fill' : shown.fill}, ${shown.stroke === 'none' ? 'no stroke' : shown.stroke}`;
   const same = (a: Style, b: Style): boolean =>
-    a.fill === b.fill && a.stroke === b.stroke && a.strokeWidth === b.strokeWidth && a.fillRule === b.fillRule;
+    a.fill === b.fill &&
+    a.stroke === b.stroke &&
+    a.strokeWidth === b.strokeWidth &&
+    a.fillRule === b.fillRule &&
+    a.opacity === b.opacity;
   const already = store.state.palette.findIndex((e) => same(e.style, shown));
   if (already >= 0) {
     paletteAt = already;
@@ -734,6 +743,15 @@ streamed(strokeWidthInput, () => {
   const v = Number(strokeWidthInput.value);
   if (!Number.isFinite(v) || v < 0) return;
   commands.setStyle({ strokeWidth: v });
+});
+
+/* Typed as a percentage and stored as SVG's 0 to 1. Clamped rather than
+   refused: `min` and `max` on the element only bind the spinner, and a pasted
+   `400` is a number somebody meant as "all of it". */
+streamed(opacityInput, () => {
+  const v = Number(opacityInput.value);
+  if (!Number.isFinite(v)) return;
+  commands.setStyle({ opacity: Math.min(1, Math.max(0, v / 100)) });
 });
 
 $('#fillRule').addEventListener('click', (e) => {
@@ -2951,7 +2969,8 @@ store.subscribe((s) => {
       e.style.fill === shown.fill &&
       e.style.stroke === shown.stroke &&
       e.style.strokeWidth === shown.strokeWidth &&
-      e.style.fillRule === shown.fillRule,
+      e.style.fillRule === shown.fillRule &&
+      e.style.opacity === shown.opacity,
   );
   if (matches !== paletteAt) {
     paletteAt = matches;
@@ -2981,6 +3000,12 @@ store.subscribe((s) => {
   if (strokeHex) strokeColour.value = strokeHex;
   if (document.activeElement !== strokeWidthInput) {
     strokeWidthInput.value = String(shown.strokeWidth);
+  }
+  /* Rounded on the way to the box and not in the model: an imported 0.333 is
+     33% here and stays 0.333 in the file, so reading the panel never rewrites
+     a number nobody touched. */
+  if (document.activeElement !== opacityInput) {
+    opacityInput.value = String(Math.round(shown.opacity * 100));
   }
   for (const b of $('#fillRule').querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.getAttribute('data-fr') === shown.fillRule));

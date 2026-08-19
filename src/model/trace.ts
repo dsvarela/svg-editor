@@ -135,6 +135,7 @@ export function traceImage(
         // The walk gives outlines and holes without promising a winding, so
         // even-odd is the rule that makes a hole a hole regardless.
         fillRule: 'evenodd',
+        opacity: 1,
       },
     });
   });

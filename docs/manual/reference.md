@@ -231,14 +231,27 @@ shape out, use **Copy** in the source drawer, which copies the text.
 
 ### Style
 
-Fill, stroke, width and fill rule for the selected shapes. A node selection
-styles the shape it belongs to, since style is a property of the whole path.
+Fill, stroke, width, opacity and fill rule for the selected shapes. A node
+selection styles the shape it belongs to, since style is a property of the whole
+path.
 
 | Control | Does |
 |---|---|
 | **Fill** | The colour inside. Tick **none** for no fill |
 | **Stroke** | The colour of the line. Tick **none** for no stroke |
 | **Width** | Stroke width in document units |
+| **Opacity** | How much of the shape shows, from 0 to 100 per cent |
+
+**Opacity is one number for the whole shape**, fill and stroke together. SVG also
+has a `fill-opacity` and a `stroke-opacity`, and they are deliberately not here:
+the three multiply, so a shape at 50 per cent with a fill at 50 per cent draws
+its fill at 25 and its stroke at 50, and that is a rule about compositing rather
+than about the drawing. A colour with alpha in it is refused for the same reason.
+
+Reading a file is the other direction, and there the three do have to be
+reconciled. An `opacity` on a `<g>` is multiplied into the shapes inside it,
+because a group carries no style here, so a group at 50 per cent holding a path
+at 50 per cent arrives as one shape at 25.
 
 **Fill rule** is a group of its own inside **Style**, shut until you press it,
 because it is set once on a shape and then rarely looked at. **Nonzero** fills
@@ -249,7 +262,7 @@ With nothing selected these set what the next shape you draw will look like. Tha
 is not an edit to the drawing, so it records no undo step, and the header says
 `for new shapes` when it applies.
 
-**Saved** keeps styles you want again. **Save style** stores the four values
+**Saved** keeps styles you want again. **Save style** stores the five values
 above under a name made from the colours; double-click the name to change it.
 Clicking a swatch puts that style on the selected shapes, or on what you draw
 next if nothing is selected. **Delete style** removes the highlighted one, and

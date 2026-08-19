@@ -977,6 +977,9 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
   min-width: 50px;
 }
 .row input { flex: 1; }
+/* A unit beside a field, not a label in front of one: no `min-width`, so a
+   single `%` does not reserve the 50px a `.rlabel` would. */
+.row .unit { flex: none; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 
 /* An action and the one number it reads, in the order the sentence goes:
    `Simplify within [0.5]`, `Reduce to [8] nodes`, `Offset by [2]`. The verb was

@@ -198,7 +198,11 @@ function readStyle(v: unknown): Style | null {
   if (!isObj(v)) return null;
   if (!isStr(v.fill) || !isStr(v.stroke) || !isNum(v.strokeWidth)) return null;
   if (v.fillRule !== 'nonzero' && v.fillRule !== 'evenodd') return null;
-  return { fill: v.fill, stroke: v.stroke, strokeWidth: v.strokeWidth, fillRule: v.fillRule };
+  /* Defaulted rather than refused, because opacity arrived after the format
+     did: a workspace written before it has no such field, and refusing one is
+     refusing somebody's drawing over a number whose absence means opaque. */
+  const opacity = isNum(v.opacity) ? Math.min(1, Math.max(0, v.opacity)) : 1;
+  return { fill: v.fill, stroke: v.stroke, strokeWidth: v.strokeWidth, fillRule: v.fillRule, opacity };
 }
 
 function readShape(v: unknown): Shape | null {

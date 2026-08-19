@@ -287,6 +287,14 @@
               <label for="strokeWidth">Width</label>
               <input type="number" id="strokeWidth" step="0.25" min="0" />
             </div>
+            <!-- A percentage, because that is what every editor and every person
+                 says, and 0 to 1 in the model, because that is what SVG writes.
+                 One number for the whole shape: §60. -->
+            <div class="row">
+              <label for="opacity">Opacity</label>
+              <input type="number" id="opacity" step="5" min="0" max="100" aria-label="Opacity, per cent" />
+              <span class="unit">%</span>
+            </div>
             <!-- Set once on a shape and rarely looked at again, so it is one
                  press away rather than permanently on screen beside Width,
                  which is read every time. -->

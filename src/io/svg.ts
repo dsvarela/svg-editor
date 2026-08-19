@@ -14,7 +14,7 @@
 import { identity, mul, rotate, scale as scaleMat, skew, translate } from '../core/affine';
 import type { Mat } from '../core/affine';
 import { parsePath } from '../core/parse';
-import { serialisePath } from '../core/serialise';
+import { formatNumber, serialisePath } from '../core/serialise';
 import type { SerialiseOptions } from '../core/serialise';
 import { STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
 import type { Doc, Group, Shape, Style, Subpath, ViewBox } from '../core/types';
@@ -176,10 +176,24 @@ function readStyle(el: Element, inherited: Style): Style {
   const stroke = styleProp(el, 'stroke');
   const sw = styleProp(el, 'stroke-width');
   const fr = styleProp(el, 'fill-rule');
+  const op = styleProp(el, 'opacity');
   if (fill) s.fill = fill;
   if (stroke) s.stroke = stroke;
   if (sw && Number.isFinite(parseFloat(sw))) s.strokeWidth = parseFloat(sw);
   if (fr === 'evenodd' || fr === 'nonzero') s.fillRule = fr;
+  /* Multiplied into what was inherited, which is what the renderer does: a
+     `<g opacity="0.5">` holding a path at 0.5 draws it at 0.25. A group carries
+     no style here (§5), so the only place that factor can land is on the shape.
+     Clamped, because a file may say anything and 1.5 is opaque.
+
+     A percentage is legal in CSS and not as a presentation attribute, so
+     `parseFloat` alone reads "50%" as 50 and clamps to opaque -- right for the
+     attribute, wrong for the inline style `styleProp` also reads. */
+  if (op !== null) {
+    const pct = op.trim().endsWith('%');
+    const n = parseFloat(op);
+    if (Number.isFinite(n)) s.opacity *= Math.min(1, Math.max(0, pct ? n / 100 : n));
+  }
   return s;
 }
 
@@ -338,6 +352,14 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
       s.style.stroke === 'none' ? '' : `stroke-width="${xmlAttr(String(s.style.strokeWidth))}"`,
       s.style.stroke === 'none' ? '' : `stroke-linejoin="${STROKE_JOIN}"`,
       s.style.stroke === 'none' ? '' : `stroke-linecap="${STROKE_CAP}"`,
+      /* Only when it says something. `opacity="1"` is the initial value, so
+         writing it on every path would put an attribute in every file to state
+         the default -- the same reason `fill-rule` is written only for
+         even-odd. Rounded with the decimals the geometry gets, so a setting
+         typed as a whole percentage does not export as 0.6699999. */
+      s.style.opacity < 1
+        ? `opacity="${xmlAttr(formatNumber(s.style.opacity, ser.decimals ?? 3))}"`
+        : '',
       s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
     ].filter(Boolean);
     return `${indent}<path ${attrs.join(' ')}/>`;

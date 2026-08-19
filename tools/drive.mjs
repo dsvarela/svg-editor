@@ -2001,6 +2001,30 @@ const scenarios = {
     await undo(page);
     check((await page.getAttribute('.artwork path', 'fill')) === '#ff0000', 'undo did not bring the fill back');
 
+    /* Opacity is typed as a percentage and stored as SVG's 0 to 1, so both
+       numbers have to be looked at: the attribute the canvas draws with, and
+       the one the export writes. A field that read the model back in the units
+       it was typed in would agree with itself and with nothing else. */
+    await page.fill('#opacity', '40');
+    await settle(page);
+    const drawnOpacity = await page.getAttribute('.artwork path', 'opacity');
+    check(Math.abs(+drawnOpacity - 0.4) < 1e-9, `the canvas drew opacity ${drawnOpacity}`);
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await settle(page);
+    check(/opacity="0.4"/.test(await page.inputValue('#src')), 'the export left the opacity out');
+    await closeSource(page);
+    /* Back to opaque has to take the attribute back to 1, not leave the last
+       value on the element: the canvas sets attributes rather than rebuilding
+       the node, so a value only written below 1 would stick. */
+    await page.fill('#opacity', '100');
+    await settle(page);
+    const backToOpaque = await page.getAttribute('.artwork path', 'opacity');
+    check(+backToOpaque === 1, `back at 100% the canvas still says ${backToOpaque}`);
+    await openSource(page);
+    check(!/opacity=/.test(await page.inputValue('#src')), 'an opaque shape exported an opacity attribute');
+    await closeSource(page);
+
     // And the tabs move.
     await tab(page, 'node');
     check(await page.locator('#bendFlat').isVisible(), 'the node tab did not open');

@@ -61,7 +61,7 @@ describe('a session survives being written and read', () => {
         { axis: 'x', at: 12 },
         { axis: 'y', at: 40 },
       ];
-      s.palette = [{ name: 'ink', style: { fill: '#111', stroke: 'none', strokeWidth: 2, fillRule: 'evenodd' } }];
+      s.palette = [{ name: 'ink', style: { fill: '#111', stroke: 'none', strokeWidth: 2, fillRule: 'evenodd', opacity: 1 } }];
       s.showKeylines = true;
       s.gridStep = 4;
       s.decimals = 1;
@@ -203,7 +203,7 @@ describe('what a save cannot carry, it says', () => {
 describe('the id counters move past a document that arrived from outside', () => {
   it('will not hand out a shape id the restored document already uses', () => {
     reserveIds({
-      shapes: [{ id: 'shape-9000', name: 'x', subpaths: [], style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' } }],
+      shapes: [{ id: 'shape-9000', name: 'x', subpaths: [], style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 } }],
       viewBox: { x: 0, y: 0, w: 1, h: 1 },
     });
     expect(nextId()).toBe('shape-9001');
@@ -216,7 +216,7 @@ describe('the id counters move past a document that arrived from outside', () =>
           id: 'shape-1',
           name: 'x',
           subpaths: [{ nodes: [{ id: 'n8000', pt: [0, 0], hIn: null, hOut: null }], closed: false }],
-          style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' },
+          style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 },
         },
       ],
       viewBox: { x: 0, y: 0, w: 1, h: 1 },
@@ -236,7 +236,7 @@ describe('the id counters move past a document that arrived from outside', () =>
   it('leaves an id that cannot collide alone', () => {
     const before = nextId();
     reserveIds({
-      shapes: [{ id: 'hand-written', name: 'x', subpaths: [], style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' } }],
+      shapes: [{ id: 'hand-written', name: 'x', subpaths: [], style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 } }],
       viewBox: { x: 0, y: 0, w: 1, h: 1 },
     });
     const after = nextId();

@@ -192,7 +192,7 @@ describe('what an import is allowed to replace the document with', () => {
       id: 'shape-1',
       name: 'lone',
       subpaths: [{ nodes: [makeNode([5, 5])], closed: false }],
-      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' },
+      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 },
     };
     expect(lone.subpaths[0].nodes).toHaveLength(1);
     expect(drawsSomething([lone])).toBe(false);
@@ -439,7 +439,7 @@ describe('shape names as ids', () => {
       id: 'shape-1',
       name: 'outer ring',
       subpaths: parsePath('M0 0 L10 0 L10 10 Z'),
-      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero' },
+      style: { fill: 'none', stroke: '#000', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 },
     };
     doc.shapes.push(shape);
 
@@ -447,5 +447,75 @@ describe('shape names as ids', () => {
     expect(svg).toContain('id="outer-ring"');
     // And it survives a round trip rather than throwing the parser.
     expect(importSvg(svg).shapes).toHaveLength(1);
+  });
+});
+
+/**
+ * Opacity, which is the first style field added since fill, stroke, width and
+ * rule, and the only one an SVG can put in three places at once.
+ *
+ * The reading is where it earns tests. A group carries no style in this model
+ * (§5), so a `<g opacity>` has nowhere to live except multiplied into the shapes
+ * under it, and getting that wrong is a drawing that is visibly the wrong
+ * darkness with nothing on screen to explain why.
+ */
+describe('opacity', () => {
+  const only = (svg: string) => importSvg(svg).shapes[0].style.opacity;
+
+  it('reads the attribute', () => {
+    expect(only('<svg><path d="M0 0 L1 0" opacity="0.4"/></svg>')).toBeCloseTo(0.4, 12);
+  });
+
+  it('reads it out of an inline style too', () => {
+    expect(only('<svg><path d="M0 0 L1 0" style="opacity:0.25"/></svg>')).toBeCloseTo(0.25, 12);
+  });
+
+  it('is opaque when the file does not mention it', () => {
+    expect(only('<svg><path d="M0 0 L1 0"/></svg>')).toBe(1);
+  });
+
+  /* The renderer multiplies down the tree and a group here holds no style, so
+     the factor has to land on the shape or be lost. */
+  it('multiplies a group into the shapes under it', () => {
+    expect(only('<svg><g opacity="0.5"><path d="M0 0 L1 0" opacity="0.5"/></g></svg>')).toBeCloseTo(0.25, 12);
+  });
+
+  it('multiplies through two nested groups', () => {
+    expect(only('<svg><g opacity="0.5"><g opacity="0.5"><path d="M0 0 L1 0"/></g></g></svg>')).toBeCloseTo(
+      0.25,
+      12,
+    );
+  });
+
+  it('clamps a file that says more than all of it', () => {
+    expect(only('<svg><path d="M0 0 L1 0" opacity="1.5"/></svg>')).toBe(1);
+    expect(only('<svg><path d="M0 0 L1 0" opacity="-2"/></svg>')).toBe(0);
+  });
+
+  /* A percentage is legal in CSS and not as a presentation attribute, so
+     `parseFloat` alone reads "50%" as 50 and clamps it to opaque -- which is
+     right for the attribute and wrong for the inline style this also reads. */
+  it('reads a percentage as a percentage', () => {
+    expect(only('<svg><path d="M0 0 L1 0" style="opacity:50%"/></svg>')).toBeCloseTo(0.5, 12);
+  });
+
+  it('writes nothing when the shape is opaque, because that is the initial value', () => {
+    const doc = emptyDoc();
+    doc.shapes = importSvg('<svg><path d="M0 0 L1 0"/></svg>').shapes;
+    expect(exportSvg(doc)).not.toContain('opacity');
+  });
+
+  it('writes it when it says something, and reads back the same number', () => {
+    const doc = emptyDoc();
+    doc.shapes = importSvg('<svg><path d="M0 0 L1 0" opacity="0.4"/></svg>').shapes;
+    const out = exportSvg(doc);
+    expect(out).toContain('opacity="0.4"');
+    expect(importSvg(out).shapes[0].style.opacity).toBeCloseTo(0.4, 12);
+  });
+
+  it('rounds it with the decimals the geometry gets', () => {
+    const doc = emptyDoc();
+    doc.shapes = importSvg('<svg><path d="M0 0 L1 0" opacity="0.6666666"/></svg>').shapes;
+    expect(exportSvg(doc, { decimals: 2 })).toContain('opacity="0.67"');
   });
 });

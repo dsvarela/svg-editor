@@ -320,6 +320,10 @@ export class Canvas {
         'stroke-width': shape.style.strokeWidth,
         'stroke-linejoin': STROKE_JOIN,
         'stroke-linecap': STROKE_CAP,
+        /* Written always, not only when it is below 1: `setAttrs` sets what it
+           is given, so leaving it out on the way back up to opaque would leave
+           the last value on the element and a shape would never come back. */
+        opacity: shape.style.opacity,
         /* Wireframe is done with a class rather than by rewriting the fill and
            stroke here, because CSS beats presentation attributes: the shape's
            own values stay on the element, exactly as the export will write

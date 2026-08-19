@@ -2771,3 +2771,56 @@ subscriber running would write the session back inside the second and make the
 button look broken. Storing the choice would turn one press into a promise the
 button does not make. It lasts until the reload, which is when a fresh start
 takes effect anyway.
+
+## 60. Opacity is one number, and the objection to it is the design
+
+`Style` had four fields, and every one of them answers a question with a single
+answer: what colour, what colour, how wide, which rule. Opacity does not have to
+be like that, and SVG offers three ways to say it -- `opacity`, `fill-opacity`,
+`stroke-opacity` -- plus a fourth in the alpha channel of a colour.
+
+**Only the first is here.** The three multiply, so a shape at 0.5 with a fill at
+0.5 draws its fill at 0.25 and its stroke at 0.5. That is a true statement about
+compositing and a useless one about a drawing: the panel would have to teach it,
+and the person reading the panel wanted to know how see-through the shape is.
+One number composites the whole shape and needs no rule to explain it.
+
+The alpha channel goes the same way, and more sharply: `#ff000080` puts the
+fill's transparency somewhere the stroke's cannot follow, and the colour input a
+browser gives you cannot show or return it, so the value would round to opaque
+the first time anybody touched the picker.
+
+The shopping list recorded this as an objection before the field existed -- "the
+reason to stop at one number is the reason gradients are refused" -- and building
+it did not answer the objection so much as hold the line it drew.
+
+### Reading is where the three have to be reconciled anyway
+
+A file may carry all of them, and refusing to read what you refuse to write is
+losing somebody's drawing. So `readStyle` multiplies `opacity` down the tree, the
+same way a renderer does. **A group carries no style here** (§5), so the factor on
+a `<g>` has nowhere to live except on the shapes under it, and dropping it would
+draw an imported file at visibly the wrong darkness with nothing on screen to
+explain why.
+
+Two details, both of which have a test because neither is obvious:
+
+- **A percentage is legal in a `style` attribute and not as a presentation
+  attribute.** `parseFloat("50%")` is 50, which clamps to opaque -- the right
+  answer for `opacity="50%"` and the wrong one for `style="opacity:50%"`, and
+  `styleProp` reads both. The suffix is checked rather than ignored.
+- **`opacity="1"` is the initial value**, so it is written only below 1. The same
+  argument writes `fill-rule` only for even-odd.
+
+`fill-opacity` and `stroke-opacity` are read as nothing, which is the one place
+this loses information from a file. It is the honest cost of the field not
+existing, rather than a gap: folding them into the shape's opacity would be
+inventing a number the file does not contain.
+
+### The canvas writes it always, and the file writes it sometimes
+
+`setAttrs` sets what it is given and does not clear what it is not, so a canvas
+that wrote `opacity` only below 1 would leave the last value on the element and a
+shape brought back to 100% would stay faded. The browser scenario checks exactly
+that, because it is invisible in a unit test of the exporter and it is the only
+half of the pair that a person would report as a bug.

@@ -2609,7 +2609,7 @@ describe('make one shape', () => {
     const id = first.id;
     const name = first.name;
     h.store.update((s) => {
-      s.doc.shapes[0].style = { ...s.doc.shapes[0].style, fill: '#111111', fillRule: 'evenodd' };
+      s.doc.shapes[0].style = { ...s.doc.shapes[0].style, fill: '#111111', fillRule: 'evenodd', opacity: 1 };
       s.doc.shapes[1].style = { ...s.doc.shapes[1].style, fill: '#eeeeee' };
     });
 
@@ -2764,7 +2764,7 @@ describe('split into shapes', () => {
         fill: '#123456',
         stroke: '#654321',
         strokeWidth: 3,
-        fillRule: 'evenodd',
+        fillRule: 'evenodd', opacity: 1,
       };
     });
 

@@ -108,6 +108,21 @@ export interface Style {
   stroke: string;
   strokeWidth: number;
   fillRule: 'nonzero' | 'evenodd';
+  /**
+   * How much of the shape shows through, 0 to 1. SVG's `opacity`.
+   *
+   * **One number, and deliberately not three.** SVG also has `fill-opacity` and
+   * `stroke-opacity`, and every editor that offers all three has to explain
+   * which one wins when they disagree: they multiply, so a shape at 50% with a
+   * fill at 50% draws its fill at 25% and its stroke at 50%. That is a rule
+   * about compositing, not about the drawing. One number composites the whole
+   * shape and needs no rule. §60 of `docs/ARCHITECTURE.md` has the argument.
+   *
+   * A colour with alpha in it is the other way to say this, and is refused for
+   * the same reason: `#ff000080` would put the fill's transparency somewhere the
+   * stroke's could not follow, and the colour picker cannot show it.
+   */
+  opacity: number;
 }
 
 /** A drawable object: one `<path>` on export. */
@@ -328,4 +343,5 @@ export const defaultStyle = (): Style => ({
   stroke: '#2563d8',
   strokeWidth: 1,
   fillRule: 'nonzero',
+  opacity: 1,
 });

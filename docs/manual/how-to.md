@@ -382,8 +382,8 @@ and press **Round** once.
 
 ## Colour a shape
 
-Select it, then set **Fill**, **Stroke** and **Width** in the **Style** panel on
-the **Shape** tab. Tick **none** beside a colour for no fill or no stroke; the
+Select it, then set **Fill**, **Stroke**, **Width** and **Opacity** in the
+**Style** panel on the **Shape** tab. Tick **none** beside a colour for no fill or no stroke; the
 picker stays usable while it is ticked, and choosing a colour clears it.
 
 With nothing selected, the same controls set what the next shape you draw will
@@ -393,6 +393,10 @@ an edit to the drawing and records no undo step.
 If a shape came from an imported file with a colour the picker cannot show, such
 as a named colour or a gradient, the panel leaves it alone and names it in the
 header rather than rounding it to black.
+
+**Opacity** is one number for the whole shape, fill and stroke together, typed
+as a percentage. There is no separate fill opacity or stroke opacity, and the
+reference says why.
 
 ## Set the page the drawing exports to
 
