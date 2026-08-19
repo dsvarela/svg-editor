@@ -1164,11 +1164,6 @@ export class Controller {
           // The node index matters as much as the subpath: an undo mid-drag can
           // shorten the path under us, and `moveHandle` would dereference it.
           if (!sp?.nodes[d.ref.i]) return;
-          /* Taking hold of a handle takes control back. An auto node would
-             otherwise recompute the handle away on the very next sweep, so the
-             drag would do nothing and there would be nothing on screen to say
-             why -- and the sweep runs at the end of this same edit. */
-          delete sp.nodes[d.ref.i].auto;
           moveHandle(sp, d.ref.i, d.which, this.snap(p, d.ref), d.breakPair);
         });
         return;

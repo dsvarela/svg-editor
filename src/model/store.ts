@@ -11,7 +11,6 @@
 
 import { cloneGroup, cloneShape, defaultStyle } from '../core/types';
 import type { Doc, Style, ViewBox } from '../core/types';
-import { reflowDoc } from './auto';
 import { rebuildPaintOrder } from './arrange';
 import { emptySelection, pruneGroups } from './doc';
 import type { Selection } from './doc';
@@ -495,14 +494,10 @@ export class Store {
   /**
    * Checkpoint, mutate, notify. The normal way to make a discrete change.
    *
-   * The auto-smooth sweep runs here rather than at each of the several sites
-   * that can disturb an auto node's neighbour, because a site that gets its
-   * indices wrong leaves a stale handle that reads as a rendering bug. One pass
-   * over nodes about to be redrawn anyway.
-   *
-   * `pruneGroups` is here for the same reason: eight places remove shapes, any
-   * can empty a group, and an empty group is a row in the list and a `<g>` in
-   * the export.
+   * `pruneGroups` runs here rather than at each of the several sites that can
+   * empty a group, because eight places remove shapes, any of them can take the
+   * last one out, and an empty group is a row in the list and a `<g>` in the
+   * export. A site that forgets is a defect nothing reports.
    *
    * `update` does not sweep -- it is for camera, tool and selection, and the
    * geometry has not changed.
@@ -510,7 +505,6 @@ export class Store {
   edit(fn: (s: EditorState) => void): void {
     this.checkpoint();
     fn(this.state);
-    reflowDoc(this.state.doc);
     pruneGroups(this.state.doc);
     rebuildPaintOrder(this.state.doc);
     this.notify();
@@ -543,7 +537,6 @@ export class Store {
 
     const changed = fn(this.state);
     if (changed) {
-      reflowDoc(this.state.doc);
       pruneGroups(this.state.doc);
       rebuildPaintOrder(this.state.doc);
       // After the mutation, so an image the edit itself replaced is seen.

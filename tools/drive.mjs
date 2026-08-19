@@ -3760,14 +3760,15 @@ const scenarios = {
   },
 
   /**
-   * Auto-smooth nodes, end to end.
+   * A handle that is not there, and the panel saying so.
    *
-   * The model tests own the derivation and the controller tests own the sweep.
-   * What is left for a browser is the button: that it reads back as pressed,
-   * that the fourth reading takes precedence over the smooth one it would
-   * otherwise light up as, and that the export carries no trace of it.
+   * The in and out fields are filled either way, because a missing handle is
+   * shown where one would go. Nothing on the panel said which, so two
+   * identically drawn shapes differed for a reason invisible on screen: one
+   * exports as `L` and the other as `C`, and Round cuts a straight side from
+   * one and a curved side from the other.
    */
-  async autoSmooth(page, check) {
+  async latentHandles(page, check) {
     const { click, drag } = await mk(page);
 
     await openSource(page);
@@ -3793,83 +3794,44 @@ const scenarios = {
       );
     check(JSON.stringify(await pressed()) === '["cusp"]', `starts as ${await pressed()}`);
 
-    /* The in and out fields are filled either way, because a missing handle is
-       shown where it would go. Nothing on the panel said which, so two
-       identically drawn shapes differed for an invisible reason and Round
-       refused one of them. */
     const ghosts = () => page.locator('#hix.ghost, #hiy.ghost, #hox.ghost, #hoy.ghost').count();
     check((await ghosts()) === 4, `a node with no handles ghosts ${await ghosts()} of 4 fields`);
     check(await page.isVisible('#handlewhy'), 'nothing said the handles were not there');
 
-    await page.click('#ntype button[data-v="auto"]');
-    await settle(page);
-    check((await ghosts()) === 0, `after Auto, ${await ghosts()} fields still read as latent`);
-    check(!(await page.isVisible('#handlewhy')), 'the latent note outlived the latent handles');
-    /* Exactly one button lit, and it is Auto. An auto node is collinear by
-       construction, so a display reading the handles alone would light Smooth
-       as well and leave two buttons pressed at once. */
-    const now = await pressed();
-    check(JSON.stringify(now) === '["auto"]', `after Auto the pressed buttons are ${now}`);
-
-    // Drag the right-hand node up. The middle one should re-aim itself, which
-    // is the whole feature and is only visible in what gets drawn.
+    /* Give the two segments handles, so the middle node has real ones on both
+       sides. `Curve` acts on segments whose two endpoints are both selected,
+       which is why all three nodes go into the selection. */
     const dEl = () => page.$eval('.artwork path', (el) => el.getAttribute('d'));
     const before = await dEl();
-    await drag([68, 40], [68, 26]);
+    await click([20, 40], 'Shift');
+    await click([68, 40], 'Shift');
+    await page.click('#curve');
     await settle(page);
     const after = await dEl();
-    check(before !== after, 'dragging the neighbour changed nothing');
-
-    /* Both of the middle node's handles lie on the chord between its
-       neighbours, so the two control points and the anchor are collinear. Read
-       off the overlay rather than out of the path text, which the serialiser is
-       free to spell with `S` and other shorthands. */
-    await click([44, 40]);
+    check(before !== after, 'Curve on both segments changed nothing');
+    /* Counted on the overlay, not matched in the path text: the serialiser is
+       free to spell a curve `C`, `Q` or `S`, and which one it picks says
+       nothing about whether the node has handles. */
+    /* Shift the two outer nodes back out of the selection, leaving the middle
+       one alone. A plain click on a node that is already part of a
+       multi-selection keeps that selection, and the panel then reads
+       "3 selected" with no single node to report handles for. */
+    await click([20, 40], 'Shift');
+    await click([68, 40], 'Shift');
     await settle(page);
-    const trio = await page.evaluate(() => {
-      const at = (hit) => {
-        const el = document.querySelector(`[data-hit="${hit}"][data-sp="0"][data-i="1"]`);
-        if (!el) return null;
-        return el.tagName === 'rect'
-          ? [+el.getAttribute('x') + +el.getAttribute('width') / 2, +el.getAttribute('y') + +el.getAttribute('height') / 2]
-          : [+el.getAttribute('cx'), +el.getAttribute('cy')];
-      };
-      return { anchor: at('anchor'), inH: at('in'), outH: at('out') };
-    });
-    check(trio.anchor && trio.inH && trio.outH, `the overlay is missing part of the node: ${JSON.stringify(trio)}`);
-    const cross =
-      (trio.inH[0] - trio.anchor[0]) * (trio.outH[1] - trio.anchor[1]) -
-      (trio.inH[1] - trio.anchor[1]) * (trio.outH[0] - trio.anchor[0]);
-    check(Math.abs(cross) < 0.02, `the handles are not collinear: cross product ${cross}`);
-    // And they went somewhere: a pair of handles collapsed onto the anchor is
-    // collinear too, and says nothing.
+    const handles = await page.locator('[data-hit="in"][data-i="1"], [data-hit="out"][data-i="1"]').count();
+    check(handles === 2, `the middle node has ${handles} handles drawn, not 2`);
+    const lit = await pressed();
+    const info = await page.textContent('#nodeinfo').catch(() => null);
     check(
-      Math.hypot(trio.outH[0] - trio.anchor[0], trio.outH[1] - trio.anchor[1]) > 1,
-      'the outgoing handle has no length',
+      lit.length > 0,
+      `clicking the middle node lit ${JSON.stringify(lit)} and the node readout says ${JSON.stringify(info)}`,
     );
-    /* And they FOLLOWED. Handles left where they started are still collinear,
-       still have length, and are wrong -- so without this the scenario passed
-       with the whole sweep removed. The chord now slopes, so a handle still
-       lying flat is one that never re-derived. */
-    check(
-      Math.abs(trio.outH[1] - trio.anchor[1]) > 0.5,
-      `the handles stayed flat at y = ${trio.outH[1]}, so nothing re-derived`,
-    );
+    const left = await ghosts();
+    check(left === 0, `a node with handles on both sides still ghosts ${left} of 4 fields`);
+    check(!(await page.isVisible('#handlewhy')), 'the latent note outlived the latent handles');
 
-    await openSource(page);
-    await page.click('#srcmode button[data-v="d"]');
-    await settle(page);
-    const d = await page.inputValue('#src');
-    check(!/auto/i.test(d), 'the export mentions auto');
-    await closeSource(page);
-
-    // And pressing it again hands control back without moving anything.
-    await page.click('#ntype button[data-v="auto"]');
-    await settle(page);
-    check(JSON.stringify(await pressed()) !== '["auto"]', 'Auto stayed pressed after a second press');
-    check((await dEl()) === after, 'handing control back moved the drawing');
-
-    return { now, before, after };
+    return { before, after, handles, ghostsLeft: left };
   },
 
   /**

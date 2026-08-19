@@ -79,7 +79,6 @@ import type { Box } from '../core/bezier';
 import { simplifySubpath } from '../model/simplify';
 import { invisibleAt, keepOnly, reduceToCount, removeRedundantNodes } from '../model/knots';
 import { phaseInForce, phaseLabel } from '../model/pixelfit';
-import { canBeAuto, setAuto } from '../model/auto';
 import { offsetSubpath, strokeOutline } from '../core/offset';
 import { addGuide } from '../model/guides';
 import type { GuideAxis } from '../model/guides';
@@ -168,62 +167,6 @@ export class Commands {
         : `There is already a guide at ${axis} = ${fmt(at)}.`,
       ok,
     );
-    return ok;
-  }
-
-  /**
-   * Make the selected nodes auto-smooth, or hand control back if they are.
-   *
-   * A toggle rather than a fourth setting beside corner, smooth and symmetric,
-   * because it is not the same kind of thing: those three are readings of the
-   * handles and this is an instruction about them. Pressing it on nodes that
-   * already have it leaves the handles exactly where they are and stops them
-   * moving on their own.
-   */
-  setSelectedAuto(): boolean {
-    const s = this.store.state;
-    const refs = selectedNodes(s.doc, s.selection);
-    if (!refs.length) {
-      this.onMessage?.('Select a node first.', false);
-      return false;
-    }
-    /* Off only when every selected node is already auto. With a mixed
-       selection the useful reading of one press is "make them all auto", not
-       "toggle each of them and leave me with the opposite mixture". */
-    const allAuto = refs.every(
-      (r) => findShape(this.store.state.doc, r.shape)?.subpaths[r.sp]?.nodes[r.i]?.auto === true,
-    );
-
-    let changed = 0;
-    let atEnd = 0;
-    const ok = this.store.tryEdit((st) => {
-      for (const r of refs) {
-        const sp = findShape(st.doc, r.shape)?.subpaths[r.sp];
-        if (!sp?.nodes[r.i]) continue;
-        if (!allAuto && !canBeAuto(sp, r.i)) {
-          atEnd++;
-          continue;
-        }
-        if (setAuto(sp, r.i, !allAuto)) changed++;
-      }
-      return changed > 0;
-    });
-
-    if (ok) {
-      this.onMessage?.(
-        allAuto
-          ? `${changed} ${changed === 1 ? 'node stops' : 'nodes stop'} re-deriving.`
-          : `${changed} ${changed === 1 ? 'node takes' : 'nodes take'} their handles from the neighbours.`,
-        true,
-      );
-    } else if (atEnd) {
-      this.onMessage?.(
-        'That node ends the path. There is no neighbour on the far side to take a direction from.',
-        false,
-      );
-    } else {
-      this.onMessage?.('Nothing changed.', false);
-    }
     return ok;
   }
 

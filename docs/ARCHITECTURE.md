@@ -1514,6 +1514,11 @@ over with a timing assertion that would be flaky.
 
 ## 35. Auto-smooth is the one stored node flag, and §6 still holds
 
+**Superseded on 2026-08-20: auto-smooth was removed, and §65 says why.**
+What follows is the decision as it was taken, kept because the reasoning
+about stored state against derived state is still the reasoning this
+project uses.
+
 Inkscape's fourth node type: handles that re-derive themselves from the
 neighbours, so moving one node of a curve re-aims the two either side and the
 shape stays fair without anyone dragging six handles to keep it that way.
@@ -2133,8 +2138,9 @@ the drift this arrangement is meant to make visible.
 
 **Two facts moved down rather than sideways.** The auto-smooth sweep was a
 private `Controller.edit` wrapper, so it protected only the callers that went
-through `Controller`; it is now inside `Store.edit` and `Store.tryEdit`, where
-no edit can skip it. `selectedNodes` and `selectedSubpaths` are pure functions
+through `Controller`, and moved into `Store.edit` and `Store.tryEdit` where no
+edit could skip it. The sweep is gone with the feature (§65) and the move is
+recorded here because the group sweep below took the same route. `selectedNodes` and `selectedSubpaths` are pure functions
 of a document and a selection, wanted by both halves, and are now in `doc.ts`
 beside `selectedRefs`.
 
@@ -2510,8 +2516,8 @@ because each already works on a set of shapes.
 
 **Empty groups are swept in `Store.edit`.** Eight places remove shapes and any of them
 can take the last one out of a group; a group naming nothing draws an empty row and
-writes an empty `<g>`. The sweep is beside the auto-smooth one and for the same
-reason §16 gives, and it returns on its first line when there are no groups.
+writes an empty `<g>`. It sits there for the reason §16 gives, and it returns on its
+first line when there are no groups.
 
 Nesting is decided by where the selection already is: shapes that all sit in one group
 make a group inside it, and anything else makes one at the top. Grouping part of a
@@ -3379,3 +3385,47 @@ removed and the index counts the same in the original array and in what is left.
 same problem. It is not, and the difference is written out beside both, because
 copying the harder version here would have been a correct-looking no-op -- which
 is what a mutation of it turned out to be, and what got the comment written.
+
+## 65. Auto-smooth is gone, and it is the invisibility that decided it
+
+Removed on 2026-08-20. §35 stays where it is as a record of the decision taken
+while it existed, and the argument it makes is still the right argument. What it
+did not weigh is that the feature had no picture.
+
+**Nothing on the canvas ever said which nodes were auto.** `canvas.ts` never read
+the flag, and `continuityOf` reports an auto node as smooth, because an auto node
+is collinear by construction. So it drew exactly like a node whose handles
+somebody had set by hand.
+
+Put that beside the sweep and the two make a bad pair. `reflowDoc` ran on the way
+out of every `Store.edit` and every `Store.tryEdit`, so moving one node rewrote
+the handles of auto nodes elsewhere in the document. An edit changing geometry
+the person did not touch is defensible when they can see which geometry that is.
+Here they could not, and the only reading available was that the editor moved
+something on its own.
+
+**The record it leaves behind is the interesting part**, because three of the
+project's own rules pointed at this and none of them fired:
+
+| Rule | What it would have caught |
+|---|---|
+| §6, no stored node state | It named the exception and then argued it. The argument was about whether the flag can disagree with the geometry, which was the wrong question. |
+| Every operation gets a button | It had one. A button is not the same as a mark on the thing it acts on. |
+| No information appears only on hover | Weaker than what was needed: this information appeared nowhere at all. |
+
+So the rule worth writing down is the one none of them said: **an edit that
+changes geometry the person did not select has to show which geometry, on the
+canvas, at the time.** Nothing in the program does that now, and anything that
+wants to will need a mark before it needs a button.
+
+What went with it: `src/model/auto.ts`, the `auto` field on `PathNode`, the
+`reflowDoc` call in both store entry points, `setSelectedAuto`, the **Auto**
+button, `Shift`+`A`, and the `autoSmooth` browser scenario. `PathNode` now holds
+nothing but geometry and an id, so §6 has no exception left to argue.
+
+**One piece of that scenario was worth keeping and nearly went with it.** It
+carried the only browser check on latent handles: that a node with no handles
+ghosts all four coordinate fields and says so, and that the note goes when real
+handles arrive. `latentHandles` is that half, with **Curve** in place of
+**Auto**. Deleting a feature deletes the tests that reached the code beside it,
+and the reaching is not visible from the name of the test.

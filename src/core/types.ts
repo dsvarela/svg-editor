@@ -71,22 +71,6 @@ export interface PathNode {
   hIn: Pt | null;
   /** Control point of the outgoing segment. `null` means that segment is straight. */
   hOut: Pt | null;
-  /**
-   * Keep re-deriving this node's handles from its neighbours.
-   *
-   * The one piece of stored node state in the whole model, and §6 argues at
-   * length against exactly this. It earns the exception because it is not a
-   * claim about the geometry -- which is what a stored `smooth` flag is, and
-   * what can disagree with the handles -- but an instruction about the future.
-   * "These handles are collinear" is checkable and so must be derived; "keep
-   * recomputing me when a neighbour moves" is not something any arrangement of
-   * control points can express.
-   *
-   * Optional, and absent on almost every node. It is never exported: a file has
-   * no way to say it, and reading one back gives ordinary handles in exactly
-   * the positions the auto node had computed.
-   */
-  auto?: boolean;
 }
 
 /**
@@ -191,7 +175,6 @@ export const cloneNode = (n: PathNode): PathNode => ({
   pt: clonePt(n.pt),
   hIn: clonePtOrNull(n.hIn),
   hOut: clonePtOrNull(n.hOut),
-  ...(n.auto ? { auto: true } : {}),
 });
 
 let nodeSeq = 0;

@@ -183,7 +183,7 @@ function readNode(v: unknown): PathNode | null {
   const hIn = readHandle(v.hIn);
   const hOut = readHandle(v.hOut);
   if (!pt || !hIn || !hOut) return null;
-  return { id: v.id, pt, hIn: hIn.pt, hOut: hOut.pt, ...(v.auto === true ? { auto: true } : {}) };
+  return { id: v.id, pt, hIn: hIn.pt, hOut: hOut.pt };
 }
 
 function readSubpath(v: unknown): Subpath | null {

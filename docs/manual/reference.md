@@ -68,7 +68,6 @@ treat those two rows as untried rather than as reported working.
 | `Shift`+`P` | Make the selected shapes into one shape, changing no geometry |
 | `Shift`+`K` | Split the selected shapes, giving each path a shape of its own |
 | `Shift`+`C` `S` `Y` | Make every selected node a cusp, smooth, or symmetric |
-| `Shift`+`A` | Make every selected node auto-smooth, or hand control back |
 | `[` `]` | Select the node before or after this one along the path |
 | `Shift`+`[` `]` | Add it to the selection instead of replacing |
 | `Shift`+`I` | Insert a node in the segment between the two selected nodes |
@@ -434,13 +433,6 @@ than a curve.
   not "corner". Every corner **Round** can cut is a cusp, but not every cusp is
   one: the end of an open path has only one side, and a node with three points in
   a line does not turn.
-- **Auto** (`Shift+A`) is different in kind: it does not set the handles once, it
-  keeps re-deriving them from the two neighbours, so moving a nearby node re-aims
-  this one and the curve stays fair. Press it again to hand control back, which
-  leaves the handles exactly where they are. Dragging either handle also hands
-  control back. An end of an open path cannot be auto, since there is no
-  neighbour on the far side to take a direction from, and the setting is not part
-  of the export.
 - **Radius** with **Round** replaces the selected corners with an arc of that
   radius. With a shape selected and no particular nodes, it rounds every corner
   the shape has.

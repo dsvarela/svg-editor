@@ -239,14 +239,6 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
         commands.insertInSelection();
         return;
       }
-      /* Shift+A, beside the three continuity keys. Ctrl+A is select-all in
-         every browser, so the plain letter was never available. */
-      case 'A': {
-        if (!e.shiftKey) return;
-        e.preventDefault();
-        commands.setSelectedAuto();
-        return;
-      }
       // Shift+R, which is Inkscape's binding for the same thing.
       case 'R': {
         if (!e.shiftKey) return;
