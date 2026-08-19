@@ -2985,3 +2985,51 @@ radius has nothing to say about a polygon. That hiding needed a CSS rule of its
 own -- `display: flex` beats the user agent's `[hidden]`, and the browser
 scenario is what found it, because the row was still on screen and every unit
 test passed.
+
+## 64. Two paths of one shape are operands, and not by a flag
+
+§47 made a path selectable on its own. Combining two paths of one shape still
+meant **Split into shapes**, four booleans, and **Make one shape** afterwards --
+a round trip that renames things and loses the hole on the way through.
+
+`booleanSubpaths` takes a shape and some of its subpath indices. The result
+replaces those paths where the first of them was, and the shape keeps its id, its
+name, its style and every path that was not chosen.
+
+### Why it is a second entry point rather than an argument
+
+`booleanShapes` concatenates a shape's subpaths into **one** path before handing
+it to the library. That concatenation is load-bearing: two subpaths of one shape
+are one region under the shape's fill rule, which is what makes a ring a ring and
+what makes subtracting a ring take its hole with it.
+
+`booleanSubpaths` hands each subpath over **separately**, as a region of its own.
+Uniting the two paths of a ring therefore gives back the solid disc, which is the
+right answer to the question that was asked and the wrong answer to the other
+one. The two are opposite readings of the same geometry, so neither can be the
+other with a boolean parameter. What they do share -- run it, rebuild the
+contours, refuse non-finite output -- is one private function both call.
+
+Every operand takes the shape's fill rule, because they share one. A subpath has
+no style of its own, which is the whole reason paths of one shape can make a
+hole.
+
+### A shape selected whole still declines
+
+`selectedSubpaths` fills in every subpath of a selected shape, so a single
+selected shape would look exactly like "two paths of one shape" to anything
+reading that map. It is not: a whole-shape selection is a question about shapes,
+and answering it with the shape's own paths would turn Unite on one shape into an
+operation it has never done, silently, in a build people already have.
+
+So the shape set is checked before the map, and the refusal names both readings:
+"needs two or more selected shapes, or two paths of one shape".
+
+### The result lands where the first chosen path was
+
+`indices` is sorted, so the first is the smallest, so nothing before it was
+removed and the index counts the same in the original array and in what is left.
+`dropShapes` (§56) has to count in the rows that are staying, and looks like the
+same problem. It is not, and the difference is written out beside both, because
+copying the harder version here would have been a correct-looking no-op -- which
+is what a mutation of it turned out to be, and what got the comment written.

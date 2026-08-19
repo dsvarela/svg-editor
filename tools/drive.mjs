@@ -751,7 +751,66 @@ const scenarios = {
       check(/2 shapes/.test(r.afterUndo), `undoing ${op} left "${r.afterUndo}"`);
     }
 
-    return { disabledWhenIdle, enabledWithTwo, runs };
+    /* The same four operations one level down, between the paths of one shape.
+       §64. Only a browser can show this half: the operands are chosen by
+       opening a shape's row and clicking the paths inside it, and which of the
+       two readings a selection asks for is decided from that selection. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40">
+  <path d="M0 0 H20 V20 H0 Z M10 10 H30 V30 H10 Z M60 5 H70 V15 H60 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    check(await page.isDisabled('[data-bool="unite"]'), 'Unite was live with nothing selected');
+
+    // Open the shape to reach its paths, which is what makes them selectable.
+    await page.click('#shapelist li.shape > .twist');
+    await settle(page);
+    const paths = await page.locator('#shapelist li.path').count();
+    check(paths === 3, `the shape opened to ${paths} path rows, want 3`);
+
+    await page.click('#shapelist li.path:nth-child(1)');
+    await settle(page);
+    check(await page.isDisabled('[data-bool="unite"]'), 'Unite was live on one path');
+    await page.click('#shapelist li.path:nth-child(2)', { modifiers: ['Shift'] });
+    await settle(page);
+    check(!(await page.isDisabled('[data-bool="unite"]')), 'Unite stayed dead on two paths of one shape');
+    const header = (await page.textContent('#boolinfo')).trim();
+    check(header === 'paths of one shape', `the Combine header says "${header}"`);
+
+    await page.click('[data-bool="unite"]');
+    await settle(page);
+    const withinStatus = (await page.textContent('#status')).trim();
+    check(/^Unite: 2 paths of /.test(withinStatus), `uniting two paths said "${withinStatus}"`);
+    const shapeRows = await page.locator('#shapelist li.shape').count();
+    check(shapeRows === 1, `uniting two paths of one shape left ${shapeRows} shapes`);
+
+    /* 700 for the two united squares, plus the 100 of the third path, which was
+       not an operand and has to be exactly where it was. Sampled the same way
+       as above, because a `d` string cannot say whether a region survived. */
+    const within = await page.evaluate(() => {
+      const p = document.querySelector('.artwork path');
+      let n = 0;
+      for (let x = 0.5; x < 80; x++) {
+        for (let y = 0.5; y < 40; y++) if (p.isPointInFill(new DOMPoint(x, y))) n++;
+      }
+      return n;
+    });
+    check(within === 800, `the shape encloses ${within} square units, want 700 + 100`);
+
+    await page.keyboard.press('Control+z');
+    await settle(page);
+    const backTo3 = await page.locator('#shapelist li.path').count();
+    check(backTo3 === 3, `undo left ${backTo3} path rows, want 3`);
+
+    return { disabledWhenIdle, enabledWithTwo, runs, within, withinStatus };
   },
 
   /**

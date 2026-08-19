@@ -176,6 +176,19 @@ that one.
 If the operation cannot produce a valid result, nothing changes and the status
 line says so. The document is never left in a half-finished state.
 
+## Combine two paths of one shape
+
+Open the shape in the **Shapes** list, click one of its paths, `Shift`-click
+another, then press the operation you want.
+
+The shape stays one shape, keeping its name and colour, and any paths you did not
+select are untouched. This used to mean **Split into shapes** first and **Make
+one shape** afterwards.
+
+Selecting the whole shape asks a different question and still declines: between
+shapes, a shape's paths count as one region together, which is what makes a hole
+a hole.
+
 ## Punch a hole in a shape
 
 1. Draw the outer shape, then draw the hole inside it as a second shape.

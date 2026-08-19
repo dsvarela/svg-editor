@@ -84,7 +84,7 @@ import type { GuideAxis } from '../model/guides';
 import { traceImage } from '../model/trace';
 import type { Placement, TraceOptions, TraceResult } from '../model/trace';
 import type { RasterLike } from '../core/raster';
-import { BOOLEAN_LABEL, booleanShapes } from '../io/boolean';
+import { BOOLEAN_LABEL, booleanShapes, booleanSubpaths } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
 import { FLAT } from '../model/transform';
 import type { Store } from '../model/store';
@@ -1531,7 +1531,16 @@ export class Commands {
     const operands = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
     const label = BOOLEAN_LABEL[op];
     if (operands.length < 2) {
-      return { ok: false, message: `${label} needs two or more selected shapes.` };
+      /* One shape's own paths, which §47 made selectable and this used to make
+         you split apart first. Only when the shapes are not the operands: two
+         selected shapes is a question about shapes whatever their paths are
+         doing, and asking the other one would be guessing. */
+      const within = this.subpathOperands();
+      if (within) return this.booleanWithin(within.shape, within.indices, op);
+      return {
+        ok: false,
+        message: `${label} needs two or more selected shapes, or two paths of one shape.`,
+      };
     }
 
     let result: Subpath[] | null;
@@ -1563,6 +1572,77 @@ export class Commands {
     return {
       ok: true,
       message: `${label}: ${operands.length} shapes → ${n} path${n === 1 ? '' : 's'}.`,
+    };
+  }
+
+  /**
+   * The one shape whose own paths the selection is asking about, or `null`.
+   *
+   * Two or more paths of exactly one shape, and that shape not selected whole:
+   * a whole-shape selection is a question about the shape, and answering it
+   * with its own paths would turn Unite on one shape into something it has
+   * never done. `selectedSubpaths` fills in every subpath of a selected shape,
+   * which is why the shape set is checked as well as the map.
+   */
+  private subpathOperands(): { shape: Shape; indices: number[] } | null {
+    const s = this.store.state;
+    if (s.selection.shapes.size) return null;
+    const map = selectedSubpaths(s.doc, s.selection);
+    if (map.size !== 1) return null;
+    const [id, set] = [...map][0];
+    if (set.size < 2) return null;
+    const shape = findShape(s.doc, id);
+    if (!shape) return null;
+    return { shape, indices: [...set].sort((a, b) => a - b) };
+  }
+
+  /** Whether a boolean would have operands, for the buttons that offer one. */
+  get canBoolean(): boolean {
+    return this.store.state.selection.shapes.size >= 2 || this.subpathOperands() !== null;
+  }
+
+  /**
+   * Combine some paths of one shape, leaving the rest of the shape alone.
+   *
+   * The result replaces the chosen paths where the first of them was, so a
+   * shape of four paths that unites two of them has three, in the order it had.
+   * Nothing about the shape changes: same id, same name, same style, and the
+   * paths that were not selected are untouched.
+   */
+  private booleanWithin(shape: Shape, indices: number[], op: BooleanOp): { ok: boolean; message: string } {
+    const label = BOOLEAN_LABEL[op];
+    let result: Subpath[] | null;
+    try {
+      result = booleanSubpaths(shape, indices, op);
+    } catch (err) {
+      return { ok: false, message: `${label} failed: ${(err as Error).message}` };
+    }
+    if (!result) {
+      return { ok: false, message: `${label} left nothing. The document is unchanged.` };
+    }
+
+    const made = result;
+    const id = shape.id;
+    const at = indices[0];
+    const drop = new Set(indices);
+    this.store.edit((st) => {
+      const target = findShape(st.doc, id);
+      if (!target) return;
+      const kept = target.subpaths.filter((_, i) => !drop.has(i));
+      /* `at` counts in the original array and in `kept` alike, because it is
+         the SMALLEST chosen index: nothing before it was removed. That is not
+         true of `dropShapes`, which has to count in the rows that are staying
+         precisely because the row it is landing before may sit after ones that
+         went. Written out because the two look like the same problem. */
+      target.subpaths = [...kept.slice(0, at), ...made, ...kept.slice(at)];
+      st.selection = emptySelection();
+      st.selection.shapes.add(id);
+    });
+
+    const n = made.length;
+    return {
+      ok: true,
+      message: `${label}: ${indices.length} paths of ${shape.name} → ${n} path${n === 1 ? '' : 's'}.`,
     };
   }
 

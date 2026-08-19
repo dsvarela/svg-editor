@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { booleanShapes } from '../src/io/boolean';
+import { booleanShapes, booleanSubpaths } from '../src/io/boolean';
 import { shapeFromPath } from '../src/model/doc';
 import { serialisePath } from '../src/core/serialise';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
@@ -133,5 +133,90 @@ describe('degenerate input', () => {
     const withOpen = size(booleanShapes([open, sq(10, 10, 20, 20)], 'intersect'));
     const withClosed = size(booleanShapes([closed, sq(10, 10, 20, 20)], 'intersect'));
     expect(withOpen).toBeCloseTo(withClosed, 6);
+  });
+});
+
+/**
+ * The same operations one level down, between the paths of one shape.
+ *
+ * `booleanShapes` concatenates a shape's subpaths into one region, which is
+ * what makes a ring a ring. `booleanSubpaths` hands each one over separately.
+ * Those are opposite readings of the same geometry, so the tests that matter
+ * are the ones where the two disagree, and the first `describe` below is
+ * exactly that pair.
+ */
+describe('booleans between the paths of one shape', () => {
+  /** One shape holding two 20x20 squares overlapping in a 10x10 corner. */
+  const pair = () => {
+    const sh = sq(0, 0, 20, 20);
+    sh.subpaths.push(...sq(10, 10, 20, 20).subpaths);
+    return sh;
+  };
+
+  it('unites two paths of one shape to the combined area', () => {
+    expect(size(booleanSubpaths(pair(), [0, 1], 'unite'))).toBeCloseTo(700, 6);
+  });
+
+  it('intersects them to the overlap', () => {
+    expect(size(booleanSubpaths(pair(), [0, 1], 'intersect'))).toBeCloseTo(100, 6);
+  });
+
+  it('subtracts the second path from the first', () => {
+    expect(size(booleanSubpaths(pair(), [0, 1], 'subtract'))).toBeCloseTo(300, 6);
+  });
+
+  it('excludes the overlap from both', () => {
+    expect(size(booleanSubpaths(pair(), [0, 1], 'exclude'))).toBeCloseTo(600, 6);
+  });
+
+  it('needs two paths', () => {
+    expect(booleanSubpaths(pair(), [0], 'unite')).toBeNull();
+    expect(booleanSubpaths(pair(), [], 'unite')).toBeNull();
+  });
+
+  it('ignores an index that names no path', () => {
+    expect(booleanSubpaths(pair(), [0, 9], 'unite')).toBeNull();
+  });
+
+  it('leaves the shape it was given alone', () => {
+    const sh = pair();
+    const before = sh.subpaths.map((sp) => sp.nodes.map((n) => [...n.pt]));
+    booleanSubpaths(sh, [0, 1], 'unite');
+    expect(sh.subpaths.map((sp) => sp.nodes.map((n) => [...n.pt]))).toEqual(before);
+  });
+
+  /* Only some of them, which is the case that separates this from splitting the
+     shape apart first: a third path that was not selected has to survive
+     untouched, and the operation has to ignore it as an operand. */
+  it('combines only the paths it was given', () => {
+    const sh = pair();
+    sh.subpaths.push(...sq(60, 60, 10, 10).subpaths);
+    expect(size(booleanSubpaths(sh, [0, 1], 'unite'))).toBeCloseTo(700, 6);
+    expect(size(booleanSubpaths(sh, [1, 2], 'unite'))).toBeCloseTo(400 + 100, 6);
+  });
+
+  /* The reading that makes the two entry points different rather than one with
+     a flag. A ring is a disc with a hole, spelled as two subpaths of one shape
+     under even-odd; as one region it has an area of 300, and as two separate
+     regions united it is the disc, 400. */
+  it('reads two paths of one shape as two regions, where the shape is one', () => {
+    const ring = sq(0, 0, 20, 20);
+    ring.subpaths.push(...sq(5, 5, 10, 10).subpaths);
+    ring.style.fillRule = 'evenodd';
+
+    const asOneRegion = booleanShapes([ring, sq(60, 60, 1, 1)], 'unite');
+    expect(size(asOneRegion)).toBeCloseTo(400 - 100 + 1, 6);
+
+    const asTwoRegions = booleanSubpaths(ring, [0, 1], 'unite');
+    expect(size(asTwoRegions)).toBeCloseTo(400, 6);
+  });
+
+  it("carries the shape's fill rule onto every operand", () => {
+    const sh = pair();
+    sh.style.fillRule = 'evenodd';
+    // A square inside another, exclusive-or'd: even-odd or not, two disjoint
+    // regions of 400 with a 100 overlap exclude to 600 either way, so this is
+    // asserting the call goes through rather than the rule changing the answer.
+    expect(size(booleanSubpaths(sh, [0, 1], 'exclude'))).toBeCloseTo(600, 6);
   });
 });

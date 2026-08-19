@@ -60,33 +60,42 @@ const WELD_EPS = 1e-9;
  * region a path encloses, and an unclosed path encloses the same region as its
  * implicitly-closed twin.
  */
-function shapeToPath(shape: Shape): PbPath {
+function subpathToPath(sp: Subpath): PbPath {
   const out: PbPath = [];
+  if (sp.nodes.length < 2) return out;
 
-  for (const sp of shape.subpaths) {
-    if (sp.nodes.length < 2) continue;
-
-    for (let i = 0; i < segmentCount(sp); i++) {
-      const a = sp.nodes[i];
-      const b = sp.nodes[endNodeIndex(sp, i)];
-      if (segmentIsLine(sp, i)) {
-        out.push(['L', [...a.pt], [...b.pt]]);
-      } else {
-        const c = segmentAsCubic(sp, i);
-        out.push(['C', c[0], c[1], c[2], c[3]]);
-      }
+  for (let i = 0; i < segmentCount(sp); i++) {
+    const a = sp.nodes[i];
+    const b = sp.nodes[endNodeIndex(sp, i)];
+    if (segmentIsLine(sp, i)) {
+      out.push(['L', [...a.pt], [...b.pt]]);
+    } else {
+      const c = segmentAsCubic(sp, i);
+      out.push(['C', c[0], c[1], c[2], c[3]]);
     }
+  }
 
-    if (!sp.closed) {
-      const first = sp.nodes[0].pt;
-      const last = sp.nodes[sp.nodes.length - 1].pt;
-      if (Math.hypot(last[0] - first[0], last[1] - first[1]) > WELD_EPS) {
-        out.push(['L', [...last], [...first]]);
-      }
+  if (!sp.closed) {
+    const first = sp.nodes[0].pt;
+    const last = sp.nodes[sp.nodes.length - 1].pt;
+    if (Math.hypot(last[0] - first[0], last[1] - first[1]) > WELD_EPS) {
+      out.push(['L', [...last], [...first]]);
     }
   }
 
   return out;
+}
+
+/**
+ * A whole shape as one path: every subpath concatenated.
+ *
+ * That concatenation is what makes a ring a ring. Two subpaths in one path are
+ * one region under the shape's fill rule, so a disc with a hole subtracted from
+ * something takes the hole with it. Handing them over separately, which is what
+ * `booleanSubpaths` does, asks the opposite question.
+ */
+function shapeToPath(shape: Shape): PbPath {
+  return shape.subpaths.flatMap(subpathToPath);
 }
 
 function segStart(s: PbSegment): Pt {
@@ -172,10 +181,42 @@ function asCubic(seg: PbSegment): [Pt, Pt, Pt, Pt] | null {
 export function booleanShapes(shapes: Shape[], op: BooleanOp): Subpath[] | null {
   if (shapes.length < 2) return null;
 
-  const inputs = shapes.map((s) => ({
-    path: shapeToPath(s),
-    fillRule: s.style.fillRule === 'evenodd' ? FillRule.EvenOdd : FillRule.NonZero,
-  }));
+  return run(
+    shapes.map((s) => ({
+      path: shapeToPath(s),
+      fillRule: s.style.fillRule === 'evenodd' ? FillRule.EvenOdd : FillRule.NonZero,
+    })),
+    op,
+  );
+}
+
+/**
+ * Combine some paths of one shape with each other.
+ *
+ * The same operation one level down, and the reason it needs its own entry
+ * point rather than a flag: `booleanShapes` concatenates a shape's subpaths into
+ * one region, which is what makes a ring a ring, and this hands each one over as
+ * a region of its own. The two are opposite readings of the same geometry, so
+ * neither can be the other with an argument.
+ *
+ * Every operand takes the shape's fill rule, because they share one -- a
+ * subpath has no style of its own, which is the whole reason paths of one shape
+ * can make a hole. Order is subpath order, so `subtract` is first-minus-the-rest
+ * exactly as it is between shapes.
+ */
+export function booleanSubpaths(shape: Shape, indices: number[], op: BooleanOp): Subpath[] | null {
+  if (indices.length < 2) return null;
+  const rule = shape.style.fillRule === 'evenodd' ? FillRule.EvenOdd : FillRule.NonZero;
+  const chosen = indices.map((i) => shape.subpaths[i]).filter(Boolean);
+  if (chosen.length < 2) return null;
+  return run(
+    chosen.map((sp) => ({ path: subpathToPath(sp), fillRule: rule })),
+    op,
+  );
+}
+
+/** The half both entry points share: run it, rebuild it, and check the numbers. */
+function run(inputs: { path: PbPath; fillRule: FillRule }[], op: BooleanOp): Subpath[] | null {
   if (inputs.some((i) => i.path.length === 0)) return null;
 
   const result = new PathBoolean(inputs).get(OPS[op]);

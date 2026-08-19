@@ -328,6 +328,21 @@ follows the box, so a pentagon in a wide drag is a wide pentagon.
 The first selected survives with its name and style, and **Subtract** removes
 the rest from it.
 
+**Or two paths of one shape.** Open the shape in the list and select two of its
+paths, and the same four operations combine those, leaving the shape and any
+paths you did not select alone. The result lands where the first chosen path was,
+so nothing else moves. The header says which of the two it is about: `2 shapes`
+or `paths of one shape`.
+
+A shape selected whole is a question about shapes, so **Unite** on one shape
+still declines rather than quietly uniting its own paths. Select the paths to ask
+the other question.
+
+**The two readings are opposite, which is why they are different operations.**
+Between shapes, a shape's paths are one region together, which is what makes a
+hole a hole: subtracting a ring takes its hole with it. Between paths, each one
+is a region of its own, so uniting a ring's two paths gives back the solid disc.
+
 **Make one shape** (`Shift+P`) also needs two or more, and is the odd one out:
 it changes no geometry. The four booleans work out what region the shapes cover
 and rebuild the outline from the answer, which discards every node that fell

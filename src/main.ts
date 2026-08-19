@@ -2298,15 +2298,20 @@ splitBtn.addEventListener('click', () => {
 
 function refreshCombine(): void {
   const n = store.state.selection.shapes.size;
-  for (const b of boolBtns) b.disabled = n < 2;
-  // Same requirement as the booleans, so the same disabled state.
+  /* Not the shape count any more: two paths of one shape are operands too, and
+     `canBoolean` is the one place that decides which of the two readings the
+     selection is asking for. */
+  for (const b of boolBtns) b.disabled = !commands.canBoolean;
+  /* Still the shape count. Make one shape moves whole shapes into one, and the
+     paths of one shape are already in one. */
   makeOneBtn.disabled = n < 2;
   /* A different requirement, so a different state. Split needs one shape that
      holds more than one path, which one selected shape can satisfy and four
      selected shapes can fail. Tying it to the count would offer it where it
      does nothing and withhold it where it works. */
   splitBtn.disabled = !commands.canSplitShapes();
-  boolInfo.textContent = n < 2 ? 'needs 2+' : `${n} shapes`;
+  boolInfo.textContent =
+    n >= 2 ? `${n} shapes` : commands.canBoolean ? 'paths of one shape' : 'needs 2+';
 }
 
 /**

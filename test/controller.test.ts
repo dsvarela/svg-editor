@@ -540,6 +540,114 @@ describe('combine', () => {
     expect(h.store.state.doc.shapes).toHaveLength(2);
     expect(h.store.canUndo).toBe(false);
   });
+
+  /**
+   * The paths of one shape, which §64 made operands.
+   *
+   * The geometry is `test/boolean.test.ts`; what these are about is which of
+   * the two readings a selection asks for, and where the result lands among the
+   * paths that were not chosen.
+   */
+  describe('between the paths of one shape', () => {
+    /** One shape of three paths: two overlapping squares and one far away. */
+    function threePaths(): Harness {
+      const h = harness('M0 0 H20 V20 H0 Z');
+      h.store.update((s) => {
+        const sh = s.doc.shapes[0];
+        sh.subpaths.push(...shapeFromPath('M10 10 H30 V30 H10 Z').subpaths);
+        sh.subpaths.push(...shapeFromPath('M60 60 H70 V70 H60 Z').subpaths);
+      });
+      return h;
+    }
+
+    /** Select the nodes of these subpaths, and no shape. */
+    const pickPaths = (h: Harness, ...which: number[]): void =>
+      h.store.update((s) => {
+        s.selection.shapes.clear();
+        s.selection.nodes.clear();
+        const sh = s.doc.shapes[0];
+        for (const i of which) for (const n of sh.subpaths[i].nodes) s.selection.nodes.add(n.id);
+      });
+
+    it('combines two paths of one shape and leaves the third alone', () => {
+      const h = threePaths();
+      pickPaths(h, 0, 1);
+      const r = h.commands.booleanSelection('unite');
+      expect(r.ok).toBe(true);
+      const sh = h.store.state.doc.shapes[0];
+      expect(h.store.state.doc.shapes).toHaveLength(1);
+      // Two became one, and the untouched third is still there.
+      expect(sh.subpaths).toHaveLength(2);
+    });
+
+    it('puts the result where the first chosen path was', () => {
+      const h = threePaths();
+      // The far square first, so a result appended at the end would show.
+      pickPaths(h, 1, 2);
+      h.commands.booleanSelection('unite');
+      const sh = h.store.state.doc.shapes[0];
+      expect(sh.subpaths).toHaveLength(3);
+      // Path 0 is untouched and still first.
+      expect(sh.subpaths[0].nodes[0].pt).toEqual([0, 0]);
+    });
+
+    it('keeps the shape, its id and its style', () => {
+      const h = threePaths();
+      h.store.update((s) => (s.doc.shapes[0].style.fill = '#123456'));
+      const id = h.store.state.doc.shapes[0].id;
+      pickPaths(h, 0, 1);
+      h.commands.booleanSelection('unite');
+      expect(h.store.state.doc.shapes[0].id).toBe(id);
+      expect(h.store.state.doc.shapes[0].style.fill).toBe('#123456');
+    });
+
+    /* A whole-shape selection is a question about shapes. Answering it with the
+       shape's own paths would turn Unite on one shape into an operation it has
+       never done, silently. */
+    it('refuses a shape selected whole, rather than uniting its own paths', () => {
+      const h = threePaths();
+      h.store.update((s) => s.selection.shapes.add(s.doc.shapes[0].id));
+      const r = h.commands.booleanSelection('unite');
+      expect(r.ok).toBe(false);
+      expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(3);
+    });
+
+    it('refuses one path, and says what it wants', () => {
+      const h = threePaths();
+      pickPaths(h, 0);
+      const r = h.commands.booleanSelection('unite');
+      expect(r.ok).toBe(false);
+      expect(r.message).toMatch(/two paths of one shape/);
+    });
+
+    it('refuses paths spread across two shapes', () => {
+      const h = threePaths();
+      h.store.update((s) => s.doc.shapes.push(shapeFromPath('M40 0 H50 V10 H40 Z')));
+      h.store.update((s) => {
+        s.selection.nodes.clear();
+        for (const n of s.doc.shapes[0].subpaths[0].nodes) s.selection.nodes.add(n.id);
+        for (const n of s.doc.shapes[1].subpaths[0].nodes) s.selection.nodes.add(n.id);
+      });
+      expect(h.commands.booleanSelection('unite').ok).toBe(false);
+    });
+
+    it('says whether it has operands, for the buttons', () => {
+      const h = threePaths();
+      expect(h.commands.canBoolean).toBe(false);
+      pickPaths(h, 0);
+      expect(h.commands.canBoolean).toBe(false);
+      pickPaths(h, 0, 1);
+      expect(h.commands.canBoolean).toBe(true);
+    });
+
+    it('is one undo step', () => {
+      const h = threePaths();
+      pickPaths(h, 0, 1);
+      h.commands.booleanSelection('unite');
+      h.store.undo();
+      expect(h.store.state.doc.shapes[0].subpaths).toHaveLength(3);
+    });
+  });
 });
 
 describe('deleting a selection', () => {
