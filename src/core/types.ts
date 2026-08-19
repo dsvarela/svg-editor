@@ -321,6 +321,18 @@ export const STROKE_JOIN = 'round';
 export const STROKE_CAP = 'round';
 
 /**
+ * How many decimals an exported `opacity` keeps.
+ *
+ * Its own number, deliberately not the serialiser's `decimals`. That setting is
+ * offered from 0 and is described as trading file size against a coarser shape,
+ * which is a true statement about coordinates and a false one about opacity: at
+ * 0 decimals every shape below half opacity rounded to `opacity="0"` and was
+ * invisible in the saved file. Three is more than a percentage typed as a whole
+ * number can need, which is all the panel produces.
+ */
+export const OPACITY_DECIMALS = 3;
+
+/**
  * Distance below which two anchors are one anchor.
  *
  * The cases this decides put the two points at bit-identical coordinates, so

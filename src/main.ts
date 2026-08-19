@@ -951,6 +951,31 @@ for (const [id, part] of boundFields) {
   });
 }
 
+/**
+ * Commit a half-typed size before the canvas takes the selection away.
+ *
+ * `change` fires on blur, and moving focus is the DEFAULT ACTION of a
+ * pointerdown -- it happens after every pointerdown listener has run. So
+ * pressing a shape on the canvas let the controller replace the selection
+ * first, and the number then landed on the shape that had just been pressed:
+ * type 50 into the width, press a different shape, and that shape is resized
+ * mid-gesture while the one the field described is untouched. On bare canvas the
+ * edit was dropped with `Nothing is selected.`
+ *
+ * Capture on the stage, so it runs before the overlay's own listener rather than
+ * in registration order beside it. Every other route out of the field was always
+ * correct: a panel button and a shape-list row both act on `click`, which comes
+ * after the focus shift, which is why this is the only place that needs saying.
+ */
+canvasRoot.addEventListener(
+  'pointerdown',
+  () => {
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement && boundFields.some(([id]) => id === `#${el.id}`)) el.blur();
+  },
+  true,
+);
+
 function refreshBounds(): void {
   const b = commands.selectionBounds();
   for (const [id, part] of boundFields) {

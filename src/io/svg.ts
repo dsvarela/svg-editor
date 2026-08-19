@@ -16,7 +16,7 @@ import type { Mat } from '../core/affine';
 import { parsePath } from '../core/parse';
 import { formatNumber, serialisePath } from '../core/serialise';
 import type { SerialiseOptions } from '../core/serialise';
-import { STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
+import { OPACITY_DECIMALS, STROKE_CAP, STROKE_JOIN, defaultStyle } from '../core/types';
 import type { Doc, Group, Shape, Style, Subpath, ViewBox } from '../core/types';
 import { findGroup, groupChain, makeShape, nextId } from '../model/doc';
 import { transformShape } from '../model/ops';
@@ -355,10 +355,17 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
       /* Only when it says something. `opacity="1"` is the initial value, so
          writing it on every path would put an attribute in every file to state
          the default -- the same reason `fill-rule` is written only for
-         even-odd. Rounded with the decimals the geometry gets, so a setting
-         typed as a whole percentage does not export as 0.6699999. */
+         even-odd.
+
+         `OPACITY_DECIMALS`, and NOT the geometry's setting. Decimals is offered
+         from 0, and is described to the reader as trading file size against a
+         coarser shape. At 0 every shape under half opacity exported as
+         `opacity="0"` -- invisible, in the file people keep, from a control
+         that promised to coarsen an outline. A shape that vanishes is not a
+         coarser shape. Three is enough for a percentage typed whole, which is
+         all this control can produce. */
       s.style.opacity < 1
-        ? `opacity="${xmlAttr(formatNumber(s.style.opacity, ser.decimals ?? 3))}"`
+        ? `opacity="${xmlAttr(formatNumber(s.style.opacity, OPACITY_DECIMALS))}"`
         : '',
       s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
     ].filter(Boolean);

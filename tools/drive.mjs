@@ -4937,6 +4937,43 @@ const scenarios = {
       `selecting the second shape read ${JSON.stringify(out.other)}`,
     );
 
+    /* A number typed and then abandoned by pressing the canvas.
+
+       `change` fires on blur, and moving focus is the DEFAULT ACTION of a
+       pointerdown, so it lands after every pointerdown listener has run. The
+       controller therefore replaced the selection first and the typed number
+       went to whatever was pressed: a second shape resized mid-gesture, and the
+       shape the field described untouched. Measured on both shapes' `d`,
+       because the field values afterwards look right either way. */
+    await page.click('#shapelist li.shape[aria-level="1"]');
+    await settle(page);
+    const dOf = () => page.evaluate(() =>
+      [...document.querySelectorAll('.artwork path')].map((p) => p.getAttribute('d')));
+    out.beforeStray = await dOf();
+
+    await page.fill('#selW', '55');
+    const box = await page.locator('.artwork path').nth(1).boundingBox();
+    await page.mouse.move(Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2));
+    await page.mouse.down();
+    await page.mouse.up();
+    await settle(page);
+    out.afterStray = await dOf();
+    /* Both halves. The width has to REACH the shape the field described --
+       without the flush it was dropped entirely, with `Nothing is selected.`,
+       because the press had already cleared the selection -- and the shape that
+       was pressed has to be untouched, which is the other way the same race
+       lands. One without the other passes on the bug. */
+    check(
+      /H 65 /.test(out.afterStray[0]),
+      `the typed width never reached the shape it was typed for: ` +
+        `${JSON.stringify(out.beforeStray[0])} -> ${JSON.stringify(out.afterStray[0])}`,
+    );
+    check(
+      out.afterStray[1] === out.beforeStray[1],
+      `pressing the second shape applied the width typed for the first: it went ` +
+        `${JSON.stringify(out.beforeStray[1])} -> ${JSON.stringify(out.afterStray[1])}`,
+    );
+
     return out;
   },
 

@@ -513,9 +513,27 @@ describe('opacity', () => {
     expect(importSvg(out).shapes[0].style.opacity).toBeCloseTo(0.4, 12);
   });
 
-  it('rounds it with the decimals the geometry gets', () => {
+  /* This asserted `decimals: 2` gave `opacity="0.67"`, which was true and was
+     the defect: the same rule at `decimals: 0` gave `opacity="0"`, so every
+     shape under half opacity was invisible in the saved file. The control that
+     sets it promises a coarser shape, and a shape that vanishes is not one. */
+  it('keeps its own precision, whatever the geometry is rounded to', () => {
     const doc = emptyDoc();
     doc.shapes = importSvg('<svg><path d="M0 0 L1 0" opacity="0.6666666"/></svg>').shapes;
-    expect(exportSvg(doc, { decimals: 2 })).toContain('opacity="0.67"');
+    for (const decimals of [0, 1, 2, 3, 9]) {
+      expect(exportSvg(doc, { decimals })).toContain('opacity="0.667"');
+    }
+  });
+
+  /* The case that made it data loss rather than a rounding preference: every
+     opacity the panel can set, at the coarsest geometry the panel can set. */
+  it('never exports a visible shape as fully transparent', () => {
+    for (const pct of [1, 5, 25, 45, 49, 50, 99]) {
+      const doc = emptyDoc();
+      doc.shapes = importSvg(`<svg><path d="M0 0 L1 0" opacity="${pct / 100}"/></svg>`).shapes;
+      const out = exportSvg(doc, { decimals: 0 });
+      expect(out).not.toContain('opacity="0"');
+      expect(importSvg(out).shapes[0].style.opacity).toBeCloseTo(pct / 100, 6);
+    }
   });
 });
