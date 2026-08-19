@@ -84,7 +84,9 @@ and unconfirmed by a hand. The rules still hold for new work:
 - Every operation gets a button, not only a shortcut. Shortcuts stay as the
   fast path. **On a mouse the button may be hidden, never absent**: the five that
   only repeat a key (Duplicate, Delete, Copy, Cut, Paste) and the node stepper
-  are behind `touchButtons`, which is on wherever `pointer: coarse` matches. A
+  are behind `touchButtons`, which a FIRST visit sets from `pointer: coarse`. A
+  restored session carries the answer somebody gave and a media query does not
+  overrule it, so the guess is made only when there is nothing to restore. A
   new operation still needs a button, and needs a key before it may hide one.
 - No information appears only on hover. A tooltip may enrich, never inform.
 - New controls are laid out at 44 px minimum, which is the touch target
@@ -94,9 +96,9 @@ Four pieces are in place, all from 2026-08-13:
 
 - **Input.** The controller listens to `pointer*` and never to `mouse*`, and
   the overlay sets `touch-action: none`.
-- **Size.** A `@media (pointer: coarse)` block at the end of
+- **Size.** A `@media (pointer: coarse)` block near the end of
   `src/ui/styles.css` raises `--h` and the handful of controls that do not take
-  their height from it, so **every one of the 229 controls is at least 44 px to
+  their height from it, so **every one of the 228 controls is at least 44 px to
   a finger, and none of them changed for a mouse**.
 - **Zoom.** Two fingers zoom about the point between them and pan as that point
   moves: `Controller.pinchMove`.
@@ -118,6 +120,14 @@ the rail redesign left it eleven; it skipped disabled ones, which are laid out
 at the size they will have when they are enabled; and its key for a control
 with no id collided, which quietly merged 28 of them into other rows. On the
 markup of that date it had been reporting 37 controls where there were 166.
+
+**Three instruments are gates, and were not until 2026-08-19.** `tools/keys.mjs`
+and `tools/touch.mjs` printed a count and exited 0 whatever it said, and CI ran
+neither of them, nor `npm run check:contrast`. Both set an exit code now and CI
+runs all three, so a regression in keyboard reach, touch target size or contrast
+turns a run red. **No green from those three before that date is evidence of
+anything**, which is the fourth time a signal in this project has been worth
+nothing.
 
 **A reload is not a reset.** The session is written to `localStorage` on a
 timer and read back on load, and the page flushes it on `pagehide` -- so
@@ -161,7 +171,7 @@ read by anything.
 a hit**, painted over something that does, because such an element does the
 opposite of the control it covers. It found two, and only one was doing harm:
 `.handle-line` cost **16.4% of the whole pixels down a selected rectangle's
-edge**, and restoring it fails 31 of the 52 scenarios. §54 of
+edge**, and restoring it failed 31 of the 52 scenarios there were then. §54 of
 `docs/ARCHITECTURE.md` has the rule and both instances.
 
 **No browser scenario waits a fixed number of milliseconds.** There were 233
@@ -187,7 +197,7 @@ tools go through it: `BROWSER` picks the engine, `BROWSER_PATH` points at a
 system Chromium-family binary, `APP_URL` moves the dev server. Playwright drives
 its own builds, so a stock `/usr/bin/firefox` cannot be used and
 `node node_modules/playwright-core/cli.js install firefox` is what puts one
-there. **All 52 scenarios pass on Firefox, and no figure here was measured on it
+there. **All 53 scenarios pass on Firefox, and no figure here was measured on it
 before 2026-08-18.**
 
 **CI's browser job could not launch one from that switch until 2026-08-18, so a

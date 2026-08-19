@@ -213,24 +213,26 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
         commands.stepNodeSelection(forward ? 1 : -1, e.shiftKey);
         return;
       }
-      // Shift+I, the keyboard's version of double-clicking an outline.
       /* Shift+G, beside Ctrl+G and Ctrl+Shift+G, which group and ungroup. It
          changes the selection rather than the document, and is in the guard
          above anyway: a drag holds refs into the selection it started with, and
          widening that mid-drag hands the gesture shapes it never picked up. */
       case 'G': {
+        if (!e.shiftKey) return;
         e.preventDefault();
         commands.selectGroup();
-        break;
+        return;
       }
       /* Shift+T, and not Ctrl+D, which is what Illustrator uses for this and
          what Duplicate already uses here. Duplicate is the one you press first
          and far more often, so it keeps the binding every editor shares. */
       case 'T': {
+        if (!e.shiftKey) return;
         e.preventDefault();
         commands.repeatTransform();
-        break;
+        return;
       }
+      // Shift+I, the keyboard's version of double-clicking an outline.
       case 'I': {
         if (!e.shiftKey) return;
         e.preventDefault();

@@ -288,37 +288,24 @@ other, which `continuityOf` reads as a corner. That is correct — there is no
 pair to keep in line — and it is what keeps the sides straight under later
 edits.
 
-`circulariseSubpath` is the inverse operation, and the interesting one.
-`fitCircle` finds the best circle through the nodes by algebraic least squares
-(Kåsa: `x² + y² = 2ax + 2by + c` is linear in the unknowns, so it is a solve
-rather than an iteration, and centring the data first decouples `c` and keeps
-the conditioning sane far from the origin). Each node then keeps its angle and
-moves to the fitted radius.
+**Circularise was the inverse operation, and it is gone.** It fitted a circle
+through a contour's nodes by least squares and moved each onto it, and §55
+records why it was removed on 2026-08-18. What used to stand here was thirty
+lines describing `circulariseSubpath` and `fitCircle` in the present tense,
+including a citation to a line of `test/primitives.test.ts` that is now a third
+of its old length. Both functions were deleted with the feature; the prose was
+not, and `npm run check:docs` cannot see it, because it checks form and links
+rather than whether a named function exists.
 
-The handles are rebuilt at `r · 4/3 · tan(θ/4)` for the angle θ each segment now
-spans, which reduces to KAPPA at a quarter turn. It is the standard
-midpoint-matching approximation, **not an exact arc** — a cubic cannot be one —
-and its error grows steeply with the span: 2.7e-4 of the radius at 90°, 8.9e-3
-at 160°, 1.8e-2 at 180°.
-
-So the result is **not** independent of how the nodes are distributed, and an
-earlier version of this section claimed it was. This document's own example —
-five nodes at 0°, 10°, 20°, 140°, 260° — measures 1.54e-3 against 2.73e-4 for
-four even ones, 5.7× less round. `test/primitives.test.ts:244` already asserted
-the looser bound while the prose above it claimed parity; the test was right.
-
-**A closed contour is a ring, and its spans must sum to a full turn.** Taking
-each span the shorter way round is right below half a turn and silently
-destructive above it: four nodes at 0°, 20°, 40° and 60° leave a 300° gap, the
-shorter way reads that as −60°, and the closing segment retraces the other three
-instead of completing the circle. Every node still lands exactly on the circle,
-so a radial measurement cannot see it, and the reported travel is zero — it
-looked like a success. So a closed contour now picks one winding from the sign
-of the polygon's area, forces every span to follow it, and checks the total is
-one turn; a node order that is not a ring, such as a star, is refused with
-nothing mutated. Fitting is a compromise by nature — it
-cannot know which node was the mistake — so the operation reports the radius it
-found and how far the furthest node had to travel, and lets the reader judge.
+The one part worth keeping is the constraint it discovered, because it still
+governs any operation that rebuilds a ring: **a closed contour's spans must sum
+to a full turn.** Taking each span the shorter way round is right below half a
+turn and silently destructive above it. Four nodes at 0°, 20°, 40° and 60° leave
+a 300° gap, the shorter way reads that as −60°, and the closing segment retraces
+the other three instead of completing the circle. Every node still lands exactly
+on the circle, so a radial measurement cannot see it and the reported travel is
+zero: it looks like a success. Anything that walks a ring by angle has to pick
+one winding from the sign of the polygon's area and check the total.
 
 ## 13. Delete never refuses; break is the other operation
 
@@ -463,7 +450,7 @@ undo entry *and* silently destroyed a pending redo, so pressing it five times
 cost five presses of Ctrl+Z, none of which visibly did anything.
 
 The point is that the decision lives in one place. `setContinuity` returning a
-boolean, and `circulariseSubpath` returning `null` before touching anything, are
+boolean, and `booleanSubpaths` returning `null` before touching anything, are
 the same idea one level down: work out the answer, then commit it.
 
 ## 17. One place decides how thick a line is
@@ -887,15 +874,11 @@ it meant.
 **The repair half is why this exists.** Two anchors on the same point export a
 zero-length command, and a path carrying one can never be simplified again: a
 zero chord leaves the fitter with no tangent to work from. §23 closed the route
-through `roundCorner`, and two remained. `rectSubpath` now names its four tangent
-coordinates once and emits a vanished side's two ends as one node, so a square
-rounded to its own limit is a four-node circle and a 40 by 20 rounded at 10 is a
-six-node stadium. `circulariseSubpath` runs `fuseDegenerate` afterwards and
-reports the count in the status line, because two nodes at the same angle about
-the centre land on the same point of the circle however faithfully each one was
-placed, and the node count changing is something the person watching should be
-told. It computed that count and threw it away for a day, while this paragraph
-and two others said the user was being told.
+through `roundCorner`, and two more existed at the time: the rectangle tool's own
+corner radius, and Circularise. **Both were removed on 2026-08-18** (§55), and
+`rectSubpath` takes no radius now. So the repair has one caller left rather than
+three, and this paragraph described the other two in the present tense for a day
+after they were deleted.
 
 `fuseDegenerate` is also offered directly: with a shape selected rather than a
 pair, **Fuse** sweeps it. A path can arrive carrying a zero-length segment from

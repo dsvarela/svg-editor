@@ -40,7 +40,7 @@ disk and it works, with no server and no external requests.
 
 ## Status of this manual
 
-Written against the editor as it stands on 2026-08-17. Features still to come
+Written against the editor as it stands on 2026-08-19. Features still to come
 are listed in [`SHOPPING-LIST.md`](../SHOPPING-LIST.md), and the known rough
 edges are named in the [reference](reference.md#known-limits) rather than left
 for you to find.

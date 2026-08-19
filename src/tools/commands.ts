@@ -2038,11 +2038,6 @@ export class Commands {
     return true;
   }
 
-  /** Whether there is anything to paste, so the button can say so before it is pressed. */
-  hasClipboard(): boolean {
-    return this.clipboard.length > 0;
-  }
-
   /**
    * Put the clipboard back, offset, and select what landed.
    *
@@ -2091,7 +2086,14 @@ export class Commands {
     return true;
   }
 
-  /** Whether a paste would do anything, for the button that offers it. */
+  /**
+   * Whether a paste would do anything, for the button that offers it.
+   *
+   * A getter, like every other capability probe here. There were briefly two of
+   * these -- this and a `hasClipboard()` method -- answering one question, with
+   * the button reading one and the tests the other. Two names for one fact is
+   * two things to remember to change.
+   */
   get canPaste(): boolean {
     return this.clipboard.length > 0;
   }

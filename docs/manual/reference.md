@@ -31,7 +31,7 @@ have meant something unrelated.
 | `Alt`-drag a handle | Move it alone, breaking the pair |
 | Drag an outline | Move the shape, and everything else selected with it |
 | Double-click an outline | Insert a node there, without changing the curve |
-| Double-click a node | Cycle corner, smooth, symmetric |
+| Double-click a node | Cycle cusp, smooth, symmetric |
 | Drag a box handle | Scale the selection. `Shift` keeps the proportions, `Alt` works from the centre |
 | Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
 | Drag on empty canvas | Marquee-select nodes |
@@ -54,7 +54,7 @@ treat those two rows as untried rather than as reported working.
 
 | Key | Effect |
 |---|---|
-| `V` `P` `E` `R` `H` | Select, pen, ellipse, rectangle, hand |
+| `V` `P` `E` `R` `N` `H` | Select, pen, ellipse, rectangle, polygon, hand |
 | Arrows | Nudge by one grid step |
 | `Shift`+arrows | Nudge by the coarse step: the grid step times **Shift &times;**, which defaults to 10 |
 | `Ctrl`+`←` `→` | Bend the active segment. `Shift` for a finer step |
@@ -113,7 +113,7 @@ Left to right.
 
 | Control | Does |
 |---|---|
-| Tool group | The four tools above |
+| Tool group | The six tools above |
 | Undo, Redo | History, 200 steps deep |
 | Curve, Straight | Curve or straighten the segments between selected nodes |
 | Delete | Delete the selection, following the **Delete** panel's mode |
@@ -130,8 +130,8 @@ Three tabs, split by what a control acts on.
 | Tab | Holds |
 |---|---|
 | **Shape** | Shapes, Style, Polygon, Combine, Path, Transform, Arrange |
-| **Node** | Node, Bend, Align, Delete |
-| **Document** | File, Canvas, Grid, Backdrop, Preview, Controls |
+| **Node** | Node, Delete. Bend, Align nodes and Distribute nodes are headings inside Node |
+| **Document** | File, Canvas, Angles, Guides, Keylines, Grid, Backdrop, Preview, Controls |
 
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
 focus.
@@ -349,7 +349,7 @@ and rebuild the outline from the answer, which discards every node that fell
 inside. This one moves the paths into a single shape and leaves each of them
 exactly as it was, so the node you placed is still the node you placed.
 
-What fills is then up to **Rule** in the Style panel. Under **Nonzero** the
+What fills is then up to **Fill rule** in the Style panel. Under **Nonzero** the
 shape looks the same as before. Under **Even-odd** a path inside another
 becomes a hole. This is the only way to make a hole here, because no boolean
 can produce one.
@@ -381,7 +381,7 @@ what they do: take nodes out of the path, or make a second path from it.
   new fill is what the stroke was coloured. A closed path becomes two contours
   under **Even-odd**, which is what makes it read as a band. A stroke too wide for
   its shape is refused rather than guessed at.
-- **Keep** with **Reduce** reduces each selected path to that many nodes, whatever
+- **Reduce** with **to** reduces each selected path to that many nodes, whatever
   it costs, and says how far the drawing moved. **Within** asks the opposite
   question: what can go for a given cost.
 - **Keep these nodes** removes everything except the nodes you have selected. A
@@ -553,7 +553,7 @@ then repeat again does the same thing a second time.
 
 ### Arrange
 
-Moves whole shapes around each other. The **Align** group in the Node panel is a
+Moves whole shapes around each other. **Align nodes** in the Node panel is a
 different thing: that one moves anchors inside one path.
 
 **Relative to** chooses the box everything below it works in.
@@ -568,7 +568,7 @@ centre, bottom. Each puts that edge of every shape on the same line. Two shapes
 are needed against the selection, and one is enough against the canvas, which is
 how a single icon is centred.
 
-**Distribute shapes** has the same six and needs three shapes. Each spaces that
+**Distribute shapes** offers gaps, centre and edges on each axis, and needs three shapes. Each spaces that
 edge evenly. Against the selection the outer two stay where they are; against the
 canvas they go flush to its sides.
 

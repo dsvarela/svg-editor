@@ -868,7 +868,6 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .row .seg button { min-width: 0; height: var(--h); padding: 0 6px; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
 
 /* The palette: a row of swatches that say what they will do. Each is fill over
    stroke, because those are the two values you pick one by. */

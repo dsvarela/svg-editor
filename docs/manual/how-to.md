@@ -66,7 +66,7 @@ panel applies to all of it.
 ## Make a corner smooth
 
 Select the node, then press **Smooth** or **Symm** in the **Node** panel. You can
-also double-click the node to cycle through corner, smooth and symmetric.
+also double-click the node to cycle through cusp, smooth and symmetric.
 
 Expect the drawing to move. A corner has no handles, so making it smooth has to
 create them, and creating them changes the curve. Roughly 1.5 units on a
@@ -194,7 +194,7 @@ a hole.
 1. Draw the outer shape, then draw the hole inside it as a second shape.
 2. Select both.
 3. Press **Make one shape** in the **Combine** panel, or `Shift+P`.
-4. Set **Rule** to **Even-odd** in the **Style** panel.
+4. Set **Fill rule** to **Even-odd** in the **Style** panel.
 
 The middle is now empty, and the two paths are still two paths: every node is
 where you put it, and you can drag either ring afterwards.

@@ -1195,11 +1195,10 @@ function refreshInspector(): void {
   ($('#insertNode') as HTMLButtonElement).disabled = count !== 2;
   ($('#findSrc') as HTMLButtonElement).disabled = count === 0;
 
-  /* Copy and Cut are derived from the selection, which every notification
-     carries. Paste is deliberately not derived from the clipboard: copying does
-     not edit the document and so raises no notification, and a Paste greyed out
-     until the next unrelated edit is a button lying about what it would do. It
-     stays live and says what is wrong when there is nothing to put back. */
+  /* All three derived from state every notification carries. Paste was not, and
+     the reason given was that copying raises no notification -- which stopped
+     being true when `copySelection` gained a `store.notify()` for exactly this,
+     leaving the comment arguing for a design the line below had replaced. */
   const anything = count > 0 || store.state.selection.shapes.size > 0;
   ($('#copySel') as HTMLButtonElement).disabled = !anything;
   ($('#cutSel') as HTMLButtonElement).disabled = !anything;
@@ -1236,7 +1235,7 @@ function refreshInspector(): void {
      for zero-length segments. Two free ends is the one case it declines, since
      that is Merge's, so the button goes with it rather than offering a press
      that can only answer back. */
-  ($('#pasteSel') as HTMLButtonElement).disabled = !commands.hasClipboard();
+  ($('#pasteSel') as HTMLButtonElement).disabled = !commands.canPaste;
 
   /* One node is the case this missed. Fuse welds two nodes that sit on the same
      point, or sweeps a whole shape for zero-length segments -- one node on its

@@ -4,8 +4,8 @@ A grid-based SVG path editor that you drive by dragging the drawing, not by
 editing a table of commands.
 
 **Use it at [dsvarela.github.io/svg-editor](https://dsvarela.github.io/svg-editor/),
-or download one file.** The whole editor is a single 290 kB HTML page with every
-asset inlined. Take the `.html` from [the latest
+or download one file.** The whole editor is a single HTML page with every
+asset inlined, 334 kB on 2026-08-19. Take the `.html` from [the latest
 release](https://github.com/dsvarela/svg-editor/releases/latest), open it in a
 browser, and it runs offline with no server and nothing installed.
 
@@ -44,8 +44,8 @@ npm run dev        # http://localhost:5173
 | `npm run test:watch` | The same, watching |
 | `npm run drive <scenario>` | Drive the real browser. See [Testing](#testing) |
 
-The production build is one file, no external requests: **289.9 kB, 86.5 kB
-gzipped** on 2026-08-17, as `npm run build` reports it. Open `dist/index.html`
+The production build is one file, no external requests: **333.7 kB, 95.7 kB
+gzipped** on 2026-08-19, as `npm run build` reports it. Open `dist/index.html`
 from disk and it works. Auto-trace is 4.2 kB of
 that all-in, against the 278 kB a WASM tracer would have cost: 2.3 kB of tracer
 and 1.9 kB for the inlined worker it runs in, measured by building without it.
@@ -65,7 +65,7 @@ tells you a feature exists that does not.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code looks the way it does, and what it costs | a standing explanation |
 | [`docs/STYLE.md`](docs/STYLE.md) | How everything a reader sees gets written | a rule to apply |
 | [`docs/SHOPPING-LIST.md`](docs/SHOPPING-LIST.md) | What is deliberately not built yet, and why | intent, not behaviour |
-| [`docs/reviews/`](docs/reviews/README.md) | Six reviews, 2026-08-11 to 2026-08-15, each with what it found and what it got wrong | evidence, true of its date |
+| [`docs/reviews/`](docs/reviews/README.md) | Nine reviews, 2026-08-11 to 2026-08-19, each with what it found and what it got wrong | evidence, true of its date |
 
 ---
 
@@ -108,7 +108,7 @@ src/
     affine.ts      2x3 matrices
     bend.ts        a curve described as angle + looseness
     fit.ts         cubics through a run of points, by least squares
-    primitives.ts  ellipse, rectangle, and fitting a circle to points
+    primitives.ts  ellipse, rectangle, polygon and star
     raster.ts      a raster's boundaries -> polylines, for tracing
     intersect.ts   where two cubics cross, by hull subdivision
     offset.ts      a path parallel to another, and stroke outlines
@@ -139,6 +139,8 @@ src/
     svg.ts         import and export whole documents
     pixels.ts      the document as a data URI, and as a PNG
     boolean.ts     unite/subtract/intersect/exclude, via path-bool
+    session.ts     the whole session as one JSON value, and back
+    storage.ts     that value in `localStorage`, and the two ways it fails
   tools/
     controller.ts  pointer gestures on the canvas
     commands.ts    what a button or a key does to the document
@@ -150,15 +152,15 @@ src/
   main.ts     wiring: document -> store -> canvas -> commands -> panels
 ```
 
-17 852 lines of TypeScript across 42 files, plus 1 161 lines of CSS, counted on
-2026-08-17. No runtime framework.
+19 261 lines of TypeScript across 44 files, plus 1 436 lines of CSS, counted on
+2026-08-19. No runtime framework.
 
 ---
 
 ## Testing
 
-**Unit and DOM tests**, with `npm test`. 942 tests in 33 files, 13 191 lines on
-2026-08-17, over parsing, serialising, geometry ops, rendering invariants, SVG
+**Unit and DOM tests**, with `npm test`. 1 068 tests in 37 files, 14 585 lines on
+2026-08-19, over parsing, serialising, geometry ops, rendering invariants, SVG
 import/export, bend, booleans, simplify, fusing, snapping, pixel fit, tracing,
 transforms, history, tooltips, node identity, the clipboard, corner fillets,
 groups, arranging shapes, paint order, PNG output, the grid and the primitives. The rendering
@@ -182,7 +184,7 @@ another engine and `BROWSER_PATH` points at a system Chromium-family binary,
 which does not need the download. Pass `--headed` to watch.
 `npm run drive -- --list` names every scenario.
 
-There are 52 of them on 2026-08-17, and they are not listed here: `--list`
+There are 53 of them on 2026-08-19, and they are not listed here: `--list`
 prints the set that exists, and a copy of it in this file is a second list that
 drifts. This one had drifted by twelve before anyone noticed.
 
