@@ -200,14 +200,6 @@ function cornersForDrag(sharp: Subpath, at: number, selected: ReadonlySet<string
 }
 
 
-/** One decimal at most, and no trailing zero to make an angle look measured. */
-
-/**
- * A scale factor as a percentage. Whole numbers only: a readout that flickers
- * through 99.7, 100.2, 99.9 while the pointer sits still is harder to read than
- * one that says 100.
- */
-
 export class Controller {
   /**
    * Where user-facing notices go. Set by the wiring, left unset in tests.
@@ -1495,13 +1487,13 @@ export class Controller {
         }
       }
 
-      /* Moving a selection is a translation, and repeating it is how a row of
-         things gets built. `applied` rather than the pointer: it is the total
-         after snapping, so a repeat lands on the same lattice the drag did.
+      /* `applied` rather than the pointer: it is the total after snapping, so a
+         repeat lands on the same lattice the drag did.
 
          `body` and not `anchor`: dragging a node moves each selected node
          through its own snap, so there is no one translation that describes the
-         gesture, and inventing one would repeat something that did not happen. */
+         gesture. §62 of `docs/ARCHITECTURE.md` lists what counts as a
+         transform. */
       if (this.drag.kind === 'body' && (this.drag.applied[0] || this.drag.applied[1])) {
         const d = this.drag;
         this.remember(translate(d.applied[0], d.applied[1]), `move ${fmt(d.applied[0])}, ${fmt(d.applied[1])}`);

@@ -21,6 +21,7 @@
  * entry sat there.
  */
 
+import { clampCorners, clampRatio } from '../core/primitives';
 import type { Doc, Group, PathNode, Pt, Shape, Style, Subpath, ViewBox } from '../core/types';
 import type { Guide } from '../model/guides';
 import type { DeleteMode, EditorState, NamedStyle, ToolName } from '../model/store';
@@ -32,7 +33,7 @@ import type { DeleteMode, EditorState, NamedStyle, ToolName } from '../model/sto
  * only honest answer: a field that changed meaning reads as valid and restores
  * the wrong drawing, and that failure is silent.
  */
-export const SESSION_VERSION = 1;
+const SESSION_VERSION = 1;
 
 /**
  * What is saved beside the drawing. Every field is a preference, not a document.
@@ -284,27 +285,49 @@ function readPalette(v: unknown): NamedStyle[] | null {
   return out;
 }
 
-const TOOLS: ToolName[] = ['select', 'pen', 'ellipse', 'rect', 'hand'];
-const DELETE_MODES: DeleteMode[] = ['fuse', 'split'];
+/**
+ * Every value each of these three fields is allowed to hold.
+ *
+ * Keyed objects rather than arrays, and that is the whole reason they are here:
+ * a `ToolName[]` accepts any subset of the union, so a tool added to `ToolName`
+ * is missing from the list without anything failing, and every session written
+ * with it restores as a different tool. Nothing is wrong at the type level and
+ * nothing is wrong at run time -- the fallback is a legal value, so it is not an
+ * error, it is a preference quietly changing on its own. A `Record` keyed by the
+ * union refuses to compile until the new member is listed.
+ *
+ * `Object.hasOwn` rather than `in`, because `in` finds `constructor` and
+ * `toString` on any object, and these are asked about a string out of a file.
+ */
+const TOOLS: Record<ToolName, true> = {
+  select: true,
+  pen: true,
+  ellipse: true,
+  rect: true,
+  poly: true,
+  hand: true,
+};
+const DELETE_MODES: Record<DeleteMode, true> = { fuse: true, split: true };
+const SOURCE_MODES: Record<EditorState['sourceMode'], true> = { svg: true, d: true };
+
+const oneOf = <T extends string>(table: Record<T, true>, v: unknown): v is T =>
+  typeof v === 'string' && Object.hasOwn(table, v);
 
 /**
  * The preferences, each falling back to the running editor's own value.
  *
- * Unlike the drawing, a preference that is missing or malformed is not worth
- * refusing the whole file over: a build that adds a switch would otherwise
- * refuse every file written before it. So this one reads leniently and the
- * document reads strictly, which is the split that matters -- a wrong boolean
- * costs a press, a wrong coordinate is somebody's drawing.
+ * Lenient where `readDoc` is strict: a missing or malformed preference falls
+ * back, a bad coordinate refuses the file. A wrong boolean costs a press and a
+ * wrong coordinate is somebody's drawing. §59 of `docs/ARCHITECTURE.md` has the
+ * argument for the split.
  */
 function readView(v: unknown, now: SessionView): SessionView {
   const o = isObj(v) ? v : {};
   const bool = (k: keyof SessionView, d: boolean): boolean => (isBool(o[k]) ? (o[k] as boolean) : d);
   const num = (k: keyof SessionView, d: number): number => (isNum(o[k]) ? (o[k] as number) : d);
   return {
-    tool: TOOLS.includes(o.tool as ToolName) ? (o.tool as ToolName) : now.tool,
-    deleteMode: DELETE_MODES.includes(o.deleteMode as DeleteMode)
-      ? (o.deleteMode as DeleteMode)
-      : now.deleteMode,
+    tool: oneOf(TOOLS, o.tool) ? o.tool : now.tool,
+    deleteMode: oneOf(DELETE_MODES, o.deleteMode) ? o.deleteMode : now.deleteMode,
     touchButtons: bool('touchButtons', now.touchButtons),
     gridStep: num('gridStep', now.gridStep),
     nudgeBig: num('nudgeBig', now.nudgeBig),
@@ -325,10 +348,13 @@ function readView(v: unknown, now: SessionView): SessionView {
     pixelFit: bool('pixelFit', now.pixelFit),
     angleStep: num('angleStep', now.angleStep),
     angleBase: num('angleBase', now.angleBase),
-    angleOrigin: readPt(o.angleOrigin),
+    /* `null` is a value here rather than an absence: it means angles are
+       measured from where the gesture started. So an explicit null is kept and
+       anything else unreadable falls back, like every other field. */
+    angleOrigin: readPt(o.angleOrigin) ?? (o.angleOrigin === null ? null : now.angleOrigin),
     decimals: num('decimals', now.decimals),
     minify: bool('minify', now.minify),
-    sourceMode: o.sourceMode === 'svg' || o.sourceMode === 'd' ? o.sourceMode : now.sourceMode,
+    sourceMode: oneOf(SOURCE_MODES, o.sourceMode) ? o.sourceMode : now.sourceMode,
     style: readStyle(o.style) ?? { ...now.style },
     polygon: readPolygon(o.polygon) ?? { ...now.polygon },
   };
@@ -337,11 +363,7 @@ function readView(v: unknown, now: SessionView): SessionView {
 /** What the polygon tool draws next. Clamped to the range the generator accepts. */
 function readPolygon(v: unknown): SessionView['polygon'] | null {
   if (!isObj(v) || !isNum(v.corners) || !isNum(v.ratio) || !isBool(v.star)) return null;
-  return {
-    corners: Math.max(3, Math.min(60, Math.round(v.corners))),
-    star: v.star,
-    ratio: Math.max(0.01, Math.min(1, v.ratio)),
-  };
+  return { corners: clampCorners(v.corners), star: v.star, ratio: clampRatio(v.ratio) };
 }
 
 /**

@@ -273,3 +273,89 @@ describe('guides in history', () => {
     expect(s.state.showGuides).toBe(false);
   });
 });
+
+/**
+ * A history belongs to a document, and opening a file replaces the document.
+ *
+ * Snapshots here are whole documents rather than inverse operations, which is
+ * what makes this a question at all: an entry taken before a file was opened is
+ * a complete drawing, and applying it does not undo the open, it puts the old
+ * drawing back over the new one with nothing to explain where it came from.
+ */
+describe('forgetHistory', () => {
+  it('leaves undo with nothing to do', () => {
+    const s = store();
+    s.edit((st) => st.doc.shapes.push(shapeFromPath('M0 0 L5 5', 'second')));
+    expect(s.canUndo).toBe(true);
+
+    s.forgetHistory();
+    expect(s.canUndo).toBe(false);
+    s.undo();
+    expect(s.state.doc.shapes.map((sh) => sh.name).at(-1)).toBe('second');
+    expect(s.state.doc.shapes).toHaveLength(2);
+  });
+
+  it('leaves redo with nothing to do either', () => {
+    const s = store();
+    s.edit((st) => st.doc.shapes.push(shapeFromPath('M0 0 L5 5', 'second')));
+    s.undo();
+    expect(s.canRedo).toBe(true);
+
+    s.forgetHistory();
+    expect(s.canRedo).toBe(false);
+    s.redo();
+    expect(s.state.doc.shapes).toHaveLength(1);
+  });
+
+  /* The bytes behind a backdrop are held alive by whichever snapshot can still
+     reach one. Dropping every snapshot drops the last reference, and nothing
+     else is going to notice that it has. */
+  it('frees a backdrop that only the discarded history was holding', () => {
+    const s = store();
+    const freed: string[] = [];
+    s.onOrphanImage = (src) => freed.push(src);
+    const image: Backdrop = {
+      src: 'blob:gone',
+      name: 'ref.png',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      naturalW: 10,
+      naturalH: 10,
+      opacity: 1,
+      visible: true,
+      locked: true,
+    };
+    s.edit((st) => (st.backdrop = image));
+    s.edit((st) => (st.backdrop = null));
+    expect(freed).toEqual([]);
+
+    s.forgetHistory();
+    expect(freed).toEqual(['blob:gone']);
+  });
+
+  it('keeps a backdrop the document is still showing', () => {
+    const s = store();
+    const freed: string[] = [];
+    s.onOrphanImage = (src) => freed.push(src);
+    s.edit((st) => {
+      st.backdrop = {
+        src: 'blob:live',
+        name: 'ref.png',
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 10,
+        naturalW: 10,
+        naturalH: 10,
+        opacity: 1,
+        visible: true,
+        locked: true,
+      };
+    });
+    s.forgetHistory();
+    expect(freed).toEqual([]);
+    expect(s.state.backdrop?.src).toBe('blob:live');
+  });
+});

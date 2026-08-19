@@ -2729,6 +2729,25 @@ otherwise refuse every file written before it.
 guessed at. A field that changed meaning reads as perfectly valid and restores
 the wrong thing, which is the failure with no symptom.
 
+**A field with a fixed set of values is checked against a `Record` keyed by the
+union, not an array of it.** An array of `ToolName` accepts any subset, so a
+tool added to the union goes missing from the list with nothing failing at
+either the type level or run time -- the fallback is a legal tool, so what you
+get is not an error, it is a preference quietly changing on its own. It had
+already happened once: the polygon tool was absent, and a session written with
+it selected came back as Select. A `Record<ToolName, true>` refuses to compile
+until the new member is listed, and `tsc` is what reports it.
+
+Membership is asked with `Object.hasOwn` rather than `in`, because `in` finds
+`constructor` and `toString` on any object and these are asked about a string
+that came out of a file.
+
+Lenience means a fallback rather than a throw, and that distinction is where
+these guards earn their keep: reading `at` off a `null` guide throws, and a
+throw out of `read` is the blank editor with no message that the strictness
+above exists to prevent. Every guard checks that a value is an object before it
+reads a field off it, and the tests break each guard separately.
+
 ### The counters are younger than the document
 
 `nextId` and `nextNodeId` are module-level and start at zero on a fresh page. A
@@ -2771,6 +2790,32 @@ subscriber running would write the session back inside the second and make the
 button look broken. Storing the choice would turn one press into a promise the
 button does not make. It lasts until the reload, which is when a fresh start
 takes effect anyway.
+
+**The two reasons are told apart by the error, not by the size.** They have
+different answers: a full quota is fixed by drawing less or by **Forget saved
+work**, and an origin with no storage cannot be fixed from the page at all. The
+first version guessed between them on the length of the string, which told a
+`file://` reader with a 600 kB drawing that the drawing was too big and sent
+them to shrink something that was never the problem. `QuotaExceededError` is
+the name the Web Storage specification gives the first condition, and
+`NS_ERROR_DOM_QUOTA_REACHED` is Gecko's name for it.
+
+### Opening a file takes the history with it
+
+A snapshot here is a whole document rather than an inverse operation, which is
+what makes this a question at all. Opening a workspace replaces the document,
+and every entry on the stack describes the one it replaced. Undo into one of
+those does not undo the open: it puts the previous drawing back over the file
+that was just loaded, with no edit anywhere to explain where it came from.
+
+So `applySession` calls `Store.forgetHistory` first, and it is the only caller.
+Opening a file is the one operation in this editor that changes which document
+the history is a history OF, so it is the one that has to say so. The stacks are
+emptied before the backdrops they were keeping alive are freed, because freeing
+asks what is still reachable and the answer has to already be "not these".
+
+At startup the stacks are empty and this does nothing, which is correct: a
+restore is not replacing anything.
 
 ## 60. Opacity is one number, and the objection to it is the design
 
@@ -2985,6 +3030,15 @@ radius has nothing to say about a polygon. That hiding needed a CSS rule of its
 own -- `display: flex` beats the user agent's `[hidden]`, and the browser
 scenario is what found it, because the row was still on screen and every unit
 test passed.
+
+**The bounds live in `primitives.ts` and nowhere else in the code.** A corner
+count is held to 3 and 60 and an inner ratio to 0.01 and 1 in three places that
+each had their own copy of the numbers: the generator, the field in the rail,
+and a session being restored. Three copies of a bound are three chances for one
+of them to be widened alone, so `clampCorners` and `clampRatio` are exported and
+the other two call them. The `min` and `max` attributes on the number inputs in
+`index.html` are a fourth copy that cannot import anything, and they are the one
+place that still has to be changed by hand.
 
 ## 64. Two paths of one shape are operands, and not by a flag
 

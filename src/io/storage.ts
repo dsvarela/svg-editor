@@ -37,11 +37,9 @@ export class SessionStore {
   /**
    * Set when somebody has asked for the copy to be forgotten.
    *
-   * A latch rather than a stored preference. Leaving the subscriber running
-   * after **Forget saved work** would write the session back inside the second
-   * and make the button look broken; storing the choice would make one press
-   * turn autosave off for good, which is a bigger promise than the button makes.
-   * It lasts until the reload, which is when a fresh start takes effect anyway.
+   * A latch, not a stored preference: it lasts until the reload, which is when
+   * a fresh start takes effect anyway. §59 of `docs/ARCHITECTURE.md` argues why
+   * **Forget saved work** promises exactly that much and no more.
    */
   stopped = false;
   /** Called after every write attempt, so the interface can say what happened. */
@@ -82,12 +80,19 @@ export class SessionStore {
       window.localStorage.setItem(KEY, text);
       this.blocked = null;
       return true;
-    } catch {
-      /* A quota error and a blocked origin are the same class here: the write
-         did not happen and nothing this code can do will make the next one
-         work. `too-big` when the string is large enough to be the reason, so
-         the message names the cause a person can act on. */
-      this.blocked = text.length > LIMIT / 4 ? 'too-big' : 'no-storage';
+    } catch (err) {
+      /* The two causes have different answers, so they must not be guessed
+         apart by size. A quota that is full is fixed by drawing less or by
+         **Forget saved work**; an origin with no storage cannot be fixed from
+         here at all, and telling somebody their drawing is too big when it is
+         not sends them to shrink a drawing that was never the problem.
+         `QuotaExceededError` is the name the Web Storage specification gives
+         the first. `NS_ERROR_DOM_QUOTA_REACHED` is what Gecko calls the same
+         condition, and this editor's own browser tools drive Firefox. */
+      const full =
+        err instanceof DOMException &&
+        (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      this.blocked = full ? 'too-big' : 'no-storage';
       return false;
     }
   }

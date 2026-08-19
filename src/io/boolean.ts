@@ -193,16 +193,15 @@ export function booleanShapes(shapes: Shape[], op: BooleanOp): Subpath[] | null 
 /**
  * Combine some paths of one shape with each other.
  *
- * The same operation one level down, and the reason it needs its own entry
- * point rather than a flag: `booleanShapes` concatenates a shape's subpaths into
- * one region, which is what makes a ring a ring, and this hands each one over as
- * a region of its own. The two are opposite readings of the same geometry, so
- * neither can be the other with an argument.
+ * Its own entry point rather than a flag on `booleanShapes`, because that one
+ * concatenates a shape's subpaths into a single region and this hands each one
+ * over as a region of its own. Those are opposite readings of the same
+ * geometry, so neither is the other with an argument. §64 of
+ * `docs/ARCHITECTURE.md` has the argument.
  *
- * Every operand takes the shape's fill rule, because they share one -- a
- * subpath has no style of its own, which is the whole reason paths of one shape
- * can make a hole. Order is subpath order, so `subtract` is first-minus-the-rest
- * exactly as it is between shapes.
+ * Every operand takes the shape's fill rule, because they share one: a subpath
+ * has no style of its own. Order is subpath order, so `subtract` is
+ * first-minus-the-rest exactly as it is between shapes.
  */
 export function booleanSubpaths(shape: Shape, indices: number[], op: BooleanOp): Subpath[] | null {
   if (indices.length < 2) return null;

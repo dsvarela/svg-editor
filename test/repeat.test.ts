@@ -7,8 +7,9 @@
  * gesture and the matrix that came out of it are not always the same thing.
  *
  * Measured on coordinates rather than on the stored matrix. Asserting that
- * `lastTransform` holds `[1,0,0,1,20,0]` would pass with the apply deleted,
- * which is the class of test `CLAUDE.md` says is worse than none.
+ * `lastTransform` holds `[1,0,0,1,20,0]` would pass with the apply deleted, so
+ * it would be green whether or not repeating a transform repeats anything. The
+ * "Testing philosophy" section of `docs/ARCHITECTURE.md` has the rule.
  */
 
 import { describe, expect, it } from 'vitest';

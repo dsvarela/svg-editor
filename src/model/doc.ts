@@ -273,9 +273,10 @@ export function selectedNodes(doc: Doc, sel: Selection): NodeRef[] {
 /**
  * The same reach, grouped as whole subpaths.
  *
- * For the operations that cannot act on loose nodes -- circularise, simplify,
- * offset -- because rewriting some of a path's nodes leaves the segments joining
- * them to the rest built from geometry they are not on.
+ * For the operations that cannot act on loose nodes -- simplify, offset, and a
+ * boolean between the paths of one shape -- because rewriting some of a path's
+ * nodes leaves the segments joining them to the rest built from geometry they
+ * are not on.
  */
 export function selectedSubpaths(doc: Doc, sel: Selection): Map<string, Set<number>> {
   const targets = new Map<string, Set<number>>();

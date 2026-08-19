@@ -100,14 +100,11 @@ export interface EditorState {
    * The last matrix put on the selection, and what to call it.
    *
    * Session state, not document state: it describes the gesture you just made,
-   * not the drawing. Undoing that gesture leaves it here on purpose -- undo
-   * takes back what happened, and what you were about to do again is a
-   * different question.
+   * not the drawing, so undoing that gesture leaves it here.
    *
-   * The label travels with the matrix rather than being derived from it. A
-   * matrix cannot say whether `[1,0,0,1,20,0]` was a nudge, a drag or a typed
-   * X, and the readout beside the button is the only thing telling you what a
-   * press is about to do.
+   * The label travels with the matrix rather than being derived from it,
+   * because a matrix cannot say whether `[1,0,0,1,20,0]` was a nudge, a drag or
+   * a typed X. §62 of `docs/ARCHITECTURE.md` has both arguments.
    */
   lastTransform: { m: Mat; what: string } | null;
   /**
@@ -466,6 +463,26 @@ export class Store {
     if (defer) this.deferred = discarded;
     else this.reap(discarded);
     return true;
+  }
+
+  /**
+   * Throw both stacks away, for a document that replaced the one they describe.
+   *
+   * A snapshot holds a whole document, so undoing into one taken before a
+   * workspace was opened does not undo the open: it puts the previous drawing
+   * on screen in place of the one that was just loaded, with no edit anywhere
+   * to explain it. Opening a file is the one operation here that changes which
+   * document the history is the history OF, so it is the one that has to say so.
+   *
+   * The backdrops the discarded snapshots were keeping alive go with them,
+   * which is why the stacks are emptied before `reap` runs: it asks what is
+   * still reachable, and these no longer are.
+   */
+  forgetHistory(): void {
+    const discarded = [...this.undoStack, ...this.redoStack].map((s) => s.backdrop);
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+    this.reap(discarded);
   }
 
   /** Mutate state and notify, without touching history. */

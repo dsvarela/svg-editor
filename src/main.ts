@@ -28,6 +28,7 @@ import type { Selection as Sel } from './model/doc';
 import { cornerAt, filletAt, isPathEnd, latentHandle } from './model/ops';
 import { continuityOf } from './core/types';
 import type { Shape, Style, Subpath, ViewBox } from './core/types';
+import { clampCorners, clampRatio } from './core/primitives';
 import { serialisePath } from './core/serialise';
 import type { Mark } from './core/serialise';
 import { phaseInForce, phaseLabel } from './model/pixelfit';
@@ -95,6 +96,11 @@ const sessions = new SessionStore();
 
 function applySession(sn: Session): void {
   reserveIds(sn.doc);
+  /* The history described the document this one replaces, and a snapshot is a
+     whole document: undoing into one would put the old drawing back over the
+     file that was just opened. Empty at startup, where this is the only
+     session there has been. */
+  store.forgetHistory();
   store.update((s) => {
     s.doc = sn.doc;
     s.camera = { ...sn.camera };
@@ -774,12 +780,12 @@ $('#polyKind').addEventListener('click', (e) => {
 streamed(polyCorners, () => {
   const v = Number(polyCorners.value);
   if (!Number.isFinite(v)) return;
-  store.update((st) => (st.polygon.corners = Math.max(3, Math.min(60, Math.round(v)))));
+  store.update((st) => (st.polygon.corners = clampCorners(v)));
 });
 streamed(polyRatio, () => {
   const v = Number(polyRatio.value);
   if (!Number.isFinite(v)) return;
-  store.update((st) => (st.polygon.ratio = Math.max(0.01, Math.min(1, v / 100))));
+  store.update((st) => (st.polygon.ratio = clampRatio(v / 100)));
 });
 
 $('#fillRule').addEventListener('click', (e) => {
@@ -1587,11 +1593,11 @@ on('#openWorkspace', () => workspaceFile.click());
  * workspace is a whole session -- the camera, the guides, every switch -- and
  * there is no coherent way to merge two of those. Two cameras is not a camera.
  *
- * What it does not do is put the old session in the history. `Ctrl`+`Z` after
- * this opens the drawing this one replaced would be undoing a file open, and
- * the history is a stack of edits to one document rather than a stack of
- * documents. The message says the session was replaced so that is not a
- * surprise.
+ * The history goes with the document it belonged to, in `applySession`. It is a
+ * stack of edits to one drawing rather than a stack of drawings, so there is no
+ * entry in it that means "opened a file" and nothing in it is true of the
+ * drawing that arrived. The message says the session was replaced, which is
+ * what an empty history then agrees with.
  */
 workspaceFile.addEventListener('change', () => {
   const f = workspaceFile.files?.[0];

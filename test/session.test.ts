@@ -119,9 +119,132 @@ describe('a session it will not take', () => {
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
   });
 
-  it('refuses a canvas with no area', () => {
-    const s = JSON.parse(written(store)) as { doc: { viewBox: { w: number } } };
-    s.doc.viewBox.w = 0;
+  /* Each field of the box separately, and each of `w` and `h` at zero. One
+     example stands for the whole guard only if the guard is one test, and this
+     one is eight: a chain of five `||` and two more comparisons, any of which
+     can be loosened without the others noticing. */
+  it.each(['x', 'y', 'w', 'h'] as const)('refuses a canvas whose %s is not a number', (k) => {
+    const s = JSON.parse(written(store)) as { doc: { viewBox: Record<string, unknown> } };
+    s.doc.viewBox[k] = 'twelve';
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it.each(['w', 'h'] as const)('refuses a canvas with no %s', (k) => {
+    const s = JSON.parse(written(store)) as { doc: { viewBox: Record<string, number> } };
+    s.doc.viewBox[k] = 0;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a camera it could not have written', () => {
+    const s = JSON.parse(written(store)) as { camera: Record<string, unknown> };
+    s.camera.y = null;
+    /* Falls back to the document's own box rather than refusing the file: a
+       camera is where you were looking, and there is always somewhere else to
+       look. The drawing is what a refusal is for. */
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.camera).toEqual(back.doc.viewBox);
+  });
+
+  it('refuses a document that is not an object at all', () => {
+    const s = JSON.parse(written(store)) as Record<string, unknown>;
+    s.doc = 'M0 0 L1 1';
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* An object with a list missing is the case a wrong guard lets through, and
+     it is worse than the case above: the wrong shape refuses either way, and
+     this one walks into a `for` over `undefined` and throws. A throw out of
+     `read` at startup is a blank editor with nothing said, which is the failure
+     this whole reader is built to avoid. */
+  it('refuses a document that is an object with no shapes in it', () => {
+    const s = JSON.parse(written(store)) as { doc: Record<string, unknown> };
+    delete s.doc.shapes;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a shape that is an object with no paths in it', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: Record<string, unknown>[] } };
+    delete s.doc.shapes[0].subpaths;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a subpath with no nodes in it', () => {
+    const s = JSON.parse(written(store)) as {
+      doc: { shapes: { subpaths: Record<string, unknown>[] }[] };
+    };
+    delete s.doc.shapes[0].subpaths[0].nodes;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a shape with no name, which every shape has', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: Record<string, unknown>[] } };
+    delete s.doc.shapes[0].name;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a stroke width that is not a number', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.strokeWidth = '2px';
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* `null`, not a string: a string has no numeric `at` either, so dropping the
+     object check would still refuse one and this would pass with the guard
+     gone. A `null` is what tells the two apart -- reading `at` off it throws,
+     and a throw out of `read` at startup is the blank editor with no message
+     that this whole file exists to prevent. */
+  it('refuses a guide that is not an object, rather than throwing on it', () => {
+    const s = JSON.parse(written(store)) as Record<string, unknown>;
+    s.guides = [null];
+    expect(read(JSON.stringify(s), view(store))).toContain('guides');
+  });
+
+  it('refuses a guide with no position', () => {
+    const s = JSON.parse(written(store)) as Record<string, unknown>;
+    s.guides = [{ axis: 'x' }];
+    expect(read(JSON.stringify(s), view(store))).toContain('guides');
+  });
+
+  it('refuses a saved style with no name', () => {
+    const s = JSON.parse(written(store)) as Record<string, unknown>;
+    s.palette = [{ style: { fill: '#000', stroke: 'none', strokeWidth: 1, fillRule: 'nonzero', opacity: 1 } }];
+    expect(read(JSON.stringify(s), view(store))).toContain('saved styles');
+  });
+
+  it('refuses a saved style that is not a style', () => {
+    const s = JSON.parse(written(store)) as Record<string, unknown>;
+    s.palette = [{ name: 'ink', style: 'black' }];
+    expect(read(JSON.stringify(s), view(store))).toContain('saved styles');
+  });
+
+  it('refuses a handle that is half a point', () => {
+    const s = JSON.parse(written(store)) as {
+      doc: { shapes: { subpaths: { nodes: Record<string, unknown>[] }[] }[] };
+    };
+    s.doc.shapes[0].subpaths[0].nodes[0].hOut = [5];
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a node with no id, which is what a selection is made of', () => {
+    const s = JSON.parse(written(store)) as {
+      doc: { shapes: { subpaths: { nodes: Record<string, unknown>[] }[] }[] };
+    };
+    delete s.doc.shapes[0].subpaths[0].nodes[0].id;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a subpath that does not say whether it closes', () => {
+    const s = JSON.parse(written(store)) as {
+      doc: { shapes: { subpaths: Record<string, unknown>[] }[] };
+    };
+    delete s.doc.shapes[0].subpaths[0].closed;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('refuses a group with no id', () => {
+    const s = JSON.parse(written(store)) as { doc: Record<string, unknown> };
+    s.doc.groups = [{ name: 'pair', parent: null }];
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
   });
 
@@ -171,6 +294,94 @@ describe('a session it repairs rather than refuses', () => {
     const back = read(JSON.stringify(s), view(store));
     if (typeof back === 'string') throw new Error(back);
     expect(back.view.tool).toBe('select');
+  });
+
+  /* The test above is only half the question, and the missing half is the one
+     that bit: it says an unknown name falls back, which stays true when a real
+     tool is left out of the table and starts falling back too. That is not an
+     error anywhere -- the fallback is a legal tool -- so the only thing that
+     can see it is asking every name the editor has to come back as itself. */
+  it.each(['select', 'pen', 'ellipse', 'rect', 'poly', 'hand'] as const)(
+    'brings the %s tool back as itself',
+    (tool) => {
+      const store = starter();
+      store.update((s) => (s.tool = tool));
+      const back = read(written(store), { ...view(store), tool: 'select' });
+      if (typeof back === 'string') throw new Error(back);
+      expect(back.view.tool).toBe(tool);
+    },
+  );
+
+  it('falls back for a delete mode and a source mode it does not know', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { view: Record<string, unknown> };
+    s.view.deleteMode = 'shred';
+    s.view.sourceMode = 'xml';
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.deleteMode).toBe(store.state.deleteMode);
+    expect(back.view.sourceMode).toBe(store.state.sourceMode);
+  });
+
+  /* `'constructor' in {}` is true, so a table asked with `in` would take any
+     name off `Object.prototype` as a tool and hand back a string the editor
+     has no case for. */
+  it('does not take a name off the prototype as a tool', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { view: Record<string, unknown> };
+    s.view.tool = 'constructor';
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.tool).toBe('select');
+  });
+
+  it('clamps a polygon setting that is outside what the generator accepts', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { view: { polygon: Record<string, unknown> } };
+    s.view.polygon = { corners: 900, star: true, ratio: 40 };
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.polygon.corners).toBe(60);
+    expect(back.view.polygon.ratio).toBe(1);
+  });
+
+  it('falls back for a polygon block that is not one', () => {
+    const store = starter();
+    store.update((s) => (s.polygon.corners = 7));
+    const s = JSON.parse(written(store)) as { view: Record<string, unknown> };
+    s.view.polygon = { corners: 'five', star: true, ratio: 0.5 };
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.polygon.corners).toBe(7);
+  });
+
+  /* `null` is a value here and not an absence: it means angles are measured
+     from wherever the gesture started. So it has to survive a round trip
+     rather than being read as a field that went missing. */
+  it('keeps an angle origin, and keeps its absence', () => {
+    const store = starter();
+    store.update((s) => (s.angleOrigin = [3, 4]));
+    const kept = read(written(store), view(store));
+    if (typeof kept === 'string') throw new Error(kept);
+    expect(kept.view.angleOrigin).toEqual([3, 4]);
+
+    store.update((s) => (s.angleOrigin = null));
+    const cleared = read(written(store), { ...view(store), angleOrigin: [9, 9] });
+    if (typeof cleared === 'string') throw new Error(cleared);
+    expect(cleared.view.angleOrigin).toBeNull();
+  });
+
+  /* The half above cannot see the fallback: an explicit `null` reads as `null`
+     whether the field falls back or not. Only a value that is neither a point
+     nor `null` separates "this field says there is no origin" from "this field
+     is unreadable", and the second is the one every other field falls back on. */
+  it('falls back for an angle origin that is neither a point nor absent', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as { view: Record<string, unknown> };
+    s.view.angleOrigin = 'the middle';
+    const back = read(JSON.stringify(s), { ...view(store), angleOrigin: [9, 9] });
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.view.angleOrigin).toEqual([9, 9]);
   });
 });
 

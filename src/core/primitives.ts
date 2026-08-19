@@ -82,6 +82,24 @@ export function rectSubpath(x: number, y: number, w: number, h: number): Subpath
 }
 
 /**
+ * The bounds a corner count and an inner ratio are held to, in one place.
+ *
+ * Clamped rather than refused: both reach the generator from a number field
+ * somebody can type -1 into, and a polygon of two sides is a line drawn twice.
+ * The corner ceiling is where the sides stop being distinguishable from the
+ * circle they approximate at any size this editor draws.
+ *
+ * Exported because three other places hold the same numbers to the same bounds
+ * -- the settings the rail writes, the settings a session restores, and the
+ * generator itself -- and three copies of a bound are three chances for one of
+ * them to be widened alone. The `min` and `max` attributes on the number fields
+ * in `index.html` are a fourth copy that cannot import this, so they are the
+ * only ones that have to be changed by hand.
+ */
+export const clampCorners = (n: number): number => Math.max(3, Math.min(60, Math.round(n)));
+export const clampRatio = (k: number): number => Math.max(0.01, Math.min(1, k));
+
+/**
  * A regular polygon or a star, inscribed in the box `(cx, cy)` with radii
  * `rx, ry`, first point at the top.
  *
@@ -114,12 +132,8 @@ export function polygonSubpath(
   corners: number,
   inner: number | null = null,
 ): Subpath {
-  /* Clamped rather than refused. The count reaches this from a number field
-     somebody can type -1 into, and a polygon of two sides is a line drawn twice.
-     The ceiling is where the sides stop being distinguishable from the circle
-     they approximate at any size this editor draws. */
-  const n = Math.max(3, Math.min(60, Math.round(corners)));
-  const k = inner === null ? 1 : Math.max(0.01, Math.min(1, inner));
+  const n = clampCorners(corners);
+  const k = inner === null ? 1 : clampRatio(inner);
   const nodes = [];
   const steps = inner === null ? n : n * 2;
   for (let i = 0; i < steps; i++) {
