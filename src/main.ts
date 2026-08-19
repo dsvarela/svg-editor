@@ -5,7 +5,7 @@
 import './ui/styles.css';
 import { PathSyntaxError } from './core/parse';
 import { drawsSomething, exportPathData, exportSvg, importSvg, xmlId } from './io/svg';
-import { pngSize, renderPng, svgDataUri } from './io/pixels';
+import { PNG_MAX, pngSize, renderPng, svgDataUri } from './io/pixels';
 import type { BooleanOp } from './io/boolean';
 import {
   docBBox,
@@ -288,6 +288,11 @@ function selectTab(id: string): void {
     tab.tabIndex = on ? 0 : -1;
     ($(`#${tab.getAttribute('aria-controls')}`) as HTMLElement).hidden = !on;
   }
+  /* A panel coming into view is the other half of a group being opened: the
+     previews stop being drawn while nobody can see them, so arriving at the tab
+     that holds them has to catch them up. Only ever called from a listener, so
+     `refreshPreview` and everything it reads are built by the time this runs. */
+  refreshPreview();
 }
 
 for (const [i, tab] of tabs.entries()) {
@@ -1585,7 +1590,18 @@ const previewImgs: [HTMLImageElement, number][] = [16, 24, 32, 48].map((px) => [
 ]);
 const previewInfo = $('#previewinfo');
 
-const previewOpen = (): boolean => previewGroup?.getAttribute('aria-expanded') === 'true';
+/**
+ * Whether the previews are on screen, which is not the same as the group being
+ * open.
+ *
+ * Asked of the image rather than of the group's `aria-expanded`, because that
+ * attribute answers one of the two ways these can be out of sight. The group
+ * sits inside a tab panel, and a shut panel is `hidden`, so every notification
+ * re-serialised the whole document into four data URIs while nobody could see
+ * any of them. `offsetParent` is null when the element or anything above it is
+ * `display: none`, which is one question covering both.
+ */
+const previewOpen = (): boolean => previewImgs[0][0].offsetParent !== null;
 
 function refreshPreview(): void {
   const s = store.state;
@@ -1611,17 +1627,29 @@ function refreshPreview(): void {
   }
 }
 
-previewGroup?.addEventListener('click', () => {
-  // The class toggle runs on its own listener; this one only has to catch up
-  // the images, which were left stale while the group was shut.
-  refreshPreview();
-});
+/* The images are left stale while the group is shut, so opening it has to catch
+   them up. On the group's own event and not on its click: the listener that
+   opens the group is registered further down this file, so a second click
+   listener here runs BEFORE it and reads the state the press is about to
+   change. Opening rendered nothing and shutting rendered, which is the two
+   listeners in the order they happen to be wired. */
+previewGroup?.addEventListener('grouptoggled', () => refreshPreview());
 
 on('#downloadPng', () => {
   const s = store.state;
   const width = Number(($('#pngWidth') as HTMLInputElement).value);
   if (!Number.isFinite(width) || width < 1) {
     say('A PNG needs a width of at least one pixel.', false);
+    return;
+  }
+  /* The field's `max` constrains its spinner and nothing else: a number typed
+     into it arrives here whatever it says. 20000 across a 4:3 document is 300
+     megapixels, which the browser either refuses or serves after a freeze long
+     enough to read as a crash. Refused with the ceiling named, rather than
+     clamped: silently drawing a different size than the one asked for is the
+     answer that leaves somebody wondering why their PNG is small. */
+  if (width > PNG_MAX) {
+    say(`A PNG can be ${PNG_MAX} pixels wide at most.`, false);
     return;
   }
   const { w, h } = pngSize(s.doc.viewBox, width);
@@ -1636,7 +1664,12 @@ on('#downloadPng', () => {
       URL.revokeObjectURL(url);
       say(`Saved ${w} × ${h}, ${Math.round(blob.size / 102.4) / 10} kB.`, true);
     },
-    (err: unknown) => say(`No PNG: ${err instanceof Error ? err.message : String(err)}`, false),
+    /* The browser's own exception text is not written to `docs/STYLE.md` and
+       differs by engine: Firefox says one thing about a canvas it will not
+       encode and Chromium another, and neither is a sentence. What went wrong
+       is one of two things from this page's side, and both have the same
+       answer. */
+    () => say('The PNG could not be drawn. Try a smaller width.', false),
   );
 });
 
@@ -2206,6 +2239,17 @@ interface RowDrag {
   /** Client y of each boundary: `gaps[i]` is the line above `rows[i]`. */
   gaps: number[];
   at: number;
+  /**
+   * Which of `rows` are travelling, held as data rather than read back off the
+   * `lifted` class.
+   *
+   * The class is the same fact for the CSS, and reading it in `endRowDrag` made
+   * that function depend on the order of its own statements: it clears the class
+   * from every row before working out where to drop, so the walk that was
+   * written to step past a travelling row stepped past nothing. One fact, held
+   * where nothing else writes it.
+   */
+  lifted: boolean[];
 }
 let rowDrag: RowDrag | null = null;
 let armed: { key: string; y: number; pointer: number; timer: number } | null = null;
@@ -2247,16 +2291,16 @@ function beginRowDrag(key: string, y: number): void {
   const gaps = rows.map((r) => r.getBoundingClientRect().top);
   gaps.push(rows[rows.length - 1].getBoundingClientRect().bottom);
 
+  const lifted = rows.map((r) => rowShapes(rowOf(r)).every((id) => store.state.selection.shapes.has(id)));
   rowDrag = {
     rows,
     // The `<ul>` a group owns lives inside that group's own row.
     parent: container.closest<HTMLElement>('li.group')?.getAttribute('data-group') ?? null,
     gaps,
     at: 0,
+    lifted,
   };
-  for (const r of rows) {
-    if (rowShapes(rowOf(r)).every((id) => store.state.selection.shapes.has(id))) r.classList.add('lifted');
-  }
+  for (const [i, r] of rows.entries()) if (lifted[i]) r.classList.add('lifted');
   shapeList.append(dropLine);
   aimRowDrag(rowDrag, y);
 }
@@ -2353,14 +2397,16 @@ const endRowDrag = (drop: boolean): void => {
   if (!drop) return;
   /* The first row at or after the gap that is NOT being dragged. `dropShapes`
      looks its key up among the rows that are STAYING, so naming a row that is
-     itself moving finds nothing, and the not-found fallback drops the selection
-     at the end of the list. Aiming at a lifted row's own edge -- which is what
-     a drag of a few pixels does -- therefore sent the selection to the front of
-     the paint order instead of leaving it where it was, in one undoable step
-     that looked like a real reorder. `null` means the end, which is what it
-     already meant when the gap was past the last row. */
+     itself moving finds nothing, and a lifted row's own top edge is the nearest
+     gap to a press that has barely moved. `null` means the end, which is what it
+     already meant when the gap was past the last row.
+
+     Read off `d.lifted` and not off the class, which the loop above has already
+     removed from every row. Written against the class this walk stepped past
+     nothing, so a four-pixel drag still sent the row to the front of the paint
+     order in one undoable step that looked like a real reorder. */
   let at = d.at;
-  while (at < d.rows.length && d.rows[at].classList.contains('lifted')) at++;
+  while (at < d.rows.length && d.lifted[at]) at++;
   const before = at < d.rows.length ? rowKey(d.rows[at]) : null;
   commands.dropSelection(d.parent, before);
 };
@@ -2867,11 +2913,14 @@ function refreshShapeList(): void {
       const isOpen = expanded.has(g.id);
       row.setAttribute('aria-expanded', String(isOpen));
 
+      /* The state lives on the row and not on the button too. A treeitem has to
+         carry `aria-expanded`, and a button inside one carrying it as well made
+         a reader announce "collapsed" twice for one row. The label below says
+         what the press does, which is what a button is for. */
       const gt = document.createElement('button');
       gt.type = 'button';
       gt.className = 'twist';
       gt.textContent = '▸';
-      gt.setAttribute('aria-expanded', String(isOpen));
       const held = shapesInGroup(s.doc, g.id).length;
       gt.setAttribute('aria-label', `${isOpen ? 'Hide' : 'Show'} the ${held} shapes in ${g.name}`);
 
@@ -2923,7 +2972,6 @@ function refreshShapeList(): void {
     twist.textContent = '▸';
     if (sh.subpaths.length > 1) {
       const open = expanded.has(sh.id);
-      twist.setAttribute('aria-expanded', String(open));
       li.setAttribute('aria-expanded', String(open));
       twist.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the ${sh.subpaths.length} paths in ${sh.name}`);
     } else {
@@ -3530,6 +3578,11 @@ for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')
   const set = (open: boolean): void => {
     head.setAttribute('aria-expanded', String(open));
     body.hidden = !open;
+    /* Announced rather than left for another listener to notice. A group whose
+       contents cost something to draw has to know when it became visible, and
+       a second `click` listener on the same button is a race decided by which
+       file ran first. */
+    head.dispatchEvent(new CustomEvent('grouptoggled'));
   };
   set(keepOpen);
   head.addEventListener('click', () => set(head.getAttribute('aria-expanded') !== 'true'));

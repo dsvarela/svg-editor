@@ -2211,6 +2211,24 @@ selecting a path's nodes on the canvas lights its row.
 Which shapes are open is not in the store, for the reason the open panels are not:
 undo has no business shutting a disclosure.
 
+**A tree with one tab stop needs `aria-activedescendant`, and had none.** The
+list is `tabindex="0"` with the arrow keys moving inside it, which is the right
+pattern and only half built without this: `aria-selected` says which rows are in
+the selection and nothing said which of them the arrows would move from, so a
+reader announced the list on entry and then nothing at all as the cursor walked
+it. `tools/keys.mjs` cannot see this, because every row was already reachable.
+
+The row named is `rowAtCursor`'s, the same answer the arrow keys act on, so the
+two cannot come apart; the ids come from one function that both the builder and
+the attribute call. The empty list clears the attribute, because a reference to a
+row that has gone is exactly as silent as no attribute at all -- which is why the
+browser check resolves the id rather than comparing the string.
+
+**The state is on the row and not on the button inside it.** A treeitem has to
+carry `aria-expanded`, and the disclosure button carried it too, so a reader
+announced "collapsed" twice for one row. The button keeps its label, which says
+what pressing it does, and the CSS turns the arrow from the row's state.
+
 **The `data-id` collision is the part worth knowing before editing this.** A path
 row is nested inside its shape's `li` and carries the same `data-id`, because it
 needs to name the shape it belongs to. So every handler on the list has to test
@@ -2555,6 +2573,32 @@ with a store notification like any other, which is what redraws them. They are
 also left alone while their group is shut, on the same argument the source drawer
 makes: a panel nobody is looking at should not cost a redraw.
 
+**"Shut" is asked of the image, not of the group.** The group's own
+`aria-expanded` answers one of the two ways these can be out of sight: the group
+sits inside a tab panel, and a shut panel is `hidden`, so every notification
+re-serialised the whole document into four data URIs while the Shape tab was on
+screen. `offsetParent` is null when the element or anything above it is
+`display: none`, which is one question covering both.
+
+**Opening the group announces itself rather than being noticed.** Catching the
+images up was a second `click` listener on the same button, registered earlier
+in `main.ts` than the one that opens the group -- so it ran first and read the
+state the press was about to change. Opening rendered nothing until some
+unrelated notification arrived, and shutting rendered. The toggle dispatches
+`grouptoggled` now, and switching tabs calls the same refresh, because a panel
+coming into view is the other half of the same event.
+
+**A width past the ceiling is refused, not clamped.** `max` on a number input
+constrains its spinner and nothing else, so a pasted 20000 reached the canvas and
+asked the browser for 300 megapixels: in Firefox that takes the page down, which
+is how the browser scenario proved the guard by losing its own context. Refused
+with `PNG_MAX` named rather than quietly drawn smaller, and the markup's `max` is
+the copy that cannot import it.
+
+**The failure message is this editor's, not the engine's.** It printed the
+browser's own exception text into a status line `docs/STYLE.md` governs, and that
+text differs by engine and is not a sentence in either.
+
 **A PNG's height follows the viewBox, never the drawing.** The canvas is the page
 the icon sits on, and cropping to the artwork would silently change the padding
 somebody chose. Both sides are floored at one pixel, because `toBlob` on a canvas
@@ -2653,8 +2697,22 @@ step, which is that neither of them writes `doc.shapes` directly.
 **The index is taken among the rows that are staying.** Taking it in the list as
 it stands counts the rows that are about to leave, so a row dragged downward past
 its own neighbours lands short of the line that was drawn for it -- by one for
-each row moving with it. That is the whole of the arithmetic and it is the whole
-of what can go wrong in it.
+each row moving with it.
+
+**Which is why a `before` naming a travelling row had to be answered, and the
+answer was the worst one available.** It fell back to the end of the list, which
+is the front of the paint order. The caller reaches that case constantly: it aims
+at the nearest gap, and a row's own top edge is the nearest gap to a press that
+has barely moved. So a four-pixel drag sent the row to the front, in one undoable
+step that looked like a real reorder.
+
+Two things were wrong and both are fixed, because either alone leaves the other
+loaded. The caller walks past the rows that are travelling, and it now reads
+which those are off the drag rather than off the `lifted` class -- the walk was
+already written and did nothing, because the class is cleared from every row four
+lines above it. And `dropShapes` refuses a `before` it cannot place instead of
+guessing: `null` is how a caller asks for the end, and that is a different
+question from naming a row that is not there.
 
 **A drop lands only among siblings, and the interface is what makes that true.**
 The drag collects its targets from the `<ul>` the row is already in, so there is

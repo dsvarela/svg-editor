@@ -30,6 +30,19 @@ export function svgDataUri(doc: Doc, o: ExportOptions = {}): string {
 }
 
 /**
+ * The widest PNG this will draw, and the same number the field's `max` carries.
+ *
+ * Exported so the two agree: `max` on a number input constrains its spinner and
+ * nothing else, so a typed 20000 reached the canvas and asked a browser for 300
+ * megapixels. 8192 is the smallest maximum texture dimension in common use, and
+ * a canvas past a browser's limit either throws or comes back blank.
+ *
+ * The markup is the copy that cannot import this, and §63 lists it with the
+ * others that have to be changed by hand.
+ */
+export const PNG_MAX = 8192;
+
+/**
  * The pixel size a PNG of this document gets, given a width.
  *
  * Height follows the viewBox's proportions, so the PNG cannot be a differently

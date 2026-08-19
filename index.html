@@ -432,8 +432,13 @@
               <input type="number" id="selX" step="1" aria-label="Selection X" />
               <input type="number" id="selY" step="1" aria-label="Selection Y" />
               <label for="selW">size</label>
-              <input type="number" id="selW" step="1" min="0" aria-label="Selection width" />
-              <input type="number" id="selH" step="1" min="0" aria-label="Selection height" />
+              <!-- `min` is the smallest value the spinner may reach, and zero is not
+                   one: a size of zero scales every point onto a line and the
+                   command refuses it. HTML has no exclusive minimum, so this is
+                   the step's own floor. A smaller number typed by hand still
+                   reaches the command, which is the guard that decides. -->
+              <input type="number" id="selW" step="1" min="1" aria-label="Selection width" />
+              <input type="number" id="selH" step="1" min="1" aria-label="Selection height" />
             </div>
               <div class="tiles">
                 <button class="tile" type="button" data-tr="rot-90" aria-label="Rotate a quarter turn anticlockwise" title="Rotate a quarter turn anticlockwise"><svg class="ico"><use href="#i-rotl" /></svg><span>−90°</span></button>
@@ -461,7 +466,7 @@
               </div>
             </div>
           <div class="group">
-              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Arrange</span><span class="gval" id="arrangeinfo">needs 2+</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-arrange" aria-label="What Arrange is for">?</button></div>
+              <div class="ghead"><button class="glabel" type="button" aria-expanded="true"><span>Arrange</span><span class="gval" id="arrangeinfo">none</span></button><button class="ghelp" type="button" aria-expanded="false" aria-controls="hint-arrange" aria-label="What Arrange is for">?</button></div>
               <div class="gbody">
             <!-- Whole shapes, not nodes. The Align in the Node panel moves anchors
                  inside one path; this moves paths around each other. -->

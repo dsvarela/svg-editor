@@ -286,8 +286,18 @@ export function dropShapes(
   /* The index is taken in `rest`, not in `list`. Taking it in `list` counts the
      rows that are about to leave, so dragging a row downward past its own
      neighbours lands it one place short of where the line was drawn. */
-  const at = before === null ? rest.length : rest.findIndex((c) => childKey(c) === before);
-  const cut = at < 0 ? rest.length : at;
+  /* A `before` that names nothing is a question this cannot answer, and the end
+     of the list is the most destructive of the available guesses: it is the
+     front of the paint order, reached by a drag that meant to move nothing.
+     `null` is how a caller asks for the end, and it is not the same thing as
+     asking for a row that is not there. */
+  /* A `before` that names nothing is a question this cannot answer, and the end
+     of the list is the most destructive of the available guesses: it is the
+     front of the paint order, reached by a drag that meant to move nothing.
+     `null` is how a caller asks for the end, and it is not the same thing as
+     asking for a row that is not there. */
+  if (before !== null && !rest.some((c) => childKey(c) === before)) return false;
+  const cut = before === null ? rest.length : rest.findIndex((c) => childKey(c) === before);
 
   const next = [...rest.slice(0, cut), ...picked, ...rest.slice(cut)];
   if (next.every((c, i) => childKey(c) === childKey(list[i]))) return false;

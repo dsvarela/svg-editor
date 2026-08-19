@@ -4916,6 +4916,34 @@ const scenarios = {
       `the preview is not of this document: ${JSON.stringify(out.previewUri.slice(0, 120))}`,
     );
 
+    /* Shut the group and open it again. Opening rendered NOTHING until some
+       unrelated notification arrived, because the catch-up listener was
+       registered before the one that opens the group and read `aria-expanded`
+       from before the press. Shutting rendered instead, which is the same two
+       listeners in the same order. Measured by emptying the `src` first, so a
+       preview left over from before the press cannot pass for one drawn now. */
+    const previewHead = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.ghead .glabel')].find(
+        (el) => el.querySelector('span')?.textContent === 'Preview',
+      );
+      b.click();
+      return b.getAttribute('aria-expanded');
+    });
+    check(previewHead === 'false', `pressing the Preview header left it ${previewHead}`);
+    await settle(page);
+    await page.evaluate(() => document.querySelector('#prev32').removeAttribute('src'));
+    await page.evaluate(() =>
+      [...document.querySelectorAll('.ghead .glabel')]
+        .find((el) => el.querySelector('span')?.textContent === 'Preview')
+        .click(),
+    );
+    await settle(page);
+    out.reopened = await page.evaluate(() => document.querySelector('#prev32').getAttribute('src'));
+    check(
+      typeof out.reopened === 'string' && out.reopened.startsWith('data:image/svg+xml'),
+      `reopening the Preview group drew ${JSON.stringify(out.reopened)}`,
+    );
+
     /* And that it FOLLOWS the document. A preview built once and never repointed
        satisfies everything above. */
     await openSource(page);
@@ -5042,6 +5070,19 @@ const scenarios = {
     await settle(page);
     out.refused = (await page.textContent('#status')).trim();
     check(/at least one pixel/.test(out.refused), `a width of 0 said ${JSON.stringify(out.refused)}`);
+
+    /* And a width past the ceiling. `max` on a number input constrains its
+       spinner and nothing else, so this arrived at the canvas and asked the
+       browser for 300 megapixels. Filled rather than typed, which is exactly
+       how a paste gets past the spinner. */
+    await page.fill('#pngWidth', '20000');
+    await page.click('#downloadPng');
+    await settle(page);
+    out.tooWide = (await page.textContent('#status')).trim();
+    check(/8192 pixels wide at most/.test(out.tooWide), `a width of 20000 said ${JSON.stringify(out.tooWide)}`);
+    // Refused before anything is drawn: the message is the refusal, not a report
+    // of a render that happened first.
+    check(!/Drawing/.test(out.tooWide), `a width of 20000 started a render: ${JSON.stringify(out.tooWide)}`);
 
     return out;
   },
@@ -5341,6 +5382,40 @@ const scenarios = {
     check(
       JSON.stringify(await painted()) === JSON.stringify(out.beforeDrag),
       'one undo did not take the drag back',
+    );
+
+    /* A drag that goes nowhere. Four pixels is past the slop that starts a drag
+       and nowhere near another row, and it sent the row to the FRONT of the
+       paint order in one undoable step that looked like a real reorder: the
+       nearest gap to a barely-moved press is the row's own top edge, `dropShapes`
+       looks that key up among the rows that are staying and does not find it,
+       and the not-found fallback was the end of the list.
+
+       Measured as the paint order and as the undo stack together, because the
+       order alone cannot tell "moved back to where it was" from "did not move",
+       and only the second is right. */
+    check(
+      !(await page.isDisabled('#redo')),
+      'the undo above left nothing to redo, so the redo probe below measures nothing',
+    );
+    /* Pressed near the row's top edge, so that four pixels down leaves that edge
+       the nearest gap. Pressed at the middle instead, the nearest gap is the
+       next row's top, `before` names a row that is staying, and the drop is a
+       correct no-op whether or not any of this is fixed. */
+    const midRow = await rowBox(1);
+    await page.mouse.move(midRow.x + midRow.width / 2, midRow.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(midRow.x + midRow.width / 2, midRow.y + 7);
+    await page.mouse.up();
+    await settle(page);
+    out.afterTinyDrag = await painted();
+    check(
+      JSON.stringify(out.afterTinyDrag) === JSON.stringify(out.beforeDrag),
+      `a four-pixel row drag repainted the order as ${JSON.stringify(out.afterTinyDrag)}`,
+    );
+    check(
+      !(await page.isDisabled('#redo')),
+      'a four-pixel row drag cleared the redo stack, so it filed an edit',
     );
 
 

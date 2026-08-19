@@ -910,13 +910,26 @@ describe('dropping before a row that stays', () => {
     expect(order(d)).toBe('BACD');
   });
 
-  /* The shape of the bug, stated against the function rather than the caller:
-     a key that names nothing among the staying rows is the case whose fallback
-     was silently reached. It still falls back -- that is the honest answer for
-     a key it cannot place -- and the caller no longer produces one. */
-  it('falls back to the end for a key that is not among the rows staying', () => {
+  /* The shape of the bug, stated against the function rather than the caller.
+     This used to fall back to the end of the list, which was recorded as the
+     honest answer for a key it cannot place. It is not: the end of the list is
+     the front of the paint order, and reaching it by accident is the most
+     destructive of the available guesses. `null` is how a caller asks for the
+     end, and that is a different question from naming a row that is not there.
+
+     The caller reached this every time. It aims at the nearest gap, a row's own
+     top edge is the nearest gap to a press that has barely moved, and the walk
+     written to step past a travelling row read a class that had already been
+     cleared. So a four-pixel drag sent the row to the front. */
+  it('refuses a key that is not among the rows staying', () => {
     const d = four();
-    dropShapes(d, new Set([idOf(d, 'B')]), null, idOf(d, 'B'));
+    expect(dropShapes(d, new Set([idOf(d, 'B')]), null, idOf(d, 'B'))).toBe(false);
+    expect(order(d)).toBe('ABCD');
+  });
+
+  it('still takes null as a request for the end', () => {
+    const d = four();
+    expect(dropShapes(d, new Set([idOf(d, 'B')]), null, null)).toBe(true);
     expect(order(d)).toBe('ACDB');
   });
 });

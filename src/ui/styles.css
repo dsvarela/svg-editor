@@ -1125,7 +1125,11 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
      character and cannot disagree about their size. */
   transition: transform 0.12s ease;
 }
-.shapelist .twist[aria-expanded='true'] { transform: rotate(90deg); }
+/* Turned by the ROW's state, not the button's. A treeitem carries
+   `aria-expanded` because the tree needs it there, and a button inside it
+   carrying the same attribute made a screen reader announce the state twice.
+   The button keeps its label, which says what pressing it does. */
+.shapelist li[aria-expanded='true'] > .twist { transform: rotate(90deg); }
 .shapelist .twist.none { visibility: hidden; }
 .shapelist .rename {
   flex: 1;
@@ -1376,7 +1380,13 @@ kbd {
     border-radius: 50%;
   }
   .ghelp:hover { box-shadow: inset 0 0 0 1px var(--ink-3); }
-  .ghelp[aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--accent); }
+  /* The border stays transparent when pressed. `.ghelp[aria-expanded='true']`
+     above outranks the `.ghelp` in this block, so a pressed `?` took the accent
+     as a 14 px border and drew the 44 px disc the block exists to avoid. */
+  .ghelp[aria-expanded='true'] {
+    border-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
 
 
   /* Six tiles across a 288px rail is 40px each, under the floor. Three columns

@@ -722,7 +722,7 @@ export class Canvas {
             if (f) {
               // A fillet is drawn for a press on either of its two nodes, since
               // both are the corner as far as a person is concerned.
-              if (!lit && !sel.nodes.has(sp.nodes[f.j].id) && !shapeSelected) continue;
+              if (!lit && !sel.nodes.has(sp.nodes[f.j].id)) continue;
               const dot = filletControl(sp, f, k);
               if (!dot || !inView(dot)) continue;
               this.cornerDots.next({
