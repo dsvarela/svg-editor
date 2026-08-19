@@ -119,6 +119,18 @@ describe('when there is no room', () => {
     expect(map.get('path.session.v1')).toBeUndefined();
   });
 
+  /* The limit itself, which is a size the session may be. Only 2 000 001 was
+     tested, and `>` widened to `>=` refused a drawing exactly at the bound with
+     the whole suite green -- a session lost to a bound that was meant to keep
+     it. Found by `tools/mutate.mjs`. */
+  it('accepts a string of exactly the limit, which is not past it', () => {
+    const map = install();
+    const s = new SessionStore();
+    expect(s.save('x'.repeat(2_000_000))).toBe(true);
+    expect(s.blocked).toBeNull();
+    expect(map.get('path.session.v1')?.length).toBe(2_000_000);
+  });
+
   it.each(['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'])(
     'names the drawing when the browser refuses with %s',
     (name) => {

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyMat, isIdentity, rotate, scale, translate } from '../src/core/affine';
+import { applyMat, isIdentity, mul, rotate, scale, skew, translate } from '../src/core/affine';
 import {
   anchorPoint,
   boxCentre,
@@ -190,5 +190,40 @@ describe('isIdentity', () => {
     // A quarter turn shares the identity's diagonal in absolute value, so a
     // comparison that forgot the off-diagonal terms would call it nothing.
     expect(isIdentity(rotate(90))).toBe(false);
+  });
+});
+
+/**
+ * Composing two transforms that both turn, which is the only thing that reaches
+ * half of `mul`.
+ *
+ * Its cross terms need an off-diagonal in BOTH operands. `about` never supplies
+ * one -- it is translate, then the matrix, then translate, so one side of every
+ * product is axis-aligned -- and the importer's transform chains in this suite
+ * are one rotation at most. A sign flip in the first term therefore passed all
+ * 1110 tests, found by `tools/mutate.mjs` and confirmed by hand.
+ */
+describe('composing two transforms', () => {
+  it('turns thirty then forty, which is seventy', () => {
+    const both = mul(rotate(30), rotate(40));
+    rotate(70).forEach((v, i) => expect(both[i]).toBeCloseTo(v, 12));
+  });
+
+  it('is the two applied in turn, which is what composing means', () => {
+    /* Stated against applying them one at a time rather than against a matrix
+       written out here, which would be a second implementation of `mul` and
+       would agree with a wrong answer as readily as with a right one.
+       A shear and a rotation, because that is the pair whose cross terms are
+       all different from each other.
+     *
+     * Sheared on BOTH axes. `skew(10, 0)` sets only `m[2]` -- `skew`'s first
+     * argument is the x shear and lands in the third slot -- so the right
+     * operand's `b[1]` was zero, the term this whole block is about dropped
+     * out, and the sign flip that motivated the test passed it. Watched fail
+     * before it was believed. */
+    const p: Pt = [3, 7];
+    const composed = applyMat(mul(rotate(25), skew(10, 20)), p);
+    const stepwise = applyMat(rotate(25), applyMat(skew(10, 20), p));
+    near(composed, stepwise, 12);
   });
 });

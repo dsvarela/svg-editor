@@ -16,9 +16,15 @@ import zlib from 'node:zlib';
    why. */
 
 const args = process.argv.slice(2);
-const scenarioName = args.find((a) => !a.startsWith('--')) ?? 'smoke';
 const headed = args.includes('--headed');
 const outIdx = args.indexOf('--out');
+/* The value that follows a flag is not a scenario. `--out shot.png smoke` read
+   the file name as the scenario and refused to run anything, which is the same
+   defect `tools/mutate.mjs` keeps its `flagValues` set to avoid. `indexOf`
+   returns -1 for a flag that is not there, and the element after that is the
+   first argument, which is the scenario itself. */
+const skip = outIdx >= 0 ? outIdx + 1 : -1;
+const scenarioName = args.find((a, i) => !a.startsWith('--') && i !== skip) ?? 'smoke';
 const out = outIdx >= 0 ? args[outIdx + 1] : `/tmp/drive-${scenarioName}.png`;
 
 /**
@@ -4271,6 +4277,70 @@ const scenarios = {
     const picked = await page.$$eval('#shapelist li.shape[aria-selected="true"]', (els) => els.length);
     check(picked === 1, `clicking one row selected ${picked} shapes, so an id names two of them`);
 
+    /* The same guarantee from the other side. `reserveIds` stops the editor
+       handing out an id the restored document already holds. `dedupeIds` is for
+       a session that arrived holding one id twice -- which nothing this build
+       writes, and any older build or hand edit can. Both are called from
+       `applySession`, and `dedupeIds` had a test of the function while its call
+       site had none.
+
+       Built from the bytes this page just saved, so the version and the schema
+       are its own and the duplicate is the only thing wrong with it. Planted
+       behind a Forget, for the reason the unreadable session below gives: the
+       running page flushes on the way out and would write straight over it. */
+    await tab(page, 'doc');
+    /* Waited on the CONTENT, for the reason the reload above gives: the write
+       is on a timer, so the entry sitting there may be from before the third
+       rectangle and doctoring that one collides two shapes this check is not
+       about. Three shapes is what the document holds now. */
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem('path.session.v1');
+      if (!raw) return false;
+      try {
+        return JSON.parse(raw).doc.shapes.length === 3;
+      } catch {
+        return false;
+      }
+    });
+    const live = JSON.parse(await page.evaluate(() => localStorage.getItem('path.session.v1')));
+    const nodeOf = (n) => live.doc.shapes[n].subpaths[0].nodes[0];
+    check(
+      nodeOf(0).id !== nodeOf(1).id,
+      'the saved session does not hold two shapes with distinct node ids to collide',
+    );
+    nodeOf(1).id = nodeOf(0).id;
+    await page.click('#forgetSession');
+    await page.evaluate((t) => localStorage.setItem('path.session.v1', t), JSON.stringify(live));
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    check(
+      /3 shapes/.test(await page.textContent('#stats')),
+      `the doctored session opened on "${await page.textContent('#stats')}"`,
+    );
+
+    /* One id naming two nodes is two nodes no selection can separate: clicking
+       one lights both. Counted on the overlay, which is where a person sees it.
+       The select tool first, because the tool is part of the restored session
+       and a pen click places a node instead of selecting one. */
+    await page.keyboard.press('v');
+    await settle(page);
+    const anchor = await page.evaluate(() => {
+      const el = document.querySelector('.overlay [data-hit="anchor"]');
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    });
+    check(!!anchor, 'the restored session drew no anchor to click');
+    await page.mouse.click(anchor.x, anchor.y);
+    await settle(page);
+    out.litOnDuplicate = await page.evaluate(
+      () => document.querySelectorAll('.overlay [data-hit="anchor"].selected').length,
+    );
+    check(
+      out.litOnDuplicate === 1,
+      `a session holding one node id twice lit ${out.litOnDuplicate} anchors from one click`,
+    );
+
     /* --- the workspace file, which is the same bytes written somewhere else - */
     await page.evaluate(() => {
       const made = URL.createObjectURL.bind(URL);
@@ -5217,6 +5287,62 @@ const scenarios = {
     // Refused before anything is drawn: the message is the refusal, not a report
     // of a render that happened first.
     check(!/Drawing/.test(out.tooWide), `a width of 20000 started a render: ${JSON.stringify(out.tooWide)}`);
+
+    /* The rejection, which neither refusal above reaches: both return before
+       anything is drawn, so the path where the browser declines to encode had
+       nothing standing on it. The answer has to be a sentence of this editor's
+       -- the engine's own exception text differs between Firefox and Chromium
+       and is not written to `docs/STYLE.md`, which is what `check:voice` is for.
+       `toBlob` handing back null is exactly what `renderPng` rejects on, and it
+       is the one failure a canvas can be made to produce on demand. */
+    await page.evaluate(() => {
+      HTMLCanvasElement.prototype.toBlob = function (cb) {
+        cb(null);
+      };
+    });
+    await page.fill('#pngWidth', '200');
+    await page.click('#downloadPng');
+    await page.waitForFunction(
+      () => !/^Drawing/.test(document.querySelector('#status')?.textContent ?? ''),
+    );
+    out.encodeFailed = (await page.textContent('#status')).trim();
+    check(
+      out.encodeFailed === 'The PNG could not be drawn. Try a smaller width.',
+      `a canvas that would not encode said ${JSON.stringify(out.encodeFailed)}`,
+    );
+
+    /* The third way to hide the previews, and the one the catch-up was not
+       wired to. The group toggle above is the first and the rail is the second;
+       this is the tab, and it is the sibling that was left when the other two
+       were fixed. `refreshPreview` returns early on a panel whose `offsetParent`
+       is null, which is what `hidden` on the tab panel gives it, so coming back
+       has to catch it up or the swatches describe the document before the edit.
+
+       The `src` is cleared on the way out, so a preview left over from before
+       the change cannot pass for one drawn on return. */
+    await tab(page, 'shape');
+    await settle(page);
+    await page.evaluate(() => document.querySelector('#prev32').removeAttribute('src'));
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 11">' +
+        '<path d="M0 0 H44 V11 H0 Z" fill="#0a5" stroke="none"/></svg>',
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await settle(page);
+    await tab(page, 'doc');
+    await settle(page);
+    out.afterTab = await page.evaluate(() => {
+      const src = document.querySelector('#prev32').getAttribute('src');
+      return src === null ? null : decodeURIComponent(src);
+    });
+    check(
+      /viewBox="0 0 44 11"/.test(out.afterTab ?? ''),
+      `coming back to the tab left the preview at ${JSON.stringify(String(out.afterTab).slice(0, 120))}`,
+    );
 
     return out;
   },
@@ -6201,6 +6327,60 @@ const scenarios = {
       `an empty list still named ${JSON.stringify(out.activeWhenEmpty)} as its active row`,
     );
 
+    /* Walking the cursor past the fold scrolls the list to it. Naming a row in
+       `aria-activedescendant` is half the pattern: a row nobody can see is
+       announced and not shown, so a sighted person driving the list by keyboard
+       watches the cursor walk off the bottom of the panel.
+     *
+     * Thirty shapes, because the list has to overflow before scrolling means
+     * anything, and the assertion is on `scrollTop` moving rather than on any
+     * particular value: how many rows fit is the window's answer, not this
+     * scenario's.
+     *
+     * The other half of the branch is not covered here. `markActiveRow` scrolls
+     * only while the list holds focus, so that a selection made on the canvas
+     * does not yank the panel about under a pointer, and reaching that case
+     * needs a shape whose position on the canvas this fixture knows. */
+    const many = Array.from(
+      { length: 30 },
+      (_, i) => `<path d="M${5 + (i % 5) * 18} ${5 + Math.floor(i / 5) * 15} h12 v10 h-12 Z" fill="#2563d8"/>`,
+    ).join('');
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${many}</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+    check((await rows()).length === 30, `the tall fixture drew ${(await rows()).length} rows, not 30`);
+
+    const overflows = await page.evaluate(() => {
+      const el = document.querySelector('#shapelist');
+      el.scrollTop = 0;
+      return el.scrollHeight > el.clientHeight;
+    });
+    check(overflows, 'the list of thirty does not overflow, so nothing here could scroll');
+
+    await page.focus('#shapelist');
+    for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowDown');
+    await settle(page);
+    out.scrolled = await page.evaluate(() => document.querySelector('#shapelist').scrollTop);
+    check(out.scrolled > 0, `walking the cursor to the last of thirty rows left scrollTop at ${out.scrolled}`);
+    /* And it is the cursor's own row that is on screen, not merely some scroll
+       having happened: the attribute and the scroll are set from one answer. */
+    out.cursorOnScreen = await page.evaluate(() => {
+      const list = document.querySelector('#shapelist');
+      const el = document.getElementById(list.getAttribute('aria-activedescendant'));
+      if (!el) return null;
+      const a = el.getBoundingClientRect();
+      const b = list.getBoundingClientRect();
+      return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+    });
+    check(out.cursorOnScreen === true, `the row the cursor names is ${JSON.stringify(out.cursorOnScreen)} on screen`);
+
     return out;
   },
 
@@ -6529,8 +6709,8 @@ await browser.close();
    throws nothing, which is the failure a screenshot is worst at showing. */
 if (audit.badD > 0) {
   failure ??=
-    `${audit.badD} attribute(s) reached the DOM holding NaN, Infinity or undefined: ` +
-    audit.badWhere.join(', ');
+    `${audit.badD} attribute${audit.badD === 1 ? '' : 's'} reached the DOM holding ` +
+    `NaN, Infinity or undefined: ${audit.badWhere.join(', ')}`;
 }
 
 if (audit.swallowers.length) {

@@ -256,6 +256,19 @@ most survivors change nothing observable and no test could have caught them.
 which measure moved. Of the 26 there now, 2 do, and both are a node laid out
 differently rather than a shape that is wrong.
 
+**Two changes on 2026-08-19 moved every site index and cut the count by about a
+quarter, so no figure above was measured against the list the tool builds now.**
+It counted the `<` and `>` of a TypeScript type argument as operators, and
+`new Promise<Blob>` mutated to `Promise<=Blob>` is not the syntax error it looks
+like: esbuild reads it as `new Promise() <= Blob > (…)`, which parses, so the
+file loads and the swap can never be a finding. And it judged a comment one line
+at a time, so a wrapped block-comment line beginning with anything but `*` read
+as code. Five files went from 170 sites to 129. **It also left a hung
+`vitest related` alive** past its own timeout, holding two cores, because
+`spawnSync` signalled the `npx` above vitest rather than vitest; the local binary
+is spawned directly now. A timing-sensitive measurement taken after a sweep on
+the old tool is worth nothing.
+
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 
 ## Writing

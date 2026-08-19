@@ -96,17 +96,76 @@ function sources(path) {
 }
 
 /**
- * Lines a mutation may not touch.
+ * Which lines of a file are prose a mutation may not touch.
  *
  * A comment is not code, and a swap inside one is always a survivor, which
- * would bury the real findings in noise. Whole-line detection only: a `//`
- * inside a string literal costs one skipped line, and missing a mutation is
- * cheaper here than reporting a false one.
+ * would bury the real findings in noise.
+ *
+ * Tracked across lines rather than judged one at a time. Asking whether a line
+ * starts with `//`, `*` or `/*` misses the continuation of a block comment that
+ * happens to start with anything else -- a wrapped sentence opening with a
+ * backtick, say. `src/io/session.ts:204` is one, and it was reported as a
+ * survivor.
+ *
+ * A `/*` inside a string literal costs one skipped line, which is the trade the
+ * line-at-a-time version already made: missing a mutation is cheaper here than
+ * reporting one that cannot be a finding.
  */
-const isProse = (line) => {
-  const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
-};
+function proseLines(lines) {
+  const out = new Set();
+  let inBlock = false;
+  lines.forEach((line, n) => {
+    const t = line.trim();
+    if (inBlock) {
+      out.add(n);
+      if (t.includes('*/')) inBlock = false;
+      return;
+    }
+    if (t.startsWith('//')) out.add(n);
+    else if (t.startsWith('/*')) {
+      out.add(n);
+      if (!t.includes('*/')) inBlock = true;
+    }
+  });
+  return out;
+}
+
+/**
+ * The columns of a line holding the `<` and `>` of a type argument.
+ *
+ * These are not operators, and a swap in one is always a survivor -- the same
+ * reason a comment is skipped above, and the same cost: real survivors buried
+ * in noise. `new Promise<Blob>(…)` mutated to `Promise<=Blob>` is not the
+ * syntax error it looks like. esbuild reads it as `new Promise() <= Blob > (…)`,
+ * which parses, so the file loads, nothing observable changes, and it scores as
+ * a finding. About a third of this tree's angle brackets are type arguments.
+ *
+ * Paired by scanning rather than matched by a regular expression, because only
+ * the pairing tells `Map<string, Pt[]>` from `a < b && c > d`. A `<` opens one
+ * only when an identifier is immediately before it and a type may start
+ * immediately after, which is what the spacing this repo is formatted with
+ * gives every real comparison. A `;` ends a statement and drops anything still
+ * open. Erring toward skipping is deliberate: missing a mutation is cheaper
+ * here than reporting one that cannot be a finding.
+ */
+function typeArgumentCols(line) {
+  const cols = new Set();
+  const open = [];
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    const before = line[i - 1] ?? '';
+    const after = line[i + 1] ?? '';
+    if (c === '<' && /[A-Za-z0-9_$]/.test(before) && /[A-Za-z_$([{'"]/.test(after)) {
+      open.push(i);
+    } else if (c === '>' && open.length && before !== '=' && after !== '=') {
+      cols.add(open.pop());
+      cols.add(i);
+    } else if (c === ';') {
+      open.length = 0;
+    }
+  }
+  return cols;
+}
 
 const files = targets.flatMap(sources).filter((f) => !f.endsWith('.d.ts'));
 
@@ -114,10 +173,13 @@ const files = targets.flatMap(sources).filter((f) => !f.endsWith('.d.ts'));
 const sites = [];
 for (const file of files) {
   const lines = readFileSync(file, 'utf8').split('\n');
+  const prose = proseLines(lines);
   lines.forEach((line, n) => {
-    if (isProse(line)) return;
+    if (prose.has(n)) return;
+    const types = typeArgumentCols(line);
     for (const rule of RULES) {
       for (const m of line.matchAll(rule.find)) {
+        if (types.has(m.index)) continue;
         sites.push({ file, line: n, col: m.index, was: m[0], now: rule.to });
       }
     }
@@ -138,10 +200,23 @@ if (!chosen.length) {
   process.exit(0);
 }
 
-/** Run the tests that may disagree with a mutation in `file`. */
+/**
+ * Run the tests that may disagree with a mutation in `file`.
+ *
+ * The local binary rather than `npx`. `spawnSync`'s timeout signals the process
+ * it started, and through `npx` that is `npx`: it dies, vitest below it is
+ * orphaned, and its fork workers keep running. One run that hung this way was
+ * still holding two cores 26 minutes after its 180-second timeout, which is
+ * long enough to skew everything measured afterwards -- the browser sweep that
+ * followed failed `traceWorker` on a responsiveness bound and passed on a quiet
+ * machine. Spawned directly, the signal reaches vitest, which tears its own
+ * pool down.
+ */
+const VITEST = join('node_modules', '.bin', 'vitest');
+
 function runSuite(file) {
-  const argv = only ? ['vitest', 'run', ...only] : ['vitest', 'related', '--run', relative(process.cwd(), file)];
-  const run = spawnSync('npx', argv, { encoding: 'utf8', timeout: 180_000 });
+  const argv = only ? ['run', ...only] : ['related', '--run', relative(process.cwd(), file)];
+  const run = spawnSync(VITEST, argv, { encoding: 'utf8', timeout: 180_000 });
   return { status: run.status, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
 }
 

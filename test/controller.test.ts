@@ -3881,3 +3881,63 @@ describe('a selection survives an edit that moves indices', () => {
     ]);
   });
 });
+
+/**
+ * Aligning and distributing anchors from the commands, which is the half the
+ * model functions' booleans exist for.
+ *
+ * `tryEdit` takes its checkpoint back when the mutation reports no change, and
+ * the redo stack with it. Without that, pressing Align top on anchors already
+ * aligned throws away a redo somebody may still want and files an entry that
+ * appears to do nothing when they reach it. The shape-level commands had this
+ * test; these two shipped without one.
+ */
+describe('aligning and distributing anchors from the commands', () => {
+  /** Every anchor of the only shape, and nothing else. */
+  const pickAll = (h: Harness): void =>
+    h.store.update((s) => {
+      s.selection.shapes.clear();
+      s.selection.nodes.clear();
+      for (const n of s.doc.shapes[0].subpaths[0].nodes) s.selection.nodes.add(n.id);
+    });
+  const ys = (h: Harness): number[] =>
+    h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[1]);
+  const xs = (h: Harness): number[] =>
+    h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[0]);
+
+  it('files one entry for an align that moves anchors', () => {
+    const h = harness('M10 10 L40 25 L40 30 Z');
+    pickAll(h);
+    h.commands.alignSelection('top');
+    expect(h.store.canUndo).toBe(true);
+    expect(ys(h)).toEqual([10, 10, 10]);
+  });
+
+  it('files nothing, and keeps the redo, for an align that moves none', () => {
+    const h = harness('M10 10 L40 25 L40 30 Z');
+    pickAll(h);
+    h.commands.alignSelection('top');
+
+    h.store.edit((s) => (s.doc.shapes[0].name = 'edited'));
+    h.store.undo();
+    expect(h.store.canRedo).toBe(true);
+
+    h.commands.alignSelection('top');
+    expect(h.store.canRedo).toBe(true);
+    expect(ys(h)).toEqual([10, 10, 10]);
+  });
+
+  it('files nothing, and keeps the redo, for a distribute that moves none', () => {
+    const h = harness('M10 10 L25 10 L40 10 Z');
+    pickAll(h);
+    h.commands.distributeSelection('h');
+
+    h.store.edit((s) => (s.doc.shapes[0].name = 'edited'));
+    h.store.undo();
+    expect(h.store.canRedo).toBe(true);
+
+    h.commands.distributeSelection('h');
+    expect(h.store.canRedo).toBe(true);
+    expect(xs(h)).toEqual([10, 25, 40]);
+  });
+});

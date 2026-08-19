@@ -118,6 +118,32 @@ describe('what gets remembered', () => {
       expect(p[1]).toBeCloseTo(before[i][1], 9);
     });
   });
+
+  /**
+   * The other flip, which nothing measured at all.
+   *
+   * `flipY` returning the identity passed all 1110 tests: `flipH` had two and
+   * its symmetric partner had none. Found by `tools/mutate.mjs` and confirmed
+   * by breaking it by hand.
+   *
+   * Asserted as a mirror rather than as "the coordinates changed", because an
+   * identity changes nothing and an identity is what was there. Every node's y
+   * before and after has to sum to the same number, which is twice whatever
+   * line it was mirrored about -- true without this test knowing which line
+   * that is. And x untouched, which is what makes it the vertical one.
+   */
+  it('a flip the other way, which is the half nothing measured', () => {
+    const { store, commands } = editor('M0 0 L30 0 L30 10 L0 10 Z');
+    store.edit((s) => (s.doc.shapes[0].subpaths[0].nodes[1].pt = [30, 4]));
+    const before = store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
+    commands.applyTransform('flipV');
+    const flipped = store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
+
+    const sums = flipped.map((p, i) => p[1] + before[i][1]);
+    expect(Math.max(...sums) - Math.min(...sums)).toBeLessThan(1e-9);
+    expect(flipped.map((p) => p[0])).toEqual(before.map((p) => p[0]));
+    expect(flipped.map((p) => p[1])).not.toEqual(before.map((p) => p[1]));
+  });
 });
 
 describe('the repeat itself', () => {

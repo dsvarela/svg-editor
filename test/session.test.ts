@@ -92,6 +92,31 @@ describe('a session survives being written and read', () => {
     expect(back.doc.groups).toEqual([{ id: 'group-1', name: 'pair', parent: null }]);
     expect(back.doc.shapes[0].group).toBe('group-1');
   });
+
+  /* A group inside a group, which the flat case above cannot show. `pruneGroups`
+     clears a parent that names nothing, and the guard it does that with --
+     `g.parent && !known.has(g.parent)` -- is only measured by a parent that IS
+     known: widen the conjunction to a disjunction and every real parent is
+     discarded, so nesting made anywhere is lost on the way in and the whole
+     tree flattens. Found by `tools/mutate.mjs`.
+
+     Built in the JSON rather than through the store, for the reason the
+     dangling-pointer test below gives: a fixture built through `Store.edit`
+     arrives already tidied and would pass whatever the reader did. */
+  it('keeps a group nested in another, which is the parent that is not null', () => {
+    const store = starter();
+    const s = JSON.parse(written(store)) as {
+      doc: { groups?: unknown; shapes: { group?: string }[] };
+    };
+    s.doc.groups = [
+      { id: 'group-1', name: 'outer', parent: null },
+      { id: 'group-2', name: 'inner', parent: 'group-1' },
+    ];
+    s.doc.shapes[0].group = 'group-2';
+    const back = read(JSON.stringify(s), view(store));
+    if (typeof back === 'string') throw new Error(back);
+    expect(back.doc.groups?.find((g) => g.id === 'group-2')?.parent).toBe('group-1');
+  });
 });
 
 describe('a session it will not take', () => {
@@ -117,6 +142,26 @@ describe('a session it will not take', () => {
     const s = JSON.parse(written(store)) as { doc: { shapes: { subpaths: { nodes: { pt: unknown }[] }[] }[] } };
     s.doc.shapes[0].subpaths[0].nodes[0].pt = [null, 10];
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* The other value JSON carries and arithmetic will not take. `1e999` is a
+     legal JSON number that parses to `Infinity`, so `typeof v === 'number'`
+     admits it and only `Number.isFinite` turns it away -- and nothing measured
+     that half: the conjunction widened to a disjunction and the suite stayed
+     green. An infinite coordinate reaches the `d` attribute, which is what the
+     browser harness's own sweep exists to catch one step later.
+
+     Substituted into the text, because `JSON.stringify(Infinity)` writes
+     `null`, which is the case above. The middle assertion is what stops this
+     passing for the wrong reason: it says the fixture really does carry an
+     infinity. */
+  it('refuses a coordinate JSON can carry and arithmetic cannot, which is 1e999', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { subpaths: { nodes: { pt: unknown }[] }[] }[] } };
+    s.doc.shapes[0].subpaths[0].nodes[0].pt = ['x', 10];
+    const text = JSON.stringify(s).replace('"x"', '1e999');
+    const carried = JSON.parse(text) as { doc: { shapes: { subpaths: { nodes: { pt: number[] }[] }[] }[] } };
+    expect(carried.doc.shapes[0].subpaths[0].nodes[0].pt[0]).toBe(Infinity);
+    expect(read(text, view(store))).toContain('malformed');
   });
 
   /* Each field of the box separately, and each of `w` and `h` at zero. One

@@ -62,22 +62,6 @@ export const flipY = (): Mat => [1, 0, 0, -1, 0, 0];
 export const about = (m: Mat, cx: number, cy: number): Mat =>
   mul(translate(cx, cy), mul(m, translate(-cx, -cy)));
 
-/** Determinant; negative means the transform mirrors (winding order flips). */
-export const det = (m: Mat): number => m[0] * m[3] - m[1] * m[2];
-
-export function invert(m: Mat): Mat | null {
-  const d = det(m);
-  if (Math.abs(d) < 1e-12) return null;
-  return [
-    m[3] / d,
-    -m[1] / d,
-    -m[2] / d,
-    m[0] / d,
-    (m[2] * m[5] - m[3] * m[4]) / d,
-    (m[1] * m[4] - m[0] * m[5]) / d,
-  ];
-}
-
 /**
  * Whether a matrix does nothing.
  *

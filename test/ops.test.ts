@@ -20,8 +20,12 @@ import {
   snap,
   splitSegment,
   transformShape,
+  alignNodes,
+  distributeNodes,
 } from '../src/model/ops';
-import { emptyDoc, shapeFromPath, shapeBBox } from '../src/model/doc';
+import { emptyDoc, shapeFromPath, shapeBBox, selectedNodes, emptySelection } from '../src/model/doc';
+import type { NodeRef } from '../src/model/doc';
+import type { Doc } from '../src/core/types';
 import { KAPPA } from '../src/core/primitives';
 import { Store } from '../src/model/store';
 
@@ -1174,5 +1178,71 @@ describe('reshapeSegment', () => {
     expect(continuityOf(sp.nodes[1])).not.toBe('cusp');
     reshapeSegment(sp, 0, 0.5, [15, -18]);
     expect(continuityOf(sp.nodes[1])).not.toBe('cusp');
+  });
+});
+
+/**
+ * Aligning and distributing anchors, and the boolean the caller acts on.
+ *
+ * Both report whether anything moved, so `Commands` can run them under
+ * `tryEdit`: three presses of Align top are one arrangement and one entry in
+ * the history. Nothing in the suite mentioned either name -- the shape-level
+ * commands were tested and the node-level pair shipped on the argument that
+ * they were the same shape of change.
+ *
+ * The return value is the point, and the positions are checked beside it: a
+ * function that moved nothing and said `false`, and one that moved everything
+ * and said `false`, are the same reading otherwise.
+ */
+describe('aligning and distributing anchors', () => {
+  /** A document of one shape, and refs to all of its nodes in order. */
+  const fixture = (d: string): { doc: Doc; refs: NodeRef[] } => {
+    const doc = emptyDoc();
+    doc.shapes.push(shapeFromPath(d));
+    const sh = doc.shapes[0];
+    return { doc, refs: sh.subpaths[0].nodes.map((_, i) => ({ shape: sh.id, sp: 0, i })) };
+  };
+  const ys = (doc: Doc): number[] => doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[1]);
+  const xs = (doc: Doc): number[] => doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[0]);
+
+  it('takes every anchor to the top of their common box, and says it moved', () => {
+    const { doc, refs } = fixture('M0 4 L10 9 L20 1');
+    expect(alignNodes(doc, refs, 'top')).toBe(true);
+    expect(ys(doc)).toEqual([1, 1, 1]);
+  });
+
+  it('says nothing moved when they are already there, so a second press files nothing', () => {
+    const { doc, refs } = fixture('M0 4 L10 9 L20 1');
+    alignNodes(doc, refs, 'top');
+    expect(alignNodes(doc, refs, 'top')).toBe(false);
+    expect(ys(doc)).toEqual([1, 1, 1]);
+  });
+
+
+  it('spaces the middle anchors evenly and leaves the two extremes where they are', () => {
+    const { doc, refs } = fixture('M0 0 L3 0 L20 0');
+    expect(distributeNodes(doc, refs, 'h')).toBe(true);
+    expect(xs(doc)).toEqual([0, 10, 20]);
+  });
+
+  it('says nothing moved when the spacing is already even', () => {
+    const { doc, refs } = fixture('M0 0 L10 0 L20 0');
+    expect(distributeNodes(doc, refs, 'h')).toBe(false);
+    expect(xs(doc)).toEqual([0, 10, 20]);
+  });
+
+
+  /* The refs these two are handed come from `selectedNodes`, which is where a
+     shape's own nodes and a separate node selection are put together. A node
+     that is in both arrives twice unless something says otherwise, and nothing
+     in the suite mentioned this function either: `return false` in its dedupe
+     inverted to `return true` and the whole suite stayed green. */
+  it('is handed each node once when a shape and one of its own nodes are both selected', () => {
+    const { doc } = fixture('M0 4 L10 9 L20 1');
+    const sh = doc.shapes[0];
+    const sel = emptySelection();
+    sel.shapes.add(sh.id);
+    sel.nodes.add(sh.subpaths[0].nodes[1].id);
+    expect(selectedNodes(doc, sel)).toHaveLength(3);
   });
 });
