@@ -20,7 +20,7 @@ import { Store } from '../src/model/store';
 import { emptyDoc, nextId, reserveIds, shapeFromPath } from '../src/model/doc';
 import { nextNodeId } from '../src/core/types';
 import { encode, read, toSession, whatIsMissing } from '../src/io/session';
-import type { SessionView } from '../src/io/session';
+import type { Session, SessionView } from '../src/io/session';
 
 const starter = (): Store => {
   const doc = emptyDoc();
@@ -187,6 +187,41 @@ describe('a session it will not take', () => {
     const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
     s.doc.shapes[0].style.strokeWidth = '2px';
     expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* A width is a length. A negative one is not refused anywhere downstream and
+     reaches `exportSvg` as `stroke-width="-4"`, so this reader is the guard. */
+  it('refuses a negative stroke width', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.strokeWidth = -4;
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  it('keeps a stroke width of zero, which is a hairline and not an error', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.strokeWidth = 0;
+    const back = read(JSON.stringify(s), view(store));
+    expect(typeof back).not.toBe('string');
+    expect((back as Session).doc.shapes[0].style.strokeWidth).toBe(0);
+  });
+
+  /* Opacity is part of the drawing, so it reads strictly like the rest of it.
+     The lenient version restored `"0.25"` as fully opaque with no message,
+     which is a wrong picture rather than a switch in the wrong position. */
+  it('refuses an opacity that is present and not a number', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    s.doc.shapes[0].style.opacity = '0.25';
+    expect(read(JSON.stringify(s), view(store))).toContain('malformed');
+  });
+
+  /* Absent is the other half and must stay lenient: opacity arrived after the
+     format did, and a workspace written before it has no such field. */
+  it('reads a style written before opacity existed as opaque', () => {
+    const s = JSON.parse(written(store)) as { doc: { shapes: { style: Record<string, unknown> }[] } };
+    delete s.doc.shapes[0].style.opacity;
+    const back = read(JSON.stringify(s), view(store));
+    expect(typeof back).not.toBe('string');
+    expect((back as Session).doc.shapes[0].style.opacity).toBe(1);
   });
 
   /* `null`, not a string: a string has no numeric `at` either, so dropping the

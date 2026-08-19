@@ -4241,6 +4241,57 @@ const scenarios = {
     out.fresh = (await page.textContent('#stats')).trim();
     check(/1 shape/.test(out.fresh), `after forgetting and reloading: "${out.fresh}"`);
 
+    /* --- a session this build cannot read, which must not be destroyed ------ */
+
+    /* Planted behind a Forget, because the running page is saving: without the
+       latch its own flush on the way out would write over the entry between the
+       `setItem` below and the reload that is supposed to find it. */
+    const UNREAD = '{"version":9999,"doc":{"shapes":[]}}';
+    await tab(page, 'doc');
+    await page.click('#forgetSession');
+    await page.evaluate((text) => localStorage.setItem('path.session.v1', text), UNREAD);
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    await tab(page, 'doc');
+    out.unread = {
+      status: (await page.textContent('#status')).trim(),
+      info: (await page.textContent('#autosaveinfo')).trim(),
+      why: (await page.textContent('#autosavewhy')).trim(),
+    };
+    check(/could not be read/.test(out.unread.status), `an unreadable session opened saying "${out.unread.status}"`);
+    check(out.unread.info === 'not saving', `an unreadable session left the readout at "${out.unread.info}"`);
+    check(
+      /could not read/.test(out.unread.why) && /Forget saved work/.test(out.unread.why),
+      `the reason reads "${out.unread.why}" and does not name the way out`,
+    );
+
+    /* The whole point: the bytes are still there afterwards. Driven through a
+       reload rather than a wait, because `pagehide` flushes the autosave -- so
+       this is the strongest attempt to overwrite the entry that the editor ever
+       makes, and it happens at a moment the harness can name. */
+    await page.click('#tool button[data-v="rect"]');
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(700, 400);
+    await page.mouse.up();
+    await settle(page);
+    await page.reload({ waitUntil: 'networkidle' });
+    await settle(page);
+    out.keptUnread = await page.evaluate(() => localStorage.getItem('path.session.v1'));
+    check(
+      out.keptUnread === UNREAD,
+      `drawing over an unreadable session replaced it with ${JSON.stringify(out.keptUnread)}`,
+    );
+
+    // And Forget is the way out it was told to offer.
+    await tab(page, 'doc');
+    await page.click('#forgetSession');
+    await settle(page);
+    check(
+      (await page.evaluate(() => localStorage.getItem('path.session.v1'))) === null,
+      'Forget saved work left the unreadable session in place',
+    );
+
     /* A browser that refuses storage, which is the case the shopping-list entry
        was mostly about: opened from `file://` Chromium gives the page an opaque
        origin and every access throws. Faked here rather than served from a real
@@ -5629,6 +5680,19 @@ const scenarios = {
       );
     const selectedRows = async () =>
       (await rows()).filter((r) => r.selected === 'true').map((r) => `${r.kind}${r.sp ?? ''}`);
+    /* The row the tree reports as the keyboard's, resolved through the id rather
+       than compared as a string: an `aria-activedescendant` naming an element
+       that is not there is exactly as silent as no attribute at all, and only
+       the lookup tells the two apart. */
+    const activeRow = () =>
+      page.evaluate(() => {
+        const list = document.querySelector('#shapelist');
+        const id = list.getAttribute('aria-activedescendant');
+        if (id === null) return null;
+        const el = document.getElementById(id);
+        if (!el || !list.contains(el)) return { id, kind: 'gone' };
+        return { id, kind: el.className, sp: el.getAttribute('data-sp') };
+      });
     const out = {};
 
     /* Two disjoint squares in one shape, which is what `Unite` and `Combine` both
@@ -5712,15 +5776,36 @@ const scenarios = {
     await page.keyboard.press('ArrowDown');
     await settle(page);
     check((await selectedRows()).join() === 'shape', 'ArrowDown did not reach the shape row');
+
+    /* The list is one tab stop with arrows moving inside it, so what the arrows
+       are on is announced through `aria-activedescendant` or not at all. Read
+       after every press that moves the cursor, because an attribute set once and
+       left behind names the right row exactly until somebody uses the feature. */
+    out.active = await activeRow();
+    check(
+      out.active?.kind === 'shape',
+      `after ArrowDown the tree named ${JSON.stringify(out.active)} rather than the shape row`,
+    );
+
     await page.keyboard.press('ArrowRight');
     await settle(page);
     check((await rows()).length === 3, 'ArrowRight did not open the shape');
     await page.keyboard.press('ArrowRight');
     await settle(page);
     check((await selectedRows()).join() === 'path0', 'a second ArrowRight did not step into the paths');
+    const onFirstPath = await activeRow();
+    check(
+      onFirstPath?.kind === 'path' && onFirstPath.sp === '0',
+      `stepping into the paths named ${JSON.stringify(onFirstPath)} rather than the first path row`,
+    );
     await page.keyboard.press('ArrowDown');
     await settle(page);
     check((await selectedRows()).join() === 'path1', 'ArrowDown did not walk to the next path');
+    const onSecondPath = await activeRow();
+    check(
+      onSecondPath?.kind === 'path' && onSecondPath.sp === '1',
+      `walking to the second path named ${JSON.stringify(onSecondPath)}`,
+    );
     await page.keyboard.press('ArrowLeft');
     await settle(page);
     check((await selectedRows()).join() === 'shape', 'ArrowLeft did not step back out to the shape');
@@ -5740,6 +5825,20 @@ const scenarios = {
     check(
       split.every((r) => r.expanded === null),
       'a shape of one path still offered something to open after Split',
+    );
+
+    /* Empty the list. It is drawn by a branch that returns before the selection
+       is painted, so a cursor named on the way in outlives every row it could
+       name unless that branch clears it too. */
+    await page.keyboard.press('Control+a');
+    await settle(page);
+    await page.click('#del');
+    await settle(page);
+    check((await rows()).length === 1, 'deleting everything did not leave the empty row');
+    out.activeWhenEmpty = await activeRow();
+    check(
+      out.activeWhenEmpty === null,
+      `an empty list still named ${JSON.stringify(out.activeWhenEmpty)} as its active row`,
     );
 
     return out;

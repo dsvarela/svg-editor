@@ -2730,6 +2730,32 @@ otherwise refuse every file written before it.
 guessed at. A field that changed meaning reads as perfectly valid and restores
 the wrong thing, which is the failure with no symptom.
 
+**A session that cannot be read is left where it is, and the autosave stops.**
+It used to be deleted, with the argument that it cannot be read by this build
+and never will be, so keeping it means refusing the same entry on every load.
+The second half of that was false: the autosave subscriber is unconditional and
+fires on the first notification after startup, so the entry was overwritten
+within the second whether or not it was deleted first. What deleting bought was
+a message that does not repeat.
+
+The build that wrote the entry can read it. That build is somewhere -- this one
+is the older or the broken one -- so the entry is the work, and deleting it is
+the only outcome here that cannot be undone. Stopping the autosave is the other
+half and is not optional, because keeping an entry nothing protects is deleting
+it a second later. The save-state readout names this case separately from
+**Forget saved work**: the latch's own sentence says a reload will start saving
+again, and here a reload finds the same entry and stops again.
+
+**The drawing reads strictly, and opacity is part of the drawing.** It arrived
+after the format did, so an absent one still means opaque; a present one that is
+not a number is refused like a coordinate. Reading `"0.25"` as fully opaque is a
+wrong picture with no message, which is what §59's lenience is for switches and
+not for geometry.
+
+A `strokeWidth` is a length and a negative one is refused. Nothing downstream
+guards it, and it reaches `exportSvg` as `stroke-width="-4"`. Zero stays legal:
+it is a hairline nobody can see, not an error.
+
 **A field with a fixed set of values is checked against a `Record` keyed by the
 union, not an array of it.** An array of `ToolName` accepts any subset, so a
 tool added to the union goes missing from the list with nothing failing at
@@ -2800,6 +2826,16 @@ first version guessed between them on the length of the string, which told a
 them to shrink something that was never the problem. `QuotaExceededError` is
 the name the Web Storage specification gives the first condition, and
 `NS_ERROR_DOM_QUOTA_REACHED` is Gecko's name for it.
+
+**A refused write leaves the copy before it in place, and a marker beside it
+says so.** That copy is a real session from an earlier moment, and nothing in it
+distinguishes it from a current one, so the next load announced somebody's older
+drawing with a sentence asserting it was the one they left. The marker is a
+separate key, because the write that would have carried the field inside the
+session is the write that did not happen. It is a dozen bytes, and the size
+refusal is decided before storage is touched, so there is room for it exactly
+when it is needed. Where there is not -- an origin that refuses everything --
+the marker fails silently and the behaviour is what it was before it existed.
 
 ### Opening a file takes the history with it
 

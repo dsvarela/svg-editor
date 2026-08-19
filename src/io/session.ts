@@ -200,10 +200,17 @@ function readSubpath(v: unknown): Subpath | null {
 function readStyle(v: unknown): Style | null {
   if (!isObj(v)) return null;
   if (!isStr(v.fill) || !isStr(v.stroke) || !isNum(v.strokeWidth)) return null;
+  /* A width is a length, and a negative one reaches `exportSvg` as
+     `stroke-width="-4"`, which is invalid SVG that this reader is the only
+     guard against. Zero is legal and means a hairline nobody can see. */
+  if (v.strokeWidth < 0) return null;
   if (v.fillRule !== 'nonzero' && v.fillRule !== 'evenodd') return null;
-  /* Defaulted rather than refused, because opacity arrived after the format
-     did: a workspace written before it has no such field, and refusing one is
-     refusing somebody's drawing over a number whose absence means opaque. */
+  /* Absent means opaque, because opacity arrived after the format did and a
+     workspace written before it has no such field. Present and not a number is
+     refused like any other part of the drawing: `"0.25"` restoring as fully
+     opaque is a wrong picture with no message, and §59 keeps lenience for the
+     switches rather than for what somebody drew. */
+  if (v.opacity !== undefined && !isNum(v.opacity)) return null;
   const opacity = isNum(v.opacity) ? Math.min(1, Math.max(0, v.opacity)) : 1;
   return { fill: v.fill, stroke: v.stroke, strokeWidth: v.strokeWidth, fillRule: v.fillRule, opacity };
 }

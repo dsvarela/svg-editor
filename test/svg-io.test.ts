@@ -277,6 +277,38 @@ describe('svg import', () => {
     expect(r.warnings.join(' ')).toContain('text');
   });
 
+  /* §60 keeps one opacity per shape, so these two have nowhere to land. The
+     loss is invisible as a loss: a fill going from 30% to 100% looks like a
+     wrong picture rather than like something that was dropped. */
+  it('says so when it drops a fill or stroke opacity', () => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" fill="#000" fill-opacity="0.3"/></svg>`);
+    expect(r.shapes).toHaveLength(1);
+    expect(r.warnings.join(' ')).toContain('fill-opacity');
+  });
+
+  it('reads one from the inline style as well as from the attribute', () => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" style="stroke-opacity: 0.3"/></svg>`);
+    expect(r.warnings.join(' ')).toContain('stroke-opacity');
+  });
+
+  // Once, however many elements carried them. A file setting one on every path
+  // would otherwise report the same loss a hundred times.
+  it('names each dropped property once for the whole file', () => {
+    const r = importSvg(`<svg>
+      <path d="M0 0 L1 1" fill-opacity="0.3"/>
+      <path d="M0 0 L2 2" fill-opacity="0.4"/>
+      <path d="M0 0 L3 3" stroke-opacity="0.5"/>
+    </svg>`);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('fill-opacity');
+    expect(r.warnings[0]).toContain('stroke-opacity');
+  });
+
+  it('says nothing about a file that carries neither', () => {
+    const r = importSvg(`<svg><path d="M0 0 L1 1" fill="#000" opacity="0.3"/></svg>`);
+    expect(r.warnings).toEqual([]);
+  });
+
   it('accepts bare path data too', () => {
     const r = importSvg('M0 0 L10 0 L10 10 Z');
     expect(r.shapes).toHaveLength(1);

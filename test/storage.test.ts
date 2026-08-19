@@ -116,7 +116,7 @@ describe('when there is no room', () => {
     const s = new SessionStore();
     expect(s.save('x'.repeat(2_000_001))).toBe(false);
     expect(s.blocked).toBe('too-big');
-    expect(map.size).toBe(0);
+    expect(map.get('path.session.v1')).toBeUndefined();
   });
 
   it.each(['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'])(
@@ -137,6 +137,108 @@ describe('when there is no room', () => {
     install();
     s.save('{}');
     expect(s.blocked).toBeNull();
+  });
+});
+
+/**
+ * A refused write leaves the copy before it in place, and nothing in that copy
+ * says it is not the drawing that was on screen. The next load then announces
+ * somebody else's work as theirs.
+ *
+ * Measured through what `load` reports rather than through the key, because the
+ * key is an implementation detail and the sentence at startup is the thing that
+ * was wrong.
+ */
+describe('a copy left behind by a refused write', () => {
+  it('is not called stale while every write is landing', () => {
+    install();
+    const s = new SessionStore();
+    s.save('{"a":1}');
+    expect(s.load()).toBe('{"a":1}');
+    expect(s.stale).toBe(false);
+  });
+
+  it('is called stale after a write refused for size', () => {
+    install();
+    const s = new SessionStore();
+    s.save('{"a":1}');
+    expect(s.save('x'.repeat(2_000_001))).toBe(false);
+
+    const back = new SessionStore();
+    expect(back.load()).toBe('{"a":1}');
+    expect(back.stale).toBe(true);
+  });
+
+  /* A full quota refuses the drawing and still has room for a dozen bytes,
+     which is the condition the marker is sized for. Modelled as a ceiling on
+     the value rather than as a storage that throws at everything, because the
+     second is the `no-storage` case and it has its own answer. */
+  it('is called stale after the browser refuses the write for room', () => {
+    const map = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (k: string) => map.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          if (v.length > 8) throw new DOMException('no room', 'QuotaExceededError');
+          map.set(k, v);
+        },
+        removeItem: (k: string) => void map.delete(k),
+      },
+    });
+    map.set('path.session.v1', '{"a":1}');
+
+    const s = new SessionStore();
+    expect(s.save('{"a":22222}')).toBe(false);
+    expect(s.blocked).toBe('too-big');
+
+    const back = new SessionStore();
+    expect(back.load()).toBe('{"a":1}');
+    expect(back.stale).toBe(true);
+  });
+
+  /* Best effort by construction: it runs where writing has just failed. A
+     storage that refuses everything leaves exactly the behaviour there was
+     before the marker existed, rather than throwing out of the save path. */
+  it('does not throw when the marker cannot be written either', () => {
+    install(new DOMException('gone', 'SecurityError'));
+    const s = new SessionStore();
+    expect(() => s.save('{"a":1}')).not.toThrow();
+    expect(s.blocked).toBe('no-storage');
+  });
+
+  it('stops being stale once a write lands again', () => {
+    install();
+    const s = new SessionStore();
+    s.save('{"a":1}');
+    s.save('x'.repeat(2_000_001));
+    s.save('{"a":2}');
+
+    const back = new SessionStore();
+    expect(back.load()).toBe('{"a":2}');
+    expect(back.stale).toBe(false);
+  });
+
+  it('says nothing about a page that has never saved', () => {
+    const map = install();
+    map.set('path.session.v1.stale', '1');
+    const s = new SessionStore();
+    expect(s.load()).toBeNull();
+    expect(s.stale).toBe(false);
+  });
+
+  it('is cleared with the session it was about', () => {
+    install();
+    const s = new SessionStore();
+    s.save('{"a":1}');
+    s.save('x'.repeat(2_000_001));
+    s.forget();
+
+    s.stopped = false;
+    s.save('{"a":2}');
+    const back = new SessionStore();
+    expect(back.load()).toBe('{"a":2}');
+    expect(back.stale).toBe(false);
   });
 });
 

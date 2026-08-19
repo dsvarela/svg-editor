@@ -170,8 +170,20 @@ function styleProp(el: Element, name: string): string | null {
   return el.getAttribute(name);
 }
 
-function readStyle(el: Element, inherited: Style): Style {
+/**
+ * The style an element draws with, and what had to be thrown away to get it.
+ *
+ * `dropped` collects the names of properties this editor's model cannot carry.
+ * §60 keeps one opacity per shape, so a `fill-opacity` of 0.3 inside a shape at
+ * full opacity has nowhere to go. Silence is the wrong answer there: a fill
+ * going from 30% to 100% does not look like a loss, it looks like the wrong
+ * picture, and the importer already has a channel for saying what it skipped.
+ */
+function readStyle(el: Element, inherited: Style, dropped: Set<string>): Style {
   const s: Style = { ...inherited };
+  for (const name of ['fill-opacity', 'stroke-opacity']) {
+    if (styleProp(el, name) !== null) dropped.add(name);
+  }
   const fill = styleProp(el, 'fill');
   const stroke = styleProp(el, 'stroke');
   const sw = styleProp(el, 'stroke-width');
@@ -251,6 +263,7 @@ export function importSvg(text: string): ImportResult {
   const viewBox = parseViewBox(root);
   const shapes: Shape[] = [];
   const groups: Group[] = [];
+  const dropped = new Set<string>();
   let n = 0;
 
   const walk = (el: Element, m: Mat, inherited: Style, group: string | null): void => {
@@ -258,7 +271,7 @@ export function importSvg(text: string): ImportResult {
 
     const own = el.getAttribute('transform');
     const here = own ? mul(m, parseTransform(own)) : m;
-    const style = readStyle(el, inherited);
+    const style = readStyle(el, inherited, dropped);
     const tag = el.tagName.toLowerCase();
 
     if (tag === 'g' || tag === 'svg' || tag === 'a') {
@@ -312,6 +325,12 @@ export function importSvg(text: string): ImportResult {
   };
 
   walk(root, identity(), defaultStyle(), null);
+  // Once, however many elements carried them: a file setting one of these on
+  // every path would otherwise report the same loss a hundred times.
+  if (dropped.size) {
+    const was = dropped.size === 1 ? 'was' : 'were';
+    warnings.push(`${[...dropped].join(' and ')} cannot be kept and ${was} dropped`);
+  }
   /* A `<g>` holding no shape we could read leaves a group naming nothing. Dropped
      here rather than left for `pruneGroups`, so what this function returns is
      already consistent and a caller does not have to know to sweep it. */

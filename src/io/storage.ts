@@ -21,6 +21,22 @@
 const KEY = 'path.session.v1';
 
 /**
+ * Written beside the session when a write is refused, and removed by the next
+ * one that succeeds.
+ *
+ * A refused write leaves the previous copy in place, and that copy is a real
+ * session from an earlier moment: nothing in it says it is not the drawing that
+ * was on screen. Without this the next load announces a different drawing with
+ * a sentence asserting it is the one you left.
+ *
+ * A separate key rather than a field inside the session, because the write that
+ * would have carried the field is the write that did not happen. This one is a
+ * dozen bytes, and the size refusal is decided before storage is touched, so
+ * there is room for it exactly when it is needed.
+ */
+const STALE = `${KEY}.stale`;
+
+/**
  * A drawing this size is not going in a few megabytes of quota with room to
  * spare, so refuse it while there is still something to say.
  *
@@ -42,6 +58,13 @@ export class SessionStore {
    * **Forget saved work** promises exactly that much and no more.
    */
   stopped = false;
+  /**
+   * Whether what `load` returned is older than the drawing that produced it.
+   *
+   * Read once, at startup, by the sentence that says the work came back. Only
+   * ever true after a write was refused in an earlier session.
+   */
+  stale = false;
   /** Called after every write attempt, so the interface can say what happened. */
   onState: (() => void) | null = null;
   private timer: number | null = null;
@@ -56,7 +79,9 @@ export class SessionStore {
    */
   load(): string | null {
     try {
-      return window.localStorage.getItem(KEY);
+      const text = window.localStorage.getItem(KEY);
+      this.stale = text !== null && window.localStorage.getItem(STALE) !== null;
+      return text;
     } catch {
       this.blocked = 'no-storage';
       return null;
@@ -70,15 +95,33 @@ export class SessionStore {
     return done;
   }
 
+  /**
+   * Say, beside the session, whether it still matches the drawing.
+   *
+   * Best effort by construction: it runs on the path where writing has just
+   * failed, and a marker that cannot be written leaves exactly the behaviour
+   * there was before it existed.
+   */
+  private mark(stale: boolean): void {
+    try {
+      if (stale) window.localStorage.setItem(STALE, '1');
+      else window.localStorage.removeItem(STALE);
+    } catch {
+      /* Nothing to add: the caller has already recorded why storage refused. */
+    }
+  }
+
   private write(text: string): boolean {
     if (this.stopped) return false;
     if (text.length > LIMIT) {
       this.blocked = 'too-big';
+      this.mark(true);
       return false;
     }
     try {
       window.localStorage.setItem(KEY, text);
       this.blocked = null;
+      this.mark(false);
       return true;
     } catch (err) {
       /* The two causes have different answers, so they must not be guessed
@@ -93,6 +136,7 @@ export class SessionStore {
         err instanceof DOMException &&
         (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
       this.blocked = full ? 'too-big' : 'no-storage';
+      this.mark(true);
       return false;
     }
   }
@@ -100,6 +144,7 @@ export class SessionStore {
   forget(): void {
     try {
       window.localStorage.removeItem(KEY);
+      window.localStorage.removeItem(STALE);
     } catch {
       this.blocked = 'no-storage';
     }

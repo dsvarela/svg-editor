@@ -132,25 +132,51 @@ let opening: { message: string; ok: boolean } | null = null;
    decisions turn on: the opening `fit` would throw the camera away, and the
    coarse-pointer default for Touch buttons would overwrite a restored answer. */
 let restored = false;
+/**
+ * Whether the autosave is stopped because a stored session could not be read.
+ *
+ * A separate fact from the latch it sets. The latch's own sentence tells you a
+ * reload will start saving again, and here a reload finds the same entry and
+ * stops again, so the readout has to say something else and name the way out.
+ */
+let keptUnread = false;
 
 {
   const text = sessions.load();
   if (text !== null) {
     const r = readSession(text, toSession(store.state).view);
     if (typeof r === 'string') {
-      /* Discarded rather than kept: it cannot be read by this build and will
-         not become readable, so leaving it there means refusing the same file
-         on every load and never saving over it. */
-      sessions.forget();
-      opening = { message: `Your saved work could not be read: ${r}. It has been discarded.`, ok: false };
+      /* Left where it is, with the autosave stopped so that nothing writes over
+         it. Deleting is the only outcome available here that cannot be undone,
+         and it is not the only one available: the build that wrote this entry
+         can still read it, and it recovers the work by finding the entry still
+         there. Deleting bought a message that does not repeat on the next load,
+         which is not worth somebody's drawing.
+
+         Stopping is the other half and is not optional. The autosave subscriber
+         fires on the first notification after startup, so an entry that is kept
+         and not protected is overwritten within the second. */
+      sessions.stopped = true;
+      keptUnread = true;
+      opening = {
+        message: `Your saved work could not be read: ${r}. It has been left alone, and nothing new is being saved.`,
+        ok: false,
+      };
     } else {
       applySession(r);
       restored = true;
       const n = r.doc.shapes.length;
-      opening = {
-        message: `Picked up where you left off: ${n} shape${n === 1 ? '' : 's'}, and the guides and switches with them.`,
-        ok: true,
-      };
+      const what = `${n} shape${n === 1 ? '' : 's'}, and the guides and switches with them`;
+      /* A refused write leaves the copy before it in place, so "where you left
+         off" would name a drawing nobody left. The marker beside the entry is
+         the only thing that can tell the two apart, because the session that
+         would have said so is the one that failed to be written. */
+      opening = sessions.stale
+        ? {
+            message: `Restored an earlier copy: ${what}. It is not the drawing you left, which grew too large to save.`,
+            ok: false,
+          }
+        : { message: `Picked up where you left off: ${what}.`, ok: true };
     }
   }
 }
@@ -1714,6 +1740,9 @@ document.addEventListener('visibilitychange', () => {
 
 on('#forgetSession', () => {
   sessions.forget();
+  // The entry it was protecting is gone, so the ordinary latch sentence is true
+  // again: a reload from here starts saving.
+  keptUnread = false;
   /* Stopped, not paused: leaving the subscriber running would write the
      session back within the second and make the button look broken. It comes
      back on the next reload, which is also when a person would expect a fresh
@@ -1736,7 +1765,7 @@ const autosaveWhy = $('#autosavewhy');
  * as a bug in the editor rather than a rule of the browser.
  */
 function refreshSaveState(): void {
-  const state = sessions.stopped ? 'stopped' : sessions.blocked;
+  const state = keptUnread ? 'unread' : sessions.stopped ? 'stopped' : sessions.blocked;
   autosaveInfo.textContent =
     state === null ? 'saving' : state === 'stopped' ? 'stopped' : 'not saving';
   autosaveInfo.className = state === null ? 'gval' : 'gval warn';
@@ -1745,9 +1774,11 @@ function refreshSaveState(): void {
       ? 'The same workspace, kept in this browser and restored when you come back. It is not a backup: clearing site data removes it.'
       : state === 'stopped'
         ? 'Nothing is being kept until you reload. Save a workspace file if you want this drawing to survive.'
-        : state === 'too-big'
-          ? 'This drawing is too large for the space a browser gives a page. Save a workspace file instead.'
-          : 'This browser will not let a page opened from a file keep anything. Save a workspace file instead.';
+        : state === 'unread'
+          ? 'A copy is here that this editor could not read, and it has been left alone rather than written over. Press Forget saved work to clear it, or open the build that saved it.'
+          : state === 'too-big'
+            ? 'This drawing is too large for the space a browser gives a page. Save a workspace file instead.'
+            : 'This browser will not let a page opened from a file keep anything. Save a workspace file instead.';
 }
 
 /* -------------------------------------------------------------- backdrop */
@@ -2501,6 +2532,19 @@ interface ListRow {
 }
 
 /**
+ * The DOM id of the element a row is drawn as.
+ *
+ * One function, called both where the rows are built and where
+ * `aria-activedescendant` names one of them, because a name that has to agree
+ * with itself across two files agrees until somebody edits one of them.
+ *
+ * The prefix keeps these out of the way of the ids in `index.html`: a shape id
+ * is `prefix-n` from `nextId`, and nothing stops a document from holding a
+ * shape whose id spells a control's.
+ */
+const rowDomId = (row: ListRow): string => `row-${row.id}${row.sp === null ? '' : `-p${row.sp}`}`;
+
+/**
  * The rows in the order they are drawn, with anything shut left out.
  *
  * Walked over `doc.shapes` in paint order rather than over the groups, because that
@@ -2782,6 +2826,9 @@ function refreshShapeList(): void {
     li.setAttribute('role', 'presentation');
     li.textContent = 'no shapes';
     shapeList.append(li);
+    // The row it named has just been removed, and a dangling reference is read
+    // as an empty name rather than as no name.
+    shapeList.removeAttribute('aria-activedescendant');
     return;
   }
 
@@ -2807,6 +2854,7 @@ function refreshShapeList(): void {
       if (!g) continue;
       const row = document.createElement('li');
       row.className = 'group';
+      row.id = rowDomId({ id: g.id, sp: null, group: true });
       row.setAttribute('role', 'treeitem');
       row.setAttribute('aria-level', String(i + 1));
       row.setAttribute('data-group', g.id);
@@ -2852,6 +2900,7 @@ function refreshShapeList(): void {
 
     const li = document.createElement('li');
     li.className = 'shape';
+    li.id = rowDomId({ id: sh.id, sp: null });
     li.setAttribute('data-id', sh.id);
     /* `aria-selected` is ignored on a plain list item, so the visual state and
        the announced state disagreed. A treeitem is the role that carries it, and
@@ -2902,6 +2951,7 @@ function refreshShapeList(): void {
       sh.subpaths.forEach((sp, i) => {
         const row = document.createElement('li');
         row.className = 'path';
+        row.id = rowDomId({ id: sh.id, sp: i });
         row.setAttribute('role', 'treeitem');
         row.setAttribute('aria-level', String(chain.length + 2));
         row.setAttribute('data-id', sh.id);
@@ -2948,6 +2998,34 @@ function paintListSelection(): void {
     const sp = shape?.subpaths[Number(row.getAttribute('data-sp'))];
     row.setAttribute('aria-selected', String(!!sp && pathIsSelected(sp, s.selection)));
   }
+  markActiveRow();
+}
+
+/**
+ * Which row the tree reports as the one the keyboard is on.
+ *
+ * The list is one tab stop with arrows moving inside it, and that pattern is
+ * only half built without this: `aria-selected` says which rows are in the
+ * selection and nothing said which of them the arrows would move from, so a
+ * screen reader announced the list on entry and then nothing at all as the
+ * cursor walked it.
+ *
+ * The row is `rowAtCursor`'s, the same answer the arrow keys act on, so the two
+ * cannot come apart. Scrolled into view only while the list holds focus,
+ * because a selection made on the canvas moves this too and must not yank the
+ * panel about under a pointer.
+ */
+function markActiveRow(): void {
+  const rows = visibleRows();
+  const at = rowAtCursor(rows);
+  if (at < 0) {
+    shapeList.removeAttribute('aria-activedescendant');
+    return;
+  }
+  const id = rowDomId(rows[at]);
+  shapeList.setAttribute('aria-activedescendant', id);
+  if (!shapeList.contains(document.activeElement)) return;
+  document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
 }
 
 /* ------------------------------------------------------------ live readout */
