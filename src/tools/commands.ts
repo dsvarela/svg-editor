@@ -51,6 +51,7 @@ import {
   reverseSubpath,
   roundCorner,
   sharedCornerRadius,
+  unroundCorner,
   setContinuity,
   setSegmentBend,
   segmentBend,
@@ -698,15 +699,43 @@ export class Commands {
        nodes here, the same rule a corner control dragged with nothing picked out
        follows. Reading the node selection alone made Round the one operation in
        the rail that answered "select one or more nodes" to a selected shape. */
-    const byPath = new Map<string, number[]>();
+    /* By id rather than by index, because both of the things below splice nodes:
+       un-rounding a corner replaces a pair with one node, and rounding it
+       replaces one with a pair. An index is true at the instant it was read
+       (§46), and the drag has always worked this way. */
+    const byPath = new Map<string, string[]>();
     for (const r of selectedNodes(s.doc, s.selection)) {
+      const id = findShape(s.doc, r.shape)?.subpaths[r.sp]?.nodes[r.i]?.id;
+      if (!id) continue;
       const k = `${r.shape}/${r.sp}`;
-      byPath.set(k, [...(byPath.get(k) ?? []), r.i]);
+      byPath.set(k, [...(byPath.get(k) ?? []), id]);
     }
     if (!byPath.size) {
       this.onMessage?.('Select a shape, or some of its nodes, to round.', false);
       return false;
     }
+
+    /* A corner that already holds an arc goes back to being a corner before it
+       can be rounded to a different radius. The drag does this on a copy at the
+       press; without it here, `roundCorner` met the two curved sides of the
+       existing fillet and refused, so the radius field was dead on anything the
+       drag had already rounded and on every rectangle drawn with one.
+
+       The limit is measured on the un-rounded copy too. An existing fillet has
+       already eaten into the sides it sits between, so a limit read off the
+       live path is the room left beside the arc rather than the room the corner
+       has. */
+    const sharpen = (sp: Subpath, ids: readonly string[]): string[] => {
+      const kept: string[] = [];
+      for (const id of ids) {
+        const at = sp.nodes.findIndex((n) => n.id === id);
+        /* Gone: un-rounding an earlier corner consumed this node as the other
+           half of its pair. */
+        if (at < 0) continue;
+        kept.push(sp.nodes[unroundCorner(sp, at) ?? at].id);
+      }
+      return kept;
+    };
 
     /* One radius for the whole selection, decided before anything is cut: the
        largest every corner asked for can hold at once. Rounding each to its own
@@ -714,12 +743,12 @@ export class Commands {
        clamped to r 8.284 by the shorter side" is a rectangle with one corner
        rounder than the other three, and no way to ask for the four to match. */
     let use = radius;
-    for (const [key, indices] of byPath) {
+    for (const [key, ids] of byPath) {
       const [shapeId, spIdx] = key.split('/');
-      const sp = findShape(s.doc, shapeId)?.subpaths[Number(spIdx)];
-      if (!sp) continue;
-      const ids = indices.map((i) => sp.nodes[i]?.id).filter((id): id is string => !!id);
-      const fits = sharedCornerRadius(sp, ids);
+      const live = findShape(s.doc, shapeId)?.subpaths[Number(spIdx)];
+      if (!live) continue;
+      const sharp = cloneSubpath(live);
+      const fits = sharedCornerRadius(sharp, sharpen(sharp, ids));
       if (fits > 0) use = Math.min(use, fits);
     }
     const held = use < radius;
@@ -728,18 +757,37 @@ export class Commands {
     const refused: Record<RoundRefusal, number> = { end: 0, curved: 0, straight: 0, tiny: 0 };
 
     this.store.tryEdit((st) => {
-      for (const [key, indices] of byPath) {
+      for (const [key, ids] of byPath) {
         const [shapeId, spIdx] = key.split('/');
-        const sp = findShape(st.doc, shapeId)?.subpaths[Number(spIdx)];
-        if (!sp) continue;
-        for (const i of [...indices].sort((a, b) => b - a)) {
-          const r = roundCorner(sp, i, use);
+        const live = findShape(st.doc, shapeId)?.subpaths[Number(spIdx)];
+        if (!live) continue;
+        /* Built beside the path and swapped in only if something rounded. A
+           selection where every corner refuses must leave the path alone rather
+           than un-round it, which is a change nobody asked for. */
+        const next = cloneSubpath(live);
+        let hit = 0;
+        /* Highest index first. Rounding a corner splices a second node in
+           beside it, and where two tangent points meet the neighbour is reused
+           rather than doubled -- so which corner is cut first decides which node
+           the closed path starts at. Descending is the order this has always
+           used; the id lookup is what makes it safe while the indices move. */
+        const order = sharpen(next, ids).sort(
+          (a, b) => next.nodes.findIndex((n) => n.id === b) - next.nodes.findIndex((n) => n.id === a),
+        );
+        for (const id of order) {
+          const at = next.nodes.findIndex((n) => n.id === id);
+          if (at < 0) continue;
+          const r = roundCorner(next, at, use);
           if (typeof r === 'string') {
             refused[r]++;
             continue;
           }
-          done++;
+          hit++;
         }
+        if (!hit) continue;
+        live.nodes = next.nodes;
+        live.closed = next.closed;
+        done += hit;
       }
       if (done) st.selection = emptySelection();
       return done > 0;
@@ -1433,6 +1481,16 @@ export class Commands {
    * all of them. A whole-shape version would silently widen a node selection.
    */
   repeatTransform(): boolean {
+    /* Guarded here rather than at the call site, because there are two: the
+       button and Shift+T. The key had the guard through the `rewrites` list in
+       `keys.ts` and the button had none, so the same operation was refused
+       mid-drag from the keyboard and allowed from the panel. A drag holds
+       captured geometry from the press, and an edit landing under it makes the
+       next frame rebuild from a document that has moved. */
+    if (this.busy()) {
+      this.onMessage?.('Finish the drag first.', false);
+      return false;
+    }
     const s = this.store.state;
     const last = s.lastTransform;
     if (!last) {
@@ -1710,7 +1768,7 @@ export class Commands {
   }
 
   /** Whether anything in the selection has more than one path to split. */
-  canSplitShapes(): boolean {
+  get canSplitShapes(): boolean {
     const s = this.store.state;
     return s.doc.shapes.some((sh) => s.selection.shapes.has(sh.id) && sh.subpaths.length > 1);
   }
@@ -1906,6 +1964,14 @@ export class Commands {
    * as clicking a shape.
    */
   selectGroup(): boolean {
+    /* Both entry points, for the reason `repeatTransform` gives. Here the
+       hazard is the one named beside `case 'G'` in `keys.ts`: a drag holds refs
+       into the selection it started with, so widening that selection mid-drag
+       hands the gesture shapes it never picked up. */
+    if (this.busy()) {
+      this.onMessage?.('Finish the drag first.', false);
+      return false;
+    }
     const s = this.store.state;
     const chosen = s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id));
     if (!chosen.length) {
@@ -1963,9 +2029,18 @@ export class Commands {
     );
   }
 
-  /** Whether Group would do anything, for the button that offers it. */
+  /**
+   * Whether Group would do anything, for the button that offers it.
+   *
+   * Counted over the live shapes, the same way `groupSelection` counts them. The
+   * selection is a set of ids and an id can outlive the shape it names, so a
+   * count of the set is a count of what was selected rather than of what is
+   * there -- and a button enabled from one number and refused by the other reads
+   * as a button that does not work.
+   */
   get canGroup(): boolean {
-    return this.store.state.selection.shapes.size >= 2;
+    const s = this.store.state;
+    return s.doc.shapes.filter((sh) => s.selection.shapes.has(sh.id)).length >= 2;
   }
 
   /** Whether Ungroup would do anything. */
@@ -2268,14 +2343,14 @@ export class Commands {
     const s = this.store.state;
     const refs = selectedNodes(s.doc, s.selection);
     if (refs.length < 2) return;
-    this.store.edit((st) => alignNodes(st.doc, refs, mode));
+    this.store.tryEdit((st) => alignNodes(st.doc, refs, mode));
   }
 
   distributeSelection(axis: 'h' | 'v'): void {
     const s = this.store.state;
     const refs = selectedNodes(s.doc, s.selection);
     if (refs.length < 3) return;
-    this.store.edit((st) => distributeNodes(st.doc, refs, axis));
+    this.store.tryEdit((st) => distributeNodes(st.doc, refs, axis));
   }
 
   /* --------------------------------------------- arranging whole shapes */
@@ -2317,10 +2392,14 @@ export class Commands {
       return false;
     }
     const ids = new Set(s.selection.shapes);
-    this.store.edit((st) => {
+    /* `tryEdit`, for the reason `reorderSelection` gives: an arrangement that
+       moved nothing is not an edit, and pressing Align Left three times should
+       not cost two presses of Ctrl+Z that do nothing. The button still reports
+       success, because the shapes are where it was asked to put them. */
+    this.store.tryEdit((st) => {
       const live = arrangeUnits(st.doc, ids);
       const frame = this.arrangeFrame(live, to);
-      if (frame) alignUnits(live, mode, frame);
+      return frame ? alignUnits(live, mode, frame) : false;
     });
     return true;
   }
@@ -2334,10 +2413,10 @@ export class Commands {
       return false;
     }
     const ids = new Set(s.selection.shapes);
-    this.store.edit((st) => {
+    this.store.tryEdit((st) => {
       const live = arrangeUnits(st.doc, ids);
       const frame = this.arrangeFrame(live, to);
-      if (frame) distributeUnits(live, mode, frame);
+      return frame ? distributeUnits(live, mode, frame) : false;
     });
     return true;
   }
@@ -2396,10 +2475,10 @@ export class Commands {
     }
     const g = gap !== null && Number.isFinite(gap) ? gap : null;
     const ids = new Set(s.selection.shapes);
-    this.store.edit((st) => {
+    this.store.tryEdit((st) => {
       const live = arrangeUnits(st.doc, ids);
       const frame = this.arrangeFrame(live, to);
-      if (frame) spaceUnits(live, axis, frame, g);
+      return frame ? spaceUnits(live, axis, frame, g) : false;
     });
     return true;
   }

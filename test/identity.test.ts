@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
-import { emptyDoc, emptySelection, resolveNodes, shapeFromPath } from '../src/model/doc';
+import { dedupeIds, emptyDoc, emptySelection, findShape, reserveIds, resolveNodes, shapeFromPath } from '../src/model/doc';
 import { nodeIdAt } from './helpers';
 import { breakAt } from '../src/model/ops';
 import type { Doc } from '../src/core/types';
@@ -245,5 +245,66 @@ describe('the clipboard', () => {
       expect(commands.copySelection()).toBe(false);
       expect(commands.canPaste).toBe(false);
     });
+  });
+});
+
+/**
+ * The same invariant arriving from outside, which is the route nothing covered.
+ *
+ * Every case above is a copy the editor made. A workspace file is a document
+ * somebody else's build wrote, or a hand edit, or a truncated write, and the
+ * reader repaired dangling group parents and cycles while accepting two nodes
+ * under one id. §46's symptom is the same whichever direction it comes from.
+ */
+describe('a document from outside', () => {
+  it('renames the second node to share an id, keeping the first', () => {
+    const doc = emptyDoc();
+    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(SQUARE));
+    reserveIds(doc);
+    const shared = doc.shapes[0].subpaths[0].nodes[0].id;
+    doc.shapes[1].subpaths[0].nodes[2].id = shared;
+    expect(collisions(doc)).toHaveLength(1);
+
+    expect(dedupeIds(doc)).toBe(1);
+    expect(collisions(doc)).toHaveLength(0);
+    expect(doc.shapes[0].subpaths[0].nodes[0].id).toBe(shared);
+  });
+
+  it('renames a shape that shares an id, so one row selects one shape', () => {
+    const doc = emptyDoc();
+    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(OPEN));
+    reserveIds(doc);
+    doc.shapes[1].id = doc.shapes[0].id;
+
+    expect(dedupeIds(doc)).toBe(1);
+    expect(doc.shapes[1].id).not.toBe(doc.shapes[0].id);
+    expect(findShape(doc, doc.shapes[1].id)).toBe(doc.shapes[1]);
+  });
+
+  /* The order matters and nothing about the types says so. The counters start
+     at zero on a fresh page, so a repair that ran first would mint `shape-1`
+     into a document that already holds one, turning one collision into two. */
+  it('mints an id the document does not already hold', () => {
+    const doc = emptyDoc();
+    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(OPEN));
+    doc.shapes[0].id = 'shape-1';
+    doc.shapes[1].id = 'shape-1';
+    doc.shapes[0].subpaths[0].nodes[0].id = 'n1';
+    doc.shapes[1].subpaths[0].nodes[0].id = 'n1';
+    reserveIds(doc);
+
+    dedupeIds(doc);
+    expect(doc.shapes[1].id).not.toBe('shape-1');
+    expect(collisions(doc)).toHaveLength(0);
+    expect(new Set(doc.shapes.map((s) => s.id)).size).toBe(2);
+  });
+
+  it('leaves a document that is already well formed alone', () => {
+    const doc = emptyDoc();
+    doc.shapes.push(shapeFromPath(SQUARE), shapeFromPath(OPEN));
+    reserveIds(doc);
+    const before = doc.shapes.map((s) => [s.id, ...s.subpaths[0].nodes.map((n) => n.id)].join(','));
+    expect(dedupeIds(doc)).toBe(0);
+    expect(doc.shapes.map((s) => [s.id, ...s.subpaths[0].nodes.map((n) => n.id)].join(','))).toEqual(before);
   });
 });

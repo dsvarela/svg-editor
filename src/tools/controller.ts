@@ -89,6 +89,14 @@ type DragKind =
       box: Box;
       saved: NodeSnapshot[];
       grab: Pt;
+      /* The matrix the last move actually applied, kept rather than rebuilt on
+         release. Rebuilding it read the raw pointer where the move had snapped
+         the delta first, so a drag of 2.4 units with a grid step of 2 scaled the
+         document by 1.2 and told `Repeat` 1.24, compounding on every press.
+         `null` until something moves, which is how a bare click on a grip is
+         told from a gesture: it must not record an identity matrix over
+         whatever `Repeat` was holding. */
+      applied: { m: Mat; what: string; deg: number | null } | null;
     }
   /* `start` is where the grabbed node was at the press, kept only so the
      readout can say how far it has come. Measuring the pointer instead would
@@ -891,6 +899,7 @@ export class Controller {
           // move. A rotation measures an angle from wherever the press landed,
           // so it wants the raw point.
           grab: hit.kind === 'rotate' ? p : [p[0] - at[0], p[1] - at[1]],
+          applied: null,
         };
         return;
       }
@@ -1165,6 +1174,7 @@ export class Controller {
           // it divides the right angle and the eighth turn both.
           const r = rotateMatrix(boxCentre(d.box), d.grab, p, this.shift(e) ? 15 : 0);
           m = r.m;
+          d.applied = { m, what: `rotate ${fmt(r.deg)}°`, deg: r.deg };
           this.onMessage?.(`Rotate ${fmt(r.deg)}°`, true);
         } else {
           const want: Pt = [p[0] - d.grab[0], p[1] - d.grab[1]];
@@ -1180,6 +1190,7 @@ export class Controller {
             fromCentre: this.alt(e),
             keepAspect: this.shift(e),
           });
+          d.applied = { m, what: 'scale', deg: null };
           this.onMessage?.(`Scale ${pct(m[0])} × ${pct(m[3])}`, true);
         }
         this.store.edit((st) => transformCaptured(st.doc, d.saved, m));
@@ -1462,28 +1473,26 @@ export class Controller {
         }
       }
 
+      /* Read rather than rebuilt. Every frame recomputes the matrix against
+         `d.saved`, the geometry as it was at the press, so the last one the move
+         handler applied IS the whole gesture -- and it is the only one that went
+         through the snap. Rebuilding it here from the pointer gave `Repeat` a
+         matrix the document had never been transformed by.
+
+         `applied` being null is a press on a grip that never moved. It leaves
+         `lastTransform` alone, because a click is not a gesture and an identity
+         matrix would destroy whatever `Repeat` was holding. */
       if (this.drag.kind === 'transform') {
         const d = this.drag;
-        const now = selectionBBox(this.store.state.doc, this.store.state.selection);
-        if (d.mode === 'rotate') {
-          const r = rotateMatrix(boxCentre(d.box), d.grab, this.pt(e), this.shift(e) ? 15 : 0);
-          this.onMessage?.(`Rotated ${fmt(r.deg)}°.`, true);
-          this.remember(r.m, `rotate ${fmt(r.deg)}°`);
-        } else if (now) {
-          this.onMessage?.(
-            `Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`,
-            true,
-          );
-          /* The matrix from the whole drag, not from the last frame. Every
-             frame recomputes it against `d.saved`, which is the geometry as it
-             was at the press, so the one built here is the whole gesture. */
-          this.remember(
-            scaleMatrix(d.box, d.part, [this.pt(e)[0] - d.grab[0], this.pt(e)[1] - d.grab[1]], {
-              fromCentre: this.alt(e),
-              keepAspect: this.shift(e),
-            }),
-            'scale',
-          );
+        const a = d.applied;
+        if (a) {
+          const now = selectionBBox(this.store.state.doc, this.store.state.selection);
+          if (d.mode === 'rotate') {
+            this.onMessage?.(`Rotated ${fmt(a.deg ?? 0)}°.`, true);
+          } else if (now) {
+            this.onMessage?.(`Scaled to ${fmt(now.x1 - now.x0)} × ${fmt(now.y1 - now.y0)}.`, true);
+          }
+          this.remember(a.m, a.what);
         }
       }
 
@@ -1526,9 +1535,12 @@ export class Controller {
    * Written straight into the store rather than routed through `Commands`,
    * which the controller does not hold: the two are siblings, both given the
    * store, and threading one into the other to set one field would be a
-   * dependency for the sake of a setter. `update` and not `edit`, because this
-   * is not a change to the document -- and it runs after the gesture's own
-   * batch has closed, so it cannot fold into that history entry.
+   * dependency for the sake of a setter.
+   *
+   * `update` and not `edit`, because this is not a change to the document. That
+   * is what keeps it out of the history entry, and it has to be: this runs
+   * inside the gesture's batch, which `closeBatch` shuts in the `finally`
+   * below, so an `edit` here would fold straight into it.
    */
   private remember(m: Mat, what: string): void {
     this.store.update((st) => (st.lastTransform = { m, what }));

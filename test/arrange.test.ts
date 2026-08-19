@@ -652,6 +652,43 @@ describe('the commands', () => {
     expect(snapshot(store.state.doc)).toEqual(before);
   });
 
+  /* `reorderSelection` argues this case and uses `tryEdit`; these three used
+     `edit`, so three presses of Align Left filed three entries, two of them
+     describing a document that did not change. The press still reports success:
+     the shapes are where it was asked to put them. */
+  it('files no history entry for an arrangement that moves nothing', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 40, 0, 10, 10], ['c', 80, 0, 10, 10]);
+    const { store, commands } = editor(doc);
+    select(store, 'a', 'b', 'c');
+
+    expect(commands.alignShapes('left', 'selection')).toBe(true);
+    const once = snapshot(store.state.doc);
+    expect(commands.alignShapes('left', 'selection')).toBe(true);
+    expect(commands.alignShapes('left', 'selection')).toBe(true);
+    expect(snapshot(store.state.doc)).toEqual(once);
+
+    store.undo();
+    expect(boxOf(store.state.doc, 'c').x0).toBeCloseTo(80, 9);
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('files no entry for a distribute or a space that moves nothing', () => {
+    const doc = docOf(['a', 0, 0, 10, 10], ['b', 12, 0, 10, 10], ['c', 90, 0, 10, 10]);
+    const { store, commands } = editor(doc);
+    select(store, 'a', 'b', 'c');
+
+    commands.distributeShapes('hcenter', 'selection');
+    commands.distributeShapes('hcenter', 'selection');
+    commands.spaceShapes('h', 'selection', 4);
+    commands.spaceShapes('h', 'selection', 4);
+
+    // Two arrangements, so two entries: one each, and none for the repeats.
+    store.undo();
+    store.undo();
+    expect(boxOf(store.state.doc, 'b').x0).toBeCloseTo(12, 9);
+    expect(store.canUndo).toBe(false);
+  });
+
   it('treats an empty gap field as fill the frame', () => {
     const doc = docOf(['a', 0, 0, 10, 10], ['b', 12, 0, 10, 10], ['c', 90, 0, 10, 10]);
     const { store, commands } = editor(doc);

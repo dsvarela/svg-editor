@@ -13,6 +13,7 @@ import {
   findGroup,
   findShape,
   groupChain,
+  dedupeIds,
   reserveIds,
   selectedRefs,
   selectedShapes,
@@ -96,6 +97,11 @@ const sessions = new SessionStore();
 
 function applySession(sn: Session): void {
   reserveIds(sn.doc);
+  /* And then §46: a file can carry two nodes or two shapes under one id, which
+     is one click selecting both and one drag moving both. After `reserveIds`,
+     never before, because a fresh id is only fresh once the counters are past
+     what the document already holds. */
+  dedupeIds(sn.doc);
   /* The history described the document this one replaces, and a snapshot is a
      whole document: undoing into one would put the old drawing back over the
      file that was just opened. Empty at startup, where this is the only
@@ -2430,7 +2436,7 @@ function refreshCombine(): void {
      holds more than one path, which one selected shape can satisfy and four
      selected shapes can fail. Tying it to the count would offer it where it
      does nothing and withhold it where it works. */
-  splitBtn.disabled = !commands.canSplitShapes();
+  splitBtn.disabled = !commands.canSplitShapes;
   boolInfo.textContent =
     n >= 2 ? `${n} shapes` : commands.canBoolean ? 'paths of one shape' : 'needs 2+';
 }

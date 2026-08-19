@@ -366,22 +366,43 @@ export function unitsBox(units: Unit[]): Box | null {
   return box;
 }
 
-/** Move a unit and keep its cached box true. */
-function translateUnit(u: Unit, dx: number, dy: number): void {
-  if (dx === 0 && dy === 0) return;
+/**
+ * Below this, a unit is where it was asked to be.
+ *
+ * Not a tolerance on the arrangement: it is the width of the arithmetic. A unit
+ * already in place is moved by `target - edgeOf(u.box)`, and adding that back
+ * lands within an ulp of the target rather than on it, so a second press
+ * computes a delta of about 1e-16 and would otherwise count as a move. Document
+ * coordinates are tens to hundreds of units and the serialiser stops at six
+ * decimals, so nothing this size can reach a file or a screen.
+ */
+const STILL = 1e-9;
+
+/** Move a unit and keep its cached box true. Returns whether it went anywhere. */
+function translateUnit(u: Unit, dx: number, dy: number): boolean {
+  if (Math.abs(dx) < STILL && Math.abs(dy) < STILL) return false;
   const m = translate(dx, dy);
   for (const sh of u.shapes) transformShape(sh, m);
   u.box = { x0: u.box.x0 + dx, y0: u.box.y0 + dy, x1: u.box.x1 + dx, y1: u.box.y1 + dy };
+  return true;
 }
 
-/** Put the named edge of every unit on the same edge of the frame. */
-export function alignUnits(units: Unit[], edge: AlignMode, frame: Box): void {
+/**
+ * Put the named edge of every unit on the same edge of the frame.
+ *
+ * Returns whether anything moved, which is what lets the caller use `tryEdit`:
+ * pressing Align Left three times is one arrangement and one entry in the
+ * history, not one arrangement and two presses of Ctrl+Z that do nothing.
+ */
+export function alignUnits(units: Unit[], edge: AlignMode, frame: Box): boolean {
   const target = edgeOf(frame, edge);
   const horizontal = isHorizontal(edge);
+  let moved = false;
   for (const u of units) {
     const d = target - edgeOf(u.box, edge);
-    translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d);
+    if (translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d)) moved = true;
   }
+  return moved;
 }
 
 /**
@@ -396,8 +417,8 @@ export function alignUnits(units: Unit[], edge: AlignMode, frame: Box): void {
  *
  * Fewer than three units is a no-op: two are already evenly spaced.
  */
-export function distributeUnits(units: Unit[], edge: AlignMode, frame: Box): void {
-  if (units.length < 3) return;
+export function distributeUnits(units: Unit[], edge: AlignMode, frame: Box): boolean {
+  if (units.length < 3) return false;
   const horizontal = isHorizontal(edge);
   const sorted = [...units].sort((a, b) => edgeOf(a.box, edge) - edgeOf(b.box, edge));
 
@@ -411,10 +432,12 @@ export function distributeUnits(units: Unit[], edge: AlignMode, frame: Box): voi
     : frame.y1 - (last.box.y1 - edgeOf(last.box, edge));
 
   const step = (hi - lo) / (sorted.length - 1);
+  let moved = false;
   sorted.forEach((u, i) => {
     const d = lo + step * i - edgeOf(u.box, edge);
-    translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d);
+    if (translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d)) moved = true;
   });
+  return moved;
 }
 
 /**
@@ -429,8 +452,8 @@ export function distributeUnits(units: Unit[], edge: AlignMode, frame: Box): voi
  * spaced across can only overlap, and overlapping them by an even amount is a
  * truer answer than refusing or than silently spilling off one end.
  */
-export function spaceUnits(units: Unit[], axis: 'h' | 'v', frame: Box, gap: number | null): void {
-  if (units.length < 2) return;
+export function spaceUnits(units: Unit[], axis: 'h' | 'v', frame: Box, gap: number | null): boolean {
+  if (units.length < 2) return false;
   const horizontal = axis === 'h';
   const size = (u: Unit): number => (horizontal ? u.box.x1 - u.box.x0 : u.box.y1 - u.box.y0);
   const low = (u: Unit): number => (horizontal ? u.box.x0 : u.box.y0);
@@ -441,9 +464,11 @@ export function spaceUnits(units: Unit[], axis: 'h' | 'v', frame: Box, gap: numb
   const g = gap ?? (span - total) / (sorted.length - 1);
 
   let at = horizontal ? frame.x0 : frame.y0;
+  let moved = false;
   for (const u of sorted) {
     const d = at - low(u);
-    translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d);
+    if (translateUnit(u, horizontal ? d : 0, horizontal ? 0 : d)) moved = true;
     at += size(u) + g;
   }
+  return moved;
 }

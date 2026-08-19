@@ -21,7 +21,7 @@ import { docBBox, emptyDoc, emptySelection, makeShape, resolveNodes, shapeBBox, 
 import { nodeIdAt } from './helpers';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
-import { segmentBend, splitSegment } from '../src/model/ops';
+import { filletAt, segmentBend, splitSegment } from '../src/model/ops';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
@@ -1265,6 +1265,76 @@ describe('rounding corners', () => {
       [3, 6],
       [0, 3],
     ]);
+  });
+
+  /* The corner control's drag un-rounds a corner before rounding it again, on a
+     copy taken at the press. The button went straight to `roundCorner`, which
+     met the two curved sides of the existing fillet and refused with `curved`.
+     So the radius field was dead on anything the drag had already rounded, and
+     on every rectangle drawn with a corner radius. */
+  it('changes a radius it has already set, rather than refusing the fillet', () => {
+    const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(4)).toBe(true);
+
+    const radii = (): number[] => {
+      const sp = h.store.state.doc.shapes[0].subpaths[0];
+      const out: number[] = [];
+      for (let i = 0; i < sp.nodes.length; i++) {
+        const f = filletAt(sp, i);
+        if (f) out.push(+f.radius.toFixed(6));
+      }
+      return out;
+    };
+    expect(radii()).toEqual([4, 4, 4, 4]);
+
+    /* Measured as the radius read back off the geometry rather than as a count
+       of nodes: re-rounding leaves eight nodes whether or not the arc changed,
+       so the node count cannot tell the fix from the defect. */
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(10)).toBe(true);
+    expect(radii()).toEqual([10, 10, 10, 10]);
+
+    // And down again, which the corner-reuse case never reaches on the way up.
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(2)).toBe(true);
+    expect(radii()).toEqual([2, 2, 2, 2]);
+  });
+
+  /* The limit is read off the un-rounded copy too. An existing fillet has
+     already eaten into the sides it sits between, so a limit measured on the
+     live path is the room left beside the arc rather than the room the corner
+     has. On this square that limit is 16 -- each side of 40 less the two arcs
+     of 4 already cut from it -- where the corner itself can hold 20. So 18 is
+     the number that separates the two, and it is under the true limit. */
+  it('measures the room a corner has, not the room left beside its arc', () => {
+    const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.shapes.add(id));
+    h.commands.roundSelection(4);
+
+    const said: string[] = [];
+    h.commands.onMessage = (m) => said.push(m);
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(18)).toBe(true);
+    expect(said.join(' ')).toMatch(/r 18\b/);
+    expect(said.join(' ')).not.toMatch(/shortest side/i);
+  });
+
+  /* A selection where nothing can be rounded must leave the path exactly as it
+     was. The un-round now happens first, so "refused" and "un-rounded and then
+     refused" are two different outcomes and only one of them is right. */
+  it('leaves a path alone when every corner in it refuses', () => {
+    const h = harness('M0 0 L40 0 L40 40 L0 40 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.shapes.add(id));
+    h.commands.roundSelection(4);
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt]);
+
+    h.store.update((s) => s.selection.shapes.add(id));
+    expect(h.commands.roundSelection(1e-12)).toBe(false);
+    expect(h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [...n.pt])).toEqual(before);
   });
 });
 
@@ -2923,12 +2993,12 @@ describe('split into shapes', () => {
 
   it('offers itself only when something can actually be split', () => {
     const h = combined();
-    expect(h.commands.canSplitShapes()).toBe(true);
+    expect(h.commands.canSplitShapes).toBe(true);
     h.commands.splitShapes();
     // Now every shape holds one path, so the button must go back to disabled
     // even though two shapes are selected.
     expect(h.store.state.selection.shapes.size).toBe(2);
-    expect(h.commands.canSplitShapes()).toBe(false);
+    expect(h.commands.canSplitShapes).toBe(false);
   });
 });
 
@@ -3537,6 +3607,54 @@ describe('keyboard guard', () => {
       expect(exportSvg(h.store.state.doc)).not.toBe(before);
     });
   }
+
+  /* The keyboard is one of two entry points and the rail is the other. Shift+G
+     and Shift+T were guarded by the `rewrites` list above and their buttons
+     were not, so the same operation was refused mid-drag from the keyboard and
+     allowed from the panel. Called on `Commands` directly, which is exactly
+     what the button handler does. */
+  it('refuses Select group from the rail while a drag is live', () => {
+    const h = twoShapes();
+    h.store.update((s) => {
+      s.doc.groups = [{ id: 'g1', name: 'pair', parent: null }];
+      s.doc.shapes[0].group = 'g1';
+      s.doc.shapes[1].group = 'g1';
+    });
+
+    /* Selected after the press, for the reason stated at the head of this
+       block: a marquee clears the selection when it starts, and `selectGroup`
+       with nothing selected refuses for want of a shape rather than for the
+       drag. Written the other way round it passed with the guard deleted. */
+    h.down([5, 5]);
+    h.move([8, 8]);
+    h.store.update((s) => (s.selection.shapes = new Set([s.doc.shapes[0].id])));
+    const before = new Set(h.store.state.selection.shapes);
+    expect(h.commands.selectGroup()).toBe(false);
+    expect(h.store.state.selection.shapes).toEqual(before);
+    h.up();
+
+    h.store.update((s) => (s.selection.shapes = new Set([s.doc.shapes[0].id])));
+    expect(h.commands.selectGroup()).toBe(true);
+    expect(h.store.state.selection.shapes.size).toBe(2);
+  });
+
+  it('refuses Repeat from the rail while a drag is live', () => {
+    const h = twoShapes();
+    h.store.update((s) => (s.lastTransform = { m: [1, 0, 0, 1, 10, 0], what: 'move 10, 0' }));
+    selectEverything(h);
+    const before = exportSvg(h.store.state.doc);
+
+    h.down([5, 5]);
+    h.move([8, 8]);
+    selectEverything(h);
+    expect(h.commands.repeatTransform()).toBe(false);
+    expect(exportSvg(h.store.state.doc)).toBe(before);
+    h.up();
+
+    selectEverything(h);
+    expect(h.commands.repeatTransform()).toBe(true);
+    expect(exportSvg(h.store.state.doc)).not.toBe(before);
+  });
 
   it('guards every capital the switch handles', () => {
     const body = source.slice(source.indexOf('const rewrites = ['));

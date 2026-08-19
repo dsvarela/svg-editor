@@ -36,6 +36,58 @@ export function reserveIds(doc: Doc): void {
   for (const g of doc.groups ?? []) reserve(g.id);
 }
 
+/**
+ * Give a fresh id to anything in an outside document that shares one.
+ *
+ * §46: an id naming two things is two things no selection can separate. The
+ * reader in `io/session.ts` refuses a file that is the wrong shape and repairs
+ * one that is merely inconsistent, and this is the second kind. A duplicate
+ * costs nothing to fix and nothing to lose, because a node id is a name inside
+ * this session and never means anything outside it, so refusing the drawing
+ * over one would be the harsher answer for no gain.
+ *
+ * The symptom it prevents is not an exception. `resolveNodes` walks every shape,
+ * so a shared node id is one click selecting two points and one drag moving
+ * both; a shared shape id is one row of the list selecting two shapes.
+ *
+ * Runs after `reserveIds`, which is what makes a minted id safe: the counters
+ * are still at zero until then, so a fresh `shape-1` would land on an id the
+ * document already holds. Returns how many it had to rename.
+ */
+export function dedupeIds(doc: Doc): number {
+  let fixed = 0;
+  const shapes = new Set<string>();
+  const nodes = new Set<string>();
+  for (const s of doc.shapes) {
+    if (shapes.has(s.id)) {
+      s.id = nextId();
+      fixed++;
+    }
+    shapes.add(s.id);
+    for (const sp of s.subpaths) {
+      for (const n of sp.nodes) {
+        if (nodes.has(n.id)) {
+          n.id = nextNodeId();
+          fixed++;
+        }
+        nodes.add(n.id);
+      }
+    }
+  }
+  const groups = new Set<string>();
+  for (const g of doc.groups ?? []) {
+    if (groups.has(g.id)) {
+      /* A second group under one id owns whichever shapes point at it, and
+         renaming it here would take them all with it. Rooting the copy leaves
+         it empty, and `pruneGroups` clears it on the next edit. */
+      g.id = nextId('group');
+      fixed++;
+    }
+    groups.add(g.id);
+  }
+  return fixed;
+}
+
 /** `style` defaults to the built-in one; callers pass the editor's current one. */
 export function makeShape(subpaths: Subpath[], name?: string, style?: Style): Shape {
   const id = nextId();

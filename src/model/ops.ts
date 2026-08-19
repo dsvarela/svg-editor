@@ -1118,15 +1118,29 @@ function resolve(doc: Doc, refs: NodeRef[]): { sp: Subpath; i: number }[] {
 }
 
 /**
+ * Below this, a node is already where it is being asked to go.
+ *
+ * Not a tolerance on the alignment: it is the width of the arithmetic. A target
+ * computed as a midpoint and then assigned lands within an ulp of itself rather
+ * than on it, so a second press would report a move of about 1e-16. Document
+ * coordinates are tens to hundreds of units and the serialiser stops at six
+ * decimals, so nothing this size can reach a file or a screen.
+ */
+const ALIGNED = 1e-9;
+
+/**
  * Align anchors to one edge or centre of their common bounding box.
  *
  * Aligning to the box rather than to a "key" node means the result does not
  * depend on selection order, which is invisible in the UI and so a bad thing to
  * make the outcome hinge on.
+ *
+ * Returns whether anything moved, so the caller can use `tryEdit`: three presses
+ * of Align Left are one arrangement and one entry in the history.
  */
-export function alignNodes(doc: Doc, refs: NodeRef[], mode: AlignMode): void {
+export function alignNodes(doc: Doc, refs: NodeRef[], mode: AlignMode): boolean {
   const items = resolve(doc, refs);
-  if (items.length < 2) return;
+  if (items.length < 2) return false;
 
   const xs = items.map((it) => it.sp.nodes[it.i].pt[0]);
   const ys = items.map((it) => it.sp.nodes[it.i].pt[1]);
@@ -1140,16 +1154,20 @@ export function alignNodes(doc: Doc, refs: NodeRef[], mode: AlignMode): void {
   }[mode];
 
   const horizontal = mode === 'left' || mode === 'right' || mode === 'hcenter';
+  let moved = false;
   for (const it of items) {
     const p = it.sp.nodes[it.i].pt;
+    if (Math.abs((horizontal ? p[0] : p[1]) - target) < ALIGNED) continue;
+    moved = true;
     moveAnchor(it.sp, it.i, horizontal ? [target, p[1]] : [p[0], target]);
   }
+  return moved;
 }
 
 /** Space anchors evenly between the two extremes, which stay put. */
-export function distributeNodes(doc: Doc, refs: NodeRef[], axis: 'h' | 'v'): void {
+export function distributeNodes(doc: Doc, refs: NodeRef[], axis: 'h' | 'v'): boolean {
   const items = resolve(doc, refs);
-  if (items.length < 3) return;
+  if (items.length < 3) return false;
 
   const ax = axis === 'h' ? 0 : 1;
   items.sort((a, b) => a.sp.nodes[a.i].pt[ax] - b.sp.nodes[b.i].pt[ax]);
@@ -1158,12 +1176,16 @@ export function distributeNodes(doc: Doc, refs: NodeRef[], axis: 'h' | 'v'): voi
   const last = items[items.length - 1].sp.nodes[items[items.length - 1].i].pt[ax];
   const step = (last - first) / (items.length - 1);
 
+  let moved = false;
   items.forEach((it, k) => {
     if (k === 0 || k === items.length - 1) return;
     const p = it.sp.nodes[it.i].pt;
     const v = first + step * k;
+    if (Math.abs(p[ax] - v) < ALIGNED) return;
+    moved = true;
     moveAnchor(it.sp, it.i, ax === 0 ? [v, p[1]] : [p[0], v]);
   });
+  return moved;
 }
 
 /* ------------------------------------------------------------- hit testing */

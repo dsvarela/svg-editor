@@ -2158,6 +2158,25 @@ shapes, not text, and it is not in the store: undoing a paste must not empty it,
 and copying is not something to undo. That also means it does not reach other
 programs, which is what the source drawer's **Copy** is for.
 
+### The route from outside, which no copy is involved in
+
+Every case above is a copy the editor made. A workspace file is a document some
+other build wrote, or a hand edit, or a truncated write, and it can carry two
+nodes or two shapes under one id with nothing wrong at the type level. The reader
+in `io/session.ts` had grown repairs for a dangling group parent and for a parent
+cycle (§59) while accepting this one, which is the same class and the older rule.
+
+`dedupeIds` renames the second of anything that shares an id, and returns how
+many. Repairing rather than refusing, because a node id is a name inside this
+session and means nothing outside it, so there is nothing to lose in a rename and
+somebody's whole drawing to lose in a refusal. That is the same judgement §59
+makes about a shape pointing at a group that is not there.
+
+**It runs after `reserveIds` and never before.** The counters start at zero on a
+fresh page, so a repair that ran first would mint `shape-1` into a document that
+already holds one, turning one collision into two. Nothing about the types says
+so, which is why `test/identity.test.ts` states it as a case of its own.
+
 ## 47. A path is a row in the list and not a kind of selection
 
 Reported from use: two disjoint paths in one shape, and the shape list showing one
@@ -2249,6 +2268,27 @@ dragged radius and one typed into the rail cannot come out differently, and drag
 back to zero leaves the corner sharp because `roundCorner` declines a radius of
 nothing. `cornerAt` is shared for the same reason: the canvas and the button have to
 agree about which corners are roundable.
+
+**The button does the same, and did not.** `roundSelection` went straight to
+`roundCorner`, which met the two curved sides of an existing fillet and refused
+with `curved`. So the radius field was dead on anything the drag had already
+rounded, and on every rectangle drawn with a corner radius: the one control that
+lets you type an exact number could not touch the corners that most wanted one.
+It un-rounds first now, on a copy, exactly as the press does.
+
+The limit is measured on that copy too. An existing fillet has already eaten
+into the sides it sits between, so `sharedCornerRadius` read off the live path
+returns the room left beside the arc rather than the room the corner has: a
+40-unit square rounded to 4 could never be rounded past 16, though its corners
+hold 20. Both halves of this are the same mistake, which is asking a rounded
+path a question that is only meaningful about a sharp one.
+
+Everything is by node id rather than by index, for §46's reason twice over:
+un-rounding replaces a pair with one node and rounding replaces one with a pair,
+so every index in hand is stale after either. The corners are still cut highest
+first, because where two tangent points meet the neighbour is reused rather than
+doubled, and which corner is cut first therefore decides which node a closed
+path starts at.
 
 `cornerArcReach` and `cornerRadiusAtReach` are an inverse pair, and both are used --
 the first to place the control, the second to read a drag back. Two separate
@@ -2407,6 +2447,21 @@ one last.
 **Nothing clamps a negative gap.** Shapes wider than the frame they are being
 spaced across can only overlap, and overlapping them by an even amount is a truer
 answer than refusing, and a much truer one than spilling silently off one end.
+
+**An arrangement that moves nothing is not an edit.** All five of these used
+`store.edit`, so pressing Align Left three times filed three entries, two of them
+describing a document that did not change. §51 argues this case for the paint
+order and reaches the opposite conclusion for the same button, which is two
+answers to one question. Each of the arrange functions returns whether anything
+moved and the callers use `tryEdit`. The press still reports success: the shapes
+are where it was asked to put them, and nothing went wrong.
+
+That answer needs a threshold rather than an equality. A unit already in place is
+moved by `target - edgeOf(u.box)`, and adding that back lands within an ulp of
+the target rather than on it, so a second press computes about 1e-16 and would
+count as a move. `STILL` is the width of the arithmetic, not a tolerance on the
+arrangement: coordinates here are tens to hundreds of units and the serialiser
+stops at six decimals, so nothing that size can reach a file or a screen.
 
 ## 51. Paint order is reordered per parent, and the canvas has to follow
 
@@ -2996,10 +3051,23 @@ own snap, so there is no single translation that describes the gesture, and
 inventing one would repeat something that did not happen. `body` and `anchor` are
 different drags for exactly this reason.
 
-The matrix for a box drag is built at the release from the whole gesture, not
-accumulated per frame. Every frame already recomputes it against the geometry as
-it was at the press -- that is how the drag avoids stacking rounding -- so the
-matrix at the release is the whole drag by construction.
+The matrix for a box drag is the whole gesture rather than the last frame of it.
+Every frame already recomputes it against the geometry as it was at the press --
+that is how the drag avoids stacking rounding -- so the last matrix the move
+handler applied IS the whole drag by construction.
+
+**It is read off the drag, not rebuilt at the release.** Rebuilding it from the
+pointer looked equivalent and was not: the move handler snaps the corner's
+position to the grid before building the matrix, and the rebuild used the raw
+pointer. Drag the corner of a 40-wide selection to 54 with a grid step of 8 and
+the document scales by the factor that puts the edge on 56, while Repeat held
+the factor for 54. Every press compounded the difference. One computation, kept.
+
+**A press on a grip that never moves records nothing.** It is a click, not a
+gesture, and the rebuild gave it an identity matrix that overwrote whatever
+Repeat was holding. The drag carries `null` until something moves, which is the
+only thing that distinguishes the two. The `body` drag had this guard from the
+start; the box handles did not.
 
 ### Where it lives, and what undo does to it
 

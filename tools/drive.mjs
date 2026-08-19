@@ -2437,7 +2437,73 @@ const scenarios = {
     const withPen = await page.locator('.thandle:visible').count();
     check(withPen === 0, `${withPen} handles still showing under the pen`);
 
-    return { start, scaled, turned, status };
+    /* --- what Repeat is given after a scale that was snapped ---------------- */
+
+    /* The move handler snaps the delta before building the matrix. The release
+       handler used to rebuild one from the raw pointer, so the document scaled
+       by the snapped factor and `Repeat` held the unsnapped one, compounding on
+       every press.
+
+       Measured as a ratio against a ratio, because the two are equal whatever
+       box the factor was taken from and whatever the grid rounded to. An
+       expectation computed from the numbers here would be a second
+       implementation of `scaleMatrix` and would agree with the wrong answer as
+       readily as with the right one. */
+    await page.keyboard.press('v');
+    await openSource(page);
+    await page.click('#srcmode button[data-v="d"]');
+    await page.fill('#src', 'M20 20 L60 20 L60 50 L20 50 Z');
+    await page.click('#apply');
+    await settle(page);
+    await closeSource(page);
+
+    await tab(page, 'doc');
+    await page.fill('#gridStep', '8');
+    await page.press('#gridStep', 'Enter');
+    await page.check('#snapGrid');
+    await settle(page);
+    await tab(page, 'shape');
+    await page.click('#shapelist li.shape');
+    await settle(page);
+
+    const w0 = (await bbox()).w;
+    // Six, with a step of eight: a delta the grid has to move, so the snapped
+    // and unsnapped factors differ.
+    const grip = await at('.thandle[data-part="se"]');
+    await drag(grip, [grip[0] - 6, grip[1]]);
+    await settle(page);
+    const w1 = (await bbox()).w;
+    /* The snap is on the corner's position, not on the delta: a right edge
+       aimed at 54 lands on the grid line at 56. That is what proves the snap
+       engaged, and 54 is what the release handler used to remember. */
+    const edge = 20 + w1;
+    check(Math.abs(edge - 56) < 0.05, `the snapped drag put the right edge at ${edge}, want the grid line at 56`);
+
+    await page.click('#repeatTransform');
+    await settle(page);
+    const w2 = (await bbox()).w;
+    check(
+      Math.abs(w2 / w1 - w1 / w0) < 0.002,
+      `the drag scaled by ${w1 / w0} and Repeat scaled by ${w2 / w1}`,
+    );
+
+    /* A press on a grip that never moves is not a gesture, and must leave
+       `Repeat` holding what it had. Recording an identity matrix destroyed it,
+       and the readout is no way to see that: it says "scale" either way. So the
+       matrix is measured by using it -- Repeat after the bare click has to
+       scale by the same factor again, and an identity leaves the width alone. */
+    const still = await at('.thandle[data-part="se"]');
+    await click(still);
+    await settle(page);
+    await page.click('#repeatTransform');
+    await settle(page);
+    const w3 = (await bbox()).w;
+    check(
+      Math.abs(w3 / w2 - w1 / w0) < 0.002,
+      `after a bare click on a grip, Repeat scaled by ${w3 / w2} rather than ${w1 / w0}`,
+    );
+
+    return { start, scaled, turned, status, snapped: { w0, w1, w2 } };
   },
 
   /**
