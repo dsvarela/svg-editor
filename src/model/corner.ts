@@ -514,9 +514,22 @@ export interface Fillet {
   j: number;
   at: Pt;
   radius: number;
+  /**
+   * The sides, restored to the length they had before the cut.
+   *
+   * Only where `reused` is false. A side the arc used up starts at its own
+   * tangent node, and every handle along it is absent, so there is nothing for
+   * this to carry and `unroundCorner` reads none of it.
+   */
   sides: [Cubic, Cubic];
   /** The node each side reaches, or -1 where the path ends there. */
   ends: [number, number];
+  /**
+   * Whether each tangent node is a corner of the drawing rather than the
+   * round's own work, in `sides` order. True where the arc reached that
+   * neighbour and `roundCorner` reused it.
+   */
+  reused: [boolean, boolean];
 }
 
 /** A fillet's side, run outward from its tangent node toward the corner. */
@@ -530,6 +543,14 @@ interface SideRun {
   /** The neighbour this side reaches, or -1 where the path ends there. */
   end: number;
   line: boolean;
+  /**
+   * The tangent node is a corner of the drawing rather than a point on this side.
+   *
+   * True when the arc reached the neighbour and `roundCorner` reused it. The
+   * side it was cut from runs from that node to the corner, so the node is not
+   * the round's to remove: undoing has to put the corner back beside it.
+   */
+  reused: boolean;
 }
 
 /** Where two sides met before the arc between them cut them apart. */
@@ -635,6 +656,7 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
     radius,
     sides,
     ends: [A.end, B.end],
+    reused: [A.reused, B.reused],
   };
   return fillet;
 }
@@ -665,6 +687,15 @@ function filletSide(
   if (absent || segmentIsLine(sp, segment)) {
     const far = end < 0 ? node.pt : sp.nodes[end].pt;
     const on = (q: number): Pt => [node.pt[0] + e[0] * q, node.pt[1] + e[1] * q];
+    /* Does the segment arriving here run on into the arc? On a tangent point
+       the round cut, it does: the side is one line through the neighbour, this
+       node and the corner. Where the arc reached the neighbour instead, that
+       node is a corner of the drawing and what arrives at it comes from
+       somewhere else, so the side is the stub from here to the corner and this
+       node was never the round's to make. */
+    const back: Pt = [node.pt[0] - far[0], node.pt[1] - far[1]];
+    const len = Math.hypot(back[0], back[1]);
+    const reused = end >= 0 && (len < 1e-9 || (back[0] * e[0] + back[1] * e[1]) / len < 1 - 1e-9);
     return {
       at: on,
       d: () => clonePt(e),
@@ -675,6 +706,7 @@ function filletSide(
       seed: cut,
       end,
       line: true,
+      reused,
     };
   }
 
@@ -701,6 +733,11 @@ function filletSide(
     seed: speed > 1e-9 ? cut / speed : cut,
     end,
     line: false,
+    /* The tangency check above is exactly the question `reused` asks, and it has
+       already refused. A curved side the arc used up cannot come back anyway:
+       the stub was a curve, and its tangent ray at this node says where it left
+       rather than where it ended. */
+    reused: false,
   };
 }
 
@@ -737,24 +774,46 @@ export function unroundCorner(sp: Subpath, i: number): number | null {
   const f = filletAt(sp, i);
   if (!f) return null;
   const [A, B] = f.sides;
+  const [keepA, keepB] = f.reused;
+  const a = sp.nodes[f.i];
+  const b = sp.nodes[f.j];
 
   /* The sides come back to the length they had, so the neighbours' handles come
      back with them. A curved side was trimmed at the corner end, which moved the
      handle at the *other* end too, and putting only the corner back would leave
-     that trim in the path. Written before the splice, while the indices still
-     mean what they meant. */
+     that trim in the path. A reused side reaches no neighbour and says so with
+     an end of -1, so this needs no second test for it. Written before the
+     splice, while the indices still mean what they meant. */
   if (f.ends[0] >= 0) sp.nodes[f.ends[0]].hOut = handleOrNull(A[1], A[0]);
   if (f.ends[1] >= 0) sp.nodes[f.ends[1]].hIn = handleOrNull(B[2], B[3]);
+
+  /* What goes back where the pair was. A tangent node the round created is
+     replaced by the corner; one it reused stays, with the handle the arc gave
+     it cleared and a straight side between it and the corner -- which is what
+     the rebuilt side already says, since it starts and ends on the same point
+     at that end. */
   const sharp = makeNode(clonePt(f.at), handleOrNull(A[2], A[3]), handleOrNull(B[1], B[0]));
+  const run: PathNode[] = [];
+  if (keepA) {
+    a.hOut = null;
+    run.push(a);
+  }
+  run.push(sharp);
+  if (keepB) {
+    b.hIn = null;
+    run.push(b);
+  }
 
   /* The pair wraps when the first of the two is the last node, and a splice
-     cannot remove across the end of an array. Removing the tail and the head
-     separately leaves the corner at index 0, which is where the wrap put it. */
+     cannot remove across the end of an array. The tail goes first and the head
+     second, which leaves the corner's run starting at index 0 -- and a kept
+     tail goes back on the end, where the ring already had it. */
   if (f.j === 0) {
     sp.nodes.splice(f.i, 1);
-    sp.nodes.splice(0, 1, sharp);
-    return 0;
+    sp.nodes.splice(0, 1, ...run.filter((nd) => nd !== a));
+    if (keepA) sp.nodes.push(a);
+    return sp.nodes.indexOf(sharp);
   }
-  sp.nodes.splice(f.i, 2, sharp);
-  return f.i;
+  sp.nodes.splice(f.i, 2, ...run);
+  return sp.nodes.indexOf(sharp);
 }

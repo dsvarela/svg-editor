@@ -1175,6 +1175,39 @@ describe('rounding corners', () => {
   const square = (): Harness => harness('M0 0 L40 0 L40 40 L0 40 Z');
   const ids = (h: Harness): string => h.store.state.doc.shapes[0].id;
 
+  it('gives a corner back after an arc has used a side up', () => {
+    /* Reported from use: round a corner as far as it goes, then reach for it
+       again and a node of the shape disappears. At the limit the tangent point
+       lands on the neighbour and `roundCorner` reuses that node, so one of the
+       fillet's two nodes is a corner of the drawing rather than the round's own
+       work. Undoing has to put the corner back beside it.
+
+       One node, not the whole shape: with every corner in the set they share
+       their sides and none of them reaches a neighbour. */
+    const h = harness('M60 20 L200 90 L170 150 L30 80 Z');
+    const id = ids(h);
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, 0)));
+    // Far more than that corner can hold, so it clamps and eats the short side.
+    expect(h.commands.roundSelection(1000)).toBe(true);
+    const maxed = h.store.state.doc.shapes[0].subpaths[0];
+    expect(maxed.nodes).toHaveLength(4);
+
+    /* Reach for it again. `roundSelection` un-rounds first and rounds afresh,
+       which is what the drag does at every frame, so this is the path the
+       report came down. The corner comes back beside the node the arc reached,
+       and the shape is a quadrilateral with one corner cut: five nodes. */
+    const grab = maxed.nodes.findIndex((n) => n.hOut !== null);
+    h.store.update((s) => s.selection.nodes.add(nodeIdAt(s.doc, id, 0, grab)));
+    expect(h.commands.roundSelection(6)).toBe(true);
+
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    expect(sp.nodes).toHaveLength(5);
+    // Both of the quadrilateral's far corners are still where they were.
+    for (const p of [[200, 90], [170, 150]]) {
+      expect(sp.nodes.some((n) => Math.hypot(n.pt[0] - p[0], n.pt[1] - p[1]) < 1e-6)).toBe(true);
+    }
+  });
+
   it('rounds several corners at once, working from the last index back', () => {
     /* Each rounded corner turns one node into two, so every index after it
        shifts. Ascending order rounds the wrong points from the second one on,

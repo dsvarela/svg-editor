@@ -295,6 +295,79 @@ describe('a corner cut with a curved side goes back exactly', () => {
   });
 });
 
+describe('an arc that used a whole side up', () => {
+  /**
+   * The tangent point lands on the neighbour, and that neighbour survives.
+   *
+   * At the limit `roundCorner` reuses the node rather than leaving two anchors
+   * on one point, so one of the fillet's two nodes is a corner of the drawing
+   * in its own right. Undoing the fillet has to put the corner back **beside**
+   * it, not in place of it: replacing it deletes a corner nobody asked to lose,
+   * and the shape springs open where that node was.
+   */
+  const QUAD = 'M60 20 L200 90 L170 150 L30 80 Z';
+
+  it('keeps the node the arc was allowed to reach', () => {
+    const sp = parsePath(QUAD)[0];
+    const c = cornerAt(sp, 0);
+    if (typeof c === 'string') throw new Error(c);
+    // The short side is used up exactly, so the tangent point is the neighbour.
+    expect(typeof roundCorner(sp, 0, maxCornerRadius(c))).not.toBe('string');
+    expect(sp.nodes.map((n) => n.pt)).toContainEqual([30, 80]);
+
+    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
+    expect(where).toHaveLength(1);
+    expect(unroundCorner(sp, where[0])).not.toBeNull();
+
+    // Every corner of the original is back, and none has been lost on the way.
+    const want = parsePath(QUAD)[0].nodes.map((n) => n.pt);
+    expect(sp.nodes).toHaveLength(want.length);
+    for (const p of want) {
+      expect(sp.nodes.some((n) => dist(n.pt, p) < 1e-6)).toBe(true);
+    }
+  });
+
+  it('comes back to the shape it was, with the sides straight again', () => {
+    const sp = parsePath(QUAD)[0];
+    const c = cornerAt(sp, 0);
+    if (typeof c === 'string') throw new Error(c);
+    roundCorner(sp, 0, maxCornerRadius(c));
+    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
+    unroundCorner(sp, where[0]);
+    // A quadrilateral of four lines: no handle anywhere.
+    for (const n of sp.nodes) {
+      expect(n.hIn).toBeNull();
+      expect(n.hOut).toBeNull();
+    }
+  });
+
+  it('does the same where both sides are used up at once', () => {
+    // A square's two sides are equal, so the arc reaches both neighbours.
+    const SQ = 'M20 20 L100 20 L100 100 L20 100 Z';
+    const sp = parsePath(SQ)[0];
+    const c = cornerAt(sp, 1);
+    if (typeof c === 'string') throw new Error(c);
+    roundCorner(sp, 1, maxCornerRadius(c));
+    expect(sp.nodes).toHaveLength(3);
+
+    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
+    expect(where).toHaveLength(1);
+    unroundCorner(sp, where[0]);
+
+    expect(sp.nodes).toHaveLength(4);
+    for (const p of parsePath(SQ)[0].nodes.map((n) => n.pt)) {
+      expect(sp.nodes.some((n) => dist(n.pt, p) < 1e-6)).toBe(true);
+    }
+    /* And it is a square again, not four points with the arc's handles still
+       hanging off two of them. Both nodes were reused here, so both had a
+       handle to give back. */
+    for (const n of sp.nodes) {
+      expect(n.hIn).toBeNull();
+      expect(n.hOut).toBeNull();
+    }
+  });
+});
+
 describe('the clamp on a curved side', () => {
   it('stops the arc before it runs off the end of a side', () => {
     const sp = parsePath(LEAF)[0];

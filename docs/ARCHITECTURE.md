@@ -2376,6 +2376,21 @@ Because the cut moved the handle at the far end of a curved side too,
 `unroundCorner` puts the neighbours' handles back along with the corner's own.
 A `Fillet` carries the two restored sides for exactly that reason.
 
+**A tangent point that landed on a neighbour keeps that node.** At the limit
+`roundCorner` reuses the neighbour rather than leaving two anchors on one point,
+so one of the fillet's two nodes is a corner of the drawing in its own right.
+Undoing has to put the corner back *beside* it. Replacing it, which is what
+happened until 2026-08-20, deleted a corner nobody asked to lose: round a corner
+as far as it goes, reach for it again, and the shape springs open where that
+node used to be. Both ends at once on a square lost two.
+
+What tells them apart is the side. On a tangent point the round cut, the segment
+arriving runs on into the arc: neighbour, node and corner are one line. Where the
+arc reached the neighbour instead, what arrives at that node comes from somewhere
+else, and `filletSide` reads that off the geometry. A curved side used up this
+way cannot come back at all, and refuses: its stub was a curve, and the tangent
+ray says where it left rather than where it ended.
+
 **Two things it will not do**, both stated rather than guarded. It takes the
 first crossing Newton reaches from that seed, so two sides that cross more than
 once ahead of their tangent points could in principle recover the wrong corner.
