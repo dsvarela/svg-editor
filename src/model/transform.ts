@@ -45,6 +45,30 @@ export const FLAT = 1e-9;
 const movesX = (part: TransformPart): boolean => part.includes('e') || part.includes('w');
 const movesY = (part: TransformPart): boolean => part.includes('n') || part.includes('s');
 
+/**
+ * Which point of the selection a transform holds still.
+ *
+ * Nine, laid out as the box's corners, edge middles and centre. Illustrator's
+ * reference point, and the reason it exists is that a transform has to keep
+ * something fixed and the useful choice is not always the same one: scaling a
+ * logo about its centre and scaling a column about its left edge are different
+ * jobs with the same numbers.
+ *
+ * Not `TransformPart`, which is the eight box handles. A handle is a thing you
+ * grab and there is nothing to grab in the middle; this is a thing you choose.
+ */
+export type Reference = 'nw' | 'n' | 'ne' | 'w' | 'c' | 'e' | 'sw' | 's' | 'se';
+
+/** Reading order, which is the order the chooser lays them out in. */
+export const REFERENCES: Reference[] = ['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se'];
+
+/** The point of `b` that `ref` names. */
+export function referencePoint(b: Box, ref: Reference): Pt {
+  const x = ref === 'nw' || ref === 'w' || ref === 'sw' ? b.x0 : ref === 'n' || ref === 'c' || ref === 's' ? (b.x0 + b.x1) / 2 : b.x1;
+  const y = ref === 'nw' || ref === 'n' || ref === 'ne' ? b.y0 : ref === 'w' || ref === 'c' || ref === 'e' ? (b.y0 + b.y1) / 2 : b.y1;
+  return [x, y];
+}
+
 export const boxCentre = (b: Box): Pt => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
 
 /** Where a handle sits on the box. Edge handles sit at the midpoint. */

@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
+import { selectionBBox } from '../src/model/doc';
 import { Commands } from '../src/tools/commands';
 import { emptyDoc, shapeBBox, shapeFromPath } from '../src/model/doc';
 import {
@@ -785,12 +786,25 @@ describe('the commands', () => {
 describe('the selection box as numbers', () => {
   const one = (): Doc => docOf(['a', 10, 20, 30, 40]);
 
+  /* What the panel shows: `x` and `y` are the reference point. */
   const bounds = (c: Commands): { x: number; y: number; w: number; h: number } => c.selectionBounds()!;
 
-  it('reads the box of what is selected', () => {
+  /* The box itself, for assertions about where the geometry ended up. The two
+     differ by exactly the choice §67 added, so a test that means one must not
+     be written with the other. */
+  const selBox = (store: Store): { x: number; y: number; w: number; h: number } => {
+    const b = selectionBBox(store.state.doc, store.state.selection)!;
+    return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
+  };
+
+  it('reads the size of what is selected, and its reference point', () => {
     const { store, commands } = editor(one());
     select(store, 'a');
+    // 10,20 by 30 by 40, so the centre is 25,40.
+    expect(bounds(commands)).toEqual({ x: 25, y: 40, w: 30, h: 40 });
+    store.update((s) => (s.reference = 'nw'));
     expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+    expect(selBox(store)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
   });
 
   it('reads nothing when nothing is selected', () => {
@@ -798,36 +812,68 @@ describe('the selection box as numbers', () => {
     expect(commands.selectionBounds()).toBeNull();
   });
 
-  it('moves the selection to a typed X, leaving its size and Y alone', () => {
+  /* `at` and the sizes both work from the reference point, which is the centre
+     unless the chooser says otherwise. The box here is 10,20 by 30 by 40, so
+     its centre is 25,40 and its top-left is 10,20. §67. */
+  it('moves the selection so the centre lands on a typed X', () => {
     const { store, commands } = editor(one());
     select(store, 'a');
     expect(commands.setSelectionBound('x', 100)).toBe(true);
-    expect(bounds(commands)).toEqual({ x: 100, y: 20, w: 30, h: 40 });
+    // The centre was 25 and is asked for 100, so the box moves by 75.
+    expect(selBox(store)).toEqual({ x: 85, y: 20, w: 30, h: 40 });
+  });
+
+  it('moves the top-left there instead when the reference is the corner', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    store.update((s) => (s.reference = 'nw'));
+    expect(commands.setSelectionBound('x', 100)).toBe(true);
+    expect(selBox(store)).toEqual({ x: 100, y: 20, w: 30, h: 40 });
   });
 
   it('moves to a typed Y, including a negative one', () => {
     const { store, commands } = editor(one());
     select(store, 'a');
+    store.update((s) => (s.reference = 'nw'));
     commands.setSelectionBound('y', -5);
-    expect(bounds(commands)).toEqual({ x: 10, y: -5, w: 30, h: 40 });
+    expect(selBox(store)).toEqual({ x: 10, y: -5, w: 30, h: 40 });
   });
 
-  it('scales width about the left edge, leaving X, Y and height alone', () => {
+  it('scales width about the centre, leaving Y and height alone', () => {
     const { store, commands } = editor(one());
     select(store, 'a');
     expect(commands.setSelectionBound('w', 60)).toBe(true);
-    const b = bounds(commands);
+    const b = selBox(store);
     expect(b.w).toBeCloseTo(60, 9);
-    expect(b.x).toBeCloseTo(10, 9);
+    // The centre at 25 stays put, so the box grows both ways: 25 - 30 = -5.
+    expect(b.x).toBeCloseTo(-5, 9);
     expect(b.y).toBeCloseTo(20, 9);
     expect(b.h).toBeCloseTo(40, 9);
   });
 
-  it('scales height about the top edge', () => {
+  it.each([
+    ['nw', 10, 20],
+    ['ne', -20, 20],
+    ['sw', 10, 20],
+    ['se', -20, 20],
+    ['c', -5, 20],
+  ] as const)('scales width about the %s corner', (ref, x, y) => {
     const { store, commands } = editor(one());
     select(store, 'a');
+    store.update((s) => (s.reference = ref));
+    expect(commands.setSelectionBound('w', 60)).toBe(true);
+    const b = selBox(store);
+    expect(b.w).toBeCloseTo(60, 9);
+    expect(b.x).toBeCloseTo(x, 9);
+    expect(b.y).toBeCloseTo(y, 9);
+  });
+
+  it('scales height about the top edge when the reference is up there', () => {
+    const { store, commands } = editor(one());
+    select(store, 'a');
+    store.update((s) => (s.reference = 'nw'));
     commands.setSelectionBound('h', 10);
-    const b = bounds(commands);
+    const b = selBox(store);
     expect(b.h).toBeCloseTo(10, 9);
     expect(b.y).toBeCloseTo(20, 9);
     expect(b.w).toBeCloseTo(30, 9);
@@ -841,9 +887,10 @@ describe('the selection box as numbers', () => {
   it('reaches the same size however many times it is set', () => {
     const { store, commands } = editor(one());
     select(store, 'a');
+    store.update((s) => (s.reference = 'nw'));
     for (const w of [60, 15, 60, 60, 7.5]) commands.setSelectionBound('w', w);
-    expect(bounds(commands).w).toBeCloseTo(7.5, 9);
-    expect(bounds(commands).x).toBeCloseTo(10, 9);
+    expect(selBox(store).w).toBeCloseTo(7.5, 9);
+    expect(selBox(store).x).toBeCloseTo(10, 9);
   });
 
   it('refuses a size of zero or less, and says so', () => {
@@ -854,7 +901,7 @@ describe('the selection box as numbers', () => {
     expect(commands.setSelectionBound('w', 0)).toBe(false);
     expect(commands.setSelectionBound('h', -3)).toBe(false);
     expect(said).toHaveLength(2);
-    expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+    expect(selBox(store)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
   });
 
   it('refuses to scale an axis the selection has no length on', () => {
@@ -887,7 +934,7 @@ describe('the selection box as numbers', () => {
     commands.setSelectionBound('x', 100);
     commands.setSelectionBound('w', 0);
     store.undo();
-    expect(bounds(commands)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+    expect(selBox(store)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
   });
 
   it('moves only the selected shape', () => {
@@ -915,7 +962,7 @@ describe('the selection box as numbers', () => {
       s.selection.nodes.add(nodes[0].id);
       s.selection.nodes.add(nodes[1].id);
     });
-    expect(bounds(commands)).toEqual({ x: 0, y: 0, w: 10, h: 0 });
+    expect(selBox(store)).toEqual({ x: 0, y: 0, w: 10, h: 0 });
     commands.setSelectionBound('y', 4);
     // The two moved nodes are on y = 4; the other two are where they were.
     const ys = store.state.doc.shapes[0].subpaths[0].nodes.map((n) => n.pt[1]);

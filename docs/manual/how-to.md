@@ -24,6 +24,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Resize or rotate about a corner instead of the centre](#resize-or-rotate-about-a-corner-instead-of-the-centre)
 - [Hide a shape while you work on another](#hide-a-shape-while-you-work-on-another)
 - [Lock a shape so you stop catching it](#lock-a-shape-so-you-stop-catching-it)
 - [Round off a corner](#round-off-a-corner)
@@ -405,6 +406,20 @@ you is afterwards: past 2 000 node markers in view the overlay stops drawing
 them, the document readout says `markers off, too dense`, and nodes cannot be
 clicked until you zoom in far enough that fewer are on screen. The shapes
 themselves are unaffected.
+
+## Resize or rotate about a corner instead of the centre
+
+Press one of the nine squares at the top of the **Transform** panel, then use
+the numbers or the buttons below it.
+
+The square you press is the point that stays put. Pick the middle and a width
+typed into **size** grows the shape both ways; pick the bottom right and the
+same width grows it left and upwards, leaving that corner where it was. Rotate,
+flip and the scale factor all turn about the same point.
+
+**at** reads whichever point you picked, so the two always agree: pick the
+centre and it tells you where the centre is, pick a corner and it tells you
+where that corner is.
 
 ## Hide a shape while you work on another
 

@@ -15,6 +15,7 @@ import { rebuildPaintOrder } from './arrange';
 import { emptySelection, pruneGroups } from './doc';
 import type { Selection } from './doc';
 import type { Guide } from './guides';
+import type { Reference } from './transform';
 import type { Mat } from '../core/affine';
 
 /** One entry in the palette: a name and the four style values it stands for. */
@@ -199,6 +200,14 @@ export interface EditorState {
    */
   showNodes: boolean;
   /**
+   * Which point of the selection a transform holds still.
+   *
+   * The centre by default, which is what rotate and flip have always used. The
+   * size fields used the top-left and nothing said so, which is two answers to
+   * "what stays put" in one panel. §67.
+   */
+  reference: Reference;
+  /**
    * The style a newly drawn shape gets.
    *
    * Carried in the editor rather than fixed in `makeShape`, so choosing red once
@@ -351,6 +360,7 @@ export class Store {
       showKeylines: false,
       showHandles: true,
       showNodes: true,
+      reference: 'c',
       style: defaultStyle(),
       filled: true,
       decimals: 3,

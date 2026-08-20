@@ -3853,6 +3853,88 @@ const scenarios = {
   },
 
   /**
+   * The nine-point reference: which point of the selection a transform holds.
+   *
+   * Only a browser has the chooser and the number fields together, and what
+   * this checks is that they agree: the readout names the point the chooser is
+   * on, and typing into it moves that point rather than a corner. §67.
+   */
+  async referencePoint(page, check) {
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <path d="M20 40 L80 40 L80 140 L20 140 Z" fill="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await page.click('#shapelist li.shape');
+    await settle(page);
+
+    const read = async () => ({
+      x: Number(await page.inputValue('#selX')),
+      y: Number(await page.inputValue('#selY')),
+      w: Number(await page.inputValue('#selW')),
+      h: Number(await page.inputValue('#selH')),
+    });
+    const pick = async (ref) => {
+      await page.click(`.refpoint [data-ref="${ref}"]`);
+      await settle(page);
+    };
+
+    // 20,40 by 60 by 100: centre 50,90 and top-left 20,40.
+    out.centre = await read();
+    check(
+      out.centre.x === 50 && out.centre.y === 90,
+      `the centre reads ${JSON.stringify(out.centre)}, not 50,90`,
+    );
+
+    await pick('nw');
+    out.nw = await read();
+    check(out.nw.x === 20 && out.nw.y === 40, `the top left reads ${JSON.stringify(out.nw)}, not 20,40`);
+
+    await pick('se');
+    out.se = await read();
+    check(out.se.x === 80 && out.se.y === 140, `the bottom right reads ${JSON.stringify(out.se)}, not 80,140`);
+
+    /* Typing a width holds the chosen point. From the bottom right, doubling
+       the width grows the shape to the left and the right edge stays at 80. */
+    await page.fill('#selW', '120');
+    await page.press('#selW', 'Enter');
+    await settle(page);
+    out.afterWide = await read();
+    check(
+      out.afterWide.w === 120 && out.afterWide.x === 80,
+      `scaling from the bottom right left ${JSON.stringify(out.afterWide)}`,
+    );
+
+    // And from the centre, the same width grows both ways.
+    await undo(page);
+    await pick('c');
+    await page.fill('#selW', '120');
+    await page.press('#selW', 'Enter');
+    await settle(page);
+    out.fromCentre = await read();
+    check(
+      out.fromCentre.w === 120 && out.fromCentre.x === 50,
+      `scaling from the centre left ${JSON.stringify(out.fromCentre)}`,
+    );
+
+    // Exactly one point is chosen at a time, which is what a radiogroup means.
+    out.lit = await page.evaluate(
+      () => document.querySelectorAll('.refpoint [aria-checked="true"]').length,
+    );
+    check(out.lit === 1, `${out.lit} reference points are lit, not 1`);
+
+    return out;
+  },
+
+  /**
    * Hiding a shape takes it off the canvas and out of the pointer's way.
    *
    * The visible half of §66's other flag. Hidden is on the shape rather than
@@ -5596,6 +5678,10 @@ const scenarios = {
     );
 
     await page.click('#shapelist li.shape:nth-child(1)');
+    await settle(page);
+    /* From the top left, so the numbers are the box's own corner. The chooser
+       decides which point `at` names, and the centre is what it starts on. */
+    await page.click('.refpoint [data-ref="nw"]');
     await settle(page);
     out.selected = (await fields()).map((f) => f.value);
     check(

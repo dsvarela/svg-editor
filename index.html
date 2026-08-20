@@ -428,6 +428,17 @@
             <!-- The same box the handles are drawn on, so the panel and the
                  canvas cannot disagree about what is being measured. -->
             <div class="coords">
+              <div class="refpoint" role="radiogroup" aria-label="Which point a transform holds still">
+                <button type="button" data-ref="nw" role="radio" aria-checked="false" aria-label="Top left" title="Transform about the top left"></button>
+                <button type="button" data-ref="n" role="radio" aria-checked="false" aria-label="Top" title="Transform about the top edge"></button>
+                <button type="button" data-ref="ne" role="radio" aria-checked="false" aria-label="Top right" title="Transform about the top right"></button>
+                <button type="button" data-ref="w" role="radio" aria-checked="false" aria-label="Left" title="Transform about the left edge"></button>
+                <button type="button" data-ref="c" role="radio" aria-checked="true" aria-label="Centre" title="Transform about the centre"></button>
+                <button type="button" data-ref="e" role="radio" aria-checked="false" aria-label="Right" title="Transform about the right edge"></button>
+                <button type="button" data-ref="sw" role="radio" aria-checked="false" aria-label="Bottom left" title="Transform about the bottom left"></button>
+                <button type="button" data-ref="s" role="radio" aria-checked="false" aria-label="Bottom" title="Transform about the bottom edge"></button>
+                <button type="button" data-ref="se" role="radio" aria-checked="false" aria-label="Bottom right" title="Transform about the bottom right"></button>
+              </div>
               <label for="selX">at</label>
               <input type="number" id="selX" step="1" aria-label="Selection X" />
               <input type="number" id="selY" step="1" aria-label="Selection Y" />

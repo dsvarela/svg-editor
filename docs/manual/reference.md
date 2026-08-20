@@ -844,6 +844,7 @@ edge is an outline, and the drawing wins where both are in reach.
 | **Snap to outlines** | Weld to a point *on* an existing curve, not only to its anchors |
 | **Snap to crossings** | Weld to where two outlines cross. Worked out on the spot, so it is off unless you want it |
 | **Pixel fit** | Shift the lattice by half the stroke width, so the stroke's edges land on whole pixels |
+| **Reference point** | The three by three grid at the top of **Transform**. Picks which point of the selection stays put: **at** reads that point, and typing a size grows the shape about it. Starts on the centre |
 | **Show nodes** | Draw the square and round markers on each node. Off leaves the shape with nothing on it to press, so nodes cannot be selected or dragged |
 | **Show handles** | Draw handles and their lines, the bend dots and the corner controls |
 | **Show fills** | Draw each shape's fill. Off leaves each shape's own stroke, so a filled shape with no stroke becomes invisible |

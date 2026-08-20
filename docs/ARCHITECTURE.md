@@ -3610,3 +3610,38 @@ Three gates, the same three the lock has and for the same reason, plus one more:
 the artwork layer draws `display="none"` for a hidden shape, so the pointer
 finds nothing there and the press lands on whatever is behind.
 
+## 67. One point stays put, and the panel says which
+
+Reported from use: every transform works from the top left. Half of that was
+true, and the half that was not is the more interesting one.
+
+`applyTransform` -- rotate, flip, the scale factor -- has always worked about
+the centre of the selection. `setSelectionBound`, the four numbers at the top of
+the same panel, worked about the top left. Two answers to "what stays put" in
+one panel, neither of them written anywhere, and the only way to find out was to
+type a number and watch.
+
+**`Reference` is one of nine**: the corners, the edge middles and the centre.
+`referencePoint` turns it into a point on the box, and both paths now ask it. So
+the panel has one answer, and it is on screen as a three by three chooser laid
+out in reading order, because a button's place in the grid is the place on the
+shape it names.
+
+**The readout follows it.** `selectionBounds` reports the reference point rather
+than the corner, since that is the point typing into the field moves. A readout
+naming one point while the field moved another would be the same disagreement
+one layer up.
+
+The centre is the default. Any single answer changes one of the two behaviours
+that were there, and the centre is the one that leaves rotate and flip alone,
+matches what Illustrator starts on, and is what the report was asking for.
+
+Not `TransformPart`, which is the eight box handles. A handle is a thing you
+grab, and there is nothing to grab in the middle of a box; this is a thing you
+choose. Two types rather than one with a ninth value nothing can drag.
+
+It is session state, not document state and not history. Which point you
+transform about says how you are working, not what the drawing is, so it sits
+beside the grid step and the snap switches. A stored value naming no point is
+dropped on the way back in.
+

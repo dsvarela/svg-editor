@@ -24,6 +24,8 @@
 import { clampCorners, clampRatio } from '../core/primitives';
 import type { Doc, Group, PathNode, Pt, Shape, Style, Subpath, ViewBox } from '../core/types';
 import type { Guide } from '../model/guides';
+import { REFERENCES } from '../model/transform';
+import type { Reference } from '../model/transform';
 import type { DeleteMode, EditorState, NamedStyle, ToolName } from '../model/store';
 
 /**
@@ -57,6 +59,7 @@ export type SessionView = Pick<
   | 'showKeylines'
   | 'showHandles'
   | 'showNodes'
+  | 'reference'
   | 'showRulers'
   | 'showGuides'
   | 'guidesLocked'
@@ -130,6 +133,7 @@ export function toSession(s: EditorState): Session {
       showKeylines: s.showKeylines,
       showHandles: s.showHandles,
       showNodes: s.showNodes,
+      reference: s.reference,
       showRulers: s.showRulers,
       showGuides: s.showGuides,
       guidesLocked: s.guidesLocked,
@@ -386,6 +390,9 @@ function readView(v: unknown, now: SessionView): SessionView {
     showKeylines: bool('showKeylines', now.showKeylines),
     showHandles: bool('showHandles', now.showHandles),
     showNodes: bool('showNodes', now.showNodes),
+    /* One of nine, checked against the list rather than trusted: a stored value
+       naming no point would put the chooser in a state no button shows. */
+    reference: REFERENCES.includes(o.reference as Reference) ? (o.reference as Reference) : now.reference,
     showRulers: bool('showRulers', now.showRulers),
     showGuides: bool('showGuides', now.showGuides),
     guidesLocked: bool('guidesLocked', now.guidesLocked),

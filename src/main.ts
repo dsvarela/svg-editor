@@ -60,6 +60,7 @@ import { bindKeys } from './tools/keys';
 import type {
   AlignMode,
 } from './model/ops';
+import type { Reference } from './model/transform';
 import { rebuildPaintOrder } from './model/arrange';
 import type { AlignTo, ZMove } from './model/arrange';
 import { $ } from './view/dom';
@@ -434,6 +435,31 @@ on('#zoomval', () => {
 });
 
 /* ------------------------------------------------------------- transforms */
+
+/**
+ * The nine-point chooser: which point of the selection a transform holds still.
+ *
+ * A radiogroup rather than nine independent buttons, because exactly one is
+ * true at a time and that is what the role means. `store.update`, not `edit`:
+ * choosing it changes nothing in the drawing, and undo has no business putting
+ * a preference back.
+ */
+const refGroup = $('.refpoint');
+function paintReference(): void {
+  for (const b of refGroup.querySelectorAll<HTMLButtonElement>('[data-ref]')) {
+    b.setAttribute('aria-checked', String(b.getAttribute('data-ref') === store.state.reference));
+  }
+}
+for (const b of refGroup.querySelectorAll<HTMLButtonElement>('[data-ref]')) {
+  b.addEventListener('click', () => {
+    store.update((s) => (s.reference = b.getAttribute('data-ref') as Reference));
+    paintReference();
+    refreshBounds();
+  });
+}
+paintReference();
+
+
 
 document.querySelectorAll<HTMLButtonElement>('[data-tr]').forEach((btn) => {
   btn.addEventListener('click', () => {

@@ -1145,6 +1145,35 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    The button keeps its label, which says what pressing it does. */
 .shapelist li[aria-expanded='true'] > .twist { transform: rotate(90deg); }
 .shapelist .twist.none { visibility: hidden; }
+/* The nine-point chooser: which point of the selection a transform holds still.
+   A 3 by 3 of small targets, laid out in reading order so the button's place in
+   the grid is the place on the shape it names. No labels: nine words would
+   crowd the panel and the position already says it. */
+.refpoint {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  background: var(--sunk);
+}
+.refpoint button {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: 1px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.refpoint button:hover { border-color: var(--ink-2); }
+.refpoint button[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* The eye, beside the lock. Same box, same always-drawn rule: the only sign a
    shape is hidden is this row, since the canvas draws nothing for it. */
 .shapelist .eyebtn {
@@ -1476,6 +1505,9 @@ kbd {
      only way to lock anything, so a finger that cannot hit it cannot lock. */
   .shapelist .lockbtn,
   .shapelist .eyebtn { width: 44px; height: 44px; font-size: 16px; }
+  /* Nine targets in one control: each one gets a finger, so the chooser is
+     three rows of 44 px rather than a 27 px square nobody can hit. */
+  .refpoint button { width: 44px; height: 44px; }
   /* The indent tracks the disclosure it lines up under. */
   .shapelist li.path { padding-left: 52px; }
   .shapelist li.group > ul > li { padding-left: 44px; }

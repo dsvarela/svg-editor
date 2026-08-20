@@ -95,7 +95,7 @@ import type { Placement, TraceOptions, TraceResult } from '../model/trace';
 import type { RasterLike } from '../core/raster';
 import { BOOLEAN_LABEL, booleanShapes, booleanSubpaths } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
-import { FLAT } from '../model/transform';
+import { FLAT, referencePoint } from '../model/transform';
 import type { Store } from '../model/store';
 import type { Bend } from '../core/bend';
 import { fmt } from './readout';
@@ -1393,7 +1393,12 @@ export class Commands {
   selectionBounds(): { x: number; y: number; w: number; h: number } | null {
     const s = this.store.state;
     const b = selectionBBox(s.doc, s.selection);
-    return b ? { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } : null;
+    if (!b) return null;
+    /* `x` and `y` are the reference point, not the corner, because that is what
+       typing into them moves. A readout that named one point while the field
+       moved another is the disagreement §67 exists to remove. */
+    const [x, y] = referencePoint(b, s.reference);
+    return { x, y, w: b.x1 - b.x0, h: b.y1 - b.y0 };
   }
 
   /**
@@ -1423,9 +1428,13 @@ export class Commands {
 
     const w = box.x1 - box.x0;
     const h = box.y1 - box.y0;
+    /* What stays put, and what `at` names. Both used to be the top-left with
+       nothing saying so, while rotate and flip held the centre: two answers to
+       one question in one panel. §67. */
+    const ref = referencePoint(box, s.reference);
     let m: Mat;
-    if (part === 'x') m = translate(value - box.x0, 0);
-    else if (part === 'y') m = translate(0, value - box.y0);
+    if (part === 'x') m = translate(value - ref[0], 0);
+    else if (part === 'y') m = translate(0, value - ref[1]);
     else {
       if (value <= 0) {
         this.onMessage?.('A size has to be greater than zero.', false);
@@ -1440,7 +1449,7 @@ export class Commands {
         return false;
       }
       const k = value / along;
-      m = about(part === 'w' ? [k, 0, 0, 1, 0, 0] : [1, 0, 0, k, 0, 0], box.x0, box.y0);
+      m = about(part === 'w' ? [k, 0, 0, 1, 0, 0] : [1, 0, 0, k, 0, 0], ref[0], ref[1]);
     }
 
     const saved = captureNodes(s.doc, selectedNodes(s.doc, s.selection));
@@ -1529,8 +1538,9 @@ export class Commands {
     let cx = 0;
     let cy = 0;
     if (box) {
-      cx = (box.x0 + box.x1) / 2;
-      cy = (box.y0 + box.y1) / 2;
+      // The point the panel is set to hold still, which is the centre unless
+      // somebody chose otherwise. §67.
+      [cx, cy] = referencePoint(box, s.reference);
     } else {
       const all = targets.flatMap((sh) => sh.subpaths.flatMap((sp) => sp.nodes.map((n) => n.pt)));
       cx = all.reduce((a, p) => a + p[0], 0) / all.length;
