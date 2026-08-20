@@ -15,7 +15,7 @@
     "check": "tsc --noEmit",
     "check:docs": "node tools/docs.mjs",
     "check:voice": "node tools/voice.mjs",
-    "check:contrast": "node ../handbook/design/contrast.mjs src/ui/styles.css src/ui/pairs.txt"
+    "check:contrast": "node tools/contrast.mjs src/ui/styles.css src/ui/pairs.txt"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",
