@@ -56,6 +56,7 @@ export type SessionView = Pick<
   | 'showGrid'
   | 'showKeylines'
   | 'showHandles'
+  | 'showNodes'
   | 'showRulers'
   | 'showGuides'
   | 'guidesLocked'
@@ -128,6 +129,7 @@ export function toSession(s: EditorState): Session {
       showGrid: s.showGrid,
       showKeylines: s.showKeylines,
       showHandles: s.showHandles,
+      showNodes: s.showNodes,
       showRulers: s.showRulers,
       showGuides: s.showGuides,
       guidesLocked: s.guidesLocked,
@@ -383,6 +385,7 @@ function readView(v: unknown, now: SessionView): SessionView {
     showGrid: bool('showGrid', now.showGrid),
     showKeylines: bool('showKeylines', now.showKeylines),
     showHandles: bool('showHandles', now.showHandles),
+    showNodes: bool('showNodes', now.showNodes),
     showRulers: bool('showRulers', now.showRulers),
     showGuides: bool('showGuides', now.showGuides),
     guidesLocked: bool('guidesLocked', now.guidesLocked),

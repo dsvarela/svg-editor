@@ -456,6 +456,42 @@ describe('wireframe', () => {
   });
 });
 
+describe('Show nodes', () => {
+  /* Reported from use: with `Show handles` off the node markers were still on
+     screen and nothing in the panel turned them off. A handle and a node are
+     different things and that control is named for one of them, so this is the
+     other one rather than a widening of it. */
+  const markers = (h: ReturnType<typeof setup>): number =>
+    visible(h.canvas.overlay, '[data-hit="anchor"]').length;
+
+  it('draws the node markers when it is on, and none when it is off', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => s.selection.shapes.add(s.doc.shapes[0].id));
+    h.controller.render();
+    expect(markers(h)).toBe(3);
+
+    h.store.update((s) => (s.showNodes = false));
+    h.controller.render();
+    expect(markers(h)).toBe(0);
+
+    h.store.update((s) => (s.showNodes = true));
+    h.controller.render();
+    expect(markers(h)).toBe(3);
+  });
+
+  it('is not the same switch as Show handles', () => {
+    // Handles off leaves the nodes, which is what the report was about.
+    const h = setup('M 0 0 C 5 -5 15 -5 20 0');
+    h.store.update((s) => {
+      s.selection.shapes.add(s.doc.shapes[0].id);
+      s.showHandles = false;
+    });
+    h.controller.render();
+    expect(markers(h)).toBeGreaterThan(0);
+    expect(visible(h.canvas.overlay, '.handle-dot')).toHaveLength(0);
+  });
+});
+
 describe('a hidden shape', () => {
   it('is not drawn, and offers nothing to catch it by', () => {
     const h = setup('M 0 0 L 20 0 L 20 20 Z');

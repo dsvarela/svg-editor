@@ -190,6 +190,15 @@ export interface EditorState {
   showKeylines: boolean;
   showHandles: boolean;
   /**
+   * Draw the node markers: the squares and circles on each anchor.
+   *
+   * Its own switch and not part of `showHandles`, because a handle and a node
+   * are different things and that control is named for one of them. With this
+   * off there is nothing on a node to press, which is the same cost the marker
+   * cap already carries and the reason it is on by default. §28.
+   */
+  showNodes: boolean;
+  /**
    * The style a newly drawn shape gets.
    *
    * Carried in the editor rather than fixed in `makeShape`, so choosing red once
@@ -341,6 +350,7 @@ export class Store {
       showGrid: true,
       showKeylines: false,
       showHandles: true,
+      showNodes: true,
       style: defaultStyle(),
       filled: true,
       decimals: 3,

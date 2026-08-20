@@ -489,6 +489,7 @@ const bindCheck = (
     | 'snapToIntersections'
     | 'pixelFit'
     | 'showHandles'
+    | 'showNodes'
     | 'filled'
     | 'wireframe'
     | 'minify'
@@ -553,6 +554,7 @@ bindCheck('#snapBoundary', 'snapToBoundary');
 bindCheck('#snapCross', 'snapToIntersections');
 bindCheck('#pixelFit', 'pixelFit');
 bindCheck('#showHandles', 'showHandles');
+bindCheck('#showNodes', 'showNodes');
 bindCheck('#filled', 'filled');
 bindCheck('#wireframe', 'wireframe');
 bindCheck('#minify', 'minify');

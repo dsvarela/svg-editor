@@ -684,7 +684,7 @@ export class Canvas {
           // readable at a glance instead of hidden in a properties panel. It is
           // read off the handles every frame, so the marker cannot claim
           // something the geometry does not back up.
-          if (!near) return;
+          if (!near || !state.showNodes) return;
           const r = continuityOf(n) === 'cusp' ? 0 : anchorSize / 2;
           this.anchors.next({
             x: n.pt[0] - anchorSize / 2,
