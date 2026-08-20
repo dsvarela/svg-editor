@@ -3790,6 +3790,20 @@ nothing at all. One icon disappeared and the other twenty-five were fine, so the
 sheet looked correct. What found it was measuring every symbol's bounding box
 rather than looking at them.
 
+### What holds the sheet together, since none of it is checkable by reading
+
+Three things the audit asks of every scenario, each because the failure is
+silent rather than wrong:
+
+- **Every symbol draws something.** An unparseable `d` renders as nothing and
+  reports nothing.
+- **Every `use` names a symbol that exists.** So does a reference to one that
+  does not, and two of the names are built at run time from a condition, so a
+  grep cannot check them.
+- **Every symbol is on the 24 grid.** The stroke is one number in `.ico`,
+  resolved in the symbol's own units, so an icon on a 16 grid comes out at half
+  again the weight of every icon beside it and nothing else says so.
+
 ### 2.25, not 2
 
 Lucide draws at 2 on a 24 grid, which comes out at 1.33 px in this editor's 16 px

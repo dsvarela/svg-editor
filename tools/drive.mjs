@@ -7219,6 +7219,15 @@ const audit = await page.evaluate(() => {
     }
   }
 
+  /* One grid for the whole sheet. The stroke is set once, in `.ico`, as a width
+     in the symbol's own units, so an icon drawn on a different grid comes out at
+     a different weight from every icon beside it and nothing else says so. */
+  const wrongGrid = [];
+  for (const sym of document.querySelectorAll('svg.sprite symbol[id^="i-"]')) {
+    const vb = sym.getAttribute('viewBox');
+    if (vb !== '0 0 24 24') wrongGrid.push(`${sym.id} is "${vb}"`);
+  }
+
   const blankIcons = [];
   const probe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   probe.setAttribute('style', 'position:absolute;width:16px;height:16px;opacity:0');
@@ -7248,6 +7257,7 @@ const audit = await page.evaluate(() => {
     icons: document.querySelectorAll('svg.sprite symbol[id^="i-"]').length,
     blankIcons,
     danglingUse: [...new Set(danglingUse)],
+    wrongGrid,
     visibleAnchors: anchors.length,
     visibleHandles: handles.length,
     visibleHandleLines: lines.length,
@@ -7268,6 +7278,12 @@ if (audit.badD > 0) {
   failure ??=
     `${audit.badD} attribute${audit.badD === 1 ? '' : 's'} reached the DOM holding ` +
     `NaN, Infinity or undefined: ${audit.badWhere.join(', ')}`;
+}
+
+if (audit.wrongGrid.length) {
+  failure ??=
+    `${audit.wrongGrid.length} icon${audit.wrongGrid.length === 1 ? '' : 's'} not on the sheet's ` +
+    `24 grid, so drawn at a different stroke weight: ${audit.wrongGrid.join(', ')}`;
 }
 
 if (audit.danglingUse.length) {
