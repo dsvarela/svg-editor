@@ -256,6 +256,39 @@ describe('reading a fillet back', () => {
     b.hIn = pull(b.hIn!, b.pt);
     expect(filletAt(sp, f.i)).toBeNull();
   });
+
+  /* Where that check turns over, which the 1.5x stretch above does not say.
+     A handle half again as long is 250 times the tolerance, so it stays refused
+     however far the tolerance is opened: the constant could be loosened a
+     hundredfold with every test still green, and that was measured rather than
+     supposed.
+
+     The two numbers here are deliberately NOT derived from `ROUND_TRIP`. A test
+     that read the constant would move with it and could never disagree with a
+     change to it, which is the whole failure it exists to catch. They bracket
+     2e-3 instead: 1e-3 is above the worst relative residual three decimals can
+     leave (2.4e-4) and below the tolerance, so it must still be read; 1e-2 is
+     five times the tolerance and cannot be rounding. §48. */
+  it.each([
+    [1e-3, true],
+    [1e-2, false],
+  ])('a handle %f too long is a fillet: %s', (off, want) => {
+    const sp = square();
+    roundCorner(sp, 1, 8);
+    const f = onlyFillet(sp)!;
+    const a = sp.nodes[f.i];
+    const b = sp.nodes[f.j];
+    /* Along its own direction, so the tangents and therefore the recovered
+       radius do not move: this changes the handle LENGTH and nothing else,
+       which is the one thing the circularity check reads. */
+    const lengthen = (p: [number, number], from: [number, number]): [number, number] => [
+      from[0] + (p[0] - from[0]) * (1 + off),
+      from[1] + (p[1] - from[1]) * (1 + off),
+    ];
+    a.hOut = lengthen(a.hOut!, a.pt);
+    b.hIn = lengthen(b.hIn!, b.pt);
+    expect(filletAt(sp, f.i) !== null).toBe(want);
+  });
 });
 
 describe('unrounding', () => {

@@ -129,14 +129,6 @@ export function groupChain(doc: Doc, id: string | null | undefined): Group[] {
 }
 
 /**
- * Is this shape locked, by itself or by a group it is inside?
- *
- * One question with one answer, asked by the hit test, the marquee, the
- * overlay and the list. Locking a group locks what is under it without
- * touching any of them, because a group is a relation and the chain is walked
- * rather than copied down. §49, §66.
- */
-/**
  * Is this shape hidden, by itself or by a group it is inside?
  *
  * The same walk `isLocked` makes and a different question: what this reads is
@@ -150,6 +142,14 @@ export function isHidden(doc: Doc, id: string): boolean {
   return groupChain(doc, group).some((g) => g.hidden === true);
 }
 
+/**
+ * Is this shape locked, by itself or by a group it is inside?
+ *
+ * One question with one answer, asked by the hit test, the marquee, the
+ * overlay and the list. Locking a group locks what is under it without
+ * touching any of them, because a group is a relation and the chain is walked
+ * rather than copied down. §49, §66.
+ */
 export function isLocked(doc: Doc, locked: ReadonlySet<string>, id: string): boolean {
   if (locked.size === 0) return false;
   if (locked.has(id)) return true;

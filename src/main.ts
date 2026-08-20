@@ -368,10 +368,7 @@ const toolSeg = $('#tool');
  * every editor with tool options puts them: the first press arms, a press on
  * the armed tool opens. §63.
  */
-const polyPop = $('#polyPop') as HTMLElement & {
-  showPopover(): void;
-  hidePopover(): void;
-};
+const polyPop = $('#polyPop');
 const polyBtn = $('#tool button[data-v="poly"]') as HTMLButtonElement;
 
 /* Whether the popover was open when the press began. A `popover="auto"` is
@@ -413,13 +410,6 @@ function closePolyPop(): void {
    honest rather than a line of code nothing runs. */
 polyPop.addEventListener('toggle', (e) => {
   polyBtn.setAttribute('aria-expanded', String((e as ToggleEvent).newState === 'open'));
-});
-
-/* Escape belongs to whichever thing is open. Without this it closes the
-   popover and clears the selection in the same press, because the window
-   listener in `keys.ts` cannot see that something nearer had a use for it. */
-polyPop.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') e.stopPropagation();
 });
 
 toolSeg.addEventListener('click', (e) => {
@@ -2518,13 +2508,6 @@ shapeList.addEventListener('pointerdown', (e) => {
 });
 
 /**
- * Lock or unlock the row that was pressed.
- *
- * `store.update` and not `store.edit`: a lock says what you are working on
- * rather than what the drawing is, so it is no more part of the history than
- * the selection is, and it never reaches a file. §66.
- */
-/**
  * Hide or show the row that was pressed.
  *
  * `store.edit` and not `store.update`, which is where this parts company with
@@ -2553,6 +2536,13 @@ shapeList.addEventListener('click', (e) => {
   });
 });
 
+/**
+ * Lock or unlock the row that was pressed.
+ *
+ * `store.update` and not `store.edit`: a lock says what you are working on
+ * rather than what the drawing is, so it is no more part of the history than
+ * the selection is, and it never reaches a file. §66.
+ */
 shapeList.addEventListener('click', (e) => {
   const btn = (e.target as Element | null)?.closest<HTMLElement>('.lockbtn');
   const id = btn?.dataset.lock;

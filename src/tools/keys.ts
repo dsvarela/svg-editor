@@ -172,6 +172,16 @@ export function bindKeys(store: Store, controller: Controller, commands: Command
         return;
       }
       case 'Escape': {
+        /* Escape belongs to whatever is open in front of the drawing, and the
+           platform closes that on its own. Declining here is what stops one
+           press both shutting a popover and emptying the selection behind it.
+
+           Asked of the page rather than arranged by each popover. The polygon
+           settings used to stop the event at themselves, which worked and left
+           the next popover, dialog or menu to remember the same line with
+           nothing to remind it. §63. */
+        if (document.querySelector(':popover-open, dialog[open]')) return;
+
         // Abandoning a drag rolls back to the checkpoint it opened, which is
         // what genuinely leaves no trace of it in history. Not `undo`: that
         // leaves the abandoned shape on the redo stack. Every drag kind comes

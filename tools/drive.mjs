@@ -7205,6 +7205,20 @@ const audit = await page.evaluate(() => {
      way to make one is to rescale path data without knowing that three of an
      elliptic arc's seven numbers are not lengths. Rendered through a `use`,
      because a symbol on its own has no box. */
+  /* And every reference to one. A `use` naming a symbol that is not there
+     renders nothing and throws nothing, so a misspelt or renamed icon leaves a
+     blank where a control's only marking was. The names are not all greppable:
+     two of them are built at run time from a condition, so this asks the
+     rendered page rather than the source. */
+  const danglingUse = [];
+  for (const use of document.querySelectorAll('use')) {
+    const href = use.getAttribute('href') ?? use.getAttribute('xlink:href') ?? '';
+    if (!href.startsWith('#')) continue;
+    if (!document.getElementById(href.slice(1))) {
+      danglingUse.push(`${href} under ${use.parentElement?.getAttribute('class') || use.parentElement?.tagName}`);
+    }
+  }
+
   const blankIcons = [];
   const probe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   probe.setAttribute('style', 'position:absolute;width:16px;height:16px;opacity:0');
@@ -7233,6 +7247,7 @@ const audit = await page.evaluate(() => {
     badWhere: [...new Set(broken)],
     icons: document.querySelectorAll('svg.sprite symbol[id^="i-"]').length,
     blankIcons,
+    danglingUse: [...new Set(danglingUse)],
     visibleAnchors: anchors.length,
     visibleHandles: handles.length,
     visibleHandleLines: lines.length,
@@ -7253,6 +7268,12 @@ if (audit.badD > 0) {
   failure ??=
     `${audit.badD} attribute${audit.badD === 1 ? '' : 's'} reached the DOM holding ` +
     `NaN, Infinity or undefined: ${audit.badWhere.join(', ')}`;
+}
+
+if (audit.danglingUse.length) {
+  failure ??=
+    `${audit.danglingUse.length} reference${audit.danglingUse.length === 1 ? '' : 's'} to an icon that ` +
+    `is not in the sheet: ${audit.danglingUse.join(', ')}`;
 }
 
 if (audit.blankIcons.length) {

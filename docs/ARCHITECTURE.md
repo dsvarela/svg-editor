@@ -3409,9 +3409,16 @@ of code that would otherwise look arbitrary:
   come with it, which is three behaviours this file does not have to own.
 
 The one thing the platform does not do is tell `keys.ts` that Escape was spoken
-for. The window listener there clears the selection, so the popover stops the
-event at itself: without that, one press closes the popover and empties the
-selection behind it.
+for. The window listener there clears the selection, so without something in the
+way one press closes the popover and empties the selection behind it.
+
+**`keys.ts` asks the page, rather than each popover stopping the event.** It
+declines Escape while `:popover-open, dialog[open]` matches anything. The first
+version had the polygon settings call `stopPropagation` on their own keydown,
+which worked and left the second popover, the first dialog and the first menu
+each to remember the same line, with nothing to remind whoever added one. One
+selector covers every one of them and the thing that owns the key owns the
+decision.
 
 **A flag set by a pointer is read once and cleared.** A `popover="auto"` is
 dismissed on `pointerdown`, so by the time the click arrives the popover is
@@ -3682,6 +3689,26 @@ transform about says how you are working, not what the drawing is, so it sits
 beside the grid step and the snap switches. A stored value naming no point is
 dropped on the way back in.
 
+
+### What defends `ROUND_TRIP`, and what did not
+
+The tolerance is 2e-3, chosen against a measurement: the worst relative residual
+three decimal places leave on a fillet's handle is 2.4e-4, so the constant sits
+about eight times clear of the thing it exists to absorb.
+
+Nothing held it there. The test for a non-circular arc stretched both handles by
+half again, which is 250 times the tolerance and stays refused however far the
+tolerance is opened. Swept against the suite, **every value from 5e-3 to 2e-1
+was green** -- a hundredfold loosening with nothing to say so. What that costs is
+small and was measured rather than guessed: at 2e-1, three of 3825 hand-drawn
+curve pairs pick up a radius control they have not earned, against none at the
+shipped value. The point is not the three. It is that the number was arrived at
+by measurement and then left with nothing watching it.
+
+A pair of cases brackets it now, at 1e-3 and 1e-2, and the green window is
+1e-3 to 5e-3. **They are deliberately not derived from the constant.** A test
+that read `ROUND_TRIP` would move with it and could never disagree with a change
+to it, which is the one failure it exists to catch.
 
 ## 68. Half the icons are Lucide's and half cannot be
 

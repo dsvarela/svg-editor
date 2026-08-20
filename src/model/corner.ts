@@ -786,15 +786,6 @@ function filletSide(
 
 
 /**
- * How far along the bisector, from the corner, the arc of radius `r` begins.
- *
- * The arc's nearest point to the corner: its centre sits `r / sin(half)` in, and the
- * arc is `r` nearer than that. Paired with `cornerRadiusAtReach`, which is its
- * inverse, so the control drawn on the canvas and the radius a drag means are one
- * relation and not two -- a control that tracked the pointer at some other ratio
- * would slide out from under it.
- */
-/**
  * How far from the corner the arc of radius `r` begins.
  *
  * The arc's nearest point to the corner, which is where the canvas puts the
@@ -803,6 +794,10 @@ function filletSide(
  * straight sides and wrong by a fifth on a sharp corner with a curve running
  * into it, which is a control that does not sit where the arc starts and a drag
  * that does not track the pointer.
+ *
+ * `cornerRadiusAtReach` is its inverse, and they have to stay inverses: a
+ * control drawn at one ratio and dragged at another slides out from under the
+ * pointer.
  */
 export function cornerArcReach(c: Corner, r: number): number {
   if (!(r > 0)) return 0;
