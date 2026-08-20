@@ -337,6 +337,53 @@ input[type='number'],
 .seg button:disabled { opacity: 0.36; cursor: default; }
 .seg button:disabled:hover { background: transparent; color: var(--ink-2); }
 
+/* The mark on a tool that has settings of its own, in the corner every editor
+   puts one. `currentColor` so it inverts with the button: the armed tool is
+   accent-on-ink, and a fixed grey would vanish into it. */
+#tool button:has(> .more) { position: relative; }
+.more {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  opacity: 0.55;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+/* A tool's own settings, in the top layer. `popover` earns its place three
+   times over: it lifts the panel out of two ancestors that clip their overflow,
+   and it brings Escape and press-outside-to-close with it. Everything below
+   undoes a UA default -- centred in the viewport, its own border, its own
+   background -- since the position is computed from the button. */
+.pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 168px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: visible;
+}
+.pop::backdrop { background: none; }
+.pophead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.pop .hint { margin: 0; }
+
 input[type='number'] {
   min-width: 0;
   height: var(--h);
@@ -1469,6 +1516,11 @@ kbd {
 
   /* Square: the width comes from here, not from `--h`. */
   #tool button { width: 44px; }
+
+  /* Two 44 px segments and a labelled number field do not fit in 168. */
+  .pop { width: 232px; }
+  /* Scaled with the target, so the mark stays the same fraction of the button. */
+  .more { width: 6px; height: 6px; right: 3px; bottom: 3px; }
 
   /* Width as well as height, for a segmented button holding a short word:
      "SVG" in the source header comes to 42.4 across without it. The rail's own

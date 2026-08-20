@@ -1114,19 +1114,92 @@ const scenarios = {
 
     /* A polygon and a star. Both are ordinary paths from the moment they exist,
        which is the claim the two tools above already make good on, so what only
-       a browser can show is that the panel's numbers reach the generator: the
-       corner count, the star toggle and the inner ratio are three controls and
-       a drag, and every one of them was correct in the unit tests. */
-    await tab(page, 'shape');
+       a browser can show is that the settings reach the generator: the corner
+       count, the star toggle and the inner ratio are three controls and a drag,
+       and every one of them was correct in the unit tests.
+
+       Reached through the tool's own popover, which is where they live (§63).
+       Two presses: the first arms the tool, the second opens its settings. */
+    await page.click('#tool button[data-v="poly"]');
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForSelector('#polyPop:popover-open');
+    check(
+      (await page.getAttribute('#tool button[data-v="poly"]', 'aria-expanded')) === 'true',
+      'the tool button did not say its settings were open',
+    );
+    /* Below the button and inside the window. The popover is in the top layer
+       precisely because the toolbar clips, so a box that has landed back inside
+       the toolbar's own clip is the failure this is watching for. */
+    const popBox = await page.evaluate(() => {
+      const p = document.querySelector('#polyPop').getBoundingClientRect();
+      const b = document.querySelector('#tool button[data-v="poly"]').getBoundingClientRect();
+      return { top: p.top, left: p.left, right: p.right, w: p.width, h: p.height, under: b.bottom };
+    });
+    check(
+      popBox.top >= popBox.under && popBox.w > 100 && popBox.h > 60,
+      `the settings popover is ${popBox.w} x ${popBox.h} at y=${popBox.top}, under a button ending at ${popBox.under}`,
+    );
+    check(
+      popBox.left >= 0 && popBox.right <= (page.viewportSize()?.width ?? 1280),
+      `the settings popover runs from ${popBox.left} to ${popBox.right}, off the window`,
+    );
+
     await page.fill('#polyCorners', '6');
     await settle(page);
     check(
       /6 sides/.test((await page.textContent('#polyinfo')).trim()),
-      `the polygon header says "${await page.textContent('#polyinfo')}"`,
+      `the polygon settings say "${await page.textContent('#polyinfo')}"`,
     );
     check(await page.locator('#polyRatioRow').isHidden(), 'the star ratio is showing for a polygon');
 
+    /* Escape belongs to whichever thing is open, and the popover is nearer than
+       the window listener that clears the selection. Both halves are checked:
+       that the popover shut is the platform's work and would read green with
+       nothing stopping the event, so the selection surviving is the half that
+       says the guard is there. */
+    await page.click('#tool button[data-v="select"]');
+    await page.click('#shapelist li:nth-child(1) .nm');
+    await settle(page);
+    check(
+      (await page.locator('#shapelist li.shape[aria-selected="true"]').count()) === 1,
+      'nothing was selected going into the Escape check, so it could not fail',
+    );
     await page.click('#tool button[data-v="poly"]');
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForSelector('#polyPop:popover-open');
+    /* Off the number field first. `keys.ts` already declines every key typed
+       into an input, so Escape pressed there could never have reached the
+       selection and the check would be green with no guard in place at all. A
+       segmented button is the focus that makes the guard load-bearing. */
+    await page.click('#polyKind button[data-pk="poly"]');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('#polyPop').matches(':popover-open'));
+    await settle(page);
+    check(
+      (await page.locator('#shapelist li.shape[aria-selected="true"]').count()) === 1,
+      'Escape closed the popover and emptied the selection behind it',
+    );
+    check(
+      await page.evaluate(() => document.activeElement?.dataset?.v === 'poly'),
+      'closing the popover left focus nowhere, so the keyboard lost its place',
+    );
+
+    /* Opened from the keyboard, with no pointer press to open it. The press
+       state a `popover="auto"` needs is recorded on `pointerdown`, which a
+       button activated by Enter never fires. The press below is the one that
+       sets the flag: it lands while the popover is open, so a flag that is not
+       consumed on read is still set when the Enter after it arrives, and the
+       button then refuses a keyboard that has done nothing wrong. */
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForSelector('#polyPop:popover-open');
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForFunction(() => !document.querySelector('#polyPop').matches(':popover-open'));
+    await page.evaluate(() => document.querySelector('#tool button[data-v="poly"]').focus());
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#polyPop:popover-open');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('#polyPop').matches(':popover-open'));
+
     await drag([10, 40], [40, 55]);
     await settle(page);
     const hex = await page.getAttribute('.artwork path:nth-child(3)', 'd');
@@ -1148,12 +1221,17 @@ const scenarios = {
       `hexagon is ${hw} x ${hh}, want ${want.toFixed(2)} x 15`,
     );
 
+    /* Back into the settings for the star toggle. One press, because the tool
+       is still armed and the popover shut: the press that would have done
+       nothing is the press that opens it. */
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForSelector('#polyPop:popover-open');
     await page.click('#polyKind button[data-pk="star"]');
     await settle(page);
     check(await page.locator('#polyRatioRow').isVisible(), 'the star ratio stayed hidden under Star');
     check(
       /6-point star/.test((await page.textContent('#polyinfo')).trim()),
-      `the star header says "${await page.textContent('#polyinfo')}"`,
+      `the star settings say "${await page.textContent('#polyinfo')}"`,
     );
     // By key this time, which is the other half of the tool being reachable.
     await page.click('#tool button[data-v="select"]');
@@ -1185,8 +1263,13 @@ const scenarios = {
         return least;
       });
     const fat = await waist('.artwork path:nth-child(4)');
+    // The settings again: pressing `select` and then `n` above left them shut.
+    await page.click('#tool button[data-v="poly"]');
+    await page.waitForSelector('#polyPop:popover-open');
     await page.fill('#polyRatio', '15');
     await settle(page);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('#polyPop').matches(':popover-open'));
     await drag([50, 40], [80, 55]);
     await settle(page);
     const thin = await waist('.artwork path:nth-child(5)');

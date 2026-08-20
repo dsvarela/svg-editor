@@ -3378,11 +3378,48 @@ could have had was already a letter or the Shift of one, so it takes `N`, for
 n-gon. The five other tool keys are all initials; this is the exception, and the
 tooltip and the manual both say the word.
 
-### The settings live in the rail, with the style for new shapes
+### The settings hang off the tool, and used to live in the rail
 
 `EditorState.polygon` sits beside `style`, on the same argument: it describes what
 you are about to draw, so choosing a hexagon once draws three hexagons, and
 setting it is not an edit to the drawing and takes no undo step.
+
+**Where they are shown is a different question, and this section answered it
+wrongly for as long as it existed.** The three controls were a group on the Shape
+tab, between Fill rule and Combine, placed beside the style for new shapes
+because both describe what you are about to draw. Everything else on that tab
+describes what is *selected*, so a group describing the tool read as a group that
+had lost its subject, and it was on screen for the whole session to serve one
+tool that is armed for a few seconds at a time.
+
+They are a popover on the polygon tool now, which is where every editor with
+tool options puts them. Three things follow, and each is the reason for a line
+of code that would otherwise look arbitrary:
+
+- **Arming the tool and opening its settings are the same button.** The first
+  press arms; a press on the armed tool opens. That press was the only one in
+  the toolbar that did nothing, so nothing was taken away to make room for it.
+- **The corner mark is drawn, never revealed.** A mark that appears under the
+  pointer is a mark a finger never sees, which is the same rule the shape list's
+  lock and eye follow (§66). It takes `currentColor`, because the armed tool is
+  accent-on-ink and a fixed grey would disappear into it.
+- **`popover="auto"` rather than a positioned `div`.** The toolbar and its
+  segmented group both clip their overflow, so a panel drawn inside either is
+  cut in half; the top layer is outside both. Escape and press-outside-to-close
+  come with it, which is three behaviours this file does not have to own.
+
+The one thing the platform does not do is tell `keys.ts` that Escape was spoken
+for. The window listener there clears the selection, so the popover stops the
+event at itself: without that, one press closes the popover and empties the
+selection behind it.
+
+**A flag set by a pointer is read once and cleared.** A `popover="auto"` is
+dismissed on `pointerdown`, so by the time the click arrives the popover is
+always shut and a naive handler reopens what the press just closed. Recording
+the state at `pointerdown` fixes that press and breaks the keyboard, which fires
+no `pointerdown` at all and would read whatever the last press left behind: the
+button then refused to open for a keyboard that had done nothing wrong. The
+probe caught it, not a person.
 
 The inner ratio's row is **hidden** rather than disabled while Star is off. A
 disabled number is a control that looks like it has something to say; the inner

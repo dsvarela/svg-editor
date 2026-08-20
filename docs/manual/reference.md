@@ -123,13 +123,38 @@ Left to right.
 | Inspector | Collapse or restore the right-hand panel |
 | Theme | Invert the theme, light against dark |
 
+### The polygon tool's settings
+
+The polygon tool carries three settings of its own. Take the tool, then press it
+again to open them; the small mark in the tool's corner is what says they are
+there. `Escape` or a press outside closes them.
+
+What the polygon tool draws next. Nothing here is stored on a shape: a pentagon
+is five nodes from the moment it exists, the same as a rectangle, so there is
+nothing that can disagree with what is on the canvas.
+
+| Control | Does |
+|---|---|
+| **Polygon** / **Star** | Which of the two the tool draws |
+| **Corners** | Sides for a polygon, points for a star. 3 to 60 |
+| **Inner** | The star's waist, as a per cent of its outer radius. Hidden for a polygon |
+
+**The shape is inscribed in the drag, not stretched to fill it.** A hexagon has
+its widest corners 30 degrees off vertical, so a 30-unit drag gives a shape about
+26 units wide and the full height. The first corner is always at the top, because
+a star turned a tenth of a turn reads as a wrong star rather than a rotated one.
+
+Every side is straight and every node is handle-free, so **Round** reaches any
+corner of a polygon. `Shift` while drawing keeps it regular; without it the shape
+follows the box, so a pentagon in a wide drag is a wide pentagon.
+
 ## Inspector panels
 
 Three tabs, split by what a control acts on.
 
 | Tab | Holds |
 |---|---|
-| **Shape** | Shapes, Style, Polygon, Combine, Path, Transform, Arrange |
+| **Shape** | Shapes, Style, Fill rule, Combine, Path, Transform, Arrange |
 | **Node** | Node, Delete. Bend, Align nodes and Distribute nodes are headings inside Node |
 | **Document** | File, Canvas, Angles, Guides, Keylines, Grid, Backdrop, Preview, Controls |
 
@@ -309,27 +334,6 @@ as soon as the style shown stops matching it.
 The colour pickers stay usable while **none** is ticked, and picking a colour
 clears it. A colour the picker cannot show, such as a named colour or a gradient
 from an imported file, is left alone and named in the header instead.
-
-### Polygon
-
-What the polygon tool draws next. Nothing here is stored on a shape: a pentagon
-is five nodes from the moment it exists, the same as a rectangle, so there is
-nothing that can disagree with what is on the canvas.
-
-| Control | Does |
-|---|---|
-| **Polygon** / **Star** | Which of the two the tool draws |
-| **Corners** | Sides for a polygon, points for a star. 3 to 60 |
-| **Inner** | The star's waist, as a per cent of its outer radius. Hidden for a polygon |
-
-**The shape is inscribed in the drag, not stretched to fill it.** A hexagon has
-its widest corners 30 degrees off vertical, so a 30-unit drag gives a shape about
-26 units wide and the full height. The first corner is always at the top, because
-a star turned a tenth of a turn reads as a wrong star rather than a rotated one.
-
-Every side is straight and every node is handle-free, so **Round** reaches any
-corner of a polygon. `Shift` while drawing keeps it regular; without it the shape
-follows the box, so a pentagon in a wide drag is a wide pentagon.
 
 ### Combine
 

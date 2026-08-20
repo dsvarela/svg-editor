@@ -8,9 +8,12 @@
  * and all three inspector tabs. A control is the element that takes the press:
  * for a checkbox in a `<label>` that is the label, not the 13 px box.
  *
- * Three ways such a sweep undercounts, silently rather than failing:
+ * Four ways such a sweep undercounts, silently rather than failing:
  *
  * - **Collapsed groups** are `hidden` and have no box, so all are opened first.
+ * - **A shut popover** is `display: none` for the same reason, and a tool's
+ *   settings live in one. Each is shown, swept and shut again, one at a time,
+ *   because showing a second `popover="auto"` dismisses the first.
  * - **Disabled controls** are laid out at their enabled size, so they count.
  * - **Colliding keys**, since the sweep dedupes. See the key below.
  *
@@ -76,7 +79,13 @@ const sweep = async () => {
          them hash alike and are counted once, which is how a pair of new
          status-strip buttons can leave the total unmoved. What separates them
          is what a person reads on them, so the label is in the key too.
-         Anything still colliding is genuinely one control in two places. */
+
+         And where they sit, which the label alone does not say. The polygon
+         tool and the Polygon half of its own Polygon-or-Star toggle carry the
+         same tag, the same empty class, the same `poly` and the same word, so
+         one 104 px button was being counted as a 44 px one in the toolbar. The
+         nearest ancestor holding an id separates them and is stable under
+         reordering in a way a child index would not be. */
       const label = (
         el.getAttribute('aria-label') ??
         el.getAttribute('title') ??
@@ -89,7 +98,8 @@ const sweep = async () => {
         .filter((a) => a.name.startsWith('data-'))
         .map((a) => a.value)
         .join('/');
-      const key = el.id || `${el.tagName}.${el.className}:${data}:${label}`;
+      const where = el.parentElement?.closest('[id]')?.id ?? '';
+      const key = el.id || `${where}>${el.tagName}.${el.className}:${data}:${label}`;
       out.push({
         key,
         w: +r.width.toFixed(1),
@@ -103,8 +113,32 @@ const sweep = async () => {
   for (const f of found) if (!seen.has(f.key)) seen.set(f.key, f);
 };
 
+/**
+ * Sweep the inside of every popover, one at a time.
+ *
+ * A shut popover is `display: none`, so its controls have no box and the sweep
+ * below drops them without a word. They are opened here rather than through the
+ * buttons that own them, because what is being measured is the size of the
+ * controls and not the route to them.
+ */
+const sweepPopovers = async () => {
+  const ids = await page.evaluate(() =>
+    [...document.querySelectorAll('[popover]')].map((p, i) => p.id || `popover-${i}`),
+  );
+  for (const id of ids) {
+    await page.evaluate((x) => document.getElementById(x)?.showPopover(), id);
+    await page.waitForTimeout(60);
+    await sweep();
+    await page.evaluate((x) => {
+      const p = document.getElementById(x);
+      if (p?.matches(':popover-open')) p.hidePopover();
+    }, id);
+  }
+};
+
 await openGroups();
 await sweep();
+await sweepPopovers();
 for (const tab of ['#tab-node', '#tab-doc', '#tab-shape']) {
   await page.click(tab);
   await page.waitForTimeout(140);

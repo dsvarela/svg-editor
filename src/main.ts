@@ -360,9 +360,79 @@ type Tool = (typeof TOOLS)[number];
 const isTool = (v: string | null | undefined): v is Tool => TOOLS.includes(v as Tool);
 
 const toolSeg = $('#tool');
+
+/**
+ * The polygon tool's own settings, hung off the tool rather than off a panel.
+ *
+ * Arming the tool and opening its settings are the same button, which is where
+ * every editor with tool options puts them: the first press arms, a press on
+ * the armed tool opens. §63.
+ */
+const polyPop = $('#polyPop') as HTMLElement & {
+  showPopover(): void;
+  hidePopover(): void;
+};
+const polyBtn = $('#tool button[data-v="poly"]') as HTMLButtonElement;
+
+/* Whether the popover was open when the press began. A `popover="auto"` is
+   dismissed on pointerdown, so by the time the click arrives it is always shut
+   and the handler below would reopen what the press had just closed.
+   Read once and cleared, because only a pointer sets it: a button activated
+   from the keyboard fires no `pointerdown`, and a flag left standing from the
+   last press is a press the keyboard did not make. */
+let popWasOpen = false;
+polyBtn.addEventListener('pointerdown', () => {
+  popWasOpen = polyPop.matches(':popover-open');
+});
+
+function openPolyPop(): void {
+  if (polyPop.matches(':popover-open')) return;
+  polyPop.showPopover();
+  /* Positioned after showing and before the frame is painted: a closed popover
+     has no box to measure, and both calls are in this one task, so nothing is
+     ever drawn in the default place. */
+  const b = polyBtn.getBoundingClientRect();
+  const w = polyPop.getBoundingClientRect().width;
+  polyPop.style.left = `${Math.max(8, Math.min(b.left, window.innerWidth - w - 8))}px`;
+  polyPop.style.top = `${b.bottom + 6}px`;
+  polyBtn.setAttribute('aria-expanded', 'true');
+  polyCorners.focus();
+  polyCorners.select();
+}
+
+function closePolyPop(): void {
+  if (polyPop.matches(':popover-open')) polyPop.hidePopover();
+}
+
+/* Both ways out of the popover come back here: the button's own state has to
+   follow a dismissal nobody in this file asked for -- a press outside it, or
+   Escape, both of which the platform handles.
+   Returning focus to the button is not among them, because hiding a popover
+   already puts focus back where it was; a line doing it here read as careful
+   and could not be made to fail. The browser scenario keeps that promise
+   honest rather than a line of code nothing runs. */
+polyPop.addEventListener('toggle', (e) => {
+  polyBtn.setAttribute('aria-expanded', String((e as ToggleEvent).newState === 'open'));
+});
+
+/* Escape belongs to whichever thing is open. Without this it closes the
+   popover and clears the selection in the same press, because the window
+   listener in `keys.ts` cannot see that something nearer had a use for it. */
+polyPop.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') e.stopPropagation();
+});
+
 toolSeg.addEventListener('click', (e) => {
+  const wasOpen = popWasOpen;
+  popWasOpen = false;
   const v = (e.target as HTMLElement).closest('button')?.getAttribute('data-v');
   if (!isTool(v)) return;
+  // A press on the tool that is already armed opens its settings instead of
+  // arming it again, which is the only press that would otherwise do nothing.
+  if (v === 'poly' && store.state.tool === 'poly' && !wasOpen) {
+    openPolyPop();
+    return;
+  }
   store.update((s) => (s.tool = v));
   // Leaving the pen for any other tool ends the path it was drawing, rather
   // than leaving it open to be extended by a click made with something else.
@@ -3525,6 +3595,9 @@ store.subscribe((s) => {
   $('#polyinfo').textContent = poly.star
     ? `${poly.corners}-point star`
     : `${poly.corners} sides`;
+  // Settings for a tool nobody is holding. Reachable by key rather than by
+  // press, which is the one route that does not dismiss the popover itself.
+  if (s.tool !== 'poly') closePolyPop();
 
   if (!tolChosen) simplifyTol.value = String(defaultTol(s.doc.viewBox));
   /* Here rather than only on `input`, because the line above sets the value

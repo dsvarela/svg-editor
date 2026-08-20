@@ -479,11 +479,15 @@ and press **Round** once.
 
 ## Draw a polygon or a star
 
-Open the **Polygon** group on the **Shape** tab, set **Corners**, then take the
-polygon tool (`N`) and drag on the canvas.
+Take the polygon tool (`N`), press it a second time for its settings, set
+**Corners**, then drag on the canvas.
 
-Press **Star** for a star and set **Inner**, which is the waist as a per cent of
-the outer radius. 38 is the five-pointed star everybody draws.
+The tool carries a small mark in its corner, which is what says the settings are
+there. Press **Star** for a star and set **Inner**, which is the waist as a per
+cent of the outer radius. 38 is the five-pointed star everybody draws.
+
+The settings close when you press outside them or press `Escape`, and what you
+chose stays chosen.
 
 The shape follows the box you drag, so a wide drag gives a wide pentagon; hold
 `Shift` to keep it regular, and `Alt` to drag out from the centre. What you get is
