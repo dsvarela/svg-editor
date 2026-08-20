@@ -1013,6 +1013,11 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .act > input { flex: 1; min-width: 0; }
 
 .coords { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
+/* Four columns, not three, and only where the reference point is: it sits in the
+   first and spans both rows, so `at` and `size` keep the layout they had beside
+   it. `.coords` is five rows in four panels, and widening all of them squeezed
+   three handle fields below a finger. */
+.coords.withref { grid-template-columns: auto auto 1fr 1fr; }
 .coords label { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
 /* A number that is not in the drawing: where a handle would go if it existed.
    The canvas draws the same thing as a hollow circle, so the two agree. */
@@ -1150,22 +1155,28 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    the grid is the place on the shape it names. No labels: nine words would
    crowd the panel and the position already says it. */
 .refpoint {
+  /* Spans the `at` row and the `size` row, which is what makes it read as
+     belonging to both rather than to the first. Columns sized to the squares
+     rather than to the space, or the grid stretches it across the panel. */
+  grid-row: span 2;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
-  flex: none;
-  padding: 2px;
+  grid-template-columns: repeat(3, 10px);
+  grid-auto-rows: 10px;
+  gap: 3px;
+  justify-self: start;
+  padding: 5px;
+  margin-right: 4px;
   border: 1px solid var(--edge);
   border-radius: var(--r);
   background: var(--sunk);
 }
 .refpoint button {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   padding: 0;
-  border: 1px solid var(--edge);
+  border: 1px solid var(--ink-3);
   border-radius: 1px;
-  background: var(--bg);
+  background: transparent;
   cursor: pointer;
 }
 .refpoint button:hover { border-color: var(--ink-2); }
@@ -1506,7 +1517,8 @@ kbd {
   .shapelist .lockbtn,
   .shapelist .eyebtn { width: 44px; height: 44px; font-size: 16px; }
   /* Nine targets in one control: each one gets a finger, so the chooser is
-     three rows of 44 px rather than a 27 px square nobody can hit. */
+     three rows of 44 px rather than a 36 px square nobody can hit. */
+  .refpoint { grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; }
   .refpoint button { width: 44px; height: 44px; }
   /* The indent tracks the disclosure it lines up under. */
   .shapelist li.path { padding-left: 52px; }
