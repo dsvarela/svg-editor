@@ -283,6 +283,34 @@ describe('a corner cut with a curved side goes back exactly', () => {
     expect(filletAt(sp, 1)).toBeNull();
   });
 
+  it('hands back the centre of the circle the arc sits on', () => {
+    /* What the canvas puts the radius control on: the arc's nearest point to
+       the corner is `radius` back along the line from one to the other, and
+       that is true whatever the sides are made of. A centre on the wrong side
+       of the tangent puts the control across the shape. */
+    for (const [d, i, r] of [
+      ['M60 20 L200 90 L170 150 L30 80 Z', 0, 20],
+      /* The same quadrilateral drawn the other way round. Every fixture above
+         winds one way, and which side of the tangent the centre lies on is
+         exactly what winding decides, so without this the sign is never read. */
+      ['M60 20 L30 80 L170 150 L200 90 Z', 0, 20],
+      [LEAF, 1, 12],
+      [HALF, 1, 14],
+      [OTHER, 1, 10],
+    ] as [string, number, number][]) {
+      const sp = parsePath(d)[0];
+      expect(typeof roundCorner(sp, i, r)).not.toBe('string');
+      const f = filletAt(sp, i);
+      expect(f, d).not.toBeNull();
+      // Equidistant from both touch points, at exactly the radius.
+      expect(dist(f!.centre, sp.nodes[f!.i].pt)).toBeCloseTo(r, 6);
+      expect(dist(f!.centre, sp.nodes[f!.j].pt)).toBeCloseTo(r, 6);
+      // And further from the corner than the radius, which is what puts the
+      // arc between the two rather than across them.
+      expect(dist(f!.centre, f!.at)).toBeGreaterThan(r);
+    }
+  });
+
   it('survives being written to a file and read back', () => {
     /* The recognition tolerances are the width of the coordinate grid a save
        rounds to, not floating-point slack. Tight enough for exact geometry and

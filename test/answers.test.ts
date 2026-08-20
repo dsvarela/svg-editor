@@ -15,7 +15,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { parsePath } from '../src/core/parse';
+import { segmentAsCubic } from '../src/core/types';
 import type { Pt } from '../src/core/types';
+import { cubicAt } from '../src/core/bezier';
 import {
   closeSubpath,
   fuseDegenerate,
@@ -24,11 +26,13 @@ import {
   setSegmentCurved,
   splitSegment,
 } from '../src/model/ops';
+import type { Corner } from '../src/model/corner';
 import {
   cornerAt,
   cornerArcReach,
   cornerRadiusAtReach,
   filletAt,
+  maxCornerRadius,
   roundCorner,
   sharedCornerRadius,
 } from '../src/model/corner';
@@ -235,26 +239,66 @@ describe('the radius of a fillet and how far it reaches', () => {
      the canvas draws the control at `cornerArcReach` from the corner and a drag
      of that control is turned back into a radius by `cornerRadiusAtReach`. If
      they disagree the control slides out from under the pointer. */
+  const cornerOf = (d: string, i: number): Corner => {
+    const got = cornerAt(parsePath(d)[0], i);
+    if (typeof got === 'string') throw new Error(got);
+    return got;
+  };
+
   it('is stated exactly at a right angle, not just against its own inverse', () => {
     // Half a right angle: the centre sits r / sin(45 degrees) in, which is
     // r * sqrt(2), and the arc begins r nearer than that.
-    expect(cornerArcReach(10, Math.PI / 4)).toBeCloseTo(10 * (Math.SQRT2 - 1), 12);
+    const square = cornerOf('M100 100 L180 100 L180 180 L100 180 Z', 1);
+    expect(cornerArcReach(square, 10)).toBeCloseTo(10 * (Math.SQRT2 - 1), 9);
   });
 
-  it('round-trips over the angles a corner can have', () => {
-    for (const deg of [10, 30, 45, 60, 89]) {
-      const half = (deg * Math.PI) / 180;
-      for (const r of [0.5, 3, 40]) {
-        expect(cornerRadiusAtReach(cornerArcReach(r, half), half)).toBeCloseTo(r, 9);
+  it('round-trips over the corners a path can have', () => {
+    for (const [d, i] of [
+      ['M100 100 L180 100 L180 180 L100 180 Z', 1],
+      ['M0 40 L100 0 L200 40 L100 44 Z', 1],
+      ['M0 40 L100 0 L104 40 L52 60 Z', 1],
+      ['M40 90 C40 50 70 30 110 30 C100 55 95 70 130 95 C100 105 60 105 40 90 Z', 1],
+    ] as [string, number][]) {
+      const c = cornerOf(d, i);
+      for (const frac of [0.05, 0.3, 0.7]) {
+        const r = maxCornerRadius(c) * frac;
+        expect(cornerRadiusAtReach(c, cornerArcReach(c, r))).toBeCloseTo(r, 6);
       }
     }
   });
 
+  it('puts the control where the arc really begins, on a curved side too', () => {
+    /* The reported symptom: on a sharp tip with a curve running into it the
+       control did not sit on the arc and the drag did not track the pointer.
+       The half-angle formula it used is exact for two straight sides and was a
+       fifth out here, so this measures the arc instead of restating a formula:
+       round the corner, walk the arc, and take its nearest point to the corner. */
+    const D = 'M100 20 C120 60 140 90 190 120 L120 200 C90 120 95 60 100 20 Z';
+    const c = cornerOf(D, 0);
+    for (const frac of [0.1, 0.4, 0.8]) {
+      const r = maxCornerRadius(c) * frac;
+      const sp = parsePath(D)[0];
+      expect(typeof roundCorner(sp, 0, r)).not.toBe('string');
+      let nearest = Infinity;
+      const arc = segmentAsCubic(sp, 0);
+      for (let k = 0; k <= 400; k++) {
+        const p = cubicAt(arc, k / 400);
+        nearest = Math.min(nearest, Math.hypot(p[0] - c.at[0], p[1] - c.at[1]));
+      }
+      /* The floor is the arc's own approximation to a circle, not zero:
+         `cornerArcReach` measures the true circle and this walks the cubic
+         standing in for it, which §12 puts at a few hundredths of a percent of
+         the radius. */
+      expect(Math.abs(cornerArcReach(c, r) - nearest)).toBeLessThan(r * 5e-3);
+    }
+  });
+
   it('is zero for anything that is not a positive radius or distance', () => {
-    expect(cornerArcReach(0, Math.PI / 4)).toBe(0);
-    expect(cornerArcReach(-1, Math.PI / 4)).toBe(0);
-    expect(cornerRadiusAtReach(0, Math.PI / 4)).toBe(0);
-    expect(cornerRadiusAtReach(5, Math.PI / 2)).toBe(0);
+    const c = cornerOf('M100 100 L180 100 L180 180 L100 180 Z', 1);
+    expect(cornerArcReach(c, 0)).toBe(0);
+    expect(cornerArcReach(c, -1)).toBe(0);
+    expect(cornerRadiusAtReach(c, 0)).toBe(0);
+    expect(cornerRadiusAtReach(c, -3)).toBe(0);
   });
 });
 

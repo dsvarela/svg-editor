@@ -26,7 +26,6 @@ import {
   latentHandle,
 } from '../model/ops';
 import {
-  cornerArcReach,
   cornerAt,
   filletAt,
 } from '../model/corner';
@@ -953,7 +952,13 @@ function filletControl(sp: Subpath, f: Fillet, k: number): Pt | null {
   const u = dir(a);
   const v = dir(b);
   if (!u || !v) return null;
-  const cos = Math.min(1, Math.max(-1, u[0] * v[0] + u[1] * v[1]));
-  const half = Math.acos(cos) / 2;
-  return alongBisector(f.at, u, v, CORNER_DOT_PX * k + cornerArcReach(f.radius, half));
+  /* Out along the line to the arc's centre, which is the direction the arc's
+     nearest point to the corner lies in whatever the sides are made of. The
+     bisector of the two tangent points is the same line for straight sides and
+     is not for curved ones, so this reads the circle rather than the corner. */
+  const away = dir(f.centre);
+  if (!away) return alongBisector(f.at, u, v, CORNER_DOT_PX * k);
+  const gap = Math.hypot(f.centre[0] - f.at[0], f.centre[1] - f.at[1]) - f.radius;
+  const out = CORNER_DOT_PX * k + Math.max(0, gap);
+  return [f.at[0] + away[0] * out, f.at[1] + away[1] * out];
 }

@@ -44,6 +44,7 @@ import {
   transformCaptured,
   transformShape,
 } from '../model/ops';
+import type { Corner } from '../model/corner';
 import {
   cornerAt,
   cornerRadiusAtReach,
@@ -148,8 +149,12 @@ type DragKind =
       corner: Pt;
       /** Unit vector from the corner into it, along the bisector of its two sides. */
       bis: Pt;
-      /** Half the interior angle, which is what turns a distance into a radius. */
-      half: number;
+      /**
+       * The corner itself, kept because turning the pointer's distance back
+       * into a radius has to read the sides. A half-angle is enough only where
+       * both of them are straight.
+       */
+      measured: Corner;
       max: number;
       applied: number;
     };
@@ -977,7 +982,7 @@ export class Controller {
             ids,
             corner: c.at,
             bis: bisector(c.u, c.v),
-            half: c.alpha / 2,
+            measured: c,
             /* The whole set's limit, not this corner's. `maxCornerRadius` alone
                would let the pointer ask for a radius its neighbours cannot hold,
                and they would clamp one at a time to different sizes. */
@@ -1304,12 +1309,18 @@ export class Controller {
         /* Less the offset the control is drawn at, so the radius comes out of the
            same relation the drawing used and the dot stays under the pointer. */
         const offset = CORNER_DOT_PX * this.canvas.scale(this.store.state.camera);
-        let r = cornerRadiusAtReach(along - offset, d.half);
-        r = Math.max(0, Math.min(d.max, r));
-        // Snapped as a length, not as a point: every other drag lands on the
-        // lattice, and a radius that came out at 3.87 would be the odd one.
+        let r = cornerRadiusAtReach(d.measured, along - offset);
+        /* Snapped as a length, not as a point: every other drag lands on the
+           lattice, and a radius that came out at 3.87 would be the odd one.
+           Skipped where a whole step does not fit in what the corner can hold,
+           because there the only values on the lattice are nothing and more
+           than it has, and the corner rounds off in one move. */
         const step = this.store.state.gridStep;
-        if (this.store.state.snapToGrid && step > 0) r = Math.round(r / step) * step;
+        if (this.store.state.snapToGrid && step > 0 && step < d.max) {
+          r = Math.round(r / step) * step;
+        }
+        // After the snap, so a snapped value can never ask for more than fits.
+        r = Math.max(0, Math.min(d.max, r));
         d.applied = r;
 
         this.store.edit((st) => {

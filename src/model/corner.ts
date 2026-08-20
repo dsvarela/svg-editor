@@ -543,6 +543,15 @@ export interface Fillet {
   /** The node each side reaches, or -1 where the path ends there. */
   ends: [number, number];
   /**
+   * The centre of the circle the arc is part of.
+   *
+   * What the canvas puts the radius control on, because the arc's nearest point
+   * to the corner is `radius` back along the line between them. That is true of
+   * any sides; a formula in the corner's half-angle is true only of straight
+   * ones. §48.
+   */
+  centre: Pt;
+  /**
    * Whether each tangent node is a corner of the drawing rather than the
    * round's own work, in `sides` order. True where the arc reached that
    * neighbour and `roundCorner` reused it.
@@ -667,6 +676,11 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
   // needs is a fixed length, so a pair that misses it is some other curve.
   if (Math.abs(ha - arcHandle(radius, turn)) > ROUND_TRIP * Math.max(ha, 1)) return null;
 
+  /* The centre is `radius` off the tangent at `a`, on the side the arc turns
+     toward -- which is the side the chord to `b` is on. */
+  const side = -ea[1] * w[0] + ea[0] * w[1] >= 0 ? 1 : -1;
+  const centre: Pt = [a.pt[0] - ea[1] * side * radius, a.pt[1] + ea[0] * side * radius];
+
   /* Both sides are run from their tangent node toward the corner. The arc
      leaves `a` that way already; it arrives at `b` from the corner, so `b`
      looks back along the reverse. */
@@ -684,6 +698,7 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
     radius,
     sides,
     ends: [A.end, B.end],
+    centre,
     reused: [A.reused, B.reused],
   };
   return fillet;
@@ -779,16 +794,44 @@ function filletSide(
  * relation and not two -- a control that tracked the pointer at some other ratio
  * would slide out from under it.
  */
-export const cornerArcReach = (r: number, half: number): number =>
-  r <= 0 ? 0 : r / Math.sin(half) - r;
+/**
+ * How far from the corner the arc of radius `r` begins.
+ *
+ * The arc's nearest point to the corner, which is where the canvas puts the
+ * control. Measured off the circle the arc actually sits on rather than worked
+ * out from the corner's half-angle: the half-angle answer is exact for two
+ * straight sides and wrong by a fifth on a sharp corner with a curve running
+ * into it, which is a control that does not sit where the arc starts and a drag
+ * that does not track the pointer.
+ */
+export function cornerArcReach(c: Corner, r: number): number {
+  if (!(r > 0)) return 0;
+  const arc = fitArc(c, r);
+  if (!arc) return 0;
+  return Math.max(0, Math.hypot(arc.centre[0] - c.at[0], arc.centre[1] - c.at[1]) - arc.radius);
+}
 
-/** The radius whose arc begins `d` from the corner. Zero for anything not positive. */
-export const cornerRadiusAtReach = (d: number, half: number): number => {
-  const sin = Math.sin(half);
-  // `sin` reaches 1 only as the corner opens out flat, which `cornerAt` refuses,
-  // so the division is safe for any corner that exists.
-  return sin >= 1 || d <= 0 ? 0 : (d * sin) / (1 - sin);
-};
+/**
+ * The radius whose arc begins `d` from the corner: the inverse of the above.
+ *
+ * Bisection, for the reason `maxCornerRadius` bisects. The relation is monotone
+ * -- a bigger arc starts further out -- so this converges, and against two
+ * straight sides it converges on `d * sin / (1 - sin)`, which is what the
+ * closed form used to say.
+ */
+export function cornerRadiusAtReach(c: Corner, d: number): number {
+  if (!(d > 0)) return 0;
+  let lo = 0;
+  let hi = maxCornerRadius(c);
+  if (!(hi > 0)) return 0;
+  if (cornerArcReach(c, hi) <= d) return hi;
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    if (cornerArcReach(c, mid) <= d) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
 
 /**
  * Put a rounded corner back to the sharp one it was cut from.

@@ -2485,6 +2485,22 @@ path starts at.
 the first to place the control, the second to read a drag back. Two separate
 formulas here would be a control that slides out from under the pointer.
 
+**Both measure the circle the arc sits on, and neither is a formula in the
+corner's half-angle.** `r / sin(half) - r` is exact for two straight sides and
+wrong by a fifth on a sharp corner with a curve running into it, which is a
+control that does not sit where the arc starts and a drag that jumps rather than
+tracks. So the forward direction asks `fitArc` for the centre and subtracts the
+radius, and the inverse bisects it, for the reason `maxCornerRadius` bisects.
+`filletAt` hands the centre back for the same reason: the canvas puts the
+control on the line from the corner to it. Reported from use on 2026-08-20.
+
+**And the grid stopped snapping a radius the corner cannot hold.** The snap ran
+after the clamp, so a step coarser than the corner's limit left two reachable
+values, nothing and past the end, and the corner rounded off completely in one
+move. The clamp runs after the snap now, and the snap is skipped entirely where
+a whole step does not fit in what the corner has, because there is nothing on
+the lattice to snap to.
+
 **The control is offset 16 px from the corner, and that is not decoration.** The
 anchor layer paints in front of the handle layer, and a node's anchor is 7 px centred
 on the corner, so a control at the corner is covered by it and cannot be pressed at
