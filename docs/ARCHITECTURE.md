@@ -3454,6 +3454,24 @@ each to remember the same line, with nothing to remind whoever added one. One
 selector covers every one of them and the thing that owns the key owns the
 decision.
 
+**It shipped visible, at every width, and the screenshot that showed it was
+read as an artefact of the screenshot.** A closed popover is hidden by a user
+agent rule, and an author rule setting `display` beats a user agent rule
+whatever their specificities are, so `.pop { display: flex }` kept the settings
+on screen permanently -- at the static position a `fixed` element with no
+offsets takes, which is inside the toolbar and partly above the top of the
+window. This is the same defect the head of `styles.css` records against
+`[hidden]`, which was patched four times one class at a time with a fifth
+escaping. It is written as `[popover]:not(:popover-open) { display: none
+!important; }` for the same reason that one is written as a rule: the next
+popover would otherwise have to remember it.
+
+**Fifty-eight scenarios and a twenty-five check probe all missed it, and every
+one of them missed it the same way.** They asked `:popover-open`, which is the
+state, and the state was correct throughout -- it was the box that was wrong.
+A scenario measures the computed `display` and the rectangle now, because
+"closed" is a claim about what is on the screen and `:popover-open` is not.
+
 **A flag set by a pointer is read once and cleared.** A `popover="auto"` is
 dismissed on `pointerdown`, so by the time the click arrives the popover is
 always shut and a naive handler reopens what the press just closed. Recording

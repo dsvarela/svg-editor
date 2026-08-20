@@ -32,6 +32,18 @@
    or a class of its own. */
 [hidden] { display: none !important; }
 
+/* And the same defect again, one attribute along. A closed popover is hidden by
+   a user agent rule, and an author rule setting `display` beats a user agent
+   rule whatever its specificity says -- so `.pop { display: flex }` left the
+   polygon settings on screen at all times, at the static position a `fixed`
+   element with no offsets takes, which is inside the toolbar. It shipped, and
+   the screenshot that showed it was read as an artefact of the screenshot.
+
+   Written as the rule rather than as `.pop:popover-open`, for the reason above
+   it: the next popover would otherwise have to remember the same thing, and
+   nothing would remind it. */
+[popover]:not(:popover-open) { display: none !important; }
+
 :root {
   --canvas: #f7f9fb;
   --panel: #ffffff;

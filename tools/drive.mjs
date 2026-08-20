@@ -1179,6 +1179,22 @@ const scenarios = {
       (await page.locator('#shapelist li.shape[aria-selected="true"]').count()) === 1,
       'Escape closed the popover and emptied the selection behind it',
     );
+    /* Shut means off the screen, not merely `:popover-open` returning false.
+       Every check here and in the probe that built this asked the state and
+       none asked the box, so an author `display` beating the user agent rule
+       that hides a closed popover left the settings on screen at all times and
+       nothing said a word. §63. */
+    const shutBox = await page.evaluate(() => {
+      const el = document.querySelector('#polyPop');
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return { display: s.display, visibility: s.visibility, w: r.width, h: r.height };
+    });
+    check(
+      shutBox.display === 'none' || shutBox.w === 0 || shutBox.h === 0,
+      `a shut popover is still laid out: display ${shutBox.display}, ${shutBox.w} x ${shutBox.h}`,
+    );
+
     check(
       await page.evaluate(() => document.activeElement?.dataset?.v === 'poly'),
       'closing the popover left focus nowhere, so the keyboard lost its place',
