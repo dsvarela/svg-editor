@@ -3809,9 +3809,6 @@ const scenarios = {
     await settle(page);
     const after = await dEl();
     check(before !== after, 'Curve on both segments changed nothing');
-    /* Counted on the overlay, not matched in the path text: the serialiser is
-       free to spell a curve `C`, `Q` or `S`, and which one it picks says
-       nothing about whether the node has handles. */
     /* Shift the two outer nodes back out of the selection, leaving the middle
        one alone. A plain click on a node that is already part of a
        multi-selection keeps that selection, and the panel then reads
@@ -3819,6 +3816,9 @@ const scenarios = {
     await click([20, 40], 'Shift');
     await click([68, 40], 'Shift');
     await settle(page);
+    /* Counted on the overlay, not matched in the path text: the serialiser is
+       free to spell a curve `C`, `Q` or `S`, and which one it picks says
+       nothing about whether the node has handles. */
     const handles = await page.locator('[data-hit="in"][data-i="1"], [data-hit="out"][data-i="1"]').count();
     check(handles === 2, `the middle node has ${handles} handles drawn, not 2`);
     const lit = await pressed();

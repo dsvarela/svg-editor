@@ -12,11 +12,18 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { cubicAt, cubicUnitTangent, projectToCubic } from '../src/core/bezier';
+import { cubicAt, cubicLength, cubicUnitTangent, projectToCubic } from '../src/core/bezier';
 import { parsePath } from '../src/core/parse';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Cubic, Pt, Subpath } from '../src/core/types';
-import { cornerAt, filletAt, maxCornerRadius, roundCorner, unroundCorner } from '../src/model/ops';
+import {
+  cornerAt,
+  filletAt,
+  maxCornerRadius,
+  roundCorner,
+  sharedCornerRadius,
+  unroundCorner,
+} from '../src/model/ops';
 
 /* Three nodes and three curves, off the origin and off both axes. Node 1 is a
    cusp of about 68 degrees with neither of its sides straight. */
@@ -339,6 +346,44 @@ describe('the clamp on a curved side', () => {
     expect(done.radius).toBeGreaterThan(0);
     // Cut down, not cut away: the arc is still tangent to what is left.
     expect(kinkAt(sp, 1)).toBeLessThan(1e-9);
+  });
+});
+
+describe('two curved corners sharing a side', () => {
+  /**
+   * Each may have half of the side between them, and no more.
+   *
+   * Measured on what is left rather than on the number handed back: two arcs
+   * that ate past the middle would leave the segment between them running
+   * backwards, and its length is the thing that says so.
+   */
+  it('leaves the side between them with room to spare', () => {
+    const sp = parsePath(LEAF)[0];
+    const ids = [sp.nodes[1].id, sp.nodes[2].id];
+    const shared = sharedCornerRadius(sp, ids);
+    expect(shared).toBeGreaterThan(0);
+
+    // Highest index first, because rounding one splices a node in beside it.
+    const order = [2, 1];
+    for (const i of order) expect(typeof roundCorner(sp, i, shared)).not.toBe('string');
+    expect(sp.nodes.length).toBe(5);
+
+    /* Nodes 2 and 3 are the two touch points facing each other across the side
+       they share, so segment 2 is what is left of it. */
+    const between = cubicLength(segmentAsCubic(sp, 2));
+    expect(between).toBeGreaterThan(0);
+    // And each arc took no more than its half.
+    const whole = cubicLength(segmentAsCubic(parsePath(LEAF)[0], 1));
+    expect(between).toBeLessThan(whole);
+    expect(kinkAt(sp, 2)).toBeLessThan(1e-9);
+    expect(kinkAt(sp, 3)).toBeLessThan(1e-9);
+  });
+
+  it('gives each less than it would have had alone', () => {
+    const sp = parsePath(LEAF)[0];
+    const alone = sharedCornerRadius(sp, [sp.nodes[1].id]);
+    const shared = sharedCornerRadius(sp, [sp.nodes[1].id, sp.nodes[2].id]);
+    expect(shared).toBeLessThan(alone);
   });
 });
 

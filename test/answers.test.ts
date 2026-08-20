@@ -15,8 +15,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { parsePath } from '../src/core/parse';
+import type { Pt } from '../src/core/types';
 import {
   closeSubpath,
+  cornerAt,
   cornerArcReach,
   cornerRadiusAtReach,
   filletAt,
@@ -155,6 +157,52 @@ describe('sharedCornerRadius measures both sides of each corner', () => {
     expect(at(1)).toBeCloseTo(40, 9);
     expect(at(4)).toBeCloseTo(50, 9);
     expect(at(5)).toBeCloseTo(60, 9);
+  });
+
+  it('halves a shared side from whichever end takes the longer bite', () => {
+    /* Two corners sharing one side, with angles far apart: 40 degrees at the
+       first and 120 at the second. A cut is `r / tan(alpha / 2)`, so for one
+       radius the sharp corner reaches more than four times as far along the
+       shared side as the blunt one.
+
+       That is why the halving is stated at both ends and neither statement is
+       spare. A square cannot show it: with equal angles the two ends convert a
+       radius to the same cut, so either statement alone gives the same answer.
+       Here the sharp corner's forward half is the only thing that binds. */
+    const deg = (d: number): number => (d * Math.PI) / 180;
+    const p1: Pt = [100, 100];
+    const p2: Pt = [180, 100];
+    const p0: Pt = [p1[0] + 100 * Math.cos(deg(40)), p1[1] + 100 * Math.sin(deg(40))];
+    const p3: Pt = [p2[0] + 60 * Math.cos(deg(-60)), p2[1] + 60 * Math.sin(deg(-60))];
+    const at = (p: Pt): string => `${p[0]} ${p[1]}`;
+    const sp = parsePath(`M${at(p0)} L${at(p1)} L${at(p2)} L${at(p3)} Z`)[0];
+
+    expect(cornerAt(sp, 1)).not.toBe('straight');
+    expect(cornerAt(sp, 2)).not.toBe('straight');
+
+    // Half of the 80-unit shared side, read as a radius at the sharp corner.
+    expect(sharedCornerRadius(sp, [sp.nodes[1].id, sp.nodes[2].id])).toBeCloseTo(
+      40 * Math.tan(deg(20)),
+      6,
+    );
+    // Alone it has the whole side, and twice the radius.
+    expect(sharedCornerRadius(sp, [sp.nodes[1].id])).toBeCloseTo(80 * Math.tan(deg(20)), 6);
+  });
+
+  it('does not halve a side for a neighbour that will not round', () => {
+    /* An L with node 2 flattened, so the path runs straight through it and it
+       takes no arc. Naming it alongside node 1 must not cost node 1 half of the
+       side they share: nothing is going to be cut from the far end of it.
+
+       This is the case that tells the two halvings apart. With a neighbour that
+       does round, each side is stated twice -- once forward from one corner and
+       once back from the other -- so either statement alone gives the same
+       answer and neither is measured. */
+    const sp = parsePath('M100 100 L180 100 L180 130 L180 190 L100 190 Z')[0];
+    const alone = sharedCornerRadius(sp, [sp.nodes[1].id]);
+    expect(alone).toBeGreaterThan(0);
+    expect(cornerAt(sp, 2)).toBe('straight');
+    expect(sharedCornerRadius(sp, [sp.nodes[1].id, sp.nodes[2].id])).toBeCloseTo(alone, 9);
   });
 
   it('is zero when nothing in the set is a corner', () => {

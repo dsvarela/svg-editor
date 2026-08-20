@@ -816,6 +816,16 @@ function step2(c0: Pt, c1: Pt, f: Pt): Pt | null {
   return [(-f[0] * c1[1] + c1[0] * f[1]) / det, (-c0[0] * f[1] + f[0] * c0[1]) / det];
 }
 
+/**
+ * A radius and a cut distance are one relation, and it is stated here.
+ *
+ * True of straight sides only: two lines touch a circle the same distance out
+ * along each, so either number gives the other. Against a curve the touch point
+ * is solved for rather than measured out, and these are the seed for that.
+ */
+const cutForRadius = (c: Corner, r: number): number => r / Math.tan(c.alpha / 2);
+const radiusForCut = (c: Corner, cut: number): number => cut * Math.tan(c.alpha / 2);
+
 /** Where an arc of a given radius touches the two sides of a corner. */
 interface Tangency {
   /** Parameter on each side, in `sides` order. */
@@ -845,14 +855,12 @@ function paramAtDistance(b: Cubic, d: number, steps = 32): number {
 /**
  * Place a circle of radius `r` tangent to both sides, inside the corner.
  *
- * Two equations, because the centre reached from one side has to be the centre
- * reached from the other. Two unknowns, one per side, saying where the circle
- * touches it. Newton from the answer two straight sides would give, which is
- * what any pair of sides looks like close enough to the corner, so the step
- * count stays small rather than growing with how hard the sides bend.
- *
  * `null` when no such circle sits on both sides within their length, which is
  * the same thing as the radius being too large for this corner.
+ *
+ * The seed has to stay the answer two straight sides would give. That is what
+ * keeps the step count independent of how hard the sides bend, because it is
+ * what any pair of sides looks like close enough to a corner. §23.
  */
 function tangentCircle(c: Corner, r: number): Tangency | null {
   const [A, B] = c.sides;
@@ -881,7 +889,7 @@ function tangentCircle(c: Corner, r: number): Tangency | null {
     };
   };
 
-  const cut = r / Math.tan(c.alpha / 2);
+  const cut = cutForRadius(c, r);
   const seed = (k: 0 | 1): number =>
     c.lines[k] ? Math.min(1, cut / c.lengths[k]) : paramAtDistance(c.sides[k], cut);
   let s = seed(0);
@@ -918,10 +926,9 @@ interface Arc extends Tangency {
 /**
  * The largest radius this corner holds, subject to `holds` on where it touches.
  *
- * Bisection rather than a formula, because with a curved side there is not one:
- * how far out the touch point travels for a given radius depends on how the
- * side bends the whole way there. Monotone, which is what makes bisection the
- * right tool -- a larger circle always touches further from the corner.
+ * Bisection is sound here because the relation is monotone: a larger circle
+ * always touches further from the corner. §23 has the argument for why there is
+ * no formula to use in its place.
  */
 function largestRadius(c: Corner, holds: (t: Tangency) => boolean): number {
   const ok = (r: number): boolean => {
@@ -929,7 +936,7 @@ function largestRadius(c: Corner, holds: (t: Tangency) => boolean): number {
     return t !== null && holds(t);
   };
   let lo = 0;
-  let hi = Math.min(c.lengths[0], c.lengths[1]) * Math.tan(c.alpha / 2);
+  let hi = radiusForCut(c, Math.min(c.lengths[0], c.lengths[1]));
   if (!(hi > 0)) return 0;
   // The straight-sided answer is the right scale to start from; a curved side
   // moves it by a factor, so grow until it stops fitting and bracket from there.
@@ -953,19 +960,27 @@ const cutAlong = (c: Corner, t: Tangency, k: 0 | 1): number =>
  * The largest radius a corner can hold before its arc runs off the end of a side.
  */
 export function maxCornerRadius(c: Corner): number {
-  /* Two lines touch a circle the same distance out along each, so the shorter
-     side answers this outright. Not a shortcut for speed: the closed form is
-     exact where a search only converges. */
-  if (c.lines[0] && c.lines[1]) {
-    return Math.min(c.lengths[0], c.lengths[1]) * Math.tan(c.alpha / 2);
-  }
-  return largestRadius(c, () => true);
+  return radiusWithin(c, c.lengths[0], c.lengths[1]);
 }
 
-/** The largest radius whose arc touches each side no further out than its limit. */
+/**
+ * The largest radius whose arc touches each side no further out than its limit.
+ *
+ * Two lines answer outright, and not as a shortcut for speed: the closed form
+ * is exact where a search only converges.
+ *
+ * The slack on the curved test is the instrument's, not the geometry's. A limit
+ * and a cut are both arc lengths measured by flattening, of curves derived
+ * along different routes, so a touch point sitting exactly on the end of its
+ * side can measure a hair past it and lose a radius that fits.
+ */
 function radiusWithin(c: Corner, limitA: number, limitB: number): number {
-  if (c.lines[0] && c.lines[1]) return Math.min(limitA, limitB) * Math.tan(c.alpha / 2);
-  return largestRadius(c, (t) => cutAlong(c, t, 0) <= limitA && cutAlong(c, t, 1) <= limitB);
+  if (c.lines[0] && c.lines[1]) return radiusForCut(c, Math.min(limitA, limitB));
+  const fits = (cut: number, limit: number): boolean => cut <= limit * (1 + 1e-9);
+  return largestRadius(
+    c,
+    (t) => fits(cutAlong(c, t, 0), limitA) && fits(cutAlong(c, t, 1), limitB),
+  );
 }
 
 /** Fit an arc of at most `radius` into the corner, saying whether it was cut down. */
@@ -977,10 +992,10 @@ function fitArc(c: Corner, radius: number): Arc | null {
        converting would land a hair off the side it was meant to reach. */
     const half = c.alpha / 2;
     const reach = Math.min(c.lengths[0], c.lengths[1]);
-    let cut = radius / Math.tan(half);
+    let cut = cutForRadius(c, radius);
     const clamped = cut > reach;
     if (clamped) cut = reach;
-    const r = cut * Math.tan(half);
+    const r = radiusForCut(c, cut);
     if (!(r > 1e-9)) return null;
     const bx = c.u[0] + c.v[0];
     const by = c.u[1] + c.v[1];
@@ -1020,20 +1035,28 @@ function fitArc(c: Corner, radius: number): Arc | null {
  * when nothing in the set is a corner, so the caller has one number to test.
  */
 export function sharedCornerRadius(sp: Subpath, ids: readonly string[]): number {
-  const set = new Set(ids);
   const n = sp.nodes.length;
-  let max = Infinity;
+  const corners = new Map<string, Corner>();
+  /* Which of them will actually take an arc, gathered first. Being in the
+     selection is not the question: a node in it that is not a corner rounds to
+     nothing and so eats none of the side it shares, and halving that side for it
+     hands its neighbour half the radius it can have. */
   for (const id of ids) {
     const i = sp.nodes.findIndex((nd) => nd.id === id);
     if (i < 0) continue;
     const c = cornerAt(sp, i);
-    if (typeof c === 'string') continue;
+    if (typeof c !== 'string') corners.set(id, c);
+  }
+
+  let max = Infinity;
+  for (const [id, c] of corners) {
+    const i = sp.nodes.findIndex((nd) => nd.id === id);
     const prev = sp.nodes[(i - 1 + n) % n];
     const next = sp.nodes[(i + 1) % n];
     // How much of each side this corner may take: all of it, or half where the
     // corner at the far end is cutting into the same side.
-    const back = c.lengths[0] / (set.has(prev.id) ? 2 : 1);
-    const fwd = c.lengths[1] / (set.has(next.id) ? 2 : 1);
+    const back = c.lengths[0] / (corners.has(prev.id) ? 2 : 1);
+    const fwd = c.lengths[1] / (corners.has(next.id) ? 2 : 1);
     max = Math.min(max, radiusWithin(c, back, fwd));
   }
   return Number.isFinite(max) ? max : 0;
