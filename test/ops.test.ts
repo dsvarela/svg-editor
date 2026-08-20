@@ -342,14 +342,38 @@ describe('splitting', () => {
   });
 
   it('keeps a split line straight', () => {
-    // Subdividing a rectangle's edge must not quietly make it a curve.
+    // Subdividing a rectangle's edge must not quietly make it a curve. Split
+    // off the midpoint, which is the one parameter a line's two candidate
+    // parameterisations agree on: at 0.5 this passes either way.
     const sp = square();
-    splitSegment(sp, 0, 0.5);
-    expect(sp.nodes[1].pt).toEqual([5, 0]);
+    splitSegment(sp, 0, 0.3);
+    expect(sp.nodes[1].pt).toEqual([3, 0]);
     expect(sp.nodes[1].hIn).toBeNull();
     expect(sp.nodes[1].hOut).toBeNull();
-    expect(serialisePath([sp])).toBe('M 0 0 H 5 H 10 V 10 H 0 Z');
+    expect(serialisePath([sp])).toBe('M 0 0 H 3 H 10 V 10 H 0 Z');
   });
+
+  /* One `t`, one point, whatever the segment is made of.
+     `splitSegment` and `segmentAsCubic` are the two functions that turn a
+     parameter into a position, and every gesture that puts a node on an
+     outline reads one and writes the other: `nearestOnPath` projects against
+     the cubic, `splitSegment` inserts at the parameter it returns. While the
+     two disagreed on straight segments a double-click landed its node up to
+     19 units from the pointer on a 200-unit line, with the hover marker
+     drawn at the right place throughout, because the marker is the projected
+     point and the node is the parameter. §69. */
+  it.each([0.1, 0.25, 0.37, 0.5, 0.75, 0.9])(
+    'puts the node where the segment says t = %f is, straight or curved',
+    (t) => {
+      for (const sp of [square(), curve()]) {
+        const before = segmentAsCubic(sp, 0);
+        const want = cubicAt(before, t);
+        const i = splitSegment(sp, 0, t);
+        expect(sp.nodes[i].pt[0]).toBeCloseTo(want[0], 9);
+        expect(sp.nodes[i].pt[1]).toBeCloseTo(want[1], 9);
+      }
+    },
+  );
 
   it('splits the closing segment of a ring', () => {
     const sp = parsePath('M0 0 C10 -10 30 -10 40 0 C30 10 10 10 0 0 Z')[0];

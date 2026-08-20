@@ -45,6 +45,7 @@ import {
   transformCaptured,
   transformShape,
 } from '../model/ops';
+import type { PathHit } from '../model/ops';
 import type { Corner } from '../model/corner';
 import {
   cornerAt,
@@ -59,7 +60,7 @@ import type {
 } from '../model/ops';
 import { invisibleAt } from '../model/knots';
 import { phaseInForce, phaseOf } from '../model/pixelfit';
-import { resolveSnap } from '../model/snapping';
+import { crossingOnSegment, resolveSnap } from '../model/snapping';
 import { keylineGuides } from '../model/keylines';
 import { alignmentsFor, shiftBox } from '../model/smart';
 import { rayAngles } from '../model/angles';
@@ -413,6 +414,38 @@ export class Controller {
    * every zoom: eight pixels is about how far the eye reads as "on it".
    */
   private static readonly REACH_PX = 8;
+
+  /**
+   * How near an outline has to be before hovering it offers an insertion point.
+   *
+   * Wider than `REACH_PX` because this is a hit rather than a pull: the pointer
+   * is being asked which outline it is on, not which of several targets wins.
+   */
+  private static readonly INSERT_PX = 12;
+
+  /**
+   * Where a node inserted at `p` would go, or null when no outline is in reach.
+   *
+   * One answer, two readers: the marker that appears under a hovering pointer
+   * and the double-click that acts on it. They were two calls agreeing by
+   * coincidence, and a marker promising a place the click does not use is the
+   * whole of what this gesture felt like when it was wrong. §69.
+   *
+   * A crossing wins over the plain projection when `Snap to crossings` is on,
+   * because it is the one snap target guaranteed to lie on the segment being
+   * split. The rest of the tiers are not consulted: a node is a split at a
+   * parameter, and a gridline crosses an outline rather than lying along it.
+   */
+  private insertPoint(p: Pt): { at: PathHit; t: number; pt: Pt } | null {
+    const s = this.store.state;
+    const k = this.canvas.scale(s.camera);
+    const at = nearestOnPath(s.doc, p, Controller.INSERT_PX * k);
+    if (!at) return null;
+    const x = s.snapToIntersections
+      ? crossingOnSegment(s.doc, at, p, Controller.REACH_PX * k)
+      : null;
+    return x ? { at, t: x.t, pt: x.pt } : { at, t: at.t, pt: at.pt };
+  }
 
   /**
    * Apply snapping. The rule lives in `model/snapping.ts`; this supplies it with
@@ -1129,10 +1162,7 @@ export class Controller {
 
         // Hovering an outline offers an insertion point.
         const hit = this.hitOf(e);
-        const near =
-          hit?.kind === 'outline'
-            ? nearestOnPath(s.doc, p, 12 * this.canvas.scale(s.camera))
-            : null;
+        const near = hit?.kind === 'outline' ? this.insertPoint(p) : null;
         const changed = !!near !== !!this.extras.insertAt;
         this.extras.insertAt = near ? near.pt : null;
         if (changed || near) this.schedule();
@@ -1619,7 +1649,6 @@ export class Controller {
   };
 
   private onDoubleClick = (e: MouseEvent): void => {
-    const s = this.store.state;
     const p = this.pt(e);
     const hit = this.hitOf(e);
 
@@ -1637,13 +1666,13 @@ export class Controller {
       return;
     }
 
-    // Double-clicking the outline inserts a node exactly where you clicked.
-    const near = nearestOnPath(s.doc, p, 12 * this.canvas.scale(s.camera));
+    // Double-clicking the outline inserts a node exactly where the marker was.
+    const near = this.insertPoint(p);
     if (near) {
       this.store.edit((st) => {
-        const sp = findShape(st.doc, near.shape)?.subpaths[near.sp];
+        const sp = findShape(st.doc, near.at.shape)?.subpaths[near.at.sp];
         if (!sp) return;
-        const i = splitSegment(sp, near.seg, near.t);
+        const i = splitSegment(sp, near.at.seg, near.t);
         st.selection = emptySelection();
         st.selection.nodes.add(sp.nodes[i].id);
       });

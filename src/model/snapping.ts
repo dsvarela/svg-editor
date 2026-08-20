@@ -26,6 +26,7 @@ import type { Guide } from './guides';
 import { nearestRay } from './angles';
 import type { AngleSetup } from './angles';
 import { cubicIntersections, hullNear } from '../core/intersect';
+import { projectToCubic } from '../core/bezier';
 import { segmentAsCubic, segmentCount } from '../core/types';
 
 /** Which tier answered. `none` means nothing was in reach and nothing moved. */
@@ -212,6 +213,20 @@ function nearestVertex(
 }
 
 /**
+ * Whether two segments meet at a node they share.
+ *
+ * Such a pair is skipped by both searches below. Two neighbours meet at their
+ * shared node by construction, and that node is already a vertex target:
+ * reporting it again as a crossing would put a second, worse-named answer on
+ * top of a better one, and would offer to insert a node on top of one that is
+ * already there.
+ */
+const meetAtANode = (u: Cubic, v: Cubic): boolean => {
+  const same = (a: Pt, b: Pt): boolean => a[0] === b[0] && a[1] === b[1];
+  return same(u[0], v[0]) || same(u[0], v[3]) || same(u[3], v[0]) || same(u[3], v[3]);
+};
+
+/**
  * The nearest place two outlines cross, within `reach`.
  *
  * Pruned twice before any real work happens. Only segments whose control hull
@@ -220,35 +235,25 @@ function nearestVertex(
  * boundary tier already costs -- and only pairs drawn from that short list are
  * intersected. On a drawing of two thousand segments the list is normally empty
  * or has two entries in it.
- *
- * Segments sharing an endpoint are skipped. Two neighbours meet at their shared
- * node by construction, and that node is already a vertex target: reporting it
- * again as a crossing would put a second, worse-named answer on top of a better
- * one.
  */
 function nearestCrossing(doc: Doc, p: Pt, reach: number): { pt: Pt; d: number } | null {
-  const near: { shape: string; sp: number; seg: number; c: Cubic; a: Pt; b: Pt }[] = [];
+  const near: Cubic[] = [];
   for (const shape of doc.shapes) {
-    shape.subpaths.forEach((sp, spI) => {
+    for (const sp of shape.subpaths) {
       const n = segmentCount(sp);
       for (let seg = 0; seg < n; seg++) {
         const c = segmentAsCubic(sp, seg);
-        if (hullNear(c, p, reach)) {
-          near.push({ shape: shape.id, sp: spI, seg, c, a: c[0], b: c[3] });
-        }
+        if (hullNear(c, p, reach)) near.push(c);
       }
-    });
+    }
   }
 
-  const same = (u: Pt, v: Pt): boolean => u[0] === v[0] && u[1] === v[1];
   let best = reach;
   let hit: { pt: Pt; d: number } | null = null;
   for (let i = 0; i < near.length; i++) {
     for (let j = i + 1; j < near.length; j++) {
-      const u = near[i];
-      const v = near[j];
-      if (same(u.a, v.a) || same(u.a, v.b) || same(u.b, v.a) || same(u.b, v.b)) continue;
-      for (const q of cubicIntersections(u.c, v.c)) {
+      if (meetAtANode(near[i], near[j])) continue;
+      for (const q of cubicIntersections(near[i], near[j])) {
         const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
         if (d < best) {
           best = d;
@@ -258,6 +263,56 @@ function nearestCrossing(doc: Doc, p: Pt, reach: number): { pt: Pt; d: number } 
     }
   }
   return hit;
+}
+
+/**
+ * Where another outline crosses one named segment, as a parameter on it.
+ *
+ * `nearestCrossing` above answers where two outlines cross without saying which
+ * two, which is all a snapped pointer needs. An inserted node needs both: it is
+ * a split of one named segment at one parameter, and of the two outlines
+ * through a crossing only the one under the pointer was clicked. `resolveSnap`
+ * answers neither, which is why the insert does not go through it. §69.
+ *
+ * `pt` is the crossing brought back onto the host segment rather than the
+ * crossing itself, so it is the point the split will produce. The two agree to
+ * about 1e-4, which is `cubicIntersections`'s own tolerance.
+ *
+ * Null when nothing crosses within `reach`, which is the ordinary case and
+ * leaves the caller with its plain projection.
+ */
+export function crossingOnSegment(
+  doc: Doc,
+  at: { shape: string; sp: number; seg: number },
+  p: Pt,
+  reach: number,
+): { t: number; pt: Pt } | null {
+  const host = findShape(doc, at.shape)?.subpaths[at.sp];
+  if (!host) return null;
+  const c = segmentAsCubic(host, at.seg);
+
+  let best = reach;
+  let hit: Pt | null = null;
+  for (const shape of doc.shapes) {
+    shape.subpaths.forEach((sp, spI) => {
+      const n = segmentCount(sp);
+      for (let seg = 0; seg < n; seg++) {
+        if (shape.id === at.shape && spI === at.sp && seg === at.seg) continue;
+        const other = segmentAsCubic(sp, seg);
+        if (!hullNear(other, p, reach) || meetAtANode(c, other)) continue;
+        for (const q of cubicIntersections(c, other)) {
+          const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          if (d < best) {
+            best = d;
+            hit = q;
+          }
+        }
+      }
+    });
+  }
+  if (!hit) return null;
+  const pr = projectToCubic(c, hit);
+  return { t: pr.t, pt: pr.pt };
 }
 
 /** How a snap reads in the status line, or `null` when nothing claimed it. */

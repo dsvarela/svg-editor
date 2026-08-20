@@ -48,6 +48,12 @@ The node appears exactly where you clicked and the curve does not move. The
 segment is split into two that trace the original between them, so this is
 lossless: you can add ten nodes to a curve and it still draws identically.
 
+A dot marks the spot while you hover, and the node lands on the dot.
+
+To put a node where two outlines cross, turn on **Snap to crossings** in the
+Document tab first. The dot then holds the crossing while you are near it, and
+the node goes into the outline you are pointing at rather than the other one.
+
 To add a node at the end of an open path instead, use the pen tool and click the
 path's last node, then keep clicking.
 

@@ -288,13 +288,33 @@ export const endNodeIndex = (s: Subpath, i: number): number => (i + 1) % s.nodes
 /**
  * Reconstruct segment `i` as a cubic.
  *
- * A straight segment (both governing handles `null`) is widened into a cubic
- * with its controls on the endpoints. Geometry code can then treat every
- * segment identically, while the model still remembers it was a line.
+ * A straight segment (both governing handles `null`) is widened into a cubic so
+ * geometry code can treat every segment identically, while the model still
+ * remembers it was a line.
+ *
+ * **A line's controls go on the thirds, so `t` is the fraction along it**, which
+ * is what `splitSegment` means by `t` and what every caller assumes. On the
+ * endpoints, the obvious reading of a `null` handle, the same line is
+ * parameterised `3t^2 - 2t^3` and the two disagree everywhere but the middle.
+ * §69.
+ *
+ * A half-collapsed segment, one handle `null` and the other not, is left alone:
+ * that is a curve somebody drew, and moving its live control would change the
+ * shape.
  */
 export function segmentAsCubic(s: Subpath, i: number): Cubic {
   const a = s.nodes[i];
   const b = s.nodes[endNodeIndex(s, i)];
+  if (a.hOut === null && b.hIn === null) {
+    const dx = b.pt[0] - a.pt[0];
+    const dy = b.pt[1] - a.pt[1];
+    return [
+      clonePt(a.pt),
+      [a.pt[0] + dx / 3, a.pt[1] + dy / 3],
+      [a.pt[0] + (dx * 2) / 3, a.pt[1] + (dy * 2) / 3],
+      clonePt(b.pt),
+    ];
+  }
   return [clonePt(a.pt), clonePt(a.hOut ?? a.pt), clonePt(b.hIn ?? b.pt), clonePt(b.pt)];
 }
 

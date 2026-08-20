@@ -102,11 +102,21 @@ function outOfRound(sp: Subpath, seg: number, steps = 32): number {
   return worst;
 }
 
-/** The worst distance from any point of `piece` to the curve `whole`. */
+/**
+ * The worst distance from any point of `piece` to the curve `whole`.
+ *
+ * Refined to 80 rather than the projector's default 20, because at the default
+ * the answer is the instrument. `projectToCubic` narrows by a third each pass,
+ * so 40 passes over a sixtieth of an 80-unit curve still leaves 6e-8 of
+ * position between the point it is given and the point it reports, and a de
+ * Casteljau split lands 2e-14 from the curve it was cut from. Measured at 40,
+ * 60, 80, 100 and 120: the reading falls 6e-8, 2e-11, 8e-15, and then stops,
+ * which is double precision rather than a better search.
+ */
 function strayFrom(piece: Cubic, whole: Cubic, steps = 32): number {
   let worst = 0;
   for (let k = 0; k <= steps; k++) {
-    worst = Math.max(worst, projectToCubic(whole, cubicAt(piece, k / steps), 60, 40).d);
+    worst = Math.max(worst, projectToCubic(whole, cubicAt(piece, k / steps), 60, 80).d);
   }
   return worst;
 }
@@ -118,8 +128,16 @@ function strayFrom(piece: Cubic, whole: Cubic, steps = 32): number {
  * even when the point it is given is on the curve. Measuring that here rather
  * than picking a tolerance keeps the check on the geometry: a piece that has
  * drifted has to beat the instrument, not a number somebody chose.
+ *
+ * **A max over 33 samples is not a bound on the next 33**, which is what the
+ * comparison below needs, so the floor is stated with the room that sampling
+ * luck costs. It read as a bound while the instrument's endpoints dominated
+ * both sides: `strayFrom(whole, whole)` and `strayFrom(piece, whole)` both
+ * peaked at an end and both returned 8.152e-8, the same number to every digit,
+ * so the check compared a quantity to itself and could not fail. Both peak in
+ * the interior now, at 8e-15 and 2e-14.
  */
-const projectorFloor = (whole: Cubic): number => strayFrom(whole, whole);
+const projectorFloor = (whole: Cubic): number => Math.max(strayFrom(whole, whole) * 8, 1e-12);
 
 /** Every coordinate a subpath holds, so two of them can be compared as numbers. */
 function coords(sp: Subpath): number[] {

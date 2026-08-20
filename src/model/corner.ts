@@ -88,14 +88,6 @@ export interface Corner {
  */
 const ROUND_TRIP = 2e-3;
 
-/** A straight cubic whose parameter moves at a constant speed along it. */
-const evenLine = (a: Pt, b: Pt): Cubic => [
-  clonePt(a),
-  [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3],
-  [a[0] + (b[0] - a[0]) * (2 / 3), a[1] + (b[1] - a[1]) * (2 / 3)],
-  clonePt(b),
-];
-
 /**
  * A control point read back as a handle, or `null` where it sits on its anchor.
  *
@@ -112,22 +104,17 @@ const turnBetween = (a: Pt, b: Pt): number =>
 /**
  * The two sides of the corner at `i`, as cubics leaving it.
  *
- * A straight segment is respaced so its parameter moves evenly. The model
- * stores a line with both controls on the anchors, which leaves the derivative
- * zero at each end, and the solver below reads a tangent exactly there. Same
- * line, same endpoints, a parameter that moves.
+ * `lines` rides along because the solver needs the tangent from the geometry
+ * and the model's own answer to "is this a line" from the model: what comes
+ * back from a split has to keep its handles absent, or a rounded rectangle
+ * stops exporting as one.
  */
 function cornerSides(sp: Subpath, i: number): { sides: [Cubic, Cubic]; lines: [boolean, boolean] } {
   const n = sp.nodes.length;
   const prevI = (i - 1 + n) % n;
-  const here = sp.nodes[i].pt;
-  const lines: [boolean, boolean] = [segmentIsLine(sp, prevI), segmentIsLine(sp, i)];
   return {
-    sides: [
-      lines[0] ? evenLine(here, sp.nodes[prevI].pt) : reverseCubic(segmentAsCubic(sp, prevI)),
-      lines[1] ? evenLine(here, sp.nodes[endNodeIndex(sp, i)].pt) : segmentAsCubic(sp, i),
-    ],
-    lines,
+    sides: [reverseCubic(segmentAsCubic(sp, prevI)), segmentAsCubic(sp, i)],
+    lines: [segmentIsLine(sp, prevI), segmentIsLine(sp, i)],
   };
 }
 

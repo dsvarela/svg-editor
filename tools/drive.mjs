@@ -3207,6 +3207,26 @@ const scenarios = {
       await settle(page);
       const now = await nodes();
       check(now === was + 1, `double-click ${i + 1} took the count from ${was} to ${now}`);
+      /* And where it went, which the count alone never asked. This starter is
+         all curves, so it never met the straight-segment parameterisation
+         defect of §69 -- but a count-only check is the shape that let that one
+         live, and the spots above are all 30 client pixels clear of every
+         existing anchor, so a node landing on the pointer is the only way to
+         put one within 3 of it. */
+      const off = await page.evaluate(([px, py]) => {
+        const anchors = [...document.querySelectorAll('.overlay [data-hit="anchor"]')];
+        if (!anchors.length) return null;
+        return Math.min(
+          ...anchors.map((el) => {
+            const r = el.getBoundingClientRect();
+            return Math.hypot(r.x + r.width / 2 - px, r.y + r.height / 2 - py);
+          }),
+        );
+      }, [x, y]);
+      check(
+        off !== null && off < 3,
+        `double-click ${i + 1} put its node ${off === null ? 'nowhere' : off.toFixed(1) + ' px'} from the pointer`,
+      );
     }
     const added = await nodes();
 
@@ -3834,6 +3854,54 @@ const scenarios = {
     await settle(page);
     const after = (await page.textContent('#snapkind')).trim();
     check(after === 'where outlines cross', `hovering the crossing reported "${after}"`);
+
+    /* A node inserted by double-click goes to the crossing too, and it goes
+       into the outline the pointer is on rather than the other one running
+       through the same point. The insert reads the crossing directly rather
+       than through `resolveSnap`, because it is a split of one named segment
+       at one parameter and most snap targets have no parameter on it. §69. */
+    const dotBefore = await page.evaluate(() => {
+      const el = document.querySelector('.insert-dot');
+      return el.getAttribute('display') === 'none'
+        ? null
+        : [+el.getAttribute('cx'), +el.getAttribute('cy')];
+    });
+    check(
+      dotBefore !== null && Math.abs(dotBefore[0] - 44.5) < 0.01 && Math.abs(dotBefore[1] - 32.5) < 0.01,
+      `the insertion marker sat at ${dotBefore}, not on the crossing at 44.5, 32.5`,
+    );
+
+    const countNodes = (d) => (d.match(/[MLHVCSQTA]/gi) ?? []).length;
+    const dsBefore = await page.evaluate(() =>
+      [...document.querySelectorAll('.artwork path')].map((p) => p.getAttribute('d')),
+    );
+    await page.mouse.dblclick(near[0], near[1]);
+    await settle(page);
+    const dsAfter = await page.evaluate(() =>
+      [...document.querySelectorAll('.artwork path')].map((p) => p.getAttribute('d')),
+    );
+    check(
+      countNodes(dsAfter[0]) === countNodes(dsBefore[0]) + 1,
+      `the clicked outline went from ${countNodes(dsBefore[0])} commands to ${countNodes(dsAfter[0])}`,
+    );
+    check(
+      dsAfter[1] === dsBefore[1],
+      `the other outline through the same crossing changed: "${dsBefore[1]}" became "${dsAfter[1]}"`,
+    );
+    /* Where, not how many. The node count going up by one was the whole of
+       what this gesture was checked for, and it was true while the node landed
+       19 units from the pointer on a 200-unit line. Read off the `d` that
+       reached the DOM: the new node is the command between the two that were
+       there, and the run is straight so it is an `L`. */
+    const inserted = (/L\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(dsAfter[0]) ?? []).slice(1).map(Number);
+    check(
+      inserted.length === 2 &&
+        Math.abs(inserted[0] - 44.5) < 0.05 &&
+        Math.abs(inserted[1] - 32.5) < 0.05,
+      `the inserted node landed at ${inserted}, not on the crossing at 44.5, 32.5; d is "${dsAfter[0]}"`,
+    );
+    await page.keyboard.press('Control+z');
+    await settle(page);
 
     // And the pointer lands on it.
     await page.click('#tool button[data-v="pen"]');

@@ -104,6 +104,7 @@ interface Harness {
   down(doc: [number, number], target?: Element, opts?: PointerEventInit): void;
   move(doc: [number, number], opts?: PointerEventInit): void;
   up(): void;
+  dbl(doc: [number, number], target?: Element): void;
   /** One finger, by id, in client pixels. Two of them are a pinch. */
   touch(type: 'down' | 'move' | 'up', id: number, client: [number, number]): void;
   key(key: string, opts?: KeyboardEventInit): void;
@@ -150,6 +151,7 @@ function harness(pathData?: string): Harness {
     down: (p, target, opts) => ev('pointerdown', p, target ?? canvas.overlay, opts),
     move: (p, opts) => ev('pointermove', p, canvas.overlay, opts),
     up: () => ev('pointerup', [0, 0], canvas.overlay),
+    dbl: (p, target) => ev('dblclick', p, target ?? canvas.overlay),
     touch: (type, id, client) => {
       const e = new MouseEvent(`pointer${type}`, {
         clientX: client[0],
@@ -3930,5 +3932,101 @@ describe('aligning and distributing anchors from the commands', () => {
     h.commands.distributeSelection('h');
     expect(h.store.canRedo).toBe(true);
     expect(xs(h)).toEqual([10, 25, 40]);
+  });
+});
+
+describe('double-click puts a node where the marker is', () => {
+  /** Every node of the first shape, as plain coordinates. */
+  const pts = (h: Harness): [number, number][] =>
+    h.store.state.doc.shapes[0].subpaths[0].nodes.map((n) => [n.pt[0], n.pt[1]]);
+
+  /* A gesture-level check on the parameterisation, because the model-level one
+     in `ops.test.ts` cannot see the projector. `nearestOnPath` reports a
+     parameter and `splitSegment` consumes one, and while a straight segment
+     was widened into a cubic with its controls on its endpoints the two
+     numbers named different points: at a fifth of the way along a 40-unit
+     line the node landed 3.7 units further on. §69. */
+  it.each([10, 20, 30])('lands on the pointer along a straight segment, at x = %d', (x) => {
+    const h = harness('M0 20 L40 20');
+    h.store.update((s) => {
+      s.snapToGrid = false;
+      s.snapToPoints = false;
+      s.snapToBoundary = false;
+    });
+    h.dbl([x, 20]);
+    const added = pts(h)[1];
+    /* Bracketed rather than picked: `projectToCubic` answers this segment to
+       1.8e-4 at its shipping 24 samples and 20 passes, and the parameterisation
+       it is guarding against put the node 3.7 units out. Two orders of room on
+       each side. */
+    expect(Math.abs(added[0] - x)).toBeLessThan(0.01);
+    expect(Math.abs(added[1] - 20)).toBeLessThan(0.01);
+  });
+
+  /* Two segments of one shape that cross each other, so the crossing is a
+     place the pointer can be near without being near either endpoint. The
+     bowtie's arms cross at [20, 20]. */
+  const BOWTIE = 'M0 0 L40 40 M40 0 L0 40';
+  const crossed = (): Harness => {
+    const h = harness(BOWTIE);
+    h.store.update((s) => {
+      s.snapToGrid = false;
+      s.snapToPoints = false;
+      s.snapToBoundary = false;
+    });
+    return h;
+  };
+
+  it('takes the crossing rather than the pointer when snapping to crossings', () => {
+    const h = crossed();
+    h.store.update((s) => (s.snapToIntersections = true));
+    // Off the crossing, but within reach of it: 8 screen pixels is 0.8 units.
+    h.dbl([20.4, 20.4]);
+    const added = h.store.state.doc.shapes[0].subpaths[0].nodes.find((n) => n.pt[0] !== 0 && n.pt[0] !== 40);
+    expect(added).toBeDefined();
+    expect(added!.pt[0]).toBeCloseTo(20, 3);
+    expect(added!.pt[1]).toBeCloseTo(20, 3);
+  });
+
+  it('takes the pointer when snapping to crossings is off, so the switch means something', () => {
+    const h = crossed();
+    h.store.update((s) => (s.snapToIntersections = false));
+    h.dbl([20.4, 20.4]);
+    const added = h.store.state.doc.shapes[0].subpaths[0].nodes.find((n) => n.pt[0] !== 0 && n.pt[0] !== 40);
+    expect(added).toBeDefined();
+    expect(added!.pt[0]).toBeCloseTo(20.4, 3);
+    expect(added!.pt[1]).toBeCloseTo(20.4, 3);
+  });
+
+  /* The two readings that have to agree, checked against each other rather
+     than against a coordinate: whatever the marker draws is where the node
+     goes. This is what makes the crossing case visible before it is committed
+     to, and it fails on any future snap the hover consults and the click does
+     not. */
+  it('inserts at the point the hover marker drew', () => {
+    for (const on of [true, false]) {
+      const h = crossed();
+      h.store.update((s) => (s.snapToIntersections = on));
+      /* The marker read off the DOM rather than off the controller, so what is
+         compared is the coordinate that reached the screen. It only appears
+         over an outline, so the move is aimed at one. */
+      const el = h.canvas.overlay.querySelector('[data-hit="outline"]');
+      expect(el).not.toBeNull();
+      const e = new MouseEvent('pointermove', {
+        clientX: 20.4 / SCALE, clientY: 20.4 / SCALE, bubbles: true, cancelable: true,
+      });
+      Object.defineProperty(e, 'pointerId', { value: 1 });
+      el!.dispatchEvent(e);
+      h.controller.render();
+      const dot = h.canvas.overlay.querySelector('.insert-dot')!;
+      expect(dot.getAttribute('display')).toBeNull();
+      const marker = [Number(dot.getAttribute('cx')), Number(dot.getAttribute('cy'))];
+
+      h.dbl([20.4, 20.4]);
+      const added = h.store.state.doc.shapes[0].subpaths[0].nodes.find((n) => n.pt[0] !== 0 && n.pt[0] !== 40);
+      expect(added).toBeDefined();
+      expect(added!.pt[0]).toBeCloseTo(marker[0], 6);
+      expect(added!.pt[1]).toBeCloseTo(marker[1], 6);
+    }
   });
 });

@@ -3837,3 +3837,80 @@ copy, and a copy here is that one file handed to somebody, so the notice is a
 comment in the markup and not only in `NOTICE`. `npm run build` was checked for
 it rather than assumed: a minifier that dropped HTML comments would have taken
 the licence with them.
+
+## 69. One `t`, one point, and a marker that does not lie
+
+A node inserted by double-clicking an outline is a split of one segment at one
+parameter. Two functions turn a parameter into a position: `segmentAsCubic`,
+which every geometry routine reads a segment through, and `splitSegment`, which
+writes the node. Nothing made them agree, and on straight segments they did not.
+
+`segmentAsCubic` widened a line into a cubic by putting both controls on the
+endpoints, which is the obvious reading of a `null` handle and draws exactly the
+right line. It parameterises it as `3t² − 2t³`: slow at the ends, fast in the
+middle, and zero-derivative at both ends. `splitSegment` interpolated linearly.
+So `nearestOnPath` reported the parameter of the point under the pointer and
+`splitSegment` inserted at that fraction along, which are different places
+everywhere except the midpoint. On a 200-unit line the node landed up to 19
+units away, about a tenth of the segment. The midpoint is exact, which is why
+the one unit test covering it split at 0.5 and passed.
+
+Three modules had already paid for the parameterisation without the cost ever
+being traced back to its source. `corner.ts` respaced every straight side
+through a private `evenLine` before solving, with a comment explaining that the
+model's own answer was unusable. `offset.ts` and `simplify.ts` each carry a
+fallback that probes past an end when the tangent there comes back zero. Two
+workarounds and a live bug, which is what a class looks like before anyone names
+it.
+
+**The fix is in `segmentAsCubic`: a line's controls go on the thirds.** Same
+line, same endpoints, same hull, and `t` is now the fraction along it for every
+caller at once. `evenLine` is gone. The two zero-tangent fallbacks stay, because
+a half-collapsed segment reaches them too: one handle `null` and the other not
+is a curve somebody drew, and moving its live control would change the shape.
+
+The invariant is held by a test rather than by memory: for a spread of
+parameters, on a straight segment and a curved one, `splitSegment` puts the node
+where `cubicAt(segmentAsCubic(...), t)` says it is.
+
+### What the marker promises, the click delivers
+
+The hover marker and the double-click were two calls to `nearestOnPath` that
+agreed by coincidence. They are one call now, `Controller.insertPoint`, because
+a dot drawn where the node will not go is worse than no dot: it is the editor
+saying something untrue about what is about to happen, and it was the visible
+half of the defect above.
+
+### Why the insert reads crossings and no other snap target
+
+`Snap to crossings` covered a dragged pointer and not an inserted node, which
+looked like an oversight in the switch and was not: the insert consulted no snap
+at all, because most snap targets are not places a node can go. A node is a
+split at a parameter on one named segment, so a gridline that crosses the
+outline, or an anchor of some other shape, has no parameter on it. Snapping the
+point first and projecting it back afterwards would move the node off the target
+it had just been snapped to.
+
+A crossing is the exception, and the only one: it lies on both outlines by
+construction, so it has a parameter on the one under the pointer. `insertPoint`
+asks `crossingOnSegment` for that parameter directly rather than going through
+`resolveSnap`, which answers a different question. It also has to be the segment
+under the pointer: two outlines run through a crossing, and putting the node in
+the other one would be a node in a shape nobody clicked.
+
+### What the gates were measuring
+
+The browser scenario that exercised this gesture checked that the node count
+went up by one. That was true throughout, with the node 19 units from the
+pointer. Both scenarios read the position now, and `crossings` reads the
+marker's coordinates as well as the node's.
+
+Fixing the parameterisation also exposed a unit test that could not fail.
+`corner-curved.test.ts` measured how far a cut piece strays from the curve it
+was cut from, against a floor measured from the same instrument. Both readings
+peaked at a segment end, where `projectToCubic` narrows an interval towards a
+minimum it never reaches, and both returned 8.152e-8 -- the same number to every
+digit, so the check compared a quantity to itself. `projectToCubic` answers the
+two ends exactly now rather than approaching them, and the test refines far
+enough that the instrument reads 8e-15 against a real difference of 2e-14. It
+goes red on a control point moved by 1e-6.

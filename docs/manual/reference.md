@@ -31,7 +31,7 @@ have meant something unrelated.
 | Drag a handle | Move it, preserving whatever relationship the pair already had |
 | `Alt`-drag a handle | Move it alone, breaking the pair |
 | Drag an outline | Move the shape, and everything else selected with it |
-| Double-click an outline | Insert a node there, without changing the curve |
+| Double-click an outline | Insert a node there, without changing the curve. Holds a crossing when **Snap to crossings** is on |
 | Double-click a node | Cycle cusp, smooth, symmetric |
 | Drag a box handle | Scale the selection. `Shift` keeps the proportions, `Alt` works from the centre |
 | Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
@@ -846,7 +846,7 @@ edge is an outline, and the drawing wins where both are in reach.
 | **Snap to grid** | Round positions to a multiple of Step |
 | **Snap to points** | Weld to an existing node within 8 pixels |
 | **Snap to outlines** | Weld to a point *on* an existing curve, not only to its anchors |
-| **Snap to crossings** | Weld to where two outlines cross. Worked out on the spot, so it is off unless you want it |
+| **Snap to crossings** | Weld to where two outlines cross, and put a double-clicked node there. Worked out on the spot, so it is off unless you want it |
 | **Pixel fit** | Shift the lattice by half the stroke width, so the stroke's edges land on whole pixels |
 | **Reference point** | The three by three grid at the top of **Transform**. Picks which point of the selection stays put: **at** reads that point, and typing a size grows the shape about it. Starts on the centre |
 | **Show nodes** | Draw the square and round markers on each node. Off leaves the shape with nothing on it to press, so nodes cannot be selected or dragged |

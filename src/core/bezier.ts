@@ -220,6 +220,13 @@ export interface Projection {
  * quantises "click the outline to insert a node" to 1/24 of a segment, which
  * makes an inserted node visibly jump away from the cursor. The refinement pass
  * costs about 20 extra evaluations and removes that entirely.
+ *
+ * **The two ends are then answered exactly rather than approached.** A point
+ * beyond the end of a segment has its nearest neighbour at `t = 0` or `t = 1`,
+ * and a search that only ever narrows an interval arrives near the end without
+ * reaching it: twenty thirds of 1/24 leaves the parameter about 6e-6 short,
+ * which on a segment 40 units long is 2.5e-4 of position. Small, and wrong in
+ * the one place the right answer is known in advance and free.
  */
 export function projectToCubic(b: Cubic, p: Pt, coarse = 24, refine = 20): Projection {
   let bestT = 0;
@@ -248,9 +255,16 @@ export function projectToCubic(b: Cubic, p: Pt, coarse = 24, refine = 20): Proje
     else lo = m1;
   }
 
-  const t = (lo + hi) / 2;
-  const pt = cubicAt(b, t);
-  return { t, d: Math.hypot(pt[0] - p[0], pt[1] - p[1]), pt };
+  const at = (t: number): Projection => {
+    const pt = cubicAt(b, t);
+    return { t, d: Math.hypot(pt[0] - p[0], pt[1] - p[1]), pt };
+  };
+  let best = at((lo + hi) / 2);
+  for (const end of [0, 1]) {
+    const e = at(end);
+    if (e.d < best.d) best = e;
+  }
+  return best;
 }
 
 /** Approximate arc length by flattening. Used for handle-length heuristics. */
