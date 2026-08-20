@@ -70,6 +70,24 @@ export interface Corner {
   lengths: [number, number];
 }
 
+/**
+ * How far off a fillet's own arithmetic may be before it stops being one.
+ *
+ * Not floating-point slack. It is the width of the coordinate grid a saved file
+ * rounds to: at three decimal places every coordinate moves by up to 0.0005,
+ * and the lengths and angles read back off them move with it. A tolerance tight
+ * enough for exact geometry says a rounded corner stopped being a corner the
+ * moment it was written to a file and read back, which is what it did say until
+ * 2026-08-20.
+ *
+ * Measured rather than picked: over radii from 0.5 to 30, corners from sharp to
+ * shallow, and coordinates out at 1200, the worst residual after a round trip
+ * through three decimals is 2.4e-4. This is that with room over it, and it is
+ * still four orders inside what a pair of hand-pulled curves would have to hit
+ * by accident. §48.
+ */
+const ROUND_TRIP = 2e-3;
+
 /** A straight cubic whose parameter moves at a constant speed along it. */
 const evenLine = (a: Pt, b: Pt): Cubic => [
   clonePt(a),
@@ -609,7 +627,7 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
   if (ha < 1e-9 || hb < 1e-9) return null;
   // Equal handles, which a fillet has by construction and a hand-pulled pair of
   // curves has only by accident.
-  if (Math.abs(ha - hb) > 1e-6 * Math.max(ha, hb)) return null;
+  if (Math.abs(ha - hb) > ROUND_TRIP * Math.max(ha, hb)) return null;
 
   const ea: Pt = [da[0] / ha, da[1] / ha];
   const eb: Pt = [db[0] / hb, db[1] / hb];
@@ -622,11 +640,12 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
   if (!(t > 1e-9)) return null; // the crossing is behind `a`, so it is not this arc's
   const meet: Pt = [a.pt[0] + ea[0] * t, a.pt[1] + ea[1] * t];
 
+  /* Where each side has to be picked up from, for the solve that finds the
+     corner. A seed only: the equality a circle's two tangent lengths have is
+     not checked, because it says nothing the handle test below does not already
+     say and it is the noisiest of the three to read off rounded coordinates. */
   const cutA = t;
   const cutB = Math.hypot(b.pt[0] - meet[0], b.pt[1] - meet[1]);
-  /* Tangent lengths from one point to one circle are equal, so an arc whose two
-     end tangents cross at unequal distances is not one circle's worth of arc. */
-  if (Math.abs(cutA - cutB) > 1e-6 * Math.max(cutA, cutB)) return null;
 
   // The angle the tangent rays make, which is the corner's own only when both
   // sides are straight.
@@ -634,10 +653,19 @@ export function filletAt(sp: Subpath, i: number): Fillet | null {
   const spread = Math.acos(cos);
   if (spread > Math.PI - 1e-6 || spread < 1e-6) return null;
 
-  const radius = cutA * Math.tan(spread / 2);
+  /* The radius from the arc's own chord and the angle it turns through, rather
+     than from the distance to where the tangent rays cross. Both spellings are
+     the same number on exact geometry; on geometry a file has rounded they are
+     not, because the crossing can be a long way off and a shallow corner
+     multiplies whatever error is in it. Chord and turn are both measured
+     between the two nodes and stay put. */
+  const turn = Math.PI - spread;
+  const chord = Math.hypot(b.pt[0] - a.pt[0], b.pt[1] - a.pt[1]);
+  const radius = chord / (2 * Math.sin(turn / 2));
+
   // Circular, not merely tangent: the handle a circular arc through this angle
   // needs is a fixed length, so a pair that misses it is some other curve.
-  if (Math.abs(ha - arcHandle(radius, Math.PI - spread)) > 1e-6 * Math.max(ha, 1)) return null;
+  if (Math.abs(ha - arcHandle(radius, turn)) > ROUND_TRIP * Math.max(ha, 1)) return null;
 
   /* Both sides are run from their tangent node toward the corner. The arc
      leaves `a` that way already; it arrives at `b` from the corner, so `b`

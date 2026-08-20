@@ -2391,6 +2391,43 @@ else, and `filletSide` reads that off the geometry. A curved side used up this
 way cannot come back at all, and refuses: its stub was a curve, and the tangent
 ray says where it left rather than where it ended.
 
+**The tolerances are the width of the coordinate grid, not floating-point
+slack.** A file rounds every coordinate to `decimals` places, and the lengths
+and angles read back off them move with it. At 1e-6 a rounded corner stopped
+being a corner the moment it went through the source drawer and came back,
+which is what it did until 2026-08-20: five decimal places were needed to
+recognise a fillet the program had just written at three.
+
+Two changes got it to three, and the second is worth more than the tolerance.
+The radius now comes from the arc's own chord and the angle it turns through
+rather than from the distance to where the tangent rays cross: both are
+measured between the two nodes and stay put, where the crossing can be a long
+way off and a shallow corner multiplies whatever error is in it. That is 2 to 5
+times better conditioned on rounded coordinates and identical on exact ones.
+And the equal-cuts test is gone: it was the noisiest of the three to read off a
+rounded file and it says nothing the handle test does not, since tangent
+lengths from one point to one circle are equal whenever the arc is circular.
+
+`ROUND_TRIP` is measured rather than picked. Over radii from 0.5 to 30, corners
+from 74 to 136 degrees, and coordinates out at 1200, the worst residual after
+three decimals is 2.4e-4.
+
+**A circle reads as four fillets, and always has.** Its segments are circular
+arcs and its nodes are smooth, so the sides either side of any node cross at
+about 165 degrees when carried past their ends, and an arc tangent to both at
+that radius is exactly what sits between them. It is a fillet by every measure
+this can take, and no tolerance separates the two: a circle's residuals are
+*smaller* than a legitimate fillet's after a save. An ellipse is refused,
+because its segments are not circular.
+
+The test that used to say otherwise was passing on luck. Its circle was written
+at four decimals, so the old tolerance rejected it for its rounding rather than
+for its shape; a circle built at full precision read as four fillets before any
+of the corner work as well. **A reconstruction check was written twice to catch
+this and removed twice**: rounding the recovered corner at the recovered radius
+puts the touch points back where they are, because for a circle that is a true
+statement. It cannot discriminate and there is no third case that needs it.
+
 **Two things it will not do**, both stated rather than guarded. It takes the
 first crossing Newton reaches from that seed, so two sides that cross more than
 once ahead of their tangent points could in principle recover the wrong corner.

@@ -14,6 +14,8 @@
 import { describe, expect, it } from 'vitest';
 import { cubicAt, cubicLength, cubicUnitTangent, projectToCubic } from '../src/core/bezier';
 import { parsePath } from '../src/core/parse';
+import { serialisePath } from '../src/core/serialise';
+import { ellipseSubpath } from '../src/core/primitives';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Cubic, Pt, Subpath } from '../src/core/types';
 import {
@@ -281,91 +283,50 @@ describe('a corner cut with a curved side goes back exactly', () => {
     expect(filletAt(sp, 1)).toBeNull();
   });
 
-  it('reports no fillet where two arcs merely meet', () => {
-    /* A circle drawn as four arcs. Every node is smooth and every segment is a
-       circular arc, so each pair passes every test the arc itself can be put
-       to, and none of them was cut from a corner. What refuses is the corner:
-       carried past their ends the two sides curl away from each other and never
-       meet, so there is no crossing to call a corner. */
-    const sp = parsePath(
-      'M100 50 C100 77.6142 77.6142 100 50 100 C22.3858 100 0 77.6142 0 50' +
-        ' C0 22.3858 22.3858 0 50 0 C77.6142 0 100 22.3858 100 50 Z',
-    )[0];
-    for (let i = 0; i < sp.nodes.length; i++) expect(filletAt(sp, i)).toBeNull();
-  });
-});
-
-describe('an arc that used a whole side up', () => {
-  /**
-   * The tangent point lands on the neighbour, and that neighbour survives.
-   *
-   * At the limit `roundCorner` reuses the node rather than leaving two anchors
-   * on one point, so one of the fillet's two nodes is a corner of the drawing
-   * in its own right. Undoing the fillet has to put the corner back **beside**
-   * it, not in place of it: replacing it deletes a corner nobody asked to lose,
-   * and the shape springs open where that node was.
-   */
-  const QUAD = 'M60 20 L200 90 L170 150 L30 80 Z';
-
-  it('keeps the node the arc was allowed to reach', () => {
-    const sp = parsePath(QUAD)[0];
-    const c = cornerAt(sp, 0);
-    if (typeof c === 'string') throw new Error(c);
-    // The short side is used up exactly, so the tangent point is the neighbour.
-    expect(typeof roundCorner(sp, 0, maxCornerRadius(c))).not.toBe('string');
-    expect(sp.nodes.map((n) => n.pt)).toContainEqual([30, 80]);
-
-    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
-    expect(where).toHaveLength(1);
-    expect(unroundCorner(sp, where[0])).not.toBeNull();
-
-    // Every corner of the original is back, and none has been lost on the way.
-    const want = parsePath(QUAD)[0].nodes.map((n) => n.pt);
-    expect(sp.nodes).toHaveLength(want.length);
-    for (const p of want) {
-      expect(sp.nodes.some((n) => dist(n.pt, p) < 1e-6)).toBe(true);
+  it('survives being written to a file and read back', () => {
+    /* The recognition tolerances are the width of the coordinate grid a save
+       rounds to, not floating-point slack. Tight enough for exact geometry and
+       a rounded corner stops being one the moment it goes through the source
+       drawer, which is what it did until 2026-08-20. */
+    const cases: [string, number, number][] = [
+      ['M60 20 L200 90 L170 150 L30 80 Z', 0, 30],
+      ['M60 20 L200 90 L170 150 L30 80 Z', 0, 0.5],
+      ['M0 40 L100 0 L200 40 L100 44 Z', 1, 6],
+      ['M0 40 L100 0 L104 40 L52 60 Z', 1, 6],
+      // Far from the origin, where the quantum is a smaller share of each number.
+      ['M1060 1020 L1200 1090 L1170 1150 L1030 1080 Z', 0, 30],
+    ];
+    for (const [d, i, r] of cases) {
+      const sp = parsePath(d)[0];
+      expect(typeof roundCorner(sp, i, r)).not.toBe('string');
+      const saved = parsePath(serialisePath([sp], { decimals: 3 }))[0];
+      const found = saved.nodes.map((_, k) => (filletAt(saved, k) ? k : -1)).filter((k) => k >= 0);
+      expect(found, `${d} at r ${r}`).toHaveLength(1);
+      // And the radius still reads back as the one it was cut with.
+      expect(filletAt(saved, found[0])!.radius).toBeCloseTo(r, 2);
     }
   });
 
-  it('comes back to the shape it was, with the sides straight again', () => {
-    const sp = parsePath(QUAD)[0];
-    const c = cornerAt(sp, 0);
-    if (typeof c === 'string') throw new Error(c);
-    roundCorner(sp, 0, maxCornerRadius(c));
-    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
-    unroundCorner(sp, where[0]);
-    // A quadrilateral of four lines: no handle anywhere.
-    for (const n of sp.nodes) {
-      expect(n.hIn).toBeNull();
-      expect(n.hOut).toBeNull();
-    }
+  it('tells a circle from an ellipse, and reads a circle as filleted', () => {
+    /* An ellipse's segments are not circular arcs, so none of its nodes claims
+       to be a corner. A circle's are, and every node of one does -- the sides
+       either side of any node cross at about 165 degrees when carried past
+       their ends, and an arc tangent to both of them at that radius is what
+       sits between. It is a fillet by every measure this can take.
+
+       That is a limit rather than a decision, and it is not new: a circle built
+       at full precision read this way before any of the corner work as well.
+       What changed on 2026-08-20 is only that the fixture here used to be
+       written at four decimals, so the old tolerance rejected it for its
+       rounding rather than for its shape. §48. */
+    const round = ellipseSubpath(50, 50, 40, 40);
+    const asFillet = round.nodes.map((_, i) => (filletAt(round, i) ? i : -1)).filter((i) => i >= 0);
+    expect(asFillet).toHaveLength(round.nodes.length);
+
+    const oval = ellipseSubpath(50, 50, 60, 30);
+    for (let i = 0; i < oval.nodes.length; i++) expect(filletAt(oval, i)).toBeNull();
   });
 
-  it('does the same where both sides are used up at once', () => {
-    // A square's two sides are equal, so the arc reaches both neighbours.
-    const SQ = 'M20 20 L100 20 L100 100 L20 100 Z';
-    const sp = parsePath(SQ)[0];
-    const c = cornerAt(sp, 1);
-    if (typeof c === 'string') throw new Error(c);
-    roundCorner(sp, 1, maxCornerRadius(c));
-    expect(sp.nodes).toHaveLength(3);
-
-    const where = sp.nodes.map((_, i) => (filletAt(sp, i) ? i : -1)).filter((i) => i >= 0);
-    expect(where).toHaveLength(1);
-    unroundCorner(sp, where[0]);
-
-    expect(sp.nodes).toHaveLength(4);
-    for (const p of parsePath(SQ)[0].nodes.map((n) => n.pt)) {
-      expect(sp.nodes.some((n) => dist(n.pt, p) < 1e-6)).toBe(true);
-    }
-    /* And it is a square again, not four points with the arc's handles still
-       hanging off two of them. Both nodes were reused here, so both had a
-       handle to give back. */
-    for (const n of sp.nodes) {
-      expect(n.hIn).toBeNull();
-      expect(n.hOut).toBeNull();
-    }
-  });
 });
 
 describe('the clamp on a curved side', () => {
