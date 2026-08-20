@@ -54,6 +54,38 @@ npm package `path-bool`, and its licence text ships with that package.
 
 --
 
+Twenty-five of the interface icons are Lucide's, used under the ISC License.
+
+    Lucide
+    Copyright (c) 2026 Lucide Icons and Contributors
+    https://lucide.dev
+    Licensed under the ISC License
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+The path data is taken verbatim from the icons named in `index.html`. It is
+vendored rather than depended on: this build is one file that opens from
+`file://`, so nothing may be fetched at run time.
+
+The other twenty-six icons in the sheet are not Lucide's. They are drawn in
+this repository on Lucide's grid, and the sheet says which is which.
+
+The notice above is repeated as a comment in `index.html`, so that it is
+inlined into the single-file build and travels with a copy handed about on its
+own.
+
+--
+
 The raster boundary walk is ported from ImageTracerJS by András Jankovics,
 released into the public domain.
 

@@ -3682,3 +3682,65 @@ transform about says how you are working, not what the drawing is, so it sits
 beside the grid step and the snap switches. A stored value naming no point is
 dropped on the way back in.
 
+
+## 68. Half the icons are Lucide's and half cannot be
+
+Fifty-one marks, on a 24 grid at a 2.25 stroke with round caps and joins. The
+grid and the stroke are Lucide's; twenty-five of the drawings are too.
+
+Before this the whole sheet was drawn here at 16, one icon at a time over about
+a year, and it looked it: no shared grid, no shared terminal, corner radii that
+disagreed. Two of the fifty-one were not drawings at all. The lock and the eye
+were emoji set as text, so they came out in whichever colour font the system
+ships, at a weight and a size nothing in this repository had a say in.
+
+### Why not all of them
+
+The obvious move is to take the whole set from the library and delete the
+drawing. It was tried, rendered at 16 and looked at, and it makes about sixteen
+icons worse. Two reasons, and they are the same reason twice:
+
+- **A library glyph for a boolean draws the outcome as an outline.** Lucide's
+  `squares-intersect` is eleven separate path fragments, which is legible at the
+  24 it was drawn for and mush at 16. The four here are solid discs with one
+  masked, which survives the size because it is two shapes and a hole.
+- **A library glyph for align or distribute does not know what this editor
+  distinguishes.** Distribute here is three operations per axis -- equal edges,
+  equal gaps, equal centres -- and the drawings differ in the width of three
+  bars, which is exactly what the operations differ in. Lucide has
+  `distribute-start`, `-center`, `-end` and `space-between`, which is a
+  different taxonomy with a defensible mapping onto this one and no way to show
+  the reader which of the three they picked.
+
+So the rule is: **Lucide where the icon names a thing, this repository where it
+diagrams an operation.** Twenty-five and twenty-six. The two halves share a grid,
+a stroke and a terminal, so the sheet reads as one set and nothing says which
+half a given mark came from.
+
+The twenty-six were not redrawn. They were rescaled, every length times 1.5,
+which is the same drawing at the same weight on screen and no new judgement
+about any of them.
+
+**Scaling path data is not scaling every number in it.** An elliptic arc is
+`A rx ry rotation large-arc sweep x y`, and three of those seven are not
+lengths. A blanket multiply turned `1 1` into `1.5 1.5`, which is not a wrong
+arc: it is a `d` attribute that stops parsing, and an unparseable `d` renders as
+nothing at all. One icon disappeared and the other twenty-five were fine, so the
+sheet looked correct. What found it was measuring every symbol's bounding box
+rather than looking at them.
+
+### 2.25, not 2
+
+Lucide draws at 2 on a 24 grid, which comes out at 1.33 px in this editor's 16 px
+box and reads thin beside 12.5 px text. 2.25 gives 1.5 px, which is the weight
+the sheet had when it was drawn on a 16 grid. The stroke is set once, in `.ico`,
+so it is one number rather than a property of each icon.
+
+### Vendored, and the notice travels with the build
+
+The path data is copied into `index.html`. Nothing is fetched, because the build
+is one file that opens from `file://` (§1). ISC asks for its notice in every
+copy, and a copy here is that one file handed to somebody, so the notice is a
+comment in the markup and not only in `NOTICE`. `npm run build` was checked for
+it rather than assumed: a minifier that dropped HTML comments would have taken
+the licence with them.

@@ -231,6 +231,12 @@ Boolean operations use **[PathBool.js](https://github.com/r-flash/PathBool.js)**
 by Adam Platkevič (MIT), the one piece of geometry here deliberately not written
 by hand.
 
+Twenty-five of the 51 interface icons are
+**[Lucide](https://lucide.dev)** (ISC), vendored as path data because the build
+may fetch nothing at run time. The other twenty-six are drawn here on Lucide's
+grid: each of those says which shape an operation acts on, and a library glyph
+of the same name does not.
+
 Ideas taken without code: [TikZiT](https://tikzit.github.io/)'s edge model,
 which is where bend comes from, and [IPE](https://otfried.github.io/ipe/)'s
 layered snapping, now built: see ARCHITECTURE §27.

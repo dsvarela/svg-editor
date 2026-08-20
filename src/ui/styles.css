@@ -288,11 +288,18 @@ input[type='number'],
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  /* 2.25 in a 24-unit viewBox is 1.5 px at 16, which is the weight the set had
+     when it was drawn on a 16 grid. Lucide's own 2 would come out at 1.33 and
+     read thin beside 12.5 px text. */
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .ico .sq { fill: currentColor; stroke: none; }
+/* Small enough for a 14 px list row. The stroke is not scaled with it: at
+   12 px a 2.25 stroke lands on 1.13 px, which is the weight the row's own
+   text is drawn at. */
+.ico.tiny { width: 12px; height: 12px; }
 .ico.glyph { width: 26px; height: 13px; stroke-width: 1.3; }
 /* The canvas draws a real handle filled and a ghost one hollow, so a glyph with
    both handles hollow reads as "two handles that do not exist yet" -- a corner
@@ -1238,11 +1245,13 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
   flex: none;
   width: 14px;
   height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
-  font-size: 10px;
   line-height: 1;
   cursor: pointer;
   opacity: 0.35;
@@ -1267,11 +1276,13 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
      children it holds, and a press aimed at the group lands on a shape. */
   width: 14px;
   height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
-  font-size: 10px;
   line-height: 1;
   cursor: pointer;
   /* Open reads as quiet and closed as present, so a list of unlocked rows is
@@ -1566,8 +1577,13 @@ kbd {
   .shapelist .twist { width: 44px; height: 44px; }
   /* And the lock at the other end of the row, for the same reason. It is the
      only way to lock anything, so a finger that cannot hit it cannot lock. */
+  /* The target grows; the icon in it grows a little, not to 44. A mark that
+     filled the whole target would outweigh the name beside it, which is the
+     same argument `.ghelp` above makes about its circle. */
   .shapelist .lockbtn,
-  .shapelist .eyebtn { width: 44px; height: 44px; font-size: 16px; }
+  .shapelist .eyebtn { width: 44px; height: 44px; }
+  .shapelist .lockbtn .ico.tiny,
+  .shapelist .eyebtn .ico.tiny { width: 17px; height: 17px; }
   /* Nine targets in one control: each one gets a finger, so the chooser is
      three rows of 44 px rather than a 36 px square nobody can hit. */
   .refpoint { grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; }

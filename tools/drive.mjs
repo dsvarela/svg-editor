@@ -7199,11 +7199,40 @@ const audit = await page.evaluate(() => {
     }
   }
 
+  /* Every icon in the sheet, measured rather than looked at. A `d` a browser
+     cannot parse is not a wrong drawing: the element renders as nothing and
+     reports nothing, so a sheet with one icon missing looks like a sheet. The
+     way to make one is to rescale path data without knowing that three of an
+     elliptic arc's seven numbers are not lengths. Rendered through a `use`,
+     because a symbol on its own has no box. */
+  const blankIcons = [];
+  const probe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  probe.setAttribute('style', 'position:absolute;width:16px;height:16px;opacity:0');
+  document.body.append(probe);
+  for (const sym of document.querySelectorAll('svg.sprite symbol[id^="i-"]')) {
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${sym.id}`);
+    probe.replaceChildren(use);
+    let w = 0;
+    let h = 0;
+    try {
+      const b = use.getBBox();
+      w = b.width;
+      h = b.height;
+    } catch {
+      /* leaves both at 0, which is the failure */
+    }
+    if (w < 4 || h < 1) blankIcons.push(`${sym.id} ${w.toFixed(1)}x${h.toFixed(1)}`);
+  }
+  probe.remove();
+
   return {
     artworkPaths: artwork.length,
     artworkD: artwork.map((p) => p.getAttribute('d')),
     badD: broken.length,
     badWhere: [...new Set(broken)],
+    icons: document.querySelectorAll('svg.sprite symbol[id^="i-"]').length,
+    blankIcons,
     visibleAnchors: anchors.length,
     visibleHandles: handles.length,
     visibleHandleLines: lines.length,
@@ -7224,6 +7253,12 @@ if (audit.badD > 0) {
   failure ??=
     `${audit.badD} attribute${audit.badD === 1 ? '' : 's'} reached the DOM holding ` +
     `NaN, Infinity or undefined: ${audit.badWhere.join(', ')}`;
+}
+
+if (audit.blankIcons.length) {
+  failure ??=
+    `${audit.blankIcons.length} of ${audit.icons} icons in the sheet draw nothing: ` +
+    audit.blankIcons.join(', ');
 }
 
 if (audit.swallowers.length) {

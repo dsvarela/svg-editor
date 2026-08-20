@@ -3030,6 +3030,25 @@ const listSignature = (): string =>
     .join('\u0002');
 
 /**
+ * One of the sprite's icons, small enough for a list row.
+ *
+ * These two rows carried emoji until the sprite had icons for them. An emoji is
+ * drawn by whichever colour font the system ships, at a weight and a size the
+ * rest of the interface has no say in, so the lock and the eye were the only
+ * two marks in the window that did not match the forty-nine around them.
+ */
+function rowIcon(name: string): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'ico tiny');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(NS, 'use');
+  use.setAttribute('href', `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+/**
  * The lock button on a list row.
  *
  * The only place a lock can be seen or changed, which is what lets the canvas
@@ -3044,7 +3063,7 @@ function eyeButton(id: string, name: string, own: boolean, inherited: boolean): 
   b.className = 'eyebtn';
   b.dataset.eye = id;
   b.tabIndex = -1;
-  b.textContent = own || inherited ? '\u{1F648}' : '\u{1F441}';
+  b.replaceChildren(rowIcon(own || inherited ? 'eyeoff' : 'eye'));
   b.setAttribute('aria-pressed', String(own || inherited));
   b.disabled = inherited && !own;
   b.setAttribute(
@@ -3066,7 +3085,7 @@ function lockButton(id: string, name: string, ownLock: boolean, inherited: boole
   b.dataset.lock = id;
   // For the reason the disclosures give: a tree is one tab stop.
   b.tabIndex = -1;
-  b.textContent = ownLock || inherited ? '\u{1F512}' : '\u{1F513}';
+  b.replaceChildren(rowIcon(ownLock || inherited ? 'lock' : 'unlock'));
   b.setAttribute('aria-pressed', String(ownLock || inherited));
   b.disabled = inherited && !ownLock;
   b.setAttribute(
