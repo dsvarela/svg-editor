@@ -27,7 +27,14 @@ import { SessionStore } from './io/storage';
 /* Aliased: the DOM's own `Selection` is a global type, and an unaliased import
    here shadows it in a file that also uses `getSelection`. */
 import type { Selection as Sel } from './model/doc';
-import { cornerAt, filletAt, isPathEnd, latentHandle } from './model/ops';
+import {
+  isPathEnd,
+  latentHandle,
+} from './model/ops';
+import {
+  cornerAt,
+  filletAt,
+} from './model/corner';
 import { continuityOf } from './core/types';
 import type { Shape, Style, Subpath, ViewBox } from './core/types';
 import { clampCorners, clampRatio } from './core/primitives';
@@ -48,7 +55,9 @@ import { fitAspect, fitBox, gridDisplayFor, screenToDoc, zoomAt } from './view/v
 import { Controller } from './tools/controller';
 import { Commands } from './tools/commands';
 import { bindKeys } from './tools/keys';
-import type { AlignMode } from './model/ops';
+import type {
+  AlignMode,
+} from './model/ops';
 import { rebuildPaintOrder } from './model/arrange';
 import type { AlignTo, ZMove } from './model/arrange';
 import { $ } from './view/dom';

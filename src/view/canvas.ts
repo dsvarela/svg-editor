@@ -17,10 +17,19 @@
 
 import { STROKE_CAP, STROKE_JOIN, continuityOf, segmentAsCubic, segmentCount } from '../core/types';
 import type { Doc, Pt, Subpath, ViewBox } from '../core/types';
-import type { Fillet } from '../model/ops';
+import type {
+  Fillet,
+} from '../model/corner';
 import { PathCache } from './pathcache';
 import type { EditorState } from '../model/store';
-import { cornerArcReach, cornerAt, filletAt, latentHandle } from '../model/ops';
+import {
+  latentHandle,
+} from '../model/ops';
+import {
+  cornerArcReach,
+  cornerAt,
+  filletAt,
+} from '../model/corner';
 import { keylinesFor } from '../model/keylines';
 import type { Alignment } from '../model/smart';
 import { serialisePath } from '../core/serialise';

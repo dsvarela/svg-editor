@@ -22,8 +22,12 @@ import { describe, expect, it } from 'vitest';
 import { projectToCubic } from '../src/core/bezier';
 import { segmentAsCubic, segmentCount } from '../src/core/types';
 import type { Doc, Pt } from '../src/core/types';
-import { nearestOnPath } from '../src/model/ops';
-import type { PathHit } from '../src/model/ops';
+import {
+  nearestOnPath,
+} from '../src/model/ops';
+import type {
+  PathHit,
+} from '../src/model/ops';
 import { emptyDoc, shapeFromPath } from '../src/model/doc';
 
 /**

@@ -19,7 +19,9 @@ import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
 import { dedupeIds, emptyDoc, emptySelection, findShape, nextId, reserveIds, resolveNodes, shapeFromPath } from '../src/model/doc';
 import { nodeIdAt } from './helpers';
-import { breakAt } from '../src/model/ops';
+import {
+  breakAt,
+} from '../src/model/ops';
 import type { Doc } from '../src/core/types';
 
 /** Every node id that names more than one node, with how many it names. */

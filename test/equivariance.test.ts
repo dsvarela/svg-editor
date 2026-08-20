@@ -21,20 +21,22 @@ import { describe, expect, it } from 'vitest';
 import { parsePath } from '../src/core/parse';
 import {
   closeSubpath,
-  cornerAt,
   deleteNode,
-  filletAt,
   fuseNodes,
   latentHandle,
   moveAnchor,
   moveHandle,
   reshapeSegment,
   reverseSubpath,
-  roundCorner,
   setContinuity,
   setSegmentCurved,
   splitSegment,
 } from '../src/model/ops';
+import {
+  cornerAt,
+  filletAt,
+  roundCorner,
+} from '../src/model/corner';
 import type { Pt, Subpath } from '../src/core/types';
 
 /** Off the origin and off both axes, with the two components unequal. */

@@ -18,18 +18,20 @@ import { parsePath } from '../src/core/parse';
 import type { Pt } from '../src/core/types';
 import {
   closeSubpath,
+  fuseDegenerate,
+  fuseNodes,
+  mergeEnds,
+  setSegmentCurved,
+  splitSegment,
+} from '../src/model/ops';
+import {
   cornerAt,
   cornerArcReach,
   cornerRadiusAtReach,
   filletAt,
-  fuseDegenerate,
-  fuseNodes,
-  mergeEnds,
   roundCorner,
-  setSegmentCurved,
   sharedCornerRadius,
-  splitSegment,
-} from '../src/model/ops';
+} from '../src/model/corner';
 
 describe('splitSegment names the node it inserted', () => {
   /* The controller selects that index straight afterwards, so an index one off

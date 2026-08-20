@@ -50,9 +50,6 @@ import {
   moveAnchor,
   moveHandle,
   reverseSubpath,
-  roundCorner,
-  sharedCornerRadius,
-  unroundCorner,
   setContinuity,
   setSegmentBend,
   segmentBend,
@@ -63,7 +60,18 @@ import {
   splitSegment,
   transformShape,
 } from '../model/ops';
-import type { AlignMode, FuseRefusal, RoundRefusal } from '../model/ops';
+import {
+  roundCorner,
+  sharedCornerRadius,
+  unroundCorner,
+} from '../model/corner';
+import type {
+  AlignMode,
+  FuseRefusal,
+} from '../model/ops';
+import type {
+  RoundRefusal,
+} from '../model/corner';
 import {
   alignUnits,
   arrangeUnits,

@@ -15,7 +15,6 @@ import {
   moveHandle,
   reshapeSegment,
   reverseSubpath,
-  roundCorner,
   setContinuity,
   setSegmentCurved,
   snap,
@@ -24,9 +23,14 @@ import {
   alignNodes,
   distributeNodes,
 } from '../src/model/ops';
+import {
+  roundCorner,
+} from '../src/model/corner';
 import { emptyDoc, shapeFromPath, shapeBBox, selectedNodes, emptySelection } from '../src/model/doc';
 import type { NodeRef } from '../src/model/doc';
-import type { AlignMode } from '../src/model/ops';
+import type {
+  AlignMode,
+} from '../src/model/ops';
 import type { Doc } from '../src/core/types';
 import { KAPPA } from '../src/core/primitives';
 import { Store } from '../src/model/store';

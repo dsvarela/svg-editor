@@ -9,7 +9,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { phaseInForce, phaseLabel, phaseOf } from '../src/model/pixelfit';
-import { snap } from '../src/model/ops';
+import {
+  snap,
+} from '../src/model/ops';
 import { emptyDoc, emptySelection, shapeFromPath } from '../src/model/doc';
 import { defaultStyle } from '../src/core/types';
 import type { Doc, Style } from '../src/core/types';

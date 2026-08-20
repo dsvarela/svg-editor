@@ -805,6 +805,12 @@ scenarios that touch what changed.
 
 ## 23. A corner is a cusp, and rounding one is tangent to whatever its sides are
 
+All of this lives in `src/model/corner.ts`: measuring a corner, replacing it
+with an arc, and reading that arc back. Eight functions over fourteen private
+helpers, and the reason it is not in `ops.ts` beside the other geometry is
+that it has its own vocabulary. `Corner`, `Tangency`, `Arc`, `SideRun` and
+`Fillet` mean nothing to a caller who wants to move a node.
+
 `roundCorner` replaces a corner node with two, one at each tangent point, and an
 arc between them. It is the operation the rectangle tool performs while drawing,
 available afterwards on anything.

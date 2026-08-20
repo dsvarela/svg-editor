@@ -21,7 +21,13 @@ import { docBBox, emptyDoc, emptySelection, makeShape, resolveNodes, shapeBBox, 
 import { nodeIdAt } from './helpers';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
-import { filletAt, segmentBend, splitSegment } from '../src/model/ops';
+import {
+  segmentBend,
+  splitSegment,
+} from '../src/model/ops';
+import {
+  filletAt,
+} from '../src/model/corner';
 import { exportSvg } from '../src/io/svg';
 import { cubicAt } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';

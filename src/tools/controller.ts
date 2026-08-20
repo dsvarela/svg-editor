@@ -30,15 +30,9 @@ import type { HandlePart, NodeRef } from '../model/doc';
 import {
   captureNodes,
   closeSubpath,
-  cornerAt,
-  cornerRadiusAtReach,
-  maxCornerRadius,
-  sharedCornerRadius,
   moveAnchor,
   moveHandle,
   nearestOnPath,
-  roundCorner,
-  unroundCorner,
   reverseSubpath,
   setContinuity,
   reshapeSegment,
@@ -49,7 +43,17 @@ import {
   transformCaptured,
   transformShape,
 } from '../model/ops';
-import type { NodeSnapshot } from '../model/ops';
+import {
+  cornerAt,
+  cornerRadiusAtReach,
+  maxCornerRadius,
+  sharedCornerRadius,
+  roundCorner,
+  unroundCorner,
+} from '../model/corner';
+import type {
+  NodeSnapshot,
+} from '../model/ops';
 import { invisibleAt } from '../model/knots';
 import { phaseInForce, phaseOf } from '../model/pixelfit';
 import { resolveSnap } from '../model/snapping';

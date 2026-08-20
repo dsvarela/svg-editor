@@ -23,7 +23,7 @@ import {
   roundCorner,
   sharedCornerRadius,
   unroundCorner,
-} from '../src/model/ops';
+} from '../src/model/corner';
 
 /* Three nodes and three curves, off the origin and off both axes. Node 1 is a
    cusp of about 68 degrees with neither of its sides straight. */

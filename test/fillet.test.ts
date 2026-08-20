@@ -17,7 +17,7 @@ import {
   maxCornerRadius,
   roundCorner,
   unroundCorner,
-} from '../src/model/ops';
+} from '../src/model/corner';
 import { serialisePath } from '../src/core/serialise';
 import type { Subpath } from '../src/core/types';
 

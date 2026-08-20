@@ -17,7 +17,10 @@ import { describe, expect, it } from 'vitest';
 import { parsePath } from '../src/core/parse';
 import { makeNode } from '../src/core/types';
 import { serialisePath } from '../src/core/serialise';
-import { splitSegment, moveAnchor } from '../src/model/ops';
+import {
+  splitSegment,
+  moveAnchor,
+} from '../src/model/ops';
 import {
   invisibleAt,
   mergeSegments,

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { bendFromPoint, bendHandlePos, bendOf, bendToHandles } from '../src/core/bend';
-import { segmentBend, setSegmentBend } from '../src/model/ops';
+import {
+  segmentBend,
+  setSegmentBend,
+} from '../src/model/ops';
 import { parsePath } from '../src/core/parse';
 import { serialisePath } from '../src/core/serialise';
 import { segmentAsCubic } from '../src/core/types';

@@ -9,7 +9,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { fuseDegenerate, fuseNodes } from '../src/model/ops';
+import {
+  fuseDegenerate,
+  fuseNodes,
+} from '../src/model/ops';
 import { makeNode } from '../src/core/types';
 import type { Pt, Subpath } from '../src/core/types';
 
