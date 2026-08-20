@@ -836,3 +836,46 @@ describe('opacity', () => {
     }
   });
 });
+
+/**
+ * What the importer must not turn into shapes.
+ *
+ * **These pin the property, not the line, and the difference matters.**
+ * `importSvg` returns early on `defs`, `clipPath`, `mask` and `symbol`, and
+ * that line is unreachable: `walk` recurses only into `g`, `svg` and `a`, so
+ * the children of those four are never visited. Deleting the guard leaves all
+ * of these green, which was checked rather than assumed, and is what its own
+ * comment means by "dropped anyway".
+ *
+ * They fail when `walk` is made to recurse into those tags **and** the guard is
+ * gone, which was also checked: five red. So what they hold is the outcome a
+ * reader cares about across both mechanisms, and the guard stays as the thing
+ * that saves whoever widens the recursion one day.
+ *
+ * The outcome is the class this project ranks first. A `<mask>` holds geometry
+ * that is not part of the picture, so importing its contents puts shapes in the
+ * document that nobody drew, on top of the ones they did.
+ */
+describe('geometry that is not the picture', () => {
+  const wrap = (inner: string): string =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${inner}</svg>`;
+
+  const VISIBLE = '<path id="real" d="M10 10 H40 V40 Z"/>';
+
+  it.each([
+    ['defs', '<defs><path id="hidden" d="M60 60 H90 V90 Z"/></defs>'],
+    ['clipPath', '<clipPath id="c"><path id="hidden" d="M60 60 H90 V90 Z"/></clipPath>'],
+    ['mask', '<mask id="m"><path id="hidden" d="M60 60 H90 V90 Z"/></mask>'],
+    ['symbol', '<symbol id="s"><path id="hidden" d="M60 60 H90 V90 Z"/></symbol>'],
+  ])('does not import what is inside a %s', (_tag, block) => {
+    const r = importSvg(wrap(block + VISIBLE));
+    expect(r.shapes).toHaveLength(1);
+    expect(r.shapes[0].name).toBe('real');
+  });
+
+  it('does not import a nested one either', () => {
+    const r = importSvg(wrap(`<defs><g><path id="hidden" d="M60 60 H90 V90 Z"/></g></defs>${VISIBLE}`));
+    expect(r.shapes).toHaveLength(1);
+    expect(r.shapes[0].name).toBe('real');
+  });
+});

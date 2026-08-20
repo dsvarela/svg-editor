@@ -256,6 +256,65 @@ describe('writing and reading groups', () => {
     expect(firstClose).toBeGreaterThan(secondOpen);
   });
 
+  /**
+   * Every `<g>` the export opens, it closes.
+   *
+   * Counting opens and checking the order of the first few does not reach the
+   * loop that closes whatever is still open when the shapes run out. Found by
+   * mutation on 2026-08-21: `for (let i = open.length - 1; i >= 0; i--)` in
+   * `exportSvg` narrowed to `i > 0` drops the outermost `</g>`, and every test
+   * in this file stayed green while the export wrote XML no parser accepts.
+   *
+   * The last shape has to be **inside** a group for that loop to run at all,
+   * which the two tests above never arrange: the first leaves an ungrouped
+   * shape last, so the close happens on the way past it instead.
+   */
+  const depth = (svg: string): { balanced: boolean; deepest: number } => {
+    let d = 0;
+    let deepest = 0;
+    let balanced = true;
+    for (const tag of svg.match(/<\/?g\b/g) ?? []) {
+      d += tag === '</g' ? -1 : 1;
+      if (d < 0) balanced = false;
+      deepest = Math.max(deepest, d);
+    }
+    return { balanced: balanced && d === 0, deepest };
+  };
+
+  it('closes every g when the last shape is inside one', () => {
+    const { store, commands } = editor(3);
+    // s1 and s2 grouped, so the run reaches the end of the paint order.
+    select(store, 's1', 's2');
+    commands.groupSelection();
+    const svg = exportSvg(store.state.doc);
+    expect((svg.match(/<g\b/g) ?? [])).toHaveLength(1);
+    expect(depth(svg)).toEqual({ balanced: true, deepest: 1 });
+  });
+
+  it('closes both when the last shape is inside a nested pair', () => {
+    const { store, commands } = editor(3);
+    select(store, 's0', 's1', 's2');
+    commands.groupSelection();
+    select(store, 's1', 's2');
+    commands.groupSelection();
+    const svg = exportSvg(store.state.doc);
+    expect(depth(svg)).toEqual({ balanced: true, deepest: 2 });
+  });
+
+  it('reads back what it wrote when the last shape is grouped', () => {
+    /* The balance check above is about the text. This is about whether a parser
+       agrees: an unclosed `<g>` is a file that will not reopen. */
+    const { store, commands } = editor(3);
+    select(store, 's1', 's2');
+    commands.groupSelection();
+    const back = importSvg(exportSvg(store.state.doc));
+    expect(back.warnings).toEqual([]);
+    expect(back.shapes).toHaveLength(3);
+    expect(back.groups).toHaveLength(1);
+    const held = back.shapes.filter((s) => s.group === back.groups![0].id);
+    expect(held).toHaveLength(2);
+  });
+
   it('writes no g at all when nothing is grouped', () => {
     const { store } = editor(2);
     expect(exportSvg(store.state.doc)).not.toContain('<g');
