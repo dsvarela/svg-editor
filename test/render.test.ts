@@ -456,6 +456,27 @@ describe('wireframe', () => {
   });
 });
 
+describe('a hidden shape', () => {
+  it('is not drawn, and offers nothing to catch it by', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    const path = () => h.canvas.artwork.querySelector('path')!;
+    const hits = () => h.canvas.overlay.querySelectorAll('[data-hit="outline"]:not([display="none"])').length;
+    expect(path().getAttribute('display')).toBe('inline');
+    expect(hits()).toBe(1);
+
+    h.store.update((s) => (s.doc.shapes[0].hidden = true));
+    h.controller.render();
+    expect(path().getAttribute('display')).toBe('none');
+    expect(hits()).toBe(0);
+
+    // And comes back, rather than being gone.
+    h.store.update((s) => delete s.doc.shapes[0].hidden);
+    h.controller.render();
+    expect(path().getAttribute('display')).toBe('inline');
+    expect(hits()).toBe(1);
+  });
+});
+
 describe('what the pointer can catch a shape by', () => {
   /**
    * The hit surface has to match the picture.

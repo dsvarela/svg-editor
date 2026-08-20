@@ -300,8 +300,11 @@ export function importSvg(text: string): ImportResult {
   const dropped = new Set<string>();
   let n = 0;
 
-  const walk = (el: Element, m: Mat, inherited: Style, group: string | null): void => {
-    if (HIDDEN(el)) return;
+  const walk = (el: Element, m: Mat, inherited: Style, group: string | null, off = false): void => {
+    /* Carried rather than dropped. Skipping the element loses it on the next
+       open, which is the file quietly deleting work somebody hid; the editor
+       can show it again, and the export writes it back the same way. */
+    const dark = off || HIDDEN(el);
 
     const own = el.getAttribute('transform');
     const here = own ? mul(m, parseTransform(own)) : m;
@@ -326,11 +329,16 @@ export function importSvg(text: string): ImportResult {
           id: nextId('group'),
           name: el.getAttribute('id') || `group ${groups.length + 1}`,
           parent: group,
+          ...(HIDDEN(el) ? { hidden: true } : {}),
         };
         groups.push(made);
         inner = made.id;
       }
-      for (const child of Array.from(el.children)) walk(child, here, style, inner);
+      /* A `<g display="none">` carries the flag itself, so what is under it is
+         only marked in turn where the group is not a group: the outer `<svg>`
+         and an `<a>` become no row, and their darkness has to travel. */
+      const pass = tag === 'g' ? off : dark;
+      for (const child of Array.from(el.children)) walk(child, here, style, inner, pass);
       return;
     }
     /* Containers whose contents describe something other than the drawing.
@@ -366,6 +374,7 @@ export function importSvg(text: string): ImportResult {
     if (subpaths.length === 0) return;
 
     const shape = makeShape(subpaths, el.getAttribute('id') || `${tag}-${++n}`);
+    if (dark) shape.hidden = true;
     shape.style = style;
     if (group) shape.group = group;
     // Bake the accumulated transform rather than storing it.
@@ -436,6 +445,10 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
         ? `opacity="${xmlAttr(formatNumber(s.style.opacity, OPACITY_DECIMALS))}"`
         : '',
       s.name && s.name !== s.id ? `id="${uniqueXmlId(s.name, used)}"` : '',
+      /* Hidden goes in the file rather than being dropped from it. Omitting the
+         shape would lose it on the next open, which is a view switch deleting
+         work; `display="none"` says what the document holds and reads back. */
+      s.hidden ? 'display="none"' : '',
     ].filter(Boolean);
     return `${indent}<path ${attrs.join(' ')}/>`;
   };
@@ -460,7 +473,8 @@ export function exportSvg(doc: Doc, options: ExportOptions = {}): string {
     for (let i = shared; i < chain.length; i++) {
       const g = findGroup(doc, chain[i]);
       const id = g && g.name && g.name !== g.id ? ` id="${uniqueXmlId(g.name, used)}"` : '';
-      lines.push(`${pad}${pad.repeat(i)}<g${id}>`);
+      const off = g?.hidden ? ' display="none"' : '';
+      lines.push(`${pad}${pad.repeat(i)}<g${id}${off}>`);
     }
     open = chain;
     lines.push(pathOf(s, pad + pad.repeat(chain.length)));

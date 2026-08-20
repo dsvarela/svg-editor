@@ -3588,3 +3588,25 @@ now, which is what the check beside it says it is doing.
 The list restates its own layout rather than either use of the word being
 renamed, because `.group` means "a group" in both places and both are right.
 
+### Hiding is on the shape, and locking is not
+
+Both arrived together and they sit in different places, which is the decision
+worth writing down.
+
+A lock is about editing. It never reaches a file, and a set beside the selection
+is what makes that impossible rather than remembered.
+
+Hiding is about the drawing. SVG already spells it `display="none"`, so it goes
+on `Shape` and on `Group`, writes itself out, reads itself back, and is in the
+history like any other edit. There is no field the export has to remember,
+because the export is where it belongs.
+
+**The import used to drop a hidden element entirely.** Round-tripping a file
+through the editor deleted whatever was hidden in it, which is a view switch
+quietly destroying work. It comes in as a hidden shape now, and the shape list
+is where it can be brought back.
+
+Three gates, the same three the lock has and for the same reason, plus one more:
+the artwork layer draws `display="none"` for a hidden shape, so the pointer
+finds nothing there and the press lands on whatever is behind.
+

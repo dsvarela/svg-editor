@@ -29,7 +29,7 @@ import {
   cornerAt,
   filletAt,
 } from '../model/corner';
-import { isLocked } from '../model/doc';
+import { isHidden, isLocked } from '../model/doc';
 import { keylinesFor } from '../model/keylines';
 import type { Alignment } from '../model/smart';
 import { serialisePath } from '../core/serialise';
@@ -313,6 +313,9 @@ export class Canvas {
       // behind it moved -- see `view/pathcache.ts` for why that is asked as a
       // question about the numbers rather than answered by a flag.
       setAttrs(path, {
+        // Hidden is a property of the drawing, so it governs the artwork as
+        // well as the overlay: not drawn here, and no hit surface below. §66.
+        display: isHidden(state.doc, shape.id) ? 'none' : 'inline',
         d: this.paths.get(shape.id, shape.subpaths),
         // The shape's own fill, or none. Never a stand-in grey for a fill of
         // `none`: that makes an unfilled shape and a grey one indistinguishable
@@ -600,6 +603,7 @@ export class Canvas {
          later would leave the shape looking catchable and doing nothing, which
          is the same silence §65 removed a feature over. The lock is visible in
          the shape list instead. §66. */
+      if (isHidden(state.doc, shape.id)) continue;
       if (isLocked(state.doc, state.locked, shape.id)) continue;
       const shapeSelected = sel.shapes.has(shape.id);
 

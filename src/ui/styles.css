@@ -1145,6 +1145,30 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    The button keeps its label, which says what pressing it does. */
 .shapelist li[aria-expanded='true'] > .twist { transform: rotate(90deg); }
 .shapelist .twist.none { visibility: hidden; }
+/* The eye, beside the lock. Same box, same always-drawn rule: the only sign a
+   shape is hidden is this row, since the canvas draws nothing for it. */
+.shapelist .eyebtn {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+}
+.shapelist .eyebtn[aria-pressed='true'] { opacity: 1; }
+.shapelist .eyebtn:hover { opacity: 1; }
+.shapelist .eyebtn:disabled { cursor: default; opacity: 0.6; }
+/* A hidden row is dimmed whole, which is a different thing from the lock's
+   italic: locked is still drawn and hidden is not. */
+.shapelist li:has(> .eyebtn[aria-pressed='true']) > .nm,
+.shapelist li:has(> .eyebtn[aria-pressed='true']) > .ct,
+.shapelist li:has(> .eyebtn[aria-pressed='true']) > .swatch { opacity: 0.4; }
+
 /* The lock, at the end of the row where the count is, because it is a state of
    the row and not a way of choosing it. Always drawn: a button that appeared on
    hover would put the only sign of a lock somewhere a finger cannot go, and
@@ -1450,7 +1474,8 @@ kbd {
   .shapelist .twist { width: 44px; height: 44px; }
   /* And the lock at the other end of the row, for the same reason. It is the
      only way to lock anything, so a finger that cannot hit it cannot lock. */
-  .shapelist .lockbtn { width: 44px; height: 44px; font-size: 16px; }
+  .shapelist .lockbtn,
+  .shapelist .eyebtn { width: 44px; height: 44px; font-size: 16px; }
   /* The indent tracks the disclosure it lines up under. */
   .shapelist li.path { padding-left: 52px; }
   .shapelist li.group > ul > li { padding-left: 44px; }

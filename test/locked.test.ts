@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
-import { emptyDoc, isLocked, shapeFromPath } from '../src/model/doc';
+import { emptyDoc, isHidden, isLocked, shapeFromPath } from '../src/model/doc';
 import { exportSvg } from '../src/io/svg';
 import { encode, read, toSession } from '../src/io/session';
 
@@ -28,6 +28,12 @@ function scene(): Store {
 }
 
 const ids = (s: Store): string[] => s.state.doc.shapes.map((sh) => sh.id);
+
+const findByIdOrThrow = <T extends { id: string }>(all: T[], id: string): T => {
+  const got = all.find((x) => x.id === id);
+  if (!got) throw new Error(`no ${id}`);
+  return got;
+};
 
 describe('what counts as locked', () => {
   it('is nothing at all when nothing is locked', () => {
@@ -158,5 +164,54 @@ describe('a lock across a reload', () => {
     expect(typeof back).not.toBe('string');
     if (typeof back === 'string') return;
     expect(back.locked).toEqual([a]);
+  });
+});
+
+describe('what counts as hidden', () => {
+  it('is the shape whose own flag is set, and no other', () => {
+    const s = scene();
+    const [a, b] = ids(s);
+    s.edit((st) => (findByIdOrThrow(st.doc.shapes, b).hidden = true));
+    expect(isHidden(s.state.doc, a)).toBe(false);
+    expect(isHidden(s.state.doc, b)).toBe(true);
+  });
+
+  it('is every shape under a hidden group', () => {
+    const s = scene();
+    const cmd = new Commands(s, () => false);
+    const [a, b, c] = ids(s);
+    s.update((st) => {
+      st.selection.shapes.add(a);
+      st.selection.shapes.add(b);
+    });
+    expect(cmd.groupSelection()).toBe(true);
+    const g = s.state.doc.groups![0];
+    s.edit((st) => (st.doc.groups!.find((x) => x.id === g.id)!.hidden = true));
+
+    expect(isHidden(s.state.doc, a)).toBe(true);
+    expect(isHidden(s.state.doc, b)).toBe(true);
+    expect(isHidden(s.state.doc, c)).toBe(false);
+    expect(isHidden(s.state.doc, g.id)).toBe(true);
+  });
+
+  /* Where it parts company with the lock: hidden is on the shape, so it is in
+     the file and in the history. */
+  it('goes into the exported file rather than being dropped from it', () => {
+    const s = scene();
+    const [a] = ids(s);
+    s.edit((st) => (findByIdOrThrow(st.doc.shapes, a).hidden = true));
+    const out = exportSvg(s.state.doc, { decimals: 3 });
+    expect(out).toContain('display="none"');
+    // Still three paths: hiding is not deleting.
+    expect(out.match(/<path/g)).toHaveLength(3);
+  });
+
+  it('is undone, because it is part of the drawing', () => {
+    const s = scene();
+    const [a] = ids(s);
+    s.edit((st) => (findByIdOrThrow(st.doc.shapes, a).hidden = true));
+    expect(s.canUndo).toBe(true);
+    s.undo();
+    expect(isHidden(s.state.doc, a)).toBe(false);
   });
 });

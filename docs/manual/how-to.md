@@ -24,6 +24,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Hide a shape while you work on another](#hide-a-shape-while-you-work-on-another)
 - [Lock a shape so you stop catching it](#lock-a-shape-so-you-stop-catching-it)
 - [Round off a corner](#round-off-a-corner)
 - [Colour a shape](#colour-a-shape)
@@ -404,6 +405,20 @@ you is afterwards: past 2 000 node markers in view the overlay stops drawing
 them, the document readout says `markers off, too dense`, and nodes cannot be
 clicked until you zoom in far enough that fewer are on screen. The shapes
 themselves are unaffected.
+
+## Hide a shape while you work on another
+
+Press the eye on its row in the **Shapes** list.
+
+A hidden shape is not drawn and cannot be selected on the canvas. Press the eye
+again to bring it back, or `Ctrl+Z`.
+
+Hiding a group hides everything in it, and the rows inside show the eye without
+letting you open it there.
+
+**Hiding is part of the drawing, unlike locking.** It is saved in the file as
+`display="none"`, so the shape is still there when you open it again, still
+hidden. Nothing is lost by hiding something and saving.
 
 ## Lock a shape so you stop catching it
 

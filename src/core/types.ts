@@ -124,6 +124,15 @@ export interface Shape {
    * the shapes of a group are contiguous in that array.
    */
   group?: string | null;
+  /**
+   * Not drawn, not exported as anything you can see, and not selectable.
+   *
+   * On the shape rather than beside the selection, which is the opposite call
+   * from the lock (§66). A lock is about editing and cannot reach a file; this
+   * is about the drawing, and SVG already spells it `display="none"`, so it
+   * writes and reads back with no field the export has to remember.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -142,6 +151,8 @@ export interface Group {
   id: string;
   name: string;
   parent: string | null;
+  /** Not drawn, and nor is anything under it. `<g display="none">` on the way out. */
+  hidden?: boolean;
 }
 
 export interface ViewBox {
@@ -264,6 +275,7 @@ export const cloneShape = (s: Shape): Shape => ({
   // a copy lands at the end of the paint order and a group's shapes have to be
   // contiguous.
   ...(s.group ? { group: s.group } : {}),
+  ...(s.hidden ? { hidden: true } : {}),
 });
 
 /** Number of segments in a subpath. Closed subpaths have one more than open. */

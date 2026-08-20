@@ -136,6 +136,20 @@ export function groupChain(doc: Doc, id: string | null | undefined): Group[] {
  * touching any of them, because a group is a relation and the chain is walked
  * rather than copied down. §49, §66.
  */
+/**
+ * Is this shape hidden, by itself or by a group it is inside?
+ *
+ * The same walk `isLocked` makes and a different question: what this reads is
+ * on the document, because it is part of the drawing and goes in the file.
+ * §66.
+ */
+export function isHidden(doc: Doc, id: string): boolean {
+  const shape = findShape(doc, id);
+  if (shape?.hidden) return true;
+  const group = shape ? shape.group : id;
+  return groupChain(doc, group).some((g) => g.hidden === true);
+}
+
 export function isLocked(doc: Doc, locked: ReadonlySet<string>, id: string): boolean {
   if (locked.size === 0) return false;
   if (locked.has(id)) return true;

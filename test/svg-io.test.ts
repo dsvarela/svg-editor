@@ -318,13 +318,37 @@ describe('svg import', () => {
     expect(r.shapes[1].style.strokeWidth).toBe(3);
   });
 
-  it('skips hidden elements and defs', () => {
+  it('skips defs, and keeps a hidden element as a hidden shape', () => {
+    /* `defs` is a definition and not a drawing, so nothing of it comes in. A
+       hidden element is a drawing somebody hid: dropping it would be the file
+       quietly deleting work, and the editor can show it again. */
     const r = importSvg(`<svg>
       <defs><path d="M0 0 L1 1"/></defs>
       <path d="M0 0 L1 1" display="none"/>
       <path d="M0 0 L2 2"/>
     </svg>`);
-    expect(r.shapes).toHaveLength(1);
+    expect(r.shapes).toHaveLength(2);
+    expect(r.shapes.filter((s) => s.hidden)).toHaveLength(1);
+    expect(r.shapes.find((s) => s.hidden)?.subpaths[0].nodes[1].pt).toEqual([1, 1]);
+  });
+
+  it('carries a hidden group down to the shapes inside it', () => {
+    const r = importSvg(`<svg>
+      <g display="none"><path d="M0 0 L1 1"/><path d="M0 0 L2 2"/></g>
+      <path d="M0 0 L3 3"/>
+    </svg>`);
+    expect(r.shapes).toHaveLength(3);
+    // The group carries it; the shapes under it are not marked twice.
+    expect(r.groups.filter((g) => g.hidden)).toHaveLength(1);
+    expect(r.shapes.filter((s) => s.hidden)).toHaveLength(0);
+  });
+
+  it('writes a hidden shape back out, so a round trip keeps it', () => {
+    const one = importSvg('<svg viewBox="0 0 10 10"><path d="M0 0 L1 1" display="none"/></svg>');
+    const doc = { shapes: one.shapes, groups: one.groups, viewBox: { x: 0, y: 0, w: 10, h: 10 } };
+    const out = exportSvg(doc, { decimals: 3 });
+    expect(out).toContain('display="none"');
+    expect(importSvg(out).shapes.filter((s) => s.hidden)).toHaveLength(1);
   });
 
   it('warns about unsupported elements instead of failing', () => {

@@ -11,6 +11,7 @@ import {
   docBBox,
   emptyDoc,
   findGroup,
+  isHidden,
   isLocked,
   findShape,
   groupChain,
@@ -2389,7 +2390,7 @@ shapeList.addEventListener('pointerdown', (e) => {
   /* The lock is a control on the row and not a way of choosing it. Handled on
      `click` below so that a press and release on the button do one thing; here
      it only has to keep the row from arming a drag under it. */
-  if (target.closest('.lockbtn')) return;
+  if (target.closest('.lockbtn') || target.closest('.eyebtn')) return;
   if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
   /* A path row carries its shape's `data-id` and sits inside the shape's own
      row, so `closest` would read a press on a path as a press on the shape.
@@ -2425,6 +2426,35 @@ shapeList.addEventListener('pointerdown', (e) => {
  * rather than what the drawing is, so it is no more part of the history than
  * the selection is, and it never reaches a file. §66.
  */
+/**
+ * Hide or show the row that was pressed.
+ *
+ * `store.edit` and not `store.update`, which is where this parts company with
+ * the lock beside it: hidden is on the shape, goes in the file, and is
+ * therefore something undo has to be able to take back. §66.
+ */
+shapeList.addEventListener('click', (e) => {
+  const btn = (e.target as Element | null)?.closest<HTMLElement>('.eyebtn');
+  const id = btn?.dataset.eye;
+  if (!id || (btn as HTMLButtonElement).disabled) return;
+  e.stopPropagation();
+  store.edit((s) => {
+    const shape = findShape(s.doc, id);
+    const group = findGroup(s.doc, id);
+    const target = shape ?? group;
+    if (!target) return;
+    if (target.hidden) delete target.hidden;
+    else target.hidden = true;
+    /* Hiding takes it out of the selection, for the reason locking does: every
+       panel would otherwise be acting on something the canvas does not draw. */
+    for (const sh of s.doc.shapes) {
+      if (!isHidden(s.doc, sh.id)) continue;
+      s.selection.shapes.delete(sh.id);
+      for (const sp of sh.subpaths) for (const n of sp.nodes) s.selection.nodes.delete(n.id);
+    }
+  });
+});
+
 shapeList.addEventListener('click', (e) => {
   const btn = (e.target as Element | null)?.closest<HTMLElement>('.lockbtn');
   const id = btn?.dataset.lock;
@@ -2895,6 +2925,8 @@ const listSignature = (): string =>
            while the pointer passed through it. */
         isLocked(store.state.doc, store.state.locked, sh.id) ? 'locked' : 'free',
         store.state.locked.has(sh.id) ? 'own' : '-',
+        isHidden(store.state.doc, sh.id) ? 'hidden' : 'shown',
+        sh.hidden ? 'own' : '-',
       ].join('\u0001'),
     )
     .join('\u0002');
@@ -2908,6 +2940,27 @@ const listSignature = (): string =>
  * shows the lock and cannot be opened from here, because the lock is not its
  * own and opening it in place would be a second answer to who holds it.
  */
+function eyeButton(id: string, name: string, own: boolean, inherited: boolean): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'eyebtn';
+  b.dataset.eye = id;
+  b.tabIndex = -1;
+  b.textContent = own || inherited ? '\u{1F648}' : '\u{1F441}';
+  b.setAttribute('aria-pressed', String(own || inherited));
+  b.disabled = inherited && !own;
+  b.setAttribute(
+    'aria-label',
+    inherited && !own
+      ? `${name} is hidden with the group it is in`
+      : own
+        ? `Show ${name}`
+        : `Hide ${name}`,
+  );
+  b.title = b.getAttribute('aria-label') ?? '';
+  return b;
+}
+
 function lockButton(id: string, name: string, ownLock: boolean, inherited: boolean): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -3069,6 +3122,12 @@ function refreshShapeList(): void {
         /* A group's lock is its own or its parent's, and never a child's: a
            group holds no list of members, so what is under it is read by
            walking up from each shape rather than down from here. §49. */
+        eyeButton(
+          g.id,
+          g.name,
+          g.hidden === true,
+          groupChain(s.doc, g.id).some((up) => up.hidden === true),
+        ),
         lockButton(
           g.id,
           g.name,
@@ -3147,6 +3206,7 @@ function refreshShapeList(): void {
       sw,
       nm,
       ct,
+      eyeButton(sh.id, sh.name, sh.hidden === true, isHidden(s.doc, sh.id)),
       lockButton(sh.id, sh.name, s.locked.has(sh.id), isLocked(s.doc, s.locked, sh.id)),
     );
 

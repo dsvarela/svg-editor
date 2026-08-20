@@ -18,6 +18,7 @@ import type { Pt, Subpath } from '../core/types';
 import {
   emptySelection,
   findShape,
+  isHidden,
   isLocked,
   makeShape,
   nextId,
@@ -551,6 +552,9 @@ export class Controller {
        this catches only what is left: a marker still on screen from the frame
        the lock landed in. §66. */
     if (shape && isLocked(this.store.state.doc, this.store.state.locked, shape)) return null;
+    // Hidden takes no press either, and for a plainer reason: there is nothing
+    // there to press. The canvas draws neither the shape nor its markers.
+    if (shape && isHidden(this.store.state.doc, shape)) return null;
     if (kind === 'outline' || !shape) return { kind, shape, part, ref: null, seg: null };
     const segAttr = t.getAttribute('data-seg');
     return {
@@ -1430,6 +1434,7 @@ export class Controller {
             // A locked shape is not swept up either: a marquee is a press the
             // pointer never landed on it, and the answer has to be the same.
             if (isLocked(st.doc, st.locked, shape.id)) continue;
+            if (isHidden(st.doc, shape.id)) continue;
             let caught = 0;
             let total = 0;
             for (const sp of shape.subpaths) {

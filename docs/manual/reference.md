@@ -150,6 +150,9 @@ its node count; a shape of more than one shows how many paths it holds and opens
 to list them. A group opens to show the shapes in it, and says how many there are.
 
 - Click a name to select it. `Shift`-click to add.
+- Press the eye to hide that shape or group. A hidden shape is not drawn, not
+  selectable, and still in the file: it exports as `display="none"` and comes
+  back hidden when you open it again. Hiding is an edit, so `Ctrl+Z` undoes it.
 - Press the lock at the end of a row to lock that shape or group. A locked
   shape is not selectable on the canvas: a press goes through it to whatever
   is behind. Locking a group locks everything in it, and those rows show the

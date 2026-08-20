@@ -3853,6 +3853,83 @@ const scenarios = {
   },
 
   /**
+   * Hiding a shape takes it off the canvas and out of the pointer's way.
+   *
+   * The visible half of §66's other flag. Hidden is on the shape rather than
+   * beside the selection, so unlike the lock it goes into the file, and this
+   * checks that too: the source drawer is where the difference shows.
+   */
+  async hiddenShape(page, check) {
+    const { click } = await mk(page);
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <path id="under" d="M20 20 L120 20 L120 100 L20 100 Z" fill="#2563d8"/>
+  <path id="over" d="M60 40 L180 40 L180 90 L60 90 Z" fill="#d82563"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    const drawn = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll('.artwork path')].filter(
+            (e) => e.getAttribute('display') !== 'none',
+          ).length,
+      );
+    const namesSelected = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#shapelist li.shape')]
+          .filter((e) => e.getAttribute('aria-selected') === 'true')
+          .map((e) => e.querySelector('.nm')?.textContent ?? ''),
+      );
+
+    out.before = await drawn();
+    check(out.before === 2, `${out.before} shapes are drawn to start, not 2`);
+
+    const eyeOf = (name) => page.locator(`#shapelist li.shape:has(.nm:text-is("${name}")) .eyebtn`);
+    await eyeOf('over').click();
+    await settle(page);
+    out.after = await drawn();
+    check(out.after === 1, `after hiding one, ${out.after} shapes are drawn, not 1`);
+
+    // The press goes through to what is behind, because nothing is there.
+    await click([90, 60]);
+    await settle(page);
+    out.selected = await namesSelected();
+    check(
+      JSON.stringify(out.selected) === '["under"]',
+      `with the top shape hidden, the press selected ${JSON.stringify(out.selected)}`,
+    );
+
+    /* And it is in the file, which is where hiding parts company with locking.
+       Dropping it would be the export quietly deleting work. */
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await settle(page);
+    const svg = await page.inputValue('#src');
+    out.paths = (svg.match(/<path/g) ?? []).length;
+    check(/display="none"/.test(svg), 'the export says nothing about the hidden shape');
+    check(out.paths === 2, `the export has ${out.paths} paths, not 2: hiding is not deleting`);
+    await closeSource(page);
+
+    // Undo puts it back, because it is part of the drawing.
+    await undo(page);
+    await settle(page);
+    out.undone = await drawn();
+    check(out.undone === 2, `undo left ${out.undone} shapes drawn, not 2`);
+
+    return out;
+  },
+
+  /**
    * Clicking the middle of a shape, which only works when there is a fill there.
    *
    * The hit surface has to match the picture: a shape you can grab where
