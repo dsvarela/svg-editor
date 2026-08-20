@@ -130,6 +130,87 @@ describe('merging one pair of segments', () => {
     }
   });
 
+
+  /* The property the cost exists to have, checked against the drawing rather
+     than against the formula that produced it.
+
+     `cost` is documented as a bound: Tiller proves the curve moves by less than
+     it everywhere, which is what lets `removeRedundantNodes` compare it to a
+     tolerance and promise the path stays inside that tolerance. A cost that is
+     an under-estimate breaks that promise silently, and nothing else here would
+     notice, because every other test compares one reconstruction against
+     another rather than against how far the path actually moved.
+
+     The bound held through the defect of §70, which is why this is here as a
+     property and not as a regression test: it is the claim the tolerance rests
+     on, and nothing else asks it. The two tests below cover what did break. */
+  it.each([
+    ['two halves of one cubic', 'M0 0 C 20 -40 60 -40 80 0', 0.37],
+    ['a collinear run', 'M0 0 L40 0 L100 0', null],
+    ['a node just off a collinear run', 'M0 0 L40 1 L100 0', null],
+    ['a node well off a collinear run', 'M0 0 L40 9 L100 0', null],
+    ['a shallow corner between curves', 'M0 0 C 10 -8 30 -12 40 -12 C 52 -12 70 -6 80 4', null],
+    ['a right angle', 'M0 0 L40 0 L40 40', null],
+    ['a curve then a line', 'M0 0 C 10 -20 30 -20 40 0 L100 0', null],
+  ])('the cost is never less than how far the path moves: %s', (_what, d, cut) => {
+    const sp = parsePath(d)[0];
+    if (cut !== null) splitSegment(sp, 0, cut);
+    const m = nodeRemovalCost(sp, 1);
+    if (m.cost === Infinity || !m.cubic) return; // a refusal promises nothing
+
+    // The pair as drawn, against the single cubic offered in its place.
+    const pair: Pt[] = [];
+    const pairLine: Pt[] = [];
+    for (const seg of [0, 1]) {
+      const c = segmentAsCubic(sp, seg);
+      for (let k = 0; k <= 96; k++) pair.push(cubicAt(c, k / 96) as Pt);
+      for (let k = 0; k <= 400; k++) pairLine.push(cubicAt(c, k / 400) as Pt);
+    }
+    const one: Pt[] = [];
+    const oneLine: Pt[] = [];
+    for (let k = 0; k <= 96; k++) one.push(cubicAt(m.cubic, k / 96) as Pt);
+    for (let k = 0; k <= 400; k++) oneLine.push(cubicAt(m.cubic, k / 400) as Pt);
+
+    let moved = 0;
+    for (const p of one) moved = Math.max(moved, toPolyline(p, pairLine));
+    for (const p of pair) moved = Math.max(moved, toPolyline(p, oneLine));
+
+    /* The instrument's own noise, measured rather than assumed: a polyline of
+       400 chords per segment sits inside its own curve, so a point exactly on
+       the curve reports a small positive distance. On an exact merge that
+       floor is the entire reading, and comparing it to a cost of 1e-14 would
+       fail on the sampling rather than on the geometry. */
+    let floor = 0;
+    for (const p of pair) floor = Math.max(floor, toPolyline(p, pairLine));
+    for (const p of one) floor = Math.max(floor, toPolyline(p, oneLine));
+    expect(moved).toBeLessThanOrEqual(m.cost + 4 * floor + 1e-9);
+  });
+
+  /* The two things that broke, both asked through the model rather than of
+     `mergeSegments` directly. The test above at line 209 hands it cubics built
+     by hand in the old storage convention, so it could not see the convention
+     change and passed throughout. These reach it the way the product does,
+     through `parsePath` and `segmentAsCubic`.
+
+     First: a path that goes out and comes back is collinear, and its tip is not
+     a redundant node. Only the straight branch refuses it, by asking whether
+     the join lies between the two ends. */
+  it('refuses the tip of a spike that doubles back', () => {
+    const sp = parsePath('M0 0 L50 0 L10 0 L10 40 Z')[0];
+    expect(nodeRemovalCost(sp, 1).cost).toBe(Infinity);
+  });
+
+  /* Second, and the one a person would see: simplifying a nearly straight run
+     has to leave a straight run. The general formula reconstructs a curve
+     through the node it is removing, which is a reasonable answer to a
+     different question and the wrong one here. It wrote
+     `C 33.33 0.833 66.664 0.556 100 0` in place of `H 100`. */
+  it('leaves a straight run straight, rather than curving it', () => {
+    const sp = parsePath('M0 0 L40 1 L100 0 L100 60 Z')[0];
+    removeRedundantNodes(sp, 2);
+    expect(serialisePath([sp])).toBe('M 0 0 H 100 V 60 Z');
+  });
+
   it('refuses a corner, however close the two segments sit', () => {
     const L: Cubic = [
       [0, 0],

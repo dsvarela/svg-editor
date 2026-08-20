@@ -45,6 +45,36 @@ export interface Merge {
 const REFUSED: Merge = { cost: Infinity, cubic: null };
 
 /**
+ * Whether a cubic draws a straight line, asked of the drawing.
+ *
+ * Both controls on the chord and between its ends. Not where the controls sit
+ * relative to the anchors, which is a storage convention rather than a fact
+ * about the curve: this read `dist(c[0], c[1]) < TINY` until 2026-08-20, and
+ * when `segmentAsCubic` moved a line's controls onto the thirds the test went
+ * silently false for every line in the document.
+ *
+ * The branch below stopped running, and the general formula answered for
+ * straight runs instead. It gives a curve. Simplifying a nearly straight run
+ * wrote `C 33.33 0.833 66.664 0.556 100 0` where the drawing had `H 100`: a
+ * curve in place of a straight edge, in more bytes, from the operation whose
+ * job is to remove both. A spike that doubles back stopped being refused at
+ * the same time, because only this branch asks whether the join lies between
+ * the two ends. §70.
+ */
+const drawsStraight = (c: Cubic): boolean => {
+  const chord = sub(c[3], c[0]);
+  const m = len(chord);
+  if (m < TINY) return false;
+  for (const p of [c[1], c[2]]) {
+    const v = sub(p, c[0]);
+    if (Math.abs(v[0] * chord[1] - v[1] * chord[0]) / m > TINY * m) return false;
+    const along = (v[0] * chord[0] + v[1] * chord[1]) / (m * m);
+    if (along < -TINY || along > 1 + TINY) return false;
+  }
+  return true;
+};
+
+/**
  * Merge two segments back into the cubic they were cut from.
  *
  * Reconstruction runs inward from both ends, which is Tiller's shape. With
@@ -59,15 +89,13 @@ const REFUSED: Merge = { cost: Infinity, cubic: null };
  * cubic, and their disagreement is the price of pretending otherwise.
  */
 export function mergeSegments(L: Cubic, R: Cubic): Merge {
-  /* Both straight is the one case the ratio cannot speak for: two lines have no
-     join handles, so `a` and `b` are both zero and `t` is 0/0. Collinearity is
-     the whole question there, and the answer is the middle node's distance from
-     the chord. Note this is not a special case bolted on: it is the same
-     condition, `C3`, in the corner of the space where the general formula
-     divides by zero. */
-  const lStraight = dist(L[0], L[1]) < TINY && dist(L[2], L[3]) < TINY;
-  const rStraight = dist(R[0], R[1]) < TINY && dist(R[2], R[3]) < TINY;
-  if (lStraight && rStraight) {
+  /* Both straight is the one case the ratio cannot speak for: two lines have
+     nothing to take a ratio of, and the general formula below divides by it.
+     Collinearity is the whole question there, and the answer is the middle
+     node's distance from the chord. Note this is not a special case bolted on:
+     it is the same condition, `C3`, in the corner of the space where the
+     general formula has nothing to work with. */
+  if (drawsStraight(L) && drawsStraight(R)) {
     const chord = sub(R[3], L[0]);
     const m = len(chord);
     if (m < TINY) return REFUSED;

@@ -91,8 +91,11 @@ const ROUND_TRIP = 2e-3;
 /**
  * A control point read back as a handle, or `null` where it sits on its anchor.
  *
- * The inverse of what `segmentAsCubic` does on the way out, so a segment taken
- * apart and put back keeps the model's own answer to "is this a line".
+ * A control on top of its own anchor is a handle somebody collapsed, and the
+ * model spells that `null`. It is not how a line is stored -- `segmentAsCubic`
+ * puts a line's controls on the thirds -- and it does not need to be: the two
+ * callers below run only on a side that is not a line, because a straight side
+ * keeps its handles absent without being taken apart.
  */
 const handleOrNull = (h: Pt, anchor: Pt): Pt | null =>
   Math.hypot(h[0] - anchor[0], h[1] - anchor[1]) <= SAME_PLACE ? null : clonePt(h);

@@ -3914,3 +3914,61 @@ digit, so the check compared a quantity to itself. `projectToCubic` answers the
 two ends exactly now rather than approaching them, and the test refines far
 enough that the instrument reads 8e-15 against a real difference of 2e-14. It
 goes red on a control point moved by 1e-6.
+
+## 70. A test that read the storage and called it the geometry
+
+§69 moved a straight segment's controls from its endpoints to its thirds. The
+line drawn is identical, the hull is identical, and 1 330 unit tests, 58 browser
+scenarios and every other gate stayed green. One thing downstream was reading
+the old positions as a fact about the curve.
+
+`mergeSegments` in `src/model/knots.ts` decides whether a pair of segments is
+straight, because two straight segments give the general reconstruction nothing
+to take a ratio of. It asked `dist(c[0], c[1]) < TINY`: is the first control on
+the anchor. That was true of every line in the document, and after §69 it was
+true of none, so the branch became unreachable and the general formula answered
+for straight runs instead.
+
+Two things followed, and neither is the one it looks like from the outside.
+
+**Simplify started writing curves where the drawing had straight edges.** The
+general formula reconstructs a cubic that passes through the node it is about to
+remove, which is a good answer to a different question. Simplifying
+`M 0 0 L40 1 L100 0 L100 60 Z` at tolerance 2 wrote
+`M 0 0 C 33.33 0.833 66.664 0.556 100 0 V 60 Z` where the straight branch writes
+`M 0 0 H 100 V 60 Z`. A curve in place of a straight edge, in more bytes, from
+the operation whose job is to remove both.
+
+**A spike stopped being refused.** Only the straight branch asks whether the join
+lies between the two ends, which is what separates a redundant collinear node
+from the tip of a path that goes out and comes back. Without it the tip is
+priced finitely and a large enough tolerance deletes it.
+
+**What the cost did not do is stop being a bound.** That was the first thing this
+looked like and it was wrong: the general formula's cost of 0.833 still exceeded
+the 0.48 its own replacement curve moved the path by. The bound held. The
+replacement was the wrong shape.
+
+### The fix, and why it is in the predicate
+
+`drawsStraight` asks the curve: are both controls on the chord and between its
+ends. That is a property of what is drawn, so no change of storage convention
+can make it silently false, and it is strictly wider than what it replaced -- a
+segment stored as a curve that happens to draw a straight line now takes the
+straight branch too, which is the right answer for it.
+
+### Why nothing caught it
+
+`test/knots.test.ts` had a test for exactly this: "merges two collinear lines,
+and refuses a spike that doubles back". It hands `mergeSegments` cubics written
+out by hand in the old convention, so it exercises the branch directly and never
+reaches `segmentAsCubic`. It passed on every version of this defect. That is the
+register's "a test that pins a layer below the one that ships", and the fix is
+not to delete it -- testing the function in isolation is worth doing -- but to
+ask the same questions through the model as well, which the two tests beside it
+now do.
+
+The third test added here is the property the tolerance rests on rather than a
+regression: for a spread of pairs, the cost `mergeSegments` returns is never less
+than how far the merged cubic actually moves the path. Nothing asked that before,
+and it is the claim `removeRedundantNodes` makes to its caller.
