@@ -30,6 +30,7 @@ import {
   cornerAt,
   filletAt,
 } from '../model/corner';
+import { isLocked } from '../model/doc';
 import { keylinesFor } from '../model/keylines';
 import type { Alignment } from '../model/smart';
 import { serialisePath } from '../core/serialise';
@@ -595,15 +596,31 @@ export class Canvas {
     const markers = !this.markersCapped;
 
     for (const shape of state.doc.shapes) {
+      /* A locked shape gets no hit surface and no markers, so the pointer finds
+         whatever is behind it and the press lands there. Refusing the press
+         later would leave the shape looking catchable and doing nothing, which
+         is the same silence §65 removed a feature over. The lock is visible in
+         the shape list instead. §66. */
+      if (isLocked(state.doc, state.locked, shape.id)) continue;
       const shapeSelected = sel.shapes.has(shape.id);
 
-      // A hit target for the outline itself: invisible, generously wide, and
-      // it is what "drag the body" and "click to insert" grab.
-      // The same string as the artwork's, and now literally the same string:
-      // this was a second full serialisation of every shape on every render.
+      /* A hit target for the shape: invisible, with a generously wide stroke,
+         and it is what "drag the body" and "click to insert" grab.
+         The same string as the artwork's, and now literally the same string:
+         this was a second full serialisation of every shape on every render.
+
+         **The inside takes a press exactly when the fill is painted.** A hit
+         surface that does not match the picture is a shape you can grab where
+         there is nothing to see, or cannot grab where there is -- so a fill of
+         `none` and wireframe both leave the shape catchable by its edge alone,
+         and `fill-rule` comes along so that a hole in an even-odd shape is a
+         hole to the pointer too. §66. */
+      const painted = state.filled && shape.style.fill !== 'none';
       this.outlines.next({
         d: this.paths.get(shape.id, shape.subpaths),
         'stroke-width': 10 * k,
+        'fill-rule': shape.style.fillRule,
+        'pointer-events': painted ? 'all' : 'stroke',
         'data-hit': 'outline',
         'data-shape': shape.id,
         class: shapeSelected ? 'outline selected' : 'outline',

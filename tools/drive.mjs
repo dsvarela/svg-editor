@@ -3760,6 +3760,159 @@ const scenarios = {
   },
 
   /**
+   * A locked shape lets the pointer through to whatever is behind it.
+   *
+   * The lock is not a refusal: the canvas draws no hit surface for a locked
+   * shape, so the press lands on what is underneath. Refusing it later would
+   * leave a shape that looks catchable and does nothing, which is the silence
+   * §65 removed a feature over. §66.
+   */
+  async lockedShape(page, check) {
+    const { click } = await mk(page);
+    const out = {};
+
+    // Two filled squares, the second overlapping the first.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <path id="under" d="M20 20 L120 20 L120 100 L20 100 Z" fill="#2563d8"/>
+  <path id="over" d="M60 40 L180 40 L180 90 L60 90 Z" fill="#d82563"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await tab(page, 'shape');
+    await settle(page);
+
+    const namesSelected = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('#shapelist li.shape')]
+          .filter((e) => e.getAttribute('aria-selected') === 'true')
+          .map((e) => e.querySelector('.nm')?.textContent ?? ''),
+      );
+
+    // Where they overlap, the top one takes the press.
+    await click([90, 60]);
+    await settle(page);
+    out.before = await namesSelected();
+    check(
+      JSON.stringify(out.before) === '["over"]',
+      `before locking, the overlap selected ${JSON.stringify(out.before)}`,
+    );
+
+    const lockOf = (name) =>
+      page.locator(`#shapelist li.shape:has(.nm:text-is("${name}")) .lockbtn`);
+    await lockOf('over').click();
+    await settle(page);
+    out.pressed = await lockOf('over').getAttribute('aria-pressed');
+    check(out.pressed === 'true', `the lock button reads ${out.pressed} after being pressed`);
+
+    /* The same press again. It reaches the shape underneath, which is the whole
+       of "click-through": not a refusal, and not nothing. */
+    await click([90, 60]);
+    await settle(page);
+    out.after = await namesSelected();
+    check(
+      JSON.stringify(out.after) === '["under"]',
+      `with the top shape locked, the same press selected ${JSON.stringify(out.after)}`,
+    );
+
+    /* No hit surface for it either, so there is nothing left to grab. Counted
+       among the ones actually showing: the overlay pools its elements and hides
+       the surplus rather than removing them, so the DOM keeps a spare. */
+    out.markers = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('.overlay [data-hit="outline"]')].filter(
+          (e) => e.getAttribute('display') !== 'none',
+        ).length,
+    );
+    check(out.markers === 1, `${out.markers} outlines are still catchable, not 1`);
+
+    // And the export says nothing about any of it.
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await settle(page);
+    const svg = await page.inputValue('#src');
+    check(!/lock/i.test(svg), 'the export mentions a lock');
+    await closeSource(page);
+
+    // Unlocking gives it back.
+    await lockOf('over').click();
+    await settle(page);
+    await click([90, 60]);
+    await settle(page);
+    out.unlocked = await namesSelected();
+    check(
+      JSON.stringify(out.unlocked) === '["over"]',
+      `after unlocking, the press selected ${JSON.stringify(out.unlocked)}`,
+    );
+
+    return out;
+  },
+
+  /**
+   * Clicking the middle of a shape, which only works when there is a fill there.
+   *
+   * The hit surface has to match the picture: a shape you can grab where
+   * nothing is drawn, or cannot grab where something is, is the same defect
+   * twice. Only a browser resolves a press against overlapping geometry, so
+   * this is where the rule is worth asserting. §66.
+   */
+  async fillClick(page, check) {
+    const { click } = await mk(page);
+    const out = {};
+
+    await openSource(page);
+    await page.click('#srcmode button[data-v="svg"]');
+    await page.fill(
+      '#src',
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <path d="M10 10 L90 10 L90 90 L10 90 Z" fill="#2563d8"/>
+  <path d="M110 10 L190 10 L190 90 L110 90 Z" fill="none" stroke="#2563d8"/>
+</svg>`,
+    );
+    await page.click('#apply');
+    await closeSource(page);
+    await settle(page);
+
+    const chosen = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll('#shapelist li.shape')].filter(
+            (e) => e.getAttribute('aria-selected') === 'true',
+          ).length,
+      );
+    await tab(page, 'shape');
+
+    // The middle of the filled square, well clear of its edges.
+    await click([50, 50]);
+    await settle(page);
+    out.filled = await chosen();
+    check(out.filled === 1, `clicking inside a filled shape selected ${out.filled} shapes, not 1`);
+
+    /* The middle of the unfilled one. Nothing is drawn there, so nothing is
+       caught: the press starts a marquee on empty canvas instead, and a marquee
+       that selects the square would mean the interior took the press after
+       all. */
+    await page.keyboard.press('Escape');
+    await settle(page);
+    await click([150, 50]);
+    await settle(page);
+    out.unfilled = await chosen();
+    check(out.unfilled === 0, `clicking inside an unfilled shape selected ${out.unfilled} shapes, not 0`);
+
+    // Its edge still catches it, so the shape is reachable either way.
+    await click([150, 10]);
+    await settle(page);
+    out.byEdge = await chosen();
+    check(out.byEdge === 1, `clicking the edge of an unfilled shape selected ${out.byEdge}, not 1`);
+
+    return out;
+  },
+
+  /**
    * A handle that is not there, and the panel saying so.
    *
    * The in and out fields are filled either way, because a missing handle is
@@ -4917,7 +5070,11 @@ const scenarios = {
     check(!one[0].selected, 'selecting one shape of a group lit the group as well');
     check(one[1].selected && !one[2].selected, 'selecting one shape of a group lit both');
 
-    await page.click('#shapelist li.group');
+    /* The group's own name, and not the middle of `li.group`: that element
+       contains the rows inside it, so its centre is a shape and pressing there
+       tests the opposite of what this says. It landed on the header only while
+       a class collision was stacking the row four lines deep. */
+    await page.click('#shapelist li.group > .nm');
     await settle(page);
     const whole = await rows();
     check(whole[0].selected, 'pressing the group row did not select it');
@@ -4952,7 +5109,7 @@ const scenarios = {
     await settle(page);
     check(await page.isDisabled('#selectGroup'), 'Select group was live on a shape in no group');
 
-    await page.click('#shapelist li.group');
+    await page.click('#shapelist li.group > .nm');
     await settle(page);
 
     // Shut it: the rows inside go, and the group's own row stays.
@@ -4998,7 +5155,7 @@ const scenarios = {
 
     // Ungroup by key, and the group goes.
     await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
-    await page.click('#shapelist li.group');
+    await page.click('#shapelist li.group > .nm');
     await settle(page);
     await page.keyboard.press('Control+Shift+g');
     await settle(page);
@@ -5025,7 +5182,7 @@ const scenarios = {
 
     /* Deleting the shapes takes the group with them. Swept in `Store.edit`, so it
        holds for every one of the routes that removes a shape and not only this one. */
-    await page.click('#shapelist li.group');
+    await page.click('#shapelist li.group > .nm');
     await settle(page);
     await page.keyboard.press('Delete');
     await settle(page);

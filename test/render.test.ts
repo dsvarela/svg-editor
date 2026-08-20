@@ -456,6 +456,61 @@ describe('wireframe', () => {
   });
 });
 
+describe('what the pointer can catch a shape by', () => {
+  /**
+   * The hit surface has to match the picture.
+   *
+   * A shape you can grab where there is nothing drawn, or cannot grab where
+   * there is, is the same defect twice. So the inside takes a press exactly
+   * when the fill is painted, which is what `pointer-events` says here. This
+   * asserts the mechanism; `fillClick` in `tools/drive.mjs` asserts that the
+   * mechanism produces the behaviour, because jsdom does no hit-testing.
+   */
+  const hit = (h: ReturnType<typeof setup>): Element =>
+    h.canvas.overlay.querySelector('[data-hit="outline"]')!;
+
+  it('catches a filled shape anywhere inside it', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => (s.doc.shapes[0].style.fill = '#ff0000'));
+    h.controller.render();
+    expect(hit(h).getAttribute('pointer-events')).toBe('all');
+  });
+
+  it('catches an unfilled shape by its edge alone', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => (s.doc.shapes[0].style.fill = 'none'));
+    h.controller.render();
+    expect(hit(h).getAttribute('pointer-events')).toBe('stroke');
+  });
+
+  it('gives a shape its edge back when the fills are switched off', () => {
+    /* Wireframe draws no fill, so there is no fill to press. Reaching through
+       a shape is the whole point of the mode, and a hit surface that stayed
+       solid would be an invisible wall. */
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => {
+      s.doc.shapes[0].style.fill = '#ff0000';
+      s.filled = false;
+    });
+    h.controller.render();
+    expect(hit(h).getAttribute('pointer-events')).toBe('stroke');
+  });
+
+  it('carries the fill rule, so a hole is a hole to the pointer', () => {
+    const h = setup('M 0 0 L 20 0 L 20 20 Z');
+    h.store.update((s) => {
+      s.doc.shapes[0].style.fill = '#ff0000';
+      s.doc.shapes[0].style.fillRule = 'evenodd';
+    });
+    h.controller.render();
+    expect(hit(h).getAttribute('fill-rule')).toBe('evenodd');
+    // And it is the shape's own rule, not a constant written twice.
+    expect(hit(h).getAttribute('fill-rule')).toBe(
+      h.canvas.artwork.querySelector('path')!.getAttribute('fill-rule'),
+    );
+  });
+});
+
 /* The canvas set `stroke-linejoin` and `stroke-linecap` to round and the
    exporter wrote neither, so a stroke was round on screen and mitred in the
    saved file. Asserting the constant twice would restate the fix rather than

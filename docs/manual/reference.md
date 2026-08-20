@@ -25,6 +25,7 @@ have meant something unrelated.
 
 | Action | Effect |
 |---|---|
+| Click inside a shape | Select it, anywhere its fill is drawn. A shape with no fill, or one seen in wireframe, is caught by its outline instead |
 | Click a node | Select it. Its handles appear, including ghost handles you can pull out |
 | Drag a node | Move it, carrying its handles |
 | Drag a handle | Move it, preserving whatever relationship the pair already had |
@@ -149,6 +150,12 @@ its node count; a shape of more than one shows how many paths it holds and opens
 to list them. A group opens to show the shapes in it, and says how many there are.
 
 - Click a name to select it. `Shift`-click to add.
+- Press the lock at the end of a row to lock that shape or group. A locked
+  shape is not selectable on the canvas: a press goes through it to whatever
+  is behind. Locking a group locks everything in it, and those rows show the
+  lock without letting you open it, because the lock is not theirs. The lock
+  is remembered across a reload and is not part of the file: saving and
+  reopening gives you everything unlocked.
 - Double-click a name to rename it.
 - Press the triangle to show or hide the paths inside a shape. Only a shape
   holding more than one has one.

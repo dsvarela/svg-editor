@@ -128,6 +128,27 @@ export function groupChain(doc: Doc, id: string | null | undefined): Group[] {
   return out;
 }
 
+/**
+ * Is this shape locked, by itself or by a group it is inside?
+ *
+ * One question with one answer, asked by the hit test, the marquee, the
+ * overlay and the list. Locking a group locks what is under it without
+ * touching any of them, because a group is a relation and the chain is walked
+ * rather than copied down. §49, §66.
+ */
+export function isLocked(doc: Doc, locked: ReadonlySet<string>, id: string): boolean {
+  if (locked.size === 0) return false;
+  if (locked.has(id)) return true;
+  /* `id` names a shape or a group, and either way the question is the same:
+     does anything above it hold a lock. A shape is asked about from the group
+     it is in; a group is asked about from itself, which walks one link further
+     than it needs to and cannot change the answer, because the line above has
+     already said what its own id means. An id that is neither gets an empty
+     chain and a `false`. */
+  const shape = findShape(doc, id);
+  return groupChain(doc, shape ? shape.group : id).some((g) => locked.has(g.id));
+}
+
 /** Whether `id` is `ancestor`, or nested anywhere inside it. */
 export function groupWithin(doc: Doc, id: string | null | undefined, ancestor: string): boolean {
   if (!id) return false;

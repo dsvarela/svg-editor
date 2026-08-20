@@ -1100,8 +1100,22 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
 .shapelist li.shape > ul { flex-basis: 100%; }
 .shapelist li.path { padding-left: 22px; font-size: 11.5px; }
 /* A group's row. `flex-wrap` and a full-width child list, the same shape a shape
-   row uses for its paths, so one rule covers both kinds of nesting. */
-.shapelist li.group { flex-wrap: wrap; }
+   row uses for its paths, so one rule covers both kinds of nesting.
+
+   The rest of this block undoes a collision: `.group` is also the inspector's
+   panel-group class, and it is a stacked panel -- a column, 12 px gaps, 15 px
+   padding and a bottom rule. All of that was landing on these rows, which put
+   the disclosure, the name and the count on three lines of their own. The word
+   is right in both places, so the list states its own layout rather than one of
+   them being renamed. */
+.shapelist li.group {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 7px;
+  border-bottom: 0;
+  width: auto;
+}
 .shapelist li.group > ul { flex-basis: 100%; }
 .shapelist li.group > .nm { font-weight: 600; }
 /* Indent every level by the width of one disclosure, so depth is readable without
@@ -1131,6 +1145,37 @@ input[type='color']:disabled { opacity: 0.4; cursor: default; }
    The button keeps its label, which says what pressing it does. */
 .shapelist li[aria-expanded='true'] > .twist { transform: rotate(90deg); }
 .shapelist .twist.none { visibility: hidden; }
+/* The lock, at the end of the row where the count is, because it is a state of
+   the row and not a way of choosing it. Always drawn: a button that appeared on
+   hover would put the only sign of a lock somewhere a finger cannot go, and
+   there is no other place a lock can be seen. */
+.shapelist .lockbtn {
+  flex: none;
+  /* The same 14 px box the disclosure uses. A taller control makes the header
+     row taller, which moves the middle of a group's row into the list of
+     children it holds, and a press aimed at the group lands on a shape. */
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  /* Open reads as quiet and closed as present, so a list of unlocked rows is
+     not a column of icons competing with the names. */
+  opacity: 0.35;
+}
+.shapelist .lockbtn[aria-pressed='true'] { opacity: 1; }
+.shapelist .lockbtn:hover { opacity: 1; }
+/* Locked by a group above it: shown, and not yours to open here. */
+.shapelist .lockbtn:disabled { cursor: default; opacity: 0.6; }
+/* The row itself, so the lock is legible without reading the icon. A locked
+   shape is still named, still counted and still reorderable; what it is not is
+   catchable on the canvas. */
+.shapelist li:has(> .lockbtn[aria-pressed='true']) > .nm { font-style: italic; opacity: 0.7; }
+
 .shapelist .rename {
   flex: 1;
   min-width: 0;
@@ -1403,6 +1448,9 @@ kbd {
      not one. Width as well as height: it sits in a flex row, so `--h` reaches
      neither axis of it. */
   .shapelist .twist { width: 44px; height: 44px; }
+  /* And the lock at the other end of the row, for the same reason. It is the
+     only way to lock anything, so a finger that cannot hit it cannot lock. */
+  .shapelist .lockbtn { width: 44px; height: 44px; font-size: 16px; }
   /* The indent tracks the disclosure it lines up under. */
   .shapelist li.path { padding-left: 52px; }
   .shapelist li.group > ul > li { padding-left: 44px; }

@@ -24,6 +24,7 @@ route to finishing it.
 - [Bend a segment without touching its handles](#bend-a-segment-without-touching-its-handles)
 - [Rotate or scale by an exact amount](#rotate-or-scale-by-an-exact-amount)
 - [Snap to a whole number of grid steps](#snap-to-a-whole-number-of-grid-steps)
+- [Lock a shape so you stop catching it](#lock-a-shape-so-you-stop-catching-it)
 - [Round off a corner](#round-off-a-corner)
 - [Colour a shape](#colour-a-shape)
 - [Set the page the drawing exports to](#set-the-page-the-drawing-exports-to)
@@ -403,6 +404,23 @@ you is afterwards: past 2 000 node markers in view the overlay stops drawing
 them, the document readout says `markers off, too dense`, and nodes cannot be
 clicked until you zoom in far enough that fewer are on screen. The shapes
 themselves are unaffected.
+
+## Lock a shape so you stop catching it
+
+Press the lock at the end of its row in the **Shapes** list.
+
+A locked shape is still drawn, still named and still in the list. What it is not
+is catchable: a press on the canvas goes straight through it to whatever is
+behind, and a marquee sweeps past it. This is what you want for a traced
+photograph, a background you are drawing over, or anything you keep selecting by
+accident.
+
+Locking a group locks everything in it. The rows inside show the lock and will
+not let you open it there, since the lock belongs to the group.
+
+**The lock is not saved in the file.** It survives closing the tab and coming
+back, because it is part of your workspace rather than part of the drawing. Save
+an SVG and open it again and nothing is locked.
 
 ## Round off a corner
 

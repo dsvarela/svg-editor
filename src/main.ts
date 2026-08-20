@@ -11,6 +11,7 @@ import {
   docBBox,
   emptyDoc,
   findGroup,
+  isLocked,
   findShape,
   groupChain,
   dedupeIds,
@@ -132,6 +133,7 @@ function applySession(sn: Session): void {
     s.camera = { ...sn.camera };
     s.guides = sn.guides;
     s.palette = sn.palette;
+    s.locked = new Set(sn.locked);
     /* Not restored: it is where you had got to, not how you work, and putting
        handles on screen nobody asked for is a worse first frame than none. */
     s.selection.shapes.clear();
@@ -2384,6 +2386,10 @@ shapeList.addEventListener('pointerdown', (e) => {
   // The disclosure triangle and the rename box own their own presses, and a
   // modifier means the press is extending a selection rather than moving one.
   if (target.closest('.twist') || target.closest('.rename')) return;
+  /* The lock is a control on the row and not a way of choosing it. Handled on
+     `click` below so that a press and release on the button do one thing; here
+     it only has to keep the row from arming a drag under it. */
+  if (target.closest('.lockbtn')) return;
   if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
   /* A path row carries its shape's `data-id` and sits inside the shape's own
      row, so `closest` would read a press on a path as a press on the shape.
@@ -2410,6 +2416,35 @@ shapeList.addEventListener('pointerdown', (e) => {
           }, ROW_HOLD_MS)
         : 0,
   };
+});
+
+/**
+ * Lock or unlock the row that was pressed.
+ *
+ * `store.update` and not `store.edit`: a lock says what you are working on
+ * rather than what the drawing is, so it is no more part of the history than
+ * the selection is, and it never reaches a file. §66.
+ */
+shapeList.addEventListener('click', (e) => {
+  const btn = (e.target as Element | null)?.closest<HTMLElement>('.lockbtn');
+  const id = btn?.dataset.lock;
+  if (!id || (btn as HTMLButtonElement).disabled) return;
+  e.stopPropagation();
+  store.update((s) => {
+    if (s.locked.has(id)) s.locked.delete(id);
+    else {
+      s.locked.add(id);
+      /* Locking takes it out of the selection. Leaving it in would leave every
+         panel acting on a shape the canvas will not let you touch, which is a
+         worse silence than the one the lock is for. */
+      s.selection.shapes.delete(id);
+      for (const sh of s.doc.shapes) {
+        if (!isLocked(s.doc, s.locked, sh.id)) continue;
+        s.selection.shapes.delete(sh.id);
+        for (const sp of sh.subpaths) for (const n of sp.nodes) s.selection.nodes.delete(n.id);
+      }
+    }
+  });
 });
 
 shapeList.addEventListener('pointermove', (e) => {
@@ -2855,9 +2890,45 @@ const listSignature = (): string =>
         groupChain(store.state.doc, sh.group)
           .map((g) => `${g.id}:${g.name}:${expanded.has(g.id) ? 'open' : 'shut'}`)
           .join('>'),
+        /* The lock, its own and any it inherits. A row draws a different button
+           either way, so a list that did not notice would show a shape as open
+           while the pointer passed through it. */
+        isLocked(store.state.doc, store.state.locked, sh.id) ? 'locked' : 'free',
+        store.state.locked.has(sh.id) ? 'own' : '-',
       ].join('\u0001'),
     )
     .join('\u0002');
+
+/**
+ * The lock button on a list row.
+ *
+ * The only place a lock can be seen or changed, which is what lets the canvas
+ * refuse the press silently: a locked shape is not a control that stopped
+ * working, it is a row with its lock closed. A shape locked by a group above it
+ * shows the lock and cannot be opened from here, because the lock is not its
+ * own and opening it in place would be a second answer to who holds it.
+ */
+function lockButton(id: string, name: string, ownLock: boolean, inherited: boolean): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'lockbtn';
+  b.dataset.lock = id;
+  // For the reason the disclosures give: a tree is one tab stop.
+  b.tabIndex = -1;
+  b.textContent = ownLock || inherited ? '\u{1F512}' : '\u{1F513}';
+  b.setAttribute('aria-pressed', String(ownLock || inherited));
+  b.disabled = inherited && !ownLock;
+  b.setAttribute(
+    'aria-label',
+    inherited && !ownLock
+      ? `${name} is locked by the group it is in`
+      : ownLock
+        ? `Unlock ${name}`
+        : `Lock ${name}, so the pointer passes through it`,
+  );
+  b.title = b.getAttribute('aria-label') ?? '';
+  return b;
+}
 
 const swatchOf = (sh: Shape): string => (sh.style.fill !== 'none' ? sh.style.fill : sh.style.stroke);
 
@@ -2991,7 +3062,20 @@ function refreshShapeList(): void {
       gc.className = 'ct';
       gc.textContent = `${held} ${held === 1 ? 'shape' : 'shapes'}`;
 
-      row.append(gt, gn, gc);
+      row.append(
+        gt,
+        gn,
+        gc,
+        /* A group's lock is its own or its parent's, and never a child's: a
+           group holds no list of members, so what is under it is read by
+           walking up from each shape rather than down from here. §49. */
+        lockButton(
+          g.id,
+          g.name,
+          s.locked.has(g.id),
+          groupChain(s.doc, g.id).some((up) => s.locked.has(up.id)),
+        ),
+      );
       at[at.length - 1].append(row);
 
       /* A shut group draws its own row and nothing under it, which means not pushing
@@ -3058,7 +3142,13 @@ function refreshShapeList(): void {
         ? `${sh.subpaths.length} paths`
         : String(sh.subpaths.reduce((a, sp) => a + sp.nodes.length, 0));
 
-    li.append(twist, sw, nm, ct);
+    li.append(
+      twist,
+      sw,
+      nm,
+      ct,
+      lockButton(sh.id, sh.name, s.locked.has(sh.id), isLocked(s.doc, s.locked, sh.id)),
+    );
 
     if (sh.subpaths.length > 1 && expanded.has(sh.id)) {
       const kids = document.createElement('ul');

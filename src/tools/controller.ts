@@ -18,6 +18,7 @@ import type { Pt, Subpath } from '../core/types';
 import {
   emptySelection,
   findShape,
+  isLocked,
   makeShape,
   nextId,
   nodeAt,
@@ -538,6 +539,13 @@ export class Controller {
     if (!kind || !t) return null;
     const shape = t.getAttribute('data-shape');
     const part = t.getAttribute('data-part');
+    /* A locked shape takes no press at all, and the gate is here because every
+       pointer gesture asks this one question first. Anywhere else it would be a
+       check each of the twenty-six places that add to a selection has to
+       remember. The canvas draws no hit surface for a locked shape either, so
+       this catches only what is left: a marker still on screen from the frame
+       the lock landed in. §66. */
+    if (shape && isLocked(this.store.state.doc, this.store.state.locked, shape)) return null;
     if (kind === 'outline' || !shape) return { kind, shape, part, ref: null, seg: null };
     const segAttr = t.getAttribute('data-seg');
     return {
@@ -1408,6 +1416,9 @@ export class Controller {
           const inBox = (p: Pt): boolean =>
             p[0] >= box.x0 && p[0] <= box.x1 && p[1] >= box.y0 && p[1] <= box.y1;
           for (const shape of st.doc.shapes) {
+            // A locked shape is not swept up either: a marquee is a press the
+            // pointer never landed on it, and the answer has to be the same.
+            if (isLocked(st.doc, st.locked, shape.id)) continue;
             let caught = 0;
             let total = 0;
             for (const sp of shape.subpaths) {

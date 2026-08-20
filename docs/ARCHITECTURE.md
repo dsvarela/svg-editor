@@ -3435,3 +3435,88 @@ ghosts all four coordinate fields and says so, and that the note goes when real
 handles arrive. `latentHandles` is that half, with **Curve** in place of
 **Auto**. Deleting a feature deletes the tests that reached the code beside it,
 and the reaching is not visible from the name of the test.
+
+## 66. The hit surface is the picture, and a locked shape has none
+
+Two changes on 2026-08-20 with one rule behind them: **what the pointer can
+catch has to be what the eye can see.** A shape you can grab where nothing is
+drawn, and a shape you cannot grab where something is, are the same defect
+twice.
+
+### Clicking the middle of a shape
+
+The overlay draws an invisible path per shape as its hit target, and it carried
+`fill: none`, so only the ten-pixel stroke along the outline took a press. A
+filled square was a square you could only catch by its edge, which is not how
+any other editor behaves and is not what the shape looks like.
+
+The fix is one attribute: `pointer-events` on that path, `all` where the fill is
+painted and `stroke` where it is not. Painted is `state.filled && fill !==
+'none'`, so a fill of `none` and wireframe both leave the shape catchable by its
+edge alone. `fill-rule` goes on the hit path too, so a hole in an even-odd shape
+is a hole to the pointer.
+
+Two things follow that are worth saying out loud rather than discovering:
+
+- **A guide crossing a filled shape is harder to grab.** The guide strips
+  already sat behind every outline, on the rule that a guide must not take a
+  press aimed at the drawing. Extending the hit surface from the edge to the
+  interior extends that rule; it does not break it.
+- **A marquee cannot start inside a filled shape**, because the press moves the
+  shape instead. Every vector editor behaves this way, and the empty canvas is
+  still where a marquee begins.
+
+### Locking
+
+**A lock is a set of ids in the editor's state, not a field on the shape.** That
+is the whole design, and §65 is why. A field would be a thing the export has to
+remember not to write; a set beside the selection cannot reach a file, because
+the document does not know it exists. `test/locked.test.ts` asserts the export
+is byte-identical with everything locked, and that assertion cannot rot into a
+`toSession` that forgot a field.
+
+The set holds shape ids and group ids together, and `isLocked` walks up from a
+shape through `groupChain`. A group holds no list of its members (§49), so
+locking one has to be answered by looking up rather than by writing down, and a
+shape moved into a locked group is locked with no second step.
+
+**It is click-through, not refusal.** The canvas draws no hit surface and no
+markers for a locked shape, so the press lands on whatever is behind it. The
+alternative -- keep the target and refuse the press -- leaves a shape that looks
+catchable and does nothing, which is the silence §65 removed a feature over. The
+lock is visible in the shape list instead, on every row, always drawn.
+
+Three gates, and the reason there are only three: **every pointer gesture
+resolves through `Controller.hitOf`**, which already has the shape id. One check
+there covers clicking, dragging a node, dragging a handle, the bend dots and the
+corner controls at once. The other two are the marquee, which does not go
+through `hitOf`, and the canvas, which is what makes it click-through rather
+than a refusal. The twenty-six places that add to a selection need no check:
+they select shapes that a paste, a boolean, a duplicate or an import has just
+made, and a new shape is never locked.
+
+**It is not in the history**, for the reason the selection is not: it says what
+you are working on rather than what the drawing is. It is in the session, as its
+own array rather than inside `SessionView`, because that is a `Pick` of the
+editor's state and JSON writes a `Set` as `{}`. Ids that name nothing are dropped
+on the way back in: a session outlives the document it was written beside, so a
+stale id would otherwise lock whichever shape was given that id next.
+
+### One thing the lock found on its way in
+
+`.group` is the inspector's panel-group class, and a group's row in the shape
+list carries the same word. That rule is a stacked panel -- a column, 12 px
+gaps, 15 px padding and a bottom rule -- and all of it had been landing on those
+rows, putting the disclosure, the name and the count on three lines of their
+own. Adding a fourth control made it visible; it had been there as long as
+groups have.
+
+**A browser scenario was passing because of it.** `groups` pressed
+`#shapelist li.group`, which is the centre of an element that contains the rows
+inside it, and that point is a shape. It landed on the header only because the
+collision had made the header four lines deep. It presses the group's own name
+now, which is what the check beside it says it is doing.
+
+The list restates its own layout rather than either use of the word being
+renamed, because `.group` means "a group" in both places and both are right.
+

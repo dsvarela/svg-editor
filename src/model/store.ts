@@ -245,6 +245,20 @@ export interface EditorState {
   /** Stop guides being dragged, so a press near one edits the drawing instead. */
   guidesLocked: boolean;
   /**
+   * Shapes and groups the pointer passes straight through, by id.
+   *
+   * Here rather than on `Shape`, and that is the whole design. A field on the
+   * shape would be a thing the export has to remember not to write, and §65 is
+   * what that costs. A set beside the selection cannot reach a file at all: the
+   * document does not know it exists.
+   *
+   * A group's id locks everything under it, so one set answers for both and the
+   * membership question is `isLocked`. Not in the history, for the reason the
+   * selection is not: it says what you are working on rather than what the
+   * drawing is. §66.
+   */
+  locked: Set<string>;
+  /**
    * Show alignment lines while dragging, and hold the drag to them.
    *
    * Not a guide and not a snap tier: see `model/smart.ts`. A view-and-input
@@ -339,6 +353,7 @@ export class Store {
       showRulers: false,
       showGuides: true,
       guidesLocked: false,
+      locked: new Set<string>(),
       smartGuides: true,
       snapToAngles: false,
       angleStep: 45,

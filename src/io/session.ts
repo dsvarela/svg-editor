@@ -82,6 +82,15 @@ export interface Session {
   camera: ViewBox;
   guides: Guide[];
   palette: NamedStyle[];
+  /**
+   * The ids of locked shapes and groups.
+   *
+   * Its own field rather than part of `view`, because `view` is a `Pick` of the
+   * editor's state and the editor holds this as a `Set`, which JSON writes as
+   * `{}`. An array here and a `Set` on the way back in, converted in one place
+   * each way.
+   */
+  locked: string[];
   view: SessionView;
 }
 
@@ -106,6 +115,7 @@ export function toSession(s: EditorState): Session {
     doc: s.doc,
     camera: { ...s.camera },
     guides: s.guides.map((g) => ({ ...g })),
+    locked: [...s.locked],
     palette: s.palette.map((p) => ({ name: p.name, style: { ...p.style } })),
     view: {
       tool: s.tool,
@@ -428,5 +438,21 @@ export function read(text: string, now: SessionView): Session | string {
   const palette = readPalette(raw.palette ?? []);
   if (!palette) return 'the saved styles in it are malformed';
   const camera = readBox(raw.camera) ?? { ...doc.viewBox };
-  return { version: SESSION_VERSION, doc, camera, guides, palette, view: readView(raw.view, now) };
+  /* Ids that name nothing are dropped on the way in. A session outlives the
+     document it was written beside -- opening a file replaces the shapes and
+     keeps the session -- so a stale id would lock a shape drawn later that
+     happened to take the same name. */
+  const known = new Set<string>([...doc.shapes.map((sh) => sh.id), ...(doc.groups ?? []).map((g) => g.id)]);
+  const locked = Array.isArray(raw.locked)
+    ? raw.locked.filter((v): v is string => typeof v === 'string' && known.has(v))
+    : [];
+  return {
+    version: SESSION_VERSION,
+    doc,
+    camera,
+    guides,
+    palette,
+    locked,
+    view: readView(raw.view, now),
+  };
 }
