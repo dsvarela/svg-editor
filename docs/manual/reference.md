@@ -17,6 +17,10 @@ Every control, and what it does. Dry and complete.
 square, by taking the shorter span of the drag. `Alt` reads the point you pressed
 as the centre rather than a corner.
 
+The status strip says the same thing while one of those three tools is armed,
+next to the **Shift** and **Alt** buttons. It is empty under Select and Pen,
+where what a modifier does depends on what is under the pointer.
+
 The polygon's key is `N`, for n-gon. Its initial was taken twice over: `P` is the
 pen and `Shift`+`G` widens a selection to its group, so `G` one Shift away would
 have meant something unrelated.
@@ -510,7 +514,10 @@ than a curve.
 
 Runs the selected node along the curve its two segments are cut from, without
 moving that curve. **along** is where it sits, as a percentage between its two
-neighbours. `Alt` and dragging the node does the same thing on the canvas.
+neighbours, from `0.1` to `99.9`. `Alt` and dragging the node does the same
+thing on the canvas, and stops at the same two figures: a node exactly on a
+neighbour is a segment of no length, which nothing can smooth or simplify
+afterwards.
 
 The heading says what the move costs. **path unchanged** means the two segments
 either side are one curve cut in two, so cutting it elsewhere draws the same

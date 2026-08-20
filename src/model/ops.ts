@@ -349,6 +349,27 @@ export function slidingParent(sp: Subpath, i: number): Slide | null {
 }
 
 /**
+ * How near an end a slid node may come, as a fraction of its parent.
+ *
+ * A node on top of its neighbour makes a zero-length segment, which gives the
+ * fitter no tangent and can never be simplified again (§23). On a pair spanning
+ * 100 units this leaves it a tenth of a unit clear, which is below anything a
+ * pointer can ask for and above anything degenerate.
+ *
+ * Here rather than beside either caller, because the drag and the **along %**
+ * field are two ways to run one operation and a margin they disagreed about
+ * would put the node in two different places. It was declared in
+ * `src/tools/controller.ts` and spelled `0.1` and `99.9` in
+ * `Commands.slideActiveTo` until 2026-08-20. The `min`, `max` and `step` on the
+ * field in `index.html` are the one copy that cannot import it.
+ */
+export const SLIDE_MARGIN = 1e-3;
+
+/** `t` held clear of both ends, which is what either entry point may ask for. */
+export const clampSlide = (t: number): number =>
+  Math.min(1 - SLIDE_MARGIN, Math.max(SLIDE_MARGIN, t));
+
+/**
  * Put node `i` at parameter `t` of `parent`, redrawing its two segments.
  *
  * `parent` is passed in rather than looked up, so a drag can hold the reading
@@ -356,9 +377,10 @@ export function slidingParent(sp: Subpath, i: number): Slide | null {
  * split of `parent`, so re-reading recovers the same curve. It is `stray` that
  * a drag must hold, and §71 says why.
  *
- * A pair of straight segments stays straight. The parent of two lines is a
- * line, and splitting it puts handles on the thirds that draw the same run and
- * export as `C` where the drawing had `L`.
+ * A pair of straight segments stays straight, and keeps its `L` commands. The
+ * parent of two lines is a line, and splitting it would put handles on the
+ * thirds: they draw the same run and export as `C` where the drawing had `L`,
+ * so this moves the point and returns before writing any handle.
  */
 export function slideNodeTo(sp: Subpath, i: number, parent: Cubic, t: number): boolean {
   const n = sp.nodes.length;

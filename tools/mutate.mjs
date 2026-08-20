@@ -53,10 +53,25 @@ const flagValues = new Set(
     .map((i) => args[i + 1]),
 );
 const targets = args.filter((a) => !a.startsWith('--') && !flagValues.has(a));
+
+const USAGE = 'usage: node tools/mutate.mjs <file or directory> [--from N] [--limit N] [--tests a,b] [--apply N]';
+
+/* A flag this does not know is refused, not dropped. It matters more here than
+   anywhere else in this tree, because this is the one tool that rewrites the
+   source: a mistyped flag was silently discarded, the target was still a target,
+   and `--list` -- which does not exist, listing is `--limit 0` -- ran a full
+   destructive sweep against a tree that had a browser sweep on it. The two
+   damages are the ones the file header already warns about, reached by a typo
+   rather than by a decision. */
+const KNOWN = new Set(['--from', '--limit', '--tests', '--apply']);
+const unknown = args.filter((a) => a.startsWith('--') && !KNOWN.has(a));
+if (unknown.length) {
+  console.error(`unknown flag: ${unknown.join(', ')}. To list the sites rather than run them, --limit 0.`);
+  console.error(USAGE);
+  process.exit(2);
+}
 if (!targets.length) {
-  console.error(
-    'usage: node tools/mutate.mjs <file or directory> [--from N] [--limit N] [--tests a,b]',
-  );
+  console.error(USAGE);
   process.exit(1);
 }
 
@@ -75,10 +90,10 @@ if (!targets.length) {
  * cannot load fails the suite and scores as caught.
  */
 const RULES = [
-  { find: /(?<![<>=!])<(?![<=])/g, to: '<=' },
-  { find: /(?<![<>=!])>(?![>=])/g, to: '>=' },
-  { find: /<=/g, to: '<' },
-  { find: />=/g, to: '>' },
+  { find: /(?<![<>=!])<(?![<=])/g, to: '<=', boundary: true },
+  { find: /(?<![<>=!])>(?![>=])/g, to: '>=', boundary: true },
+  { find: /<=/g, to: '<', boundary: true },
+  { find: />=/g, to: '>', boundary: true },
   { find: /(?<![&])&&(?![&])/g, to: '||' },
   { find: /(?<![|])\|\|(?![|])/g, to: '&&' },
   { find: /(?<![=!<>])===(?!=)/g, to: '!==' },
@@ -169,6 +184,78 @@ function typeArgumentCols(line) {
 }
 
 /**
+ * Every name the tree binds to a float tolerance.
+ *
+ * A tolerance is declared as a literal with a negative exponent, which is what
+ * makes it recognisable without a parser: `const SAME_PLACE = 1e-9`. Thirteen
+ * names in this tree are one, and none of them is anything else.
+ *
+ * `INVISIBLE_MOVE` is a tolerance this misses, because it is arithmetic on
+ * `PATH_DECIMALS` rather than a literal. Missing one costs a survivor somebody
+ * reads and discards, which is the cost this whole idea is trying to lower
+ * rather than a new one.
+ */
+function toleranceNames(root) {
+  const names = new Set();
+  if (!existsSync(root)) return names;
+  const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*-?\d[\d.]*[eE]-\d+\s*;/g;
+  for (const file of sources(root)) {
+    for (const m of readFileSync(file, 'utf8').matchAll(decl)) names.add(m[1]);
+  }
+  return names;
+}
+
+/**
+ * The columns of a line holding an operator whose meaning turns on a float
+ * tolerance, which can never be a finding. Skipped for the reason a comment is,
+ * and argued under "Testing philosophy" in `docs/ARCHITECTURE.md`.
+ *
+ * A boundary reads its whole operand, because the bound is usually the epsilon
+ * added to something. An additive operator reads only the token beside it: what
+ * is skipped is the epsilon being added, not a sum that has one somewhere in it.
+ */
+function toleranceCols(line, tolerances) {
+  const cols = new Set();
+  const LIT = /-?\d[\d.]*[eE]-\d+/;
+  const hasTol = (text) =>
+    LIT.test(text) || [...text.matchAll(/[A-Za-z_$][\w$]*/g)].some((m) => tolerances.has(m[0]));
+
+  /* Where an operand stops. A bracket that closes one this operand never opened
+     ends it, which is what keeps `f(a < b)` from reading past the call. */
+  const edge = (c) => c === '&' || c === '|' || c === '?' || c === ':' || c === ',' || c === ';';
+  const operand = (from, step) => {
+    let depth = 0;
+    let j = from;
+    for (; j >= 0 && j < line.length; j += step) {
+      const c = line[j];
+      const opens = step < 0 ? ')]}' : '([{';
+      const closes = step < 0 ? '([{' : ')]}';
+      if (opens.includes(c)) depth++;
+      else if (closes.includes(c)) {
+        if (depth === 0) break;
+        depth--;
+      } else if (depth === 0 && (edge(c) || '<>=!'.includes(c))) break;
+    }
+    return step < 0 ? line.slice(j + 1, from + 1) : line.slice(from, j);
+  };
+
+  for (const m of line.matchAll(/<=|>=|<|>/g)) {
+    if (hasTol(operand(m.index - 1, -1)) || hasTol(operand(m.index + m[0].length, 1))) {
+      cols.add(m.index);
+    }
+  }
+
+  const token = /-?\d[\d.]*(?:[eE][-+]?\d+)?|[A-Za-z_$][\w$]*/;
+  for (const m of line.matchAll(/(?<![+\-\w])[+-](?![+\-=>])/g)) {
+    const before = line.slice(0, m.index).match(new RegExp(`(${token.source})\\s*$`));
+    const after = line.slice(m.index + 1).match(new RegExp(`^\\s*(${token.source})`));
+    const tol = (t) => t !== undefined && (LIT.test(t) || tolerances.has(t));
+    if (tol(before?.[1]) || tol(after?.[1])) cols.add(m.index);
+  }
+  return cols;
+}
+
+/**
  * Put the file back even if this process never gets to.
  *
  * The mutation lives in the working tree while the tests run, so a sweep that
@@ -246,6 +333,10 @@ if (existsSync(PENDING)) {
 
 const files = targets.flatMap(sources).filter((f) => !f.endsWith('.d.ts'));
 
+/* Read from the whole of `src`, never from the target: a sweep aimed at one
+   file still meets `SAME_PLACE`, which `src/core/types.ts` declares. */
+const tolerances = toleranceNames('src');
+
 /** Every place a rule matches, in file and then line order. */
 const sites = [];
 for (const file of files) {
@@ -254,9 +345,11 @@ for (const file of files) {
   lines.forEach((line, n) => {
     if (prose.has(n)) return;
     const types = typeArgumentCols(line);
+    const tol = toleranceCols(line, tolerances);
     for (const rule of RULES) {
       for (const m of line.matchAll(rule.find)) {
         if (types.has(m.index)) continue;
+        if (tol.has(m.index)) continue;
         sites.push({ file, line: n, col: m.index, was: m[0], now: rule.to });
       }
     }

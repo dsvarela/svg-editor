@@ -41,6 +41,7 @@ import {
   reshapeSegment,
   setSegmentBend,
   segmentBend,
+  clampSlide,
   slideNodeTo,
   slidingParent,
   snap as snapTo,
@@ -238,24 +239,20 @@ function cornersForDrag(sharp: Subpath, at: number, selected: ReadonlySet<string
 
 
 /**
- * How near an end a slid node may come, as a fraction of its parent.
- *
- * A node on top of its neighbour makes a zero-length segment, which gives the
- * fitter no tangent and can never be simplified again (§23). On a pair
- * spanning 100 units this leaves it a tenth of a unit clear, which is below
- * anything a pointer can ask for and above anything degenerate.
- */
-const SLIDE_MARGIN = 1e-3;
-
-/**
  * What a slide says while it happens: where the node is, and what it cost.
  *
  * A movement below `INVISIBLE_MOVE` is one the saved file cannot record, so it
  * is reported as no movement rather than as a very small one.
  * `docs/STYLE.md` governs the wording. §71.
+ *
+ * One decimal, which is the resolution the operation has: `SLIDE_MARGIN` holds
+ * the node a tenth of a per cent clear of each end, and rounding to a whole
+ * number reported that position as `0 %` and `100 %`, both of which the code
+ * guarantees are false. The **along %** field is written to the same decimal
+ * for the same reason.
  */
 function slideSays(t: number, stray: number): string {
-  const where = `${Math.round(t * 100)} % along`;
+  const where = `${(t * 100).toFixed(1)} % along`;
   return stray < INVISIBLE_MOVE ? `${where}, path unchanged` : `${where}, path moved ${fmt(stray)}`;
 }
 
@@ -1284,7 +1281,7 @@ export class Controller {
         /* Off the ends by a thousandth rather than up to them. A node on top of
            its neighbour is a zero-length segment, which gives the fitter no
            tangent and can never be simplified again. §23. */
-        const t = Math.min(1 - SLIDE_MARGIN, Math.max(SLIDE_MARGIN, projectToCubic(d.parent, p).t));
+        const t = clampSlide(projectToCubic(d.parent, p).t);
         this.store.edit((st) => {
           const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
           if (!sp?.nodes[d.ref.i]) return;

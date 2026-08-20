@@ -23,7 +23,9 @@ import { nodeIdAt } from './helpers';
 import type { TraceResult } from '../src/model/trace';
 import { serialisePath } from '../src/core/serialise';
 import {
+  SLIDE_MARGIN,
   segmentBend,
+  slidingParent,
   splitSegment,
 } from '../src/model/ops';
 import {
@@ -4148,5 +4150,48 @@ describe('Alt and drag slides a node along its own path', () => {
     corner.move([40, 40], { altKey: true } as PointerEventInit);
     corner.up();
     expect(heard[heard.length - 1]).toMatch(/path moved/);
+  });
+
+  /* The percentage in that string had nothing checking it, on either entry
+     point, so it could have quoted any number and both tests above would still
+     have passed. Two things have to be true of it: it says where the node
+     actually ended up, and it never says one of the two positions the code
+     refuses to produce. */
+  it('quotes the percentage the node is actually at', () => {
+    const h = withInsertedNode();
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    const parent = slidingParent(sp, 1)!.parent;
+    const at = sp.nodes[1].pt.slice() as Pt;
+
+    h.down(at, h.anchorEl(h.store.state.doc.shapes[0].id, 0, 1), { altKey: true });
+    h.move([52, 28], { altKey: true } as PointerEventInit);
+    h.up();
+
+    const quoted = Number(/([\d.]+) % along/.exec(said[said.length - 1])![1]);
+    const landed = h.store.state.doc.shapes[0].subpaths[0].nodes[1].pt;
+    expect(quoted).toBeCloseTo(projectToCubic(parent, landed).t * 100, 1);
+  });
+
+  it('never quotes a position it refuses to put the node in', () => {
+    /* Dragged far past the near neighbour. `clampSlide` holds the node a tenth
+       of a per cent clear, so `0.0 % along` would be the readout describing a
+       zero-length segment that does not exist. It said exactly that while the
+       figure was rounded to a whole number. */
+    const h = withInsertedNode();
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    const at = sp.nodes[1].pt.slice() as Pt;
+    const first = sp.nodes[0].pt;
+
+    h.down(at, h.anchorEl(h.store.state.doc.shapes[0].id, 0, 1), { altKey: true });
+    h.move([first[0] - 500, first[1]], { altKey: true } as PointerEventInit);
+    h.up();
+
+    const quoted = Number(/([\d.]+) % along/.exec(said[said.length - 1])![1]);
+    expect(quoted).toBeCloseTo(SLIDE_MARGIN * 100, 6);
+    expect(quoted).toBeGreaterThan(0);
   });
 });

@@ -2054,6 +2054,33 @@ a bound nothing can reach, is an equivalent mutant: the program's behaviour did
 not change, so no test could have noticed. Reading them is the work; the tool
 only finds the candidates.
 
+**One family of those is decidable, and since 2026-08-20 the tool declines to
+make it.** Where a float tolerance is what decides an operator, the mutated and
+original programs differ only on inputs no fixture can produce: `<` against
+`<=` on an epsilon bound, and `+ 1e-12` against `- 1e-12`. Neither can ever be
+a finding, so neither is offered as one, on the same argument that already skips
+a comment and the `<` of a type argument. `src` went from 3 930 sites to 3 767.
+
+**The bound is usually the epsilon added to something**, not the epsilon: `m <=
+1 + 1e-12`, or `Math.floor(Math.log10(x) + 1e-12)`. A first version read the
+token beside the operator and so skipped none of the four tolerance lines in
+`src/view/viewport.ts`, which came back 31 survivors of 42. A boundary reads its
+whole operand now, out to the nearest `&&`, `?`, `,` or unbalanced bracket, and
+an additive operator reads the token beside it. viewport falls to 33 sites and
+every one of the 9 removed was a survivor.
+
+What it deliberately still offers is `p[0] < lo - reach`: `reach` is a distance
+a caller chooses and a fixture can sit exactly on it. The skip is for the
+epsilon no fixture can reach, not for every bound with a name.
+
+**It also refuses a flag it does not know**, which matters more here than
+anywhere else in this tree, because this is the one tool that rewrites the
+source. Listing the sites is `--limit 0`; `--list` is not a flag, and until that
+date it was silently dropped while the target stayed a target, so a typo ran a
+full destructive sweep. That is how the browser sweep of 2026-08-20 came to fail
+three scenarios while `src/model/ops.ts` was being rewritten and restored under
+it, a red that said nothing about the code.
+
 Its own first version could not report a finding. `--silent` swallowed the
 filename, vitest exited 1 on a command line it could not parse, and every
 mutation scored as caught, so it reported a clean sweep having measured nothing —
@@ -4023,8 +4050,15 @@ of when it is exact.
 a perfect split of the parent, so asking again mid-drag returns zero: a drag
 that re-read it would report that the path had not moved, having just moved it
 by the figure it quoted at the press. The parent is held beside it for cost
-rather than correctness, since the same curve comes back every time. Breaking
-that on purpose fails no test, which is the honest state of it.
+rather than correctness, since the same curve comes back every time.
+
+**Until 2026-08-20 this paragraph ended "breaking that on purpose fails no
+test", and that was not so.** Re-reading `stray` in the move handler was tried:
+`test/controller.test.ts`, "says the path is unchanged only when it is", goes
+red with `expected '57.1 % along, path unchanged' to match /path moved/`. The
+claim would have let somebody drop the hold believing nothing measured it,
+which is the more expensive direction for a wrong claim about coverage to run
+in.
 
 ### There is no threshold, because there is no cliff
 
@@ -4051,6 +4085,61 @@ beyond would mean merging three. It stops a thousandth of the parent short of
 each end, because a node on top of its neighbour is a zero-length segment that
 gives the fitter no tangent and can never be simplified again (§23).
 
-A straight run stays straight. The parent of two lines is a line, and splitting
-it puts handles on the thirds that draw the same run and export as two `C`
-commands where the drawing had two `L`.
+**That thousandth is `SLIDE_MARGIN` in `src/model/ops.ts`, and both entry points
+read it through `clampSlide`.** It lived in `src/tools/controller.ts` and was
+spelled `0.1` and `99.9` in `Commands.slideActiveTo` until 2026-08-20, which is
+one fact in two modules with nothing making them agree: widening the drag's
+margin would have put the gesture and the field at different places. The `min`,
+`max` and `step` on the **along %** field in `index.html` are the copy that
+cannot import it, the same situation `clampCorners` already carries.
+
+**Both readouts quote a tenth of a per cent, because that is the resolution the
+operation has.** Rounded to a whole number, the status line said `0 % along` and
+`100 % along` for the two positions the margin exists to prevent, and the field
+wrote back `0` for a node the document held at 0.1. The number on screen was not
+the number stored, at both ends of a field whose own `min` and `max` offered
+exactly those two values.
+
+A straight run stays straight, and keeps its `L` commands. The parent of two
+lines is a line, and splitting it puts handles on the thirds: they draw the same
+run and would export as two `C` where the drawing had two `L`, so `slideNodeTo`
+moves the point and returns before it writes any handle when both segments are
+lines. Measured on 2026-08-20: sliding node 1 of `M10 20 L50 20 L90 20` to
+`t = 0.25` serialises with no `C` in it. **Until that date this paragraph
+asserted the outcome and then described the mechanism without the guard**, which
+reads as the export it does not produce.
+
+## 72. What a modifier does is drawn, not hovered
+
+The rule is one line in `CLAUDE.md`: no information appears only on hover, and a
+tooltip may enrich but never inform. Three tools broke it in the same way, and
+the breakage survived a review that had the rule in its lane.
+
+**The ellipse, rectangle and polygon tools each change what they draw under
+Shift and Alt, and the only place that said so was a `title` attribute.** The
+`aria-label` beside it read `Ellipse`. So a person on a touch screen, a person
+using a screen reader, and a person who simply did not rest a pointer on the
+button all had the same information about the tool, which was none. The manual
+carried it (`docs/manual/reference.md`), which is why this was hard to see: the
+fact existed, correctly, in a document nobody reads while holding a mouse.
+
+**The fix is a readout in the status strip, beside the two latch buttons.** It
+names what Shift and Alt will do for whichever tool is armed. It goes there and
+not on the tool because the strip is the one row still on screen mid-gesture,
+which is the argument the latch buttons were put there under, and because it is
+what those two buttons are about to do when pressed. The titles stay; a tooltip
+that repeats what is drawn is enrichment, which is what the rule allows.
+
+**Only the three drawing tools are in the table, and that is a decision rather
+than an omission.** Under Select and Pen a modifier means whatever the gesture
+under the pointer means: Shift adds to a selection, keeps a scale's proportions
+and snaps a rotation to 15°, while Alt scales from the centre, breaks a handle
+pair, bends a segment and now slides a node (§71). A single line naming one of
+those is wrong for the other six, and a line naming all seven does not fit in a
+24-pixel strip. Those stay with the message the gesture itself writes and with
+the manual. What would retire this is a hint that reads the hit under the
+pointer, which is a larger piece and is not built.
+
+The check is in the `primitives` browser scenario, and it reads the laid-out
+width rather than `textContent`, because a `hidden` element still has its text.
+The question the rule asks is whether a person can see the words.

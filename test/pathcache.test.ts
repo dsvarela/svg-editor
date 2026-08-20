@@ -54,7 +54,14 @@ describe('the path cache', () => {
   const changes: [string, (sp: Subpath[]) => void][] = [
     ['a node moves', (sp) => (sp[0].nodes[0].pt[0] = 4)],
     ['a node moves by a ten-thousandth', (sp) => (sp[0].nodes[1].pt[1] += 0.0001)],
-    ['a handle moves', (sp) => (sp[0].nodes[1].hIn![0] = 12)],
+    /* Both halves of the pair, named apart. `matches` reads `hIn` and `hOut` in
+       two separate rows, and only the `hIn` one had a case: inverting the
+       `hOut` row left the whole suite green, so dragging an out-handle would
+       have redrawn nothing. "A handle appears" does not reach it either, since
+       a handle arriving is caught one line earlier by the presence flags, which
+       carry no coordinates. */
+    ['an in-handle moves', (sp) => (sp[0].nodes[1].hIn![0] = 12)],
+    ['an out-handle moves', (sp) => (sp[0].nodes[0].hOut![0] = 6)],
     ['a handle appears', (sp) => (sp[0].nodes[1].hOut = [20, 20])],
     ['a handle is taken away', (sp) => (sp[0].nodes[1].hIn = null)],
     ['a node is added', (sp) => sp[0].nodes.push(makeNode([30, 40]))],

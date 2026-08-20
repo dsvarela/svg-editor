@@ -1081,8 +1081,30 @@ const scenarios = {
     await page.keyboard.press('Delete');
     await settle(page);
 
+    /* What Shift and Alt do is on the screen, not in a title. Read from the
+       laid-out box rather than from `textContent`, because a `hidden` slot
+       still has text in it and the question is whether a person can see the
+       words. §72. */
+    const modsSay = async () =>
+      page.$eval('#toolmods', (el) =>
+        el.getBoundingClientRect().width > 0 ? el.textContent.trim() : '',
+      );
+
+    await page.click('#tool button[data-v="select"]');
+    await settle(page);
+    check(
+      (await modsSay()) === '',
+      `Select has no constant modifier, so the strip should be empty: ${await modsSay()}`,
+    );
+
     // A circle: Shift takes the smaller span of the drag.
     await page.click('#tool button[data-v="ellipse"]');
+    await settle(page);
+    {
+      const said = await modsSay();
+      check(/circle/i.test(said), `the ellipse tool should name Shift's effect on screen: ${said}`);
+      check(/centre/i.test(said), `the ellipse tool should name Alt's effect on screen: ${said}`);
+    }
     await drag([20, 15], [50, 55], 10, 'Shift');
     await settle(page);
     const circle = {
@@ -1100,6 +1122,11 @@ const scenarios = {
        only while drawing, no other tool read it, and Round does the same arc on
        any path afterwards. So a curve in this `d` is a defect now. */
     await page.click('#tool button[data-v="rect"]');
+    await settle(page);
+    {
+      const said = await modsSay();
+      check(/square/i.test(said), `the rectangle tool should name Shift's effect on screen: ${said}`);
+    }
     await drag([56, 15], [80, 40]);
     await settle(page);
     const rect = {

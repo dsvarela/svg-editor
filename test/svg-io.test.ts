@@ -82,6 +82,44 @@ describe('primitive conversion', () => {
   });
 
   /**
+   * A primitive's position moves with the drawing and its size does not.
+   *
+   * Every fixture in this describe but one is written without `x` and `y`, or
+   * with a `cx` of 0, so `x + width` and `width` are the same number and the
+   * two spellings cannot be told apart. That is the class `test/equivariance.
+   * test.ts` states for the geometry modules, and this is the element half of
+   * it: the size, radius and point-list attributes are differences, and only
+   * the position attributes carry the move.
+   */
+  it.each([
+    ['rect', '<rect x="1" y="2" width="10" height="5" rx="2"/>', '<rect x="138" y="-59" width="10" height="5" rx="2"/>'],
+    ['circle', '<circle cx="4" cy="6" r="3"/>', '<circle cx="141" cy="-55" r="3"/>'],
+    ['ellipse', '<ellipse cx="4" cy="6" rx="3" ry="7"/>', '<ellipse cx="141" cy="-55" rx="3" ry="7"/>'],
+    ['line', '<line x1="1" y1="2" x2="9" y2="8"/>', '<line x1="138" y1="-59" x2="146" y2="-53"/>'],
+    ['polygon', '<polygon points="1,2 9,8 4,11"/>', '<polygon points="138,-59 146,-53 141,-50"/>'],
+    ['polyline', '<polyline points="1,2 9,8 4,11"/>', '<polyline points="138,-59 146,-53 141,-50"/>'],
+  ])('a %s moves with the drawing and keeps its size', (_tag, here, there) => {
+    const V: Pt = [137, -61];
+    const a = parsePath(primitiveToPath(el(here))!);
+    const b = parsePath(primitiveToPath(el(there))!);
+    expect(a.length).toBeGreaterThan(0);
+    expect(b.length).toBe(a.length);
+    a.forEach((sp, i) => {
+      expect(b[i].nodes.length).toBe(sp.nodes.length);
+      sp.nodes.forEach((n, k) => {
+        const m = b[i].nodes[k];
+        expect(m.pt[0]).toBeCloseTo(n.pt[0] + V[0], 6);
+        expect(m.pt[1]).toBeCloseTo(n.pt[1] + V[1], 6);
+        expect(m.hIn === null).toBe(n.hIn === null);
+        if (n.hIn && m.hIn) {
+          expect(m.hIn[0]).toBeCloseTo(n.hIn[0] + V[0], 6);
+          expect(m.hIn[1]).toBeCloseTo(n.hIn[1] + V[1], 6);
+        }
+      });
+    });
+  });
+
+  /**
    * How far the outline keeps away from the corner it rounds.
    *
    * The bounding box cannot answer this: a rounded rect and a sharp one share

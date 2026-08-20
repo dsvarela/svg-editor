@@ -252,9 +252,18 @@ the same reason, and it applies to a hand edit just as much.
 rewrites the file it is measuring and puts it back between sites, so an edit
 made while a sweep is up is reverted by the sweep, silently, with the editor
 none the wiser. A sweep outlives the session that started it. Before touching
-`src/`, `pgrep -af mutate.mjs`; if one is up, kill it, run `mutate.mjs --recover`
-and check `git diff src/` is empty. Two edits were lost that way on 2026-08-19
-and both had to be made twice.
+`src/`, `pgrep -af mutate.mjs`; if one is up, kill it, then read `git diff src/`
+and put back whatever the sweep left. **There is no `--recover` flag**, and the
+line here claimed one until 2026-08-20: recovery is automatic, from a record in
+`tmpdir()`, on the next run that reaches the same working tree. Two edits were
+lost this way on 2026-08-19 and both had to be made twice.
+
+**A flag `mutate.mjs` does not know is refused, and was silently dropped until
+2026-08-20.** Listing the sites is `--limit 0`; `--list` is not a flag, and it
+used to leave the target in place and run the whole destructive sweep. That is
+how the browser sweep of 2026-08-20 came to fail three scenarios while
+`src/model/ops.ts` was being rewritten and restored under it, which is the sixth
+time a signal here has been worth nothing.
 
 **A survivor count is not a finding until someone has read the survivors.** In
 `offsetSubpath` it went from 29 of 92 to 26 of 87 while the gap closed, because
@@ -276,6 +285,16 @@ as code. Five files went from 170 sites to 129. **It also left a hung
 `spawnSync` signalled the `npx` above vitest rather than vitest; the local binary
 is spawned directly now. A timing-sensitive measurement taken after a sweep on
 the old tool is worth nothing.
+
+**A third change on 2026-08-20 moved every index again**, so no site number
+recorded before that date names the same site. The tool skips an operator whose
+meaning turns on a float tolerance: `<` against `<=` where the bound is an
+epsilon, and `+ 1e-12` against `- 1e-12`, both of which differ only on inputs no
+fixture can produce. `src` went from 3 930 sites to 3 767. **The bound is
+usually the epsilon added to something** rather than the epsilon itself, so a
+boundary reads its whole operand and not the token beside it. All four tolerance
+lines in `src/view/viewport.ts` are that shape, which is the file that showed
+it: 42 sites to 33, and every one of the 9 removed was a survivor.
 
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 

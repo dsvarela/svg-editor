@@ -1276,8 +1276,13 @@ function refreshSlide(): void {
   }
   slideInfo.textContent =
     found.slide.stray < INVISIBLE_MOVE ? 'path unchanged' : `path moves ${+found.slide.stray.toFixed(2)}`;
+  /* One decimal, which is what the field can store: `SLIDE_MARGIN` holds the
+     node a tenth of a per cent clear of each end, and a whole number wrote back
+     `0` for a node at 0.1 % and `100` for one at 99.9 %. The field then showed
+     a position the document did not hold, and its own `min` and `max` offered
+     both. §71. */
   if (document.activeElement !== slideAlong) {
-    slideAlong.value = Math.round(found.slide.t * 100).toString();
+    slideAlong.value = (found.slide.t * 100).toFixed(1);
   }
 }
 
@@ -3451,6 +3456,24 @@ const measureVal = $('#measure span');
 const undoBtn = $('#undo') as HTMLButtonElement;
 const redoBtn = $('#redo') as HTMLButtonElement;
 
+const toolModsEl = $('#toolmods');
+const toolModValEl = $('#toolmodval');
+
+/**
+ * What Shift and Alt do for each tool, for the strip beside the latch buttons.
+ *
+ * Only the three tools that draw are here, because only for those is the answer
+ * a property of the tool. Under Select and Pen a modifier means whatever the
+ * gesture under the pointer means, and a line naming one of the seven would be
+ * wrong for the other six. Those stay with the live message the gesture writes
+ * and with the manual. §72.
+ */
+const TOOL_MODS: Partial<Record<Tool, string>> = {
+  ellipse: 'Shift circle · Alt from centre',
+  rect: 'Shift square · Alt from centre',
+  poly: 'Shift regular · Alt from centre',
+};
+
 /**
  * The document readout, and whether the overlay is drawing markers.
  *
@@ -3498,6 +3521,10 @@ store.subscribe((s) => {
     const on = b.getAttribute('data-mod') === 'shift' ? s.heldShift : s.heldAlt;
     b.setAttribute('aria-pressed', String(on));
   }
+  const mods = TOOL_MODS[s.tool] ?? '';
+  toolModValEl.textContent = mods;
+  toolModsEl.toggleAttribute('hidden', !mods);
+
   $('#delmodeinfo').textContent = s.deleteMode === 'split' ? 'leaves two ends' : 'keeps it whole';
   undoBtn.disabled = !store.canUndo;
   redoBtn.disabled = !store.canRedo;

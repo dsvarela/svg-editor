@@ -11,7 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { gridDisplayFor, rulerTicksFor } from '../src/view/viewport';
+import { fitBox, gridDisplayFor, rulerTicksFor } from '../src/view/viewport';
 import { Canvas } from '../src/view/canvas';
 import { Store } from '../src/model/store';
 import { emptyDoc } from '../src/model/doc';
@@ -260,5 +260,57 @@ describe('rulerTicksFor', () => {
   it('refuses when there is nothing measured to draw on', () => {
     expect(rulerTicksFor(1, 100, 0)).toBeNull();
     expect(rulerTicksFor(1, 0, 1000)).toBeNull();
+  });
+});
+
+/**
+ * What **Fit** puts in the camera, which nothing measured until 2026-08-20.
+ *
+ * `fitBox` is called from one place in `src/main.ts` and no test imported it,
+ * so the five operators in its last line all survived a mutation sweep: the
+ * margin could be subtracted where it is added, or the centre offset by a sum
+ * where it needs a difference, and the suite stayed green.
+ *
+ * Asserted as the two properties the arithmetic is for rather than by copying
+ * the expression: the box stays centred wherever it is, and the padding is the
+ * fraction it says it is. A fixture at the origin cannot see the first of those,
+ * so none of these is at the origin.
+ */
+describe('fitting the camera to a box', () => {
+  const el = (w: number, h: number): SVGSVGElement =>
+    ({ getBoundingClientRect: () => ({ width: w, height: h }) }) as unknown as SVGSVGElement;
+
+  it.each([
+    ['off the origin', { x0: 100, y0: 60, x1: 300, y1: 210 }],
+    ['across the origin', { x0: -80, y0: -45, x1: 120, y1: 105 }],
+    ['in negative space', { x0: -300, y0: -210, x1: -100, y1: -60 }],
+  ])('centres the box %s', (_name, box) => {
+    const v = fitBox(box, el(800, 600), 0.1);
+    expect(v.x + v.w / 2).toBeCloseTo((box.x0 + box.x1) / 2, 9);
+    expect(v.y + v.h / 2).toBeCloseTo((box.y0 + box.y1) / 2, 9);
+  });
+
+  it('pads by the fraction it is given, on both sides', () => {
+    const box = { x0: 100, y0: 60, x1: 300, y1: 210 };
+    // 200 by 150 at 4:3, so the element's aspect binds on neither side and the
+    // unpadded camera is the box itself.
+    const v = fitBox(box, el(800, 600), 0.1);
+    expect(v.w).toBeCloseTo(200 * 1.2, 9);
+    expect(v.h).toBeCloseTo(150 * 1.2, 9);
+    expect(box.x0 - v.x).toBeCloseTo(200 * 0.1, 9);
+    expect(box.y0 - v.y).toBeCloseTo(150 * 0.1, 9);
+  });
+
+  it('shows the whole box whatever shape the element is', () => {
+    const box = { x0: 100, y0: 60, x1: 300, y1: 210 };
+    for (const [w, h] of [[800, 600], [400, 900], [1600, 200]]) {
+      const v = fitBox(box, el(w, h), 0.1);
+      expect(v.x).toBeLessThan(box.x0);
+      expect(v.y).toBeLessThan(box.y0);
+      expect(v.x + v.w).toBeGreaterThan(box.x1);
+      expect(v.y + v.h).toBeGreaterThan(box.y1);
+      // And it matches the element, or the drawing is squashed.
+      expect(v.h / v.w).toBeCloseTo(h / w, 9);
+    }
   });
 });

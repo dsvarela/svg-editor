@@ -542,7 +542,12 @@
             <div class="glabel sub"><span>Slide</span><span class="gval" id="slideinfo">no node</span></div>
             <div class="row" id="sliderow">
               <label for="slideAlong">along</label>
-              <input type="number" id="slideAlong" step="1" min="0" max="100"
+              <!-- The bounds are `SLIDE_MARGIN` in `src/model/ops.ts`, and this
+                   is the copy of them that cannot import it. A node is held a
+                   tenth of a per cent clear of each neighbour, so 0 and 100 are
+                   positions the document cannot hold and this must not offer.
+                   §71. -->
+              <input type="number" id="slideAlong" step="0.1" min="0.1" max="99.9"
                 aria-label="How far along its own path the node sits, per cent" />
               <span class="unit">%</span>
             </div>
@@ -870,6 +875,13 @@
           <button type="button" data-mod="shift" aria-pressed="false" title="Hold Shift: adds to the selection, keeps a scale's proportions, snaps a rotation to 15°, draws a square or a circle">Shift</button>
           <button type="button" data-mod="alt" aria-pressed="false" title="Hold Alt: scales from the centre, moves a handle without its pair, bends a segment freely">Alt</button>
         </div>
+        <!-- What Shift and Alt do for the armed tool, drawn rather than left in
+             the two titles above. A modifier that changes what a drag draws is
+             information, and a tooltip may enrich but never inform. Beside the
+             latch buttons because it is what they will do when pressed, and
+             empty for the tools whose modifiers depend on what is under the
+             pointer rather than on the tool. §72. -->
+        <span class="rd" id="toolmods" hidden><i>keys</i><span id="toolmodval"></span></span>
         <span class="rd"><i>doc</i><span id="stats"></span></span>
         <span class="rd"><i>grid</i><span id="gridval"></span></span>
         <button type="button" class="rd zoomrd" id="zoomval" title="Zoom. Click to return to 1:1"><i>zoom</i><span class="mono" id="zoomnum"></span></button>

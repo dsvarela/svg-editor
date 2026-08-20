@@ -52,6 +52,7 @@ import {
   reverseSubpath,
   setContinuity,
   setSegmentBend,
+  clampSlide,
   slideNodeTo,
   slidingParent,
   segmentBend,
@@ -2554,11 +2555,15 @@ export class Commands {
    * The parent is read here rather than passed in, which is right for a typed
    * figure and wrong for a drag: see `slideNodeTo`. A field is one edit at a
    * time, and reading fresh is what makes the number in it mean what it says.
+   *
+   * Held clear of the ends by `clampSlide`, the same margin the drag uses. It
+   * was spelled `0.1` and `99.9` here until 2026-08-20, which is one fact in
+   * two modules with nothing making them agree.
    */
   slideActiveTo(pct: number): void {
     const found = this.activeSlide();
     if (!found) return;
-    const t = Math.min(99.9, Math.max(0.1, pct)) / 100;
+    const t = clampSlide(pct / 100);
     this.store.edit((st) => {
       const sp = findShape(st.doc, found.ref.shape)?.subpaths[found.ref.sp];
       if (sp) slideNodeTo(sp, found.ref.i, found.slide.parent, t);
