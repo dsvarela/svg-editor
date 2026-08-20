@@ -2439,13 +2439,47 @@ else the shape is.
 the corner is a circular arc that its two sides run into, and stops appearing
 when it is not. Move one of the arc's nodes and the corner becomes an ordinary
 pair of curves; the mark goes, and it should, because there is no longer a radius
-to change. A circle drawn as four arcs is the case worth naming: every node is
-smooth and every segment is a circular arc, so each pair passes everything the
-arc itself can be put to, and none of them is a fillet. What refuses is that the
-sides carried past their ends curl away from each other and never meet, so there
-is no crossing to call a corner. That is a real difference from Illustrator, and
-it is the difference between reading the drawing and trusting a note attached
-to it.
+to change. That is a real difference from Illustrator, and it is the difference
+between reading the drawing and trusting a note attached to it.
+
+**This paragraph used to end by claiming a circle is refused**, on the argument
+that its sides carried past their ends curl away from each other and never meet.
+That is not what happens, and it contradicted the top of this section on the same
+screen. Measured on the editor's own circle: `ellipseSubpath(50, 50, 40, 40)`
+reads **4 of 4** nodes as a fillet, each of radius 40 with its centre on the
+circle's centre. The paragraph at the head of this section is the true one.
+
+### Three discriminators measured, and none of them works
+
+Written down so a fourth attempt starts from what has been ruled out rather than
+from the same three. Swept over 264 circles (3 to 48 arcs, radii 5 to 400, four
+rotation phases each, giving 978 arcs read as fillets) against 25 393 built
+corners giving 5 404 real fillets, all rounded to three decimals first.
+
+| Candidate | Worst circle | Nearest real fillet | Verdict |
+|---|---|---|---|
+| Arc turn over the turn the recovered corner needs | 3.18 | 52.3 | inverted |
+| Curvature match, `\|1 - r*k\|`, on the side at the tangent point | 6.27e-2 | 7.71e-6 | inverted |
+| Departure one radius along the side, scaled against a straight one | 1.88e-2 | 2.14e-3 | inverted |
+
+Every one of them puts real fillets on the circle's side of the line, not merely
+close to it. All three together do separate: no circle arc is beaten by a real
+fillet on all three at once. But the tightest rule that catches all 978 circle
+arcs also refuses 10 real fillets, including a 158-degree corner filleted to 98%
+of its maximum. Zero margin is not a threshold worth spending.
+
+**Why none of them can work, which is the part worth keeping.** The curvature
+measure tracks the fillet's radius as a fraction of the maximum its corner can
+hold: lowest reading 0.94 at 10% of maximum, 0.53 at 50%, 0.080 at 90%, 0.019 at
+98%. A circle is the limit of a fillet that consumed its whole side. There is no
+gap in the geometry, so no measurement finds one.
+
+The blast radius is narrower than it looks, and is why this is left alone. Two
+segments must be exact circular arcs of the *same* circle meeting smoothly. An
+ellipse is refused sharply -- 40 by 39.9 reads 0 of 4 -- and a rounded rectangle
+is fine, because straight sides separate its arcs. It is circles, and only
+circles. The control is drawn only for a selected shape (§66), so a circle is
+quiet on the page and offers four radius controls once you click it.
 
 **The drag rebuilds from a sharp copy every frame.** On the press the subpath is
 cloned and `unroundCorner` puts the corner back; every move clones that copy and

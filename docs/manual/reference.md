@@ -1025,6 +1025,12 @@ Named here rather than left for you to find.
 - **Healing across an inflection.** Deleting a node whose two segments curve
   opposite ways rebuilds them as one that visibly differs. Use **Split** or
   **Break here** when the curve matters.
+- **Select a circle and its four nodes each offer a corner radius.** A circle is
+  four circular arcs meeting smoothly, which is exactly what a rounded corner is
+  made of, so the editor reads one at every node. Nothing is wrong with the
+  shape and dragging a control does what it says. There is no measurement that
+  tells the two apart: a circle's numbers are cleaner than a real rounded
+  corner's, not messier. Ellipses and rounded rectangles are unaffected.
 - **A corner rounded to its limit cannot be adjusted again.** The arc reaches
   both neighbours, so the two straight sides that defined the corner are gone
   and nothing can read a radius back off the path. Undo, or draw it again.
