@@ -534,6 +534,19 @@
               <button class="btn wide tonly" id="delNode" title="Delete the selected nodes (Delete)">Delete node</button>
             </div>
 
+            <!-- Sliding runs a node along the curve its own two segments are a
+                 split of, so it is a node operation and not a segment one. It
+                 sits above Bend because it moves the node the panel is about,
+                 where Bend shapes what leaves it. Alt and drag does the same
+                 thing on the canvas. -->
+            <div class="glabel sub"><span>Slide</span><span class="gval" id="slideinfo">no node</span></div>
+            <div class="row" id="sliderow">
+              <label for="slideAlong">along</label>
+              <input type="number" id="slideAlong" step="1" min="0" max="100"
+                aria-label="How far along its own path the node sits, per cent" />
+              <span class="unit">%</span>
+            </div>
+
             <div class="glabel sub"><span>Bend</span><span class="gval" id="bendinfo">no segment</span></div>
             <div class="coords" id="bendrow">
               <label for="bendAngle">angle</label>

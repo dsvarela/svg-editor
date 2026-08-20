@@ -616,6 +616,7 @@ input[type='number']:disabled { opacity: 0.4; }
 .sel-box,
 .insert-dot,
 .pen-preview,
+.slide-preview,
 .doc-shade,
 .doc-edge { pointer-events: none; }
 
@@ -688,6 +689,10 @@ input[type='number']:disabled { opacity: 0.4; }
 
 .insert-dot { fill: none; stroke: var(--measure); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .pen-preview { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+/* The curve a slid node runs along, drawn only where it differs from the path
+   the node is leaving. `--measure` rather than `--accent`: it is a reading
+   about the gesture, like the insertion dot, and not a piece of the drawing. */
+.slide-preview { fill: none; stroke: var(--measure); stroke-width: 1px; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
 
 /* --- inspector -------------------------------------------------------- */
 

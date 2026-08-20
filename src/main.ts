@@ -37,7 +37,7 @@ import {
   cornerAt,
   filletAt,
 } from './model/corner';
-import { continuityOf } from './core/types';
+import { continuityOf, INVISIBLE_MOVE } from './core/types';
 import type { Shape, Style, Subpath, ViewBox } from './core/types';
 import { clampCorners, clampRatio } from './core/primitives';
 import { serialisePath } from './core/serialise';
@@ -1246,6 +1246,39 @@ function refreshArrange(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-sdi]').forEach((b) => (b.disabled = n < 3));
   document.querySelectorAll<HTMLButtonElement>('[data-ssp]').forEach((b) => (b.disabled = n < 2));
   spaceGap.disabled = n < 2;
+}
+
+const slideAlong = $('#slideAlong') as HTMLInputElement;
+const slideInfo = $('#slideinfo');
+
+slideAlong.addEventListener('change', () => {
+  const v = Number(slideAlong.value);
+  if (Number.isFinite(v)) commands.slideActiveTo(v);
+});
+slideAlong.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') slideAlong.blur();
+});
+
+/**
+ * What the Slide row says, which is where the node is and what moving it costs.
+ *
+ * A movement below `INVISIBLE_MOVE` is one the saved file cannot record, so
+ * saying the path is unchanged is the honest reading rather than a rounding.
+ * §71.
+ */
+function refreshSlide(): void {
+  const found = commands.activeSlide();
+  slideAlong.disabled = !found;
+  if (!found) {
+    slideInfo.textContent = 'no node';
+    slideAlong.value = '';
+    return;
+  }
+  slideInfo.textContent =
+    found.slide.stray < INVISIBLE_MOVE ? 'path unchanged' : `path moves ${+found.slide.stray.toFixed(2)}`;
+  if (document.activeElement !== slideAlong) {
+    slideAlong.value = Math.round(found.slide.t * 100).toString();
+  }
 }
 
 const bendAngle = $('#bendAngle') as HTMLInputElement;
@@ -3480,6 +3513,7 @@ store.subscribe((s) => {
 
   refreshInspector();
   refreshBend();
+  refreshSlide();
   refreshPreview();
 
   // Every line on screen is a snap position, but when zoomed out not every snap

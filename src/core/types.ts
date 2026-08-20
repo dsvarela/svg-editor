@@ -348,6 +348,26 @@ export const STROKE_CAP = 'round';
 export const OPACITY_DECIMALS = 3;
 
 /**
+ * How many decimals a path coordinate keeps in a saved file.
+ *
+ * `serialisePath` defaults to this, and it is named here because two other
+ * things reason about it: `INVISIBLE_MOVE` below, and the corner solver's
+ * round-trip tolerance in `model/corner.ts`.
+ */
+export const PATH_DECIMALS = 3;
+
+/**
+ * Below this, a movement of the drawing is one the saved file cannot record.
+ *
+ * Half of the last decimal a coordinate keeps. Not a tolerance for geometry --
+ * §48's `ROUND_TRIP` is that, and it is looser because errors accumulate --
+ * but the threshold for telling somebody the path did not move. Above it the
+ * figure is worth quoting; below it there is nothing to quote, because saving
+ * and reopening would round the difference away. §71.
+ */
+export const INVISIBLE_MOVE = 0.5 / 10 ** PATH_DECIMALS;
+
+/**
  * Distance below which two anchors are one anchor.
  *
  * The cases this decides put the two points at bit-identical coordinates, so

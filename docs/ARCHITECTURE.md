@@ -3972,3 +3972,85 @@ The third test added here is the property the tolerance rests on rather than a
 regression: for a spread of pairs, the cost `mergeSegments` returns is never less
 than how far the merged cubic actually moves the path. Nothing asked that before,
 and it is the claim `removeRedundantNodes` makes to its caller.
+
+## 71. Sliding a node along the path it is already on
+
+Moving a node changes the drawing. That is what a node is for, and it is why no
+mainstream editor ships an exact "slide along the path": Astute Graphics'
+Reposition Point, the only shipping one, keeps the shape "as closely as
+possible" and draws the result in red so you can see how far it drifted.
+Inkscape has the request open and suggests inserting a new node and deleting the
+old one. Illustrator has neither.
+
+There is one case where it is exact, and it is the case people want. A node put
+there by double-clicking an outline is a de Casteljau split, so its two segments
+are one cubic. Re-cutting that cubic somewhere else leaves the drawing
+untouched, to 2e-14 on the fixtures in `test/ops.test.ts`.
+
+**The condition is geometry, not provenance.** `slidingParent` asks the path as
+it stands whether these two segments are a split of one curve, rather than
+remembering that a node was inserted. A remembered flag would have to survive
+undo, a reload, and every edit elsewhere in the document. The geometry survives
+all three by not being stored, which is §43's argument about node ids arriving
+at the opposite answer for a different reason.
+
+`mergeSegments` already answered the question. It is Tiller's knot removal, it
+reconstructs the parent in closed form, and its `cost` bounds how far the
+drawing moves if the pair is replaced by that parent. Sliding replaces the pair
+with a different split of the parent, so the new path **is** the parent and that
+same cost bounds the slide without adjustment. The whole model layer is
+`slidingParent` and `slideNodeTo`, and neither reimplements any of it.
+
+### The workaround is worse than it looks
+
+Insert-then-delete, which is what Inkscape suggests, is exact only when the node
+being removed sat at the midpoint. Measured on a curve about 100 units long:
+
+| Node at | Moved to | Re-split | Delete and reinsert |
+| --- | --- | --- | --- |
+| 0.5 | 0.2 | 2.3e-14 | 2.1e-14 |
+| 0.3 | 0.7 | 2.9e-14 | 1.22 |
+| 0.25 | 0.26 | 2.4e-14 | 3.94 |
+| 0.1 | 0.9 | 3.2e-14 | 12.1 |
+
+`deleteNode` fuses with an arc-length heuristic and a 3x clamp, and its own
+comment says the round trip is exact when the split was even. That is the whole
+of when it is exact.
+
+### What is held for the length of a drag, and why
+
+`stray`, and not for the reason it first appears. One slide turns the pair into
+a perfect split of the parent, so asking again mid-drag returns zero: a drag
+that re-read it would report that the path had not moved, having just moved it
+by the figure it quoted at the press. The parent is held beside it for cost
+rather than correctness, since the same curve comes back every time. Breaking
+that on purpose fails no test, which is the honest state of it.
+
+### There is no threshold, because there is no cliff
+
+The pair either is one cubic or it is not, but the cost degrades continuously
+rather than switching. Nudge an inserted node off its curve and the reported
+figure tracks the nudge at about half of it: 0.001 reads 5.3e-4, 0.1 reads
+5.3e-2. A shallow corner behaves the same way at about a tenth: 179.9 degrees
+reads 9.4e-3, 175 degrees reads 0.47.
+
+So nothing decides whether a node is eligible. One operation runs on every node
+that has two segments, and the readout says what it cost. The only threshold is
+`INVISIBLE_MOVE`, half of the last decimal a coordinate keeps in a saved file:
+below it there is nothing to quote, because saving and reopening would round the
+difference away. The same figure decides whether the ghost of the parent is
+drawn, so the dotted curve appears exactly when the words stop saying the path
+is unchanged.
+
+### What it will not do
+
+A node whose two segments are not one cubic still slides, along the best curve
+through them, and the readout and the ghost both say so. It cannot slide past a
+neighbour: the parent spans the two adjacent segments and no further, and going
+beyond would mean merging three. It stops a thousandth of the parent short of
+each end, because a node on top of its neighbour is a zero-length segment that
+gives the fitter no tangent and can never be simplified again (§23).
+
+A straight run stays straight. The parent of two lines is a line, and splitting
+it puts handles on the thirds that draw the same run and export as two `C`
+commands where the drawing had two `L`.

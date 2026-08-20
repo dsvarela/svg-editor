@@ -37,6 +37,7 @@ route to finishing it.
 - [Paste in a path from somewhere else](#paste-in-a-path-from-somewhere-else)
 - [Save the drawing as a PNG](#save-the-drawing-as-a-png)
 - [See how the icon reads at 16 px](#see-how-the-icon-reads-at-16-px)
+- [Move a node along its path without changing the shape](#move-a-node-along-its-path-without-changing-the-shape)
 - [Get the smallest possible output](#get-the-smallest-possible-output)
 - [Rename a shape and control its exported id](#rename-a-shape-and-control-its-exported-id)
 
@@ -56,6 +57,24 @@ the node goes into the outline you are pointing at rather than the other one.
 
 To add a node at the end of an open path instead, use the pen tool and click the
 path's last node, then keep clicking.
+
+## Move a node along its path without changing the shape
+
+Hold **Alt** and drag the node. It runs along the curve instead of pulling it.
+
+The status line says what the move costs. On a node you added by double-clicking
+it says **path unchanged**, and it means it: the two segments either side are one
+curve cut in two, so cutting it somewhere else draws the same line.
+
+On any other node it names the distance the path moves, and a dotted curve shows
+where the node is about to run. A corner has no curve of its own to follow, so
+sliding one rounds it off. Undo puts it back.
+
+You can also type the position: select one node and use **along** in the Node
+tab, which is the same move as a percentage.
+
+The node stops at its two neighbours. To move it past one, delete it and add a
+new node where you want it.
 
 ## Move several shapes at once
 

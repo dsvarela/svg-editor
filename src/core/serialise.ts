@@ -16,6 +16,7 @@
 import { cubicAsQuad } from './bezier';
 import { segmentAsCubic, segmentCount, segmentIsLine,
   endNodeIndex,
+  PATH_DECIMALS,
 } from './types';
 import type { Pt, Subpath } from './types';
 
@@ -288,7 +289,7 @@ export function serialisePath(
   marks?: Mark[],
 ): string {
   const opts: Required<SerialiseOptions> = {
-    decimals: options.decimals ?? 3,
+    decimals: options.decimals ?? PATH_DECIMALS,
     minify: options.minify ?? false,
     shorthands: options.shorthands ?? true,
   };

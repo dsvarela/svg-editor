@@ -33,6 +33,7 @@ have meant something unrelated.
 | Drag an outline | Move the shape, and everything else selected with it |
 | Double-click an outline | Insert a node there, without changing the curve. Holds a crossing when **Snap to crossings** is on |
 | Double-click a node | Cycle cusp, smooth, symmetric |
+| `Alt` drag a node | Slide it along its own path. The status line says what the move costs |
 | Drag a box handle | Scale the selection. `Shift` keeps the proportions, `Alt` works from the centre |
 | Drag just outside a corner | Rotate the selection. `Shift` snaps to 15° |
 | Drag on empty canvas | Marquee-select nodes |
@@ -155,7 +156,7 @@ Three tabs, split by what a control acts on.
 | Tab | Holds |
 |---|---|
 | **Shape** | Shapes, Style, Fill rule, Combine, Path, Transform, Arrange |
-| **Node** | Node, Delete. Bend, Align nodes and Distribute nodes are headings inside Node |
+| **Node** | Node, Delete. Slide, Bend, Align nodes and Distribute nodes are headings inside Node |
 | **Document** | File, Canvas, Angles, Guides, Keylines, Grid, Backdrop, Preview, Controls |
 
 Nothing switches tab on its own. Arrow keys move between the tabs once one has
@@ -504,6 +505,20 @@ than a curve.
   the node. It switches the box to **Path data** and to that shape alone, since the
   position it points at is only true of that text.
 - **Delete node** removes it, following the **Delete** panel's mode.
+
+### Slide
+
+Runs the selected node along the curve its two segments are cut from, without
+moving that curve. **along** is where it sits, as a percentage between its two
+neighbours. `Alt` and dragging the node does the same thing on the canvas.
+
+The heading says what the move costs. **path unchanged** means the two segments
+either side are one curve cut in two, so cutting it elsewhere draws the same
+line. That is true of any node added by double-clicking an outline, and of any
+node in a straight run. Otherwise it names the distance the path moves.
+
+Unavailable unless exactly one node is selected, and at the two ends of an open
+path, which have one segment and so no curve to run along.
 
 ### Bend
 

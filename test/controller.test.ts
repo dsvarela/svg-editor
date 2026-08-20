@@ -12,6 +12,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { parsePath } from '../src/core/parse';
 import { Canvas } from '../src/view/canvas';
 import { Controller } from '../src/tools/controller';
 import { Commands } from '../src/tools/commands';
@@ -29,8 +30,9 @@ import {
   filletAt,
 } from '../src/model/corner';
 import { exportSvg } from '../src/io/svg';
-import { cubicAt } from '../src/core/bezier';
+import { cubicAt, projectToCubic } from '../src/core/bezier';
 import { continuityOf, makeNode, segmentAsCubic, segmentCount } from '../src/core/types';
+import type { Pt } from '../src/core/types';
 import { screenToDoc } from '../src/view/viewport';
 import keySource from '../src/tools/keys.ts?raw';
 
@@ -4028,5 +4030,123 @@ describe('double-click puts a node where the marker is', () => {
       expect(added!.pt[0]).toBeCloseTo(marker[0], 6);
       expect(added!.pt[1]).toBeCloseTo(marker[1], 6);
     }
+  });
+});
+
+
+describe('Alt and drag slides a node along its own path', () => {
+  /* The gesture, not the geometry: `ops.test.ts` holds the exactness. What is
+     asked here is that Alt reaches the slide rather than the ordinary move,
+     that the drag re-cuts one curve rather than dragging the node off it, and
+     that a node with nothing to slide on says so instead of moving. §71. */
+  const CURVE = 'M8 45 C 22 12 50 12 66 45';
+
+  /** The shape as coordinates, so two states can be compared as numbers. */
+  const shape = (h: Harness): number[] =>
+    h.store.state.doc.shapes[0].subpaths[0].nodes.flatMap((n) => [
+      ...n.pt, ...(n.hIn ?? [NaN, NaN]), ...(n.hOut ?? [NaN, NaN]),
+    ]);
+
+  /** How far the drawing strays from the curve it started as. */
+  const strayed = (h: Harness): number => {
+    const ref = parsePath(CURVE)[0];
+    const sp = h.store.state.doc.shapes[0].subpaths[0];
+    let worst = 0;
+    for (let i = 0; i < segmentCount(sp); i++) {
+      const c = segmentAsCubic(sp, i);
+      for (let k = 0; k <= 40; k++) {
+        worst = Math.max(worst, projectToCubic(segmentAsCubic(ref, 0), cubicAt(c, k / 40) as Pt, 60, 80).d);
+      }
+    }
+    return worst;
+  };
+
+  const withInsertedNode = (): Harness => {
+    const h = harness(CURVE);
+    h.store.update((s) => {
+      s.snapToGrid = false;
+      s.snapToPoints = false;
+      s.snapToBoundary = false;
+    });
+    h.store.edit((s) => {
+      splitSegment(s.doc.shapes[0].subpaths[0], 0, 0.35);
+      // Anchors are drawn for a selected shape, and there is no anchor to press
+      // on one that is not.
+      s.selection.shapes.add(s.doc.shapes[0].id);
+    });
+    return h;
+  };
+
+  it('moves the node and leaves the drawing where it was', () => {
+    const h = withInsertedNode();
+    const before = h.store.state.doc.shapes[0].subpaths[0].nodes[1].pt.slice();
+    const el = h.anchorEl(h.store.state.doc.shapes[0].id, 0, 1);
+    h.down([before[0], before[1]], el, { altKey: true });
+    h.move([52, 28], { altKey: true } as PointerEventInit);
+    h.up();
+    const after = h.store.state.doc.shapes[0].subpaths[0].nodes[1].pt;
+    expect(Math.hypot(after[0] - before[0], after[1] - before[1])).toBeGreaterThan(3);
+    expect(strayed(h)).toBeLessThan(1e-6);
+  });
+
+  it('without Alt the same drag pulls the node off the curve', () => {
+    const h = withInsertedNode();
+    const at = h.store.state.doc.shapes[0].subpaths[0].nodes[1].pt.slice();
+    const el = h.anchorEl(h.store.state.doc.shapes[0].id, 0, 1);
+    h.down([at[0], at[1]], el);
+    h.move([at[0], at[1] + 14]);
+    h.up();
+    expect(strayed(h)).toBeGreaterThan(3);
+  });
+
+  it('says so, and changes nothing, at an end of an open path', () => {
+    const h = withInsertedNode();
+    const said: string[] = [];
+    h.controller.onMessage = (m) => said.push(m);
+    const before = shape(h);
+    const at = h.store.state.doc.shapes[0].subpaths[0].nodes[0].pt.slice();
+    const el = h.anchorEl(h.store.state.doc.shapes[0].id, 0, 0);
+    h.down([at[0], at[1]], el, { altKey: true });
+    h.move([at[0] + 20, at[1] + 20], { altKey: true } as PointerEventInit);
+    h.up();
+    expect(shape(h)).toEqual(before);
+    expect(said.join(' ')).toMatch(/no path to slide along/);
+  });
+
+  /* One entry, so one undo puts it back. A drag that filed a step per frame
+     would need forty presses to undo. */
+  it('files the whole drag as one history entry', () => {
+    const h = withInsertedNode();
+    const before = shape(h);
+    const at = h.store.state.doc.shapes[0].subpaths[0].nodes[1].pt.slice();
+    const el = h.anchorEl(h.store.state.doc.shapes[0].id, 0, 1);
+    h.down([at[0], at[1]], el, { altKey: true });
+    for (const x of [28, 36, 44, 52]) h.move([x, 26], { altKey: true } as PointerEventInit);
+    h.up();
+    expect(shape(h)).not.toEqual(before);
+    h.store.undo();
+    expect(shape(h)).toEqual(before);
+  });
+
+  /* The readout is the whole of the honesty here, so it has to track the two
+     regimes rather than always saying the reassuring one. */
+  it('says the path is unchanged only when it is', () => {
+    const exact = withInsertedNode();
+    const said: string[] = [];
+    exact.controller.onMessage = (m) => said.push(m);
+    const at = exact.store.state.doc.shapes[0].subpaths[0].nodes[1].pt.slice();
+    exact.down([at[0], at[1]], exact.anchorEl(exact.store.state.doc.shapes[0].id, 0, 1), { altKey: true });
+    exact.move([52, 28], { altKey: true } as PointerEventInit);
+    exact.up();
+    expect(said[said.length - 1]).toMatch(/path unchanged/);
+
+    const corner = harness('M10 50 L45 50 L45 15');
+    corner.store.edit((s) => s.selection.shapes.add(s.doc.shapes[0].id));
+    const heard: string[] = [];
+    corner.controller.onMessage = (m) => heard.push(m);
+    corner.down([45, 50], corner.anchorEl(corner.store.state.doc.shapes[0].id, 0, 1), { altKey: true });
+    corner.move([40, 40], { altKey: true } as PointerEventInit);
+    corner.up();
+    expect(heard[heard.length - 1]).toMatch(/path moved/);
   });
 });

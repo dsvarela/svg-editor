@@ -12,9 +12,10 @@
 
 import { translate, isIdentity } from '../core/affine';
 import type { Mat } from '../core/affine';
+import { projectToCubic } from '../core/bezier';
 import type { Box } from '../core/bezier';
-import { cloneSubpath, continuityOf, makeNode, segmentCount } from '../core/types';
-import type { Pt, Subpath } from '../core/types';
+import { cloneSubpath, continuityOf, INVISIBLE_MOVE, makeNode, segmentCount } from '../core/types';
+import type { Cubic, Pt, Subpath } from '../core/types';
 import {
   emptySelection,
   findShape,
@@ -40,6 +41,8 @@ import {
   reshapeSegment,
   setSegmentBend,
   segmentBend,
+  slideNodeTo,
+  slidingParent,
   snap as snapTo,
   splitSegment,
   transformCaptured,
@@ -118,6 +121,11 @@ type DragKind =
      readout can say how far it has come. Measuring the pointer instead would
      lie whenever a snap held the node back. */
   | { kind: 'anchor'; refs: NodeRef[]; grabbed: NodeRef; offset: Pt; start: Pt }
+  /* Sliding one node along the curve its two segments are a split of.
+     `stray` is the reading taken at the press and must not be retaken: one
+     slide makes the pair a perfect split, so a second reading returns zero and
+     the readout would call a move it just made free. §71. */
+  | { kind: 'slide'; ref: NodeRef; parent: Cubic; stray: number }
   | { kind: 'handle'; ref: NodeRef; which: 'in' | 'out'; breakPair: boolean }
   /* Moving a selection. The total translation is tracked from the press rather
      than accumulated per move, because it is the TOTAL that gets snapped: see
@@ -227,6 +235,29 @@ function cornersForDrag(sharp: Subpath, at: number, selected: ReadonlySet<string
   return ids;
 }
 
+
+
+/**
+ * How near an end a slid node may come, as a fraction of its parent.
+ *
+ * A node on top of its neighbour makes a zero-length segment, which gives the
+ * fitter no tangent and can never be simplified again (§23). On a pair
+ * spanning 100 units this leaves it a tenth of a unit clear, which is below
+ * anything a pointer can ask for and above anything degenerate.
+ */
+const SLIDE_MARGIN = 1e-3;
+
+/**
+ * What a slide says while it happens: where the node is, and what it cost.
+ *
+ * A movement below `INVISIBLE_MOVE` is one the saved file cannot record, so it
+ * is reported as no movement rather than as a very small one.
+ * `docs/STYLE.md` governs the wording. §71.
+ */
+function slideSays(t: number, stray: number): string {
+  const where = `${Math.round(t * 100)} % along`;
+  return stray < INVISIBLE_MOVE ? `${where}, path unchanged` : `${where}, path moved ${fmt(stray)}`;
+}
 
 export class Controller {
   /**
@@ -354,6 +385,12 @@ export class Controller {
     // phase and all, because there is only one of them.
     this.extras.gridPhase = this.phase();
     this.extras.draggingGuide = this.drag.kind === 'guide' ? this.drag.i : null;
+    /* Only while it would say something. A slide whose parent is the path draws
+       the ghost exactly under the artwork, which is clutter rather than a
+       warning. Same threshold as the readout, so the ghost appears exactly
+       when the words stop saying the path is unchanged. */
+    this.extras.slidePath =
+      this.drag.kind === 'slide' && this.drag.stray >= INVISIBLE_MOVE ? this.drag.parent : null;
     // Recomputed every frame rather than cached: the implicit origin moves with
     // the gesture, so the rays are only right if they are asked again.
     this.extras.rays = this.rayLines();
@@ -644,6 +681,35 @@ export class Controller {
    */
   get busy(): boolean {
     return this.drag.kind !== 'none';
+  }
+
+  /**
+   * Begin sliding `ref` along the curve its two segments are a split of.
+   *
+   * The node is selected on its own first, because a slide moves exactly one
+   * node and leaving a wider selection on screen would say otherwise.
+   *
+   * A node with nothing to slide along says so rather than falling through to
+   * an ordinary drag. Alt meaning "slide" here and "move" there would be one
+   * modifier with two behaviours told apart by geometry the pointer cannot see.
+   */
+  private startSlide(ref: NodeRef): void {
+    const s = this.store.state;
+    const sp = findShape(s.doc, ref.shape)?.subpaths[ref.sp];
+    const slide = sp ? slidingParent(sp, ref.i) : null;
+    if (!slide) {
+      this.onMessage?.('That node has no path to slide along.', true);
+      return;
+    }
+    const key = sp?.nodes[ref.i]?.id;
+    if (key === undefined) return;
+    this.store.update((st) => {
+      st.selection = emptySelection();
+      st.selection.nodes.add(key);
+    });
+    this.openBatch();
+    this.drag = { kind: 'slide', ref, parent: slide.parent, stray: slide.stray };
+    this.onMessage?.(slideSays(slide.t, slide.stray), true);
   }
 
   /**
@@ -968,6 +1034,11 @@ export class Controller {
       }
     }
 
+    if (hit?.kind === 'anchor' && hit.ref && this.alt(e)) {
+      this.startSlide(hit.ref);
+      return;
+    }
+
     if (hit?.kind === 'anchor' && hit.ref) {
       const key = nodeAt(this.store.state.doc, hit.ref)?.id;
       if (key === undefined) return;
@@ -1205,6 +1276,21 @@ export class Controller {
             moveAnchor(sp, r.i, [sp.nodes[r.i].pt[0] + delta[0], sp.nodes[r.i].pt[1] + delta[1]]);
           }
         });
+        return;
+      }
+
+      case 'slide': {
+        const d = this.drag;
+        /* Off the ends by a thousandth rather than up to them. A node on top of
+           its neighbour is a zero-length segment, which gives the fitter no
+           tangent and can never be simplified again. §23. */
+        const t = Math.min(1 - SLIDE_MARGIN, Math.max(SLIDE_MARGIN, projectToCubic(d.parent, p).t));
+        this.store.edit((st) => {
+          const sp = findShape(st.doc, d.ref.shape)?.subpaths[d.ref.sp];
+          if (!sp?.nodes[d.ref.i]) return;
+          slideNodeTo(sp, d.ref.i, d.parent, t);
+        });
+        this.onMessage?.(slideSays(t, d.stray), true);
         return;
       }
 

@@ -52,6 +52,8 @@ import {
   reverseSubpath,
   setContinuity,
   setSegmentBend,
+  slideNodeTo,
+  slidingParent,
   segmentBend,
   setSegmentCurved,
   snap as snapTo,
@@ -68,6 +70,7 @@ import {
 import type {
   AlignMode,
   FuseRefusal,
+  Slide,
 } from '../model/ops';
 import type {
   RoundRefusal,
@@ -2526,6 +2529,40 @@ export class Commands {
       }
     }
     return found;
+  }
+
+
+  /**
+   * The one selected node's slide, or null when a slide has no meaning here.
+   *
+   * Null for anything but a single node: a slide runs along one node's own
+   * pair of segments, and two nodes have two different curves to run along.
+   */
+  activeSlide(): { ref: NodeRef; slide: Slide } | null {
+    const s = this.store.state;
+    if (s.selection.shapes.size) return null;
+    const refs = selectedRefs(s.doc, s.selection);
+    if (refs.length !== 1) return null;
+    const sp = findShape(s.doc, refs[0].shape)?.subpaths[refs[0].sp];
+    const slide = sp ? slidingParent(sp, refs[0].i) : null;
+    return slide ? { ref: refs[0], slide } : null;
+  }
+
+  /**
+   * Put the selected node at `pct` percent along the curve it slides on.
+   *
+   * The parent is read here rather than passed in, which is right for a typed
+   * figure and wrong for a drag: see `slideNodeTo`. A field is one edit at a
+   * time, and reading fresh is what makes the number in it mean what it says.
+   */
+  slideActiveTo(pct: number): void {
+    const found = this.activeSlide();
+    if (!found) return;
+    const t = Math.min(99.9, Math.max(0.1, pct)) / 100;
+    this.store.edit((st) => {
+      const sp = findShape(st.doc, found.ref.shape)?.subpaths[found.ref.sp];
+      if (sp) slideNodeTo(sp, found.ref.i, found.slide.parent, t);
+    });
   }
 
   /** Set the active segment's bend outright. */

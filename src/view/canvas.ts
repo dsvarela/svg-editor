@@ -16,7 +16,7 @@
  */
 
 import { STROKE_CAP, STROKE_JOIN, continuityOf, segmentAsCubic, segmentCount } from '../core/types';
-import type { Doc, Pt, Subpath, ViewBox } from '../core/types';
+import type { Cubic, Doc, Pt, Subpath, ViewBox } from '../core/types';
 import type {
   Fillet,
 } from '../model/corner';
@@ -48,6 +48,15 @@ export interface OverlayExtras {
   /** Rubber-band preview while the pen tool is placing a node. */
   penFrom?: Pt | null;
   penTo?: Pt | null;
+  /**
+   * The curve a node is sliding along, drawn only when it is not the path.
+   *
+   * On a pair that really is one cubic the parent and the drawing are the same
+   * line, so the ghost would sit exactly under the artwork and say nothing.
+   * Where they differ it is the whole warning: the node is about to leave the
+   * shape you can see and run along this instead. §71.
+   */
+  slidePath?: Cubic | null;
   /** Bounding box of the current selection, drawn with its transform handles. */
   selectionBox?: Box | null;
   /**
@@ -181,6 +190,7 @@ export class Canvas {
   private selBox: SVGRectElement;
   private insertDot: SVGCircleElement;
   private penLine: SVGPathElement;
+  private slideLine: SVGPathElement;
   /** Fixed set: eight scale handles and four rotation zones, made once. */
   private tRotors: { part: TransformPart; el: SVGRectElement }[] = [];
   private tHandles: { part: TransformPart; el: SVGRectElement }[] = [];
@@ -255,7 +265,8 @@ export class Canvas {
     this.selBox = svg('rect', { class: 'sel-box' });
     this.insertDot = svg('circle', { class: 'insert-dot' });
     this.penLine = svg('path', { class: 'pen-preview' });
-    this.chrome.append(this.selBox, this.marquee, this.insertDot, this.penLine);
+    this.slideLine = svg('path', { class: 'slide-preview' });
+    this.chrome.append(this.selBox, this.marquee, this.insertDot, this.penLine, this.slideLine);
 
     /* Rotors before handles, so the handle wins the middle of a corner and the
        rotor keeps the ring around it. Both are in `chrome`, which is the last
@@ -823,6 +834,16 @@ export class Canvas {
       setAttrs(this.insertDot, { cx: extras.insertAt[0], cy: extras.insertAt[1], r: 4 * k });
     } else {
       this.insertDot.setAttribute('display', 'none');
+    }
+
+    if (extras.slidePath) {
+      const c = extras.slidePath;
+      this.slideLine.removeAttribute('display');
+      setAttrs(this.slideLine, {
+        d: `M${c[0][0]} ${c[0][1]}C${c[1][0]} ${c[1][1]} ${c[2][0]} ${c[2][1]} ${c[3][0]} ${c[3][1]}`,
+      });
+    } else {
+      this.slideLine.setAttribute('display', 'none');
     }
 
     if (extras.penFrom && extras.penTo) {

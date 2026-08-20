@@ -3927,6 +3927,188 @@ const scenarios = {
   },
 
   /**
+   * Alt and drag runs a node along the curve its two segments are cut from.
+   *
+   * Only a browser can say whether the gesture reaches the operation: the
+   * modifier is read off a real pointer event, the target is a hit surface the
+   * overlay drew, and where the pointer lands is the camera's answer. The
+   * exactness is unit-tested. What is checked here is that the node travelled,
+   * that the drawn curve did not, and that the readout tells the truth in both
+   * regimes. §71.
+   */
+  async slideNode(page, check) {
+    const { toClient } = await mk(page);
+
+    const load = async (d) => {
+      await openSource(page);
+      await page.click('#srcmode button[data-v="svg"]');
+      await page.fill(
+        '#src',
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 64">' +
+          `<path d="${d}" fill="none" stroke="#888"/></svg>`,
+      );
+      await page.click('#apply');
+      await settle(page);
+      await closeSource(page);
+    };
+    const anchorAt = (n) =>
+      page.evaluate((k) => {
+        const el = document.querySelectorAll('.overlay [data-hit="anchor"]')[k];
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2];
+      }, n);
+    const drawn = () => page.evaluate(() => document.querySelector('.artwork path').getAttribute('d'));
+
+    await load('M12 46 C 26 12 62 12 76 46');
+
+    /* A node put there by double-clicking, which is the case the operation is
+       for: its two segments are one cubic by construction. Where to click is
+       asked of the drawing rather than worked out by hand: a coordinate off the
+       outline inserts nothing and the scenario then measures a slide that never
+       happened. */
+    const on = await page.evaluate(() => {
+      const path = document.querySelector('.artwork path');
+      const at = path.getPointAtLength(0.35 * path.getTotalLength());
+      const m = document.querySelector('.overlay').getScreenCTM();
+      const c = new DOMPoint(at.x, at.y).matrixTransform(m);
+      return [Math.round(c.x), Math.round(c.y)];
+    });
+    await page.mouse.dblclick(on[0], on[1]);
+    await settle(page);
+    const cmds = ((await drawn()).match(/[MLC]/g) ?? []).length;
+    check(cmds === 3, `the double-click left ${cmds} commands, wanted 3`);
+
+    const before = await drawn();
+    const wasAt = await anchorAt(1);
+    check(wasAt !== null, 'no anchor to grab after the insert');
+
+    // Alt held across the press, which is when the controller reads it.
+    const to = await toClient([56, 20.5]);
+    await page.mouse.move(wasAt[0], wasAt[1]);
+    await page.keyboard.down('Alt');
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(
+        wasAt[0] + ((to[0] - wasAt[0]) * i) / 6,
+        wasAt[1] + ((to[1] - wasAt[1]) * i) / 6,
+      );
+    }
+    const said = (await page.textContent('#status')).trim();
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await settle(page);
+
+    check(/path unchanged/.test(said), `sliding an inserted node reported "${said}"`);
+    const after = await drawn();
+    check(after !== before, 'the slide changed nothing at all');
+
+    const nowAt = await anchorAt(1);
+    const travelled = Math.hypot(nowAt[0] - wasAt[0], nowAt[1] - wasAt[1]);
+    check(travelled > 20, `the node travelled ${travelled.toFixed(1)} px, wanted more than 20`);
+
+    /* And it went where the pointer asked, which is a different question from
+       whether the curve held still. A node put at the wrong parameter is still
+       exactly on the curve, so every check above passes while the node ignores
+       the pointer. It should sit at the nearest point of the path to where the
+       drag ended: `slack` is how much further from the pointer it landed than
+       the closest place on the path it could have. */
+    const slack = await page.evaluate(([px, py]) => {
+      const path = document.querySelector('.artwork path');
+      const m = document.querySelector('.overlay').getScreenCTM();
+      const total = path.getTotalLength();
+      let best = Infinity;
+      for (let k = 0; k <= 2000; k++) {
+        const q = path.getPointAtLength((k / 2000) * total);
+        const c = new DOMPoint(q.x, q.y).matrixTransform(m);
+        best = Math.min(best, Math.hypot(c.x - px, c.y - py));
+      }
+      return best;
+    }, to);
+    const reach = Math.hypot(nowAt[0] - to[0], nowAt[1] - to[1]);
+    check(
+      reach - slack < 6,
+      `the node landed ${reach.toFixed(1)} px from the pointer where ${slack.toFixed(1)} px was reachable`,
+    );
+
+    /* And it is the same curve. Sampled off two rendered paths rather than
+       compared as strings: the commands are meant to differ, the drawing is
+       not. */
+    const strayed = await page.evaluate(([oldD, newD]) => {
+      const ns = 'http://www.w3.org/2000/svg';
+      const host = document.querySelector('.artwork');
+      const mkp = (data) => {
+        const el = document.createElementNS(ns, 'path');
+        el.setAttribute('d', data);
+        el.setAttribute('display', 'none');
+        host.append(el);
+        return el;
+      };
+      const a = mkp(oldD);
+      const b = mkp(newD);
+      /* Point to SEGMENT against a polyline, not point to nearest sample. A
+         sample every 0.125 units puts a floor of 0.0625 under every reading,
+         which is larger than the drift being looked for, so the check would be
+         measuring its own resolution. A chord follows the curve to second
+         order and drops that floor to about 1e-4. */
+      const poly = [];
+      const la = a.getTotalLength();
+      for (let j = 0; j <= 600; j++) poly.push(a.getPointAtLength((j / 600) * la));
+      const toPoly = (q) => {
+        let best = Infinity;
+        for (let j = 1; j < poly.length; j++) {
+          const p0 = poly[j - 1];
+          const p1 = poly[j];
+          const dx = p1.x - p0.x;
+          const dy = p1.y - p0.y;
+          const dd = dx * dx + dy * dy;
+          const t = dd < 1e-18 ? 0 : Math.max(0, Math.min(1, ((q.x - p0.x) * dx + (q.y - p0.y) * dy) / dd));
+          best = Math.min(best, Math.hypot(p0.x + t * dx - q.x, p0.y + t * dy - q.y));
+        }
+        return best;
+      };
+      let worst = 0;
+      const lb = b.getTotalLength();
+      for (let k = 0; k <= 160; k++) worst = Math.max(worst, toPoly(b.getPointAtLength((k / 160) * lb)));
+      // The instrument on itself, so the reading below is the geometry.
+      let floor = 0;
+      for (let k = 0; k <= 160; k++) floor = Math.max(floor, toPoly(a.getPointAtLength((k / 160) * la)));
+      a.remove();
+      b.remove();
+      return { worst, floor };
+    }, [before, after]);
+    check(
+      strayed.worst <= Math.max(4 * strayed.floor, 1e-3),
+      `the curve moved by ${strayed.worst.toFixed(5)} units against an instrument floor of ${strayed.floor.toFixed(5)}`,
+    );
+
+    /* The other regime. A right angle has no curve of its own to run along, so
+       the readout quotes a figure rather than reassuring, and the ghost appears
+       to show where the node is about to go. */
+    await load('M16 16 L60 16 L60 52');
+    const corner = await toClient([60, 16]);
+    await page.mouse.click(corner[0], corner[1]);
+    await settle(page);
+    await page.mouse.move(corner[0], corner[1]);
+    await page.keyboard.down('Alt');
+    await page.mouse.down();
+    await page.mouse.move(corner[0] - 14, corner[1] + 14);
+    const cornerSaid = (await page.textContent('#status')).trim();
+    const ghost = await page.evaluate(() => {
+      const el = document.querySelector('.slide-preview');
+      return el && el.getAttribute('display') !== 'none' ? el.getAttribute('d') : null;
+    });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await settle(page);
+
+    check(/path moved/.test(cornerSaid), `sliding a corner reported "${cornerSaid}"`);
+    check(ghost !== null, 'no ghost was drawn for a slide that moves the path');
+
+    return { said, cornerSaid, travelled, strayed, ghost };
+  },
+
+  /**
    * A locked shape lets the pointer through to whatever is behind it.
    *
    * The lock is not a refusal: the canvas draws no hit surface for a locked

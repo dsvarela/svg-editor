@@ -29,8 +29,9 @@ import {
   SAME_PLACE,
   segmentIsLine,
 } from '../core/types';
-import type { Doc, NodeContinuity, PathNode, Pt, Shape, Subpath } from '../core/types';
+import type { Cubic, Doc, NodeContinuity, PathNode, Pt, Shape, Subpath } from '../core/types';
 import type { NodeRef } from './doc';
+import { nodeRemovalCost } from './knots';
 
 const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
@@ -304,6 +305,80 @@ export function deleteNode(sp: Subpath, i: number): boolean {
   if (next.hIn) next.hIn = stretchHandle(next.pt, next.hIn, k2);
 
   sp.nodes.splice(i, 1);
+  return true;
+}
+
+/** The curve a node runs along when it slides, and what running it costs. */
+export interface Slide {
+  /** The single cubic the node's two segments are a split of. */
+  parent: Cubic;
+  /**
+   * Where the node sits on `parent` now, so a control can show it.
+   *
+   * The two neighbours are `parent[0]` and `parent[3]`, so the node is free
+   * anywhere in `(0, 1)` and there are no other limits to report.
+   */
+  t: number;
+  /**
+   * An upper bound on how far the drawing moves, wherever the node is put.
+   *
+   * Zero when the pair really is one cubic, which is the case this operation
+   * exists for. It is `mergeSegments`'s cost and it bounds the right thing
+   * without adjustment: sliding replaces the pair with a different split of
+   * `parent`, so the new path is `parent`, and the distance from `parent` to
+   * the pair as drawn is what the cost measures. §71.
+   */
+  stray: number;
+}
+
+/**
+ * What node `i` would slide along, or null when it has nothing to slide on.
+ *
+ * Null for an end of an open path, which has one segment and so no pair, and
+ * for a pair `mergeSegments` refuses outright.
+ *
+ * The parent is read from the path as it stands rather than remembered from
+ * the split that made the node. A flag would have to survive undo, a reload
+ * and every edit elsewhere in the document; the geometry survives all three by
+ * not being stored.
+ */
+export function slidingParent(sp: Subpath, i: number): Slide | null {
+  const m = nodeRemovalCost(sp, i);
+  if (!m.cubic || !Number.isFinite(m.cost)) return null;
+  return { parent: m.cubic, t: m.t, stray: m.cost };
+}
+
+/**
+ * Put node `i` at parameter `t` of `parent`, redrawing its two segments.
+ *
+ * `parent` is passed in rather than looked up, so a drag can hold the reading
+ * it took at the press. Not against drift: one slide turns the pair into a
+ * split of `parent`, so re-reading recovers the same curve. It is `stray` that
+ * a drag must hold, and §71 says why.
+ *
+ * A pair of straight segments stays straight. The parent of two lines is a
+ * line, and splitting it puts handles on the thirds that draw the same run and
+ * export as `C` where the drawing had `L`.
+ */
+export function slideNodeTo(sp: Subpath, i: number, parent: Cubic, t: number): boolean {
+  const n = sp.nodes.length;
+  const segs = segmentCount(sp);
+  if (segs < 2 || !sp.nodes[i]) return false;
+  if (!sp.closed && (i === 0 || i === n - 1)) return false;
+  if (!(t > 0 && t < 1)) return false;
+
+  const prevI = (i - 1 + n) % n;
+  const nextI = (i + 1) % n;
+  const straight = segmentIsLine(sp, (i - 1 + segs) % segs) && segmentIsLine(sp, i);
+
+  const [left, right] = splitCubic(parent, t);
+  sp.nodes[i].pt = clonePt(left[3]);
+  if (straight) return true;
+
+  sp.nodes[prevI].hOut = clonePt(left[1]);
+  sp.nodes[i].hIn = clonePt(left[2]);
+  sp.nodes[i].hOut = clonePt(right[1]);
+  sp.nodes[nextI].hIn = clonePt(right[2]);
   return true;
 }
 

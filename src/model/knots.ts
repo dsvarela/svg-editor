@@ -40,9 +40,18 @@ const dist = (a: Pt, b: Pt): number => Math.hypot(a[0] - b[0], a[1] - b[1]);
 export interface Merge {
   cost: number;
   cubic: Cubic | null;
+  /**
+   * Where on `cubic` the removed node sat, or 0 when there is no cubic.
+   *
+   * The reconstruction has to know this to run at all, so it is returned rather
+   * than recovered: projecting the node back onto the parent is what a caller
+   * would otherwise do, and `projectToCubic` answers to about 5e-6 where this
+   * is exact.
+   */
+  t: number;
 }
 
-const REFUSED: Merge = { cost: Infinity, cubic: null };
+const REFUSED: Merge = { cost: Infinity, cubic: null, t: 0 };
 
 /**
  * Whether a cubic draws a straight line, asked of the drawing.
@@ -108,7 +117,7 @@ export function mergeSegments(L: Cubic, R: Cubic): Merge {
     const cost = Math.abs(v[0] * chord[1] - v[1] * chord[0]) / m;
     const q1: Pt = [L[0][0] + chord[0] / 3, L[0][1] + chord[1] / 3];
     const q2: Pt = [R[3][0] - chord[0] / 3, R[3][1] - chord[1] / 3];
-    return { cost, cubic: [clonePt(L[0]), q1, q2, clonePt(R[3])] };
+    return { cost, cubic: [clonePt(L[0]), q1, q2, clonePt(R[3])], t: along };
   }
 
   const a = dist(L[3], L[2]);
@@ -159,7 +168,7 @@ export function mergeSegments(L: Cubic, R: Cubic): Merge {
   for (const p of [q1, q2]) {
     if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) return REFUSED;
   }
-  return { cost, cubic };
+  return { cost, cubic, t };
 }
 
 /** What removing node `i` would cost, wrapping the window on a closed path. */

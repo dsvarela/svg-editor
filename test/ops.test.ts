@@ -22,6 +22,8 @@ import {
   transformShape,
   alignNodes,
   distributeNodes,
+  slidingParent,
+  slideNodeTo,
 } from '../src/model/ops';
 import {
   roundCorner,
@@ -1380,5 +1382,120 @@ describe('aligning and distributing anchors', () => {
     sel.shapes.add(sh.id);
     sel.nodes.add(sh.subpaths[0].nodes[1].id);
     expect(selectedNodes(doc, sel)).toHaveLength(3);
+  });
+});
+
+
+describe('sliding a node along the path it is already on', () => {
+  const CURVE = 'M20 60 C 40 10 90 10 110 60';
+  const LINE = 'M20 20 L120 90';
+
+  /** The path with a node inserted at `t`, and the shape it had before. */
+  const withNode = (d: string, t: number): { sp: Subpath; was: Pt[] } => {
+    const sp = parsePath(d)[0];
+    const was = sample(sp, 96);
+    splitSegment(sp, 0, t);
+    return { sp, was };
+  };
+
+  /* The case the operation exists for. A node put there by double-clicking is
+     a de Casteljau split, so its two segments are one cubic and re-cutting
+     that cubic anywhere else leaves the drawing alone. */
+  it.each([
+    [0.5, 0.2], [0.5, 0.8], [0.3, 0.7], [0.25, 0.26], [0.5, 0.05], [0.1, 0.9],
+  ])('moves an inserted node from %f to %f without moving the path', (from, to) => {
+    const { sp, was } = withNode(CURVE, from);
+    const slide = slidingParent(sp, 1);
+    expect(slide).not.toBeNull();
+    expect(slide!.stray).toBeLessThan(1e-9);
+    expect(slide!.t).toBeCloseTo(from, 6);
+
+    expect(slideNodeTo(sp, 1, slide!.parent, to)).toBe(true);
+    expect(deviation(was, sp)).toBeLessThan(1e-9);
+    expect(deviation(sample(sp, 96), parsePath(CURVE)[0])).toBeLessThan(1e-9);
+    // And it went where it was sent, not merely somewhere on the curve.
+    const want = cubicAt(slide!.parent, to);
+    expect(sp.nodes[1].pt[0]).toBeCloseTo(want[0], 9);
+    expect(sp.nodes[1].pt[1]).toBeCloseTo(want[1], 9);
+  });
+
+  /* Two straight segments have a straight parent, so splitting it puts handles
+     on the thirds: the same drawing, exported as two `C` commands where it had
+     two `L`. The node also stops reading as a corner. */
+  it('leaves a straight run straight, and still exporting as lines', () => {
+    const { sp } = withNode(LINE, 0.3);
+    const slide = slidingParent(sp, 1)!;
+    expect(slideNodeTo(sp, 1, slide.parent, 0.75)).toBe(true);
+    expect(sp.nodes[1].pt[0]).toBeCloseTo(95, 9);
+    expect(sp.nodes[1].pt[1]).toBeCloseTo(72.5, 9);
+    expect(sp.nodes[1].hIn).toBeNull();
+    expect(sp.nodes[1].hOut).toBeNull();
+    expect(sp.nodes[0].hOut).toBeNull();
+    expect(sp.nodes[2].hIn).toBeNull();
+    expect(serialisePath([sp])).toBe('M 20 20 L 95 72.5 L 120 90');
+  });
+
+  /* The property a drag depends on: after a slide the pair is still one cubic,
+     so the next slide is exact too. It is not a privilege spent on first use. */
+  it('stays exact over four slides in a row', () => {
+    const { sp, was } = withNode(CURVE, 0.4);
+    for (const to of [0.7, 0.15, 0.85, 0.5]) {
+      const slide = slidingParent(sp, 1)!;
+      expect(slide.stray).toBeLessThan(1e-9);
+      expect(slideNodeTo(sp, 1, slide.parent, to)).toBe(true);
+    }
+    expect(deviation(was, sp)).toBeLessThan(1e-9);
+  });
+
+  it('reports a real cost for a node whose segments are not one cubic', () => {
+    const sp = parsePath('M0 0 L40 0 L40 40')[0];
+    const slide = slidingParent(sp, 1);
+    expect(slide).not.toBeNull();
+    expect(slide!.stray).toBeGreaterThan(1);
+  });
+
+  it('has nothing to slide along at the end of an open path', () => {
+    const sp = parsePath(CURVE)[0];
+    splitSegment(sp, 0, 0.5);
+    expect(slidingParent(sp, 0)).toBeNull();
+    expect(slidingParent(sp, sp.nodes.length - 1)).toBeNull();
+  });
+
+  /* The ends are where the neighbours are, and a node on top of a neighbour is
+     a zero-length segment nothing can simplify again. §23. */
+  it('refuses to put a node at either end of its parent', () => {
+    const { sp } = withNode(CURVE, 0.5);
+    const slide = slidingParent(sp, 1)!;
+    expect(slideNodeTo(sp, 1, slide.parent, 0)).toBe(false);
+    expect(slideNodeTo(sp, 1, slide.parent, 1)).toBe(false);
+    // The neighbours are the parent's own ends, so there is nothing else to
+    // clamp against: 0 and 1 are exactly where they sit.
+    expect(slide.parent[0]).toEqual(sp.nodes[0].pt);
+    expect(slide.parent[3]).toEqual(sp.nodes[2].pt);
+  });
+
+  /* Why a drag reads the parent once at the press.
+     Not drift: the first slide turns the pair into a split of the parent, so
+     re-reading it on the next frame recovers the same curve and the geometry is
+     stable either way. What re-reading loses is the ability to say what the
+     gesture has cost. `stray` is measured against the pair as it was found, and
+     one frame in, the pair is a perfect split -- so a drag that re-read it
+     would report that the path had not moved, having already moved it by the
+     figure it reported at the press. */
+  it('reports a cost that survives the first frame, which re-reading would not', () => {
+    const d = 'M0 0 C 10 -30 30 -30 40 0 C 48 18 70 24 90 20';
+    const sp = parsePath(d)[0];
+    const atPress = slidingParent(sp, 1)!;
+    expect(atPress.stray).toBeGreaterThan(1);
+
+    const was = sample(sp, 96);
+    slideNodeTo(sp, 1, atPress.parent, 0.6);
+    // The path really did move, by about what was promised.
+    const moved = deviation(was, sp);
+    expect(moved).toBeGreaterThan(0.5);
+    expect(moved).toBeLessThanOrEqual(atPress.stray);
+    // And a second reading now calls it free, which is why the drag holds the
+    // first one rather than asking again.
+    expect(slidingParent(sp, 1)!.stray).toBeLessThan(1e-9);
   });
 });
