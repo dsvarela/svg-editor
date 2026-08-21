@@ -17,7 +17,7 @@
  */
 
 import { cubicAt } from '../core/bezier';
-import { clonePt, segmentAsCubic, segmentCount } from '../core/types';
+import { clampDecimals, clonePt, segmentAsCubic, segmentCount } from '../core/types';
 import type { Cubic, Pt, Subpath } from '../core/types';
 
 /** Below this a length is zero, and a ratio built from it means nothing. */
@@ -371,7 +371,7 @@ function applyMerge(sp: Subpath, i: number, cubic: Cubic): void {
  * change a single character of what gets saved.
  */
 export const invisibleAt = (decimals: number): number =>
-  0.5 * Math.pow(10, -Math.max(0, Math.min(9, decimals)));
+  0.5 * Math.pow(10, -clampDecimals(decimals));
 
 /**
  * Remove nodes until only `target` are left, whatever it costs.

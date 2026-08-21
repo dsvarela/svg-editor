@@ -27,6 +27,30 @@ export interface Bend {
   looseness: number;
 }
 
+/**
+ * The slackest a bend may be, and the floor both ways of setting one obey.
+ *
+ * Below this the controls collapse onto the chord and the segment stops being a
+ * curve anything can grab. Here rather than beside either caller, because the
+ * **loose** field and the keyboard nudge are two ways to run one operation, and
+ * a floor they disagreed about would leave the same segment in two different
+ * shapes. §71 makes the argument for `SLIDE_MARGIN`, which is the same shape.
+ *
+ * It was spelled `0.05` in `src/main.ts` and again in `src/tools/commands.ts`
+ * until 2026-08-21. The `min` on the field in `index.html` is the one copy that
+ * cannot import it.
+ */
+const MIN_LOOSENESS = 0.05;
+
+/**
+ * `looseness` held at or above the floor, whichever route asks for it.
+ *
+ * The clamp is exported and the number is not: no caller needs to know what the
+ * floor is, only to be held to it, and an exported constant is one more thing
+ * every reader of this interface pays for. `code` rule 1.
+ */
+export const clampLooseness = (v: number): number => Math.max(MIN_LOOSENESS, v);
+
 
 /** Wrap to (-180, 180]. */
 function norm(deg: number): number {

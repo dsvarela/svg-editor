@@ -11,7 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fitBox, gridDisplayFor, rulerTicksFor } from '../src/view/viewport';
+import { fitBox, gridDisplayFor, labelDecimals, rulerTicksFor } from '../src/view/viewport';
 import { Canvas } from '../src/view/canvas';
 import { Store } from '../src/model/store';
 import { emptyDoc } from '../src/model/doc';
@@ -213,7 +213,7 @@ describe('rulerTicksFor', () => {
     const g = gridDisplayFor(3, cam(100), 1000);
     const t = rulerTicksFor(3, 100, 1000);
     expect(g).not.toBeNull();
-    expect(t).toEqual({ step: g!.step, labelEvery: g!.majorEvery });
+    expect(t).toEqual({ step: g!.step, labelEvery: g!.majorEvery, decimals: 0 });
     // And it is the grid's answer, not the ladder's, which would be 1.
     expect(t!.step).toBe(3);
   });
@@ -260,6 +260,52 @@ describe('rulerTicksFor', () => {
   it('refuses when there is nothing measured to draw on', () => {
     expect(rulerTicksFor(1, 100, 0)).toBeNull();
     expect(rulerTicksFor(1, 0, 1000)).toBeNull();
+  });
+
+  /**
+   * How a label is spelled, which nothing measured until 2026-08-21.
+   *
+   * `rulers.ts` has no test of its own, and the `guides` scenario reads the
+   * labels through `+e.textContent`, which turns `"10.0"` into `10` before it
+   * compares anything. So the ruler printed a decimal it did not need at every
+   * power of ten, including the step the default grid uses, and both instruments
+   * agreed it was fine.
+   *
+   * **Asserted as the string a person reads**, not as the number the count
+   * yields: the count is the thing under test, and comparing it to a second copy
+   * of the same arithmetic would pass for either spelling.
+   */
+  describe('how many decimals a label needs', () => {
+    /* Every rung of the 1-2-5 ladder over the range this editor draws at, built
+       the way the ladder itself is, so a rung whose float is not exact -- 1e-4
+       comes out 9.999999999999999e-5 -- is tried as the code will meet it. */
+    const ladder: number[] = [];
+    for (let e = -4; e <= 4; e++) for (const m of [1, 2, 5]) ladder.push(m * Math.pow(10, e));
+
+    it('spells every rung of the ladder exactly, and no wider', () => {
+      for (const step of ladder) {
+        const shown = (3 * step).toFixed(labelDecimals(step));
+        expect(Number(shown), `${step} lost precision as "${shown}"`).toBeCloseTo(3 * step, 9);
+        /* No trailing zero. That is the half that was wrong: a step of 1 asked
+           for one decimal, so the whole ruler read `10.0`. */
+        expect(shown, `${step} spelled "${shown}"`).not.toMatch(/\.\d*0$/);
+      }
+    });
+
+    it('gives a whole-number step no decimals at all', () => {
+      // Named on its own because it is the default grid, so it is what almost
+      // every session sees, and it is one of the five the epsilon got wrong.
+      expect(labelDecimals(1)).toBe(0);
+      expect((10).toFixed(labelDecimals(1))).toBe('10');
+      expect(labelDecimals(10)).toBe(0);
+      expect(labelDecimals(1000)).toBe(0);
+    });
+
+    it('comes back on the ticks, so nothing has to derive it twice', () => {
+      const t = rulerTicksFor(1, 100, 1000)!;
+      expect(t.decimals).toBe(labelDecimals(t.step));
+      expect((2 * t.step).toFixed(t.decimals)).not.toMatch(/\.\d*0$/);
+    });
   });
 });
 

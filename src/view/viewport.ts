@@ -118,23 +118,47 @@ const MAJOR_EVERY: Record<number, number> = { 1: 5, 2: 5, 5: 4, 10: 5 };
  * ruler ticks every 2 and the grid draws every 1.
  *
  * `minPx` defaults to the grid's, or ruler ticks land between drawn lines.
+ *
+ * `decimals` is how many a label needs to spell its own step, and it is here
+ * rather than beside the labels because the step is chosen here: a precision
+ * derived from a number somewhere else is a second answer to one question.
  */
 export function rulerTicksFor(
   snapStep: number,
   span: number,
   lengthPx: number,
   minPx = 9,
-): { step: number; labelEvery: number } | null {
+): { step: number; labelEvery: number; decimals: number } | null {
   if (lengthPx <= 0 || !(span > 0)) return null;
 
   const g = gridDisplayFor(snapStep, { x: 0, y: 0, w: span, h: span }, lengthPx, minPx);
-  if (g) return { step: g.step, labelEvery: g.majorEvery };
+  if (g) return { step: g.step, labelEvery: g.majorEvery, decimals: labelDecimals(g.step) };
 
   // No lattice to agree with, so straight onto the ladder from the camera.
   const step = ladderAtLeast((minPx * span) / lengthPx);
   const mantissa = step / Math.pow(10, Math.floor(Math.log10(step) + 1e-12));
-  return { step, labelEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5 };
+  return {
+    step,
+    labelEvery: MAJOR_EVERY[Math.round(mantissa)] ?? 5,
+    decimals: labelDecimals(step),
+  };
 }
+
+/**
+ * How many decimals a label needs to spell a step exactly.
+ *
+ * **The epsilon absorbs float error and must not make it.** `Math.log10` of an
+ * exact power of ten can land a hair either side of the integer, and `Math.ceil`
+ * of an integer PLUS a positive epsilon is the next integer up: a step of 1 then
+ * asks for one decimal and every label on the ruler reads `10.0` where it means
+ * `10`. Subtracting is right in both directions, because `0.9999999999999998`
+ * and `1.0000000000000002` both belong at 1.
+ *
+ * Five of the 27 rungs of the 1-2-5 ladder are affected and all five are the
+ * powers of ten, which includes the step the default grid uses.
+ */
+export const labelDecimals = (step: number): number =>
+  step > 0 ? Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)) : 0;
 
 /**
  * Choose what grid to draw, given the step the editor actually snaps to.

@@ -2073,6 +2073,36 @@ What it deliberately still offers is `p[0] < lo - reach`: `reach` is a distance
 a caller chooses and a fixture can sit exactly on it. The skip is for the
 epsilon no fixture can reach, not for every bound with a name.
 
+**A second family was proposed on the same argument and refused on 2026-08-21:
+operators inside a string, a template or a regular expression.** The proposal
+was that a `<` inside `` `</g>` `` is data rather than an operator.
+
+**Six of the 55 sites it removed were mutated by hand and the suite caught every
+one**, by between 1 and 116 tests each: the `</g>` that becomes a file no parser
+accepts, the `[-+]?` that stops a negative number parsing in both `svg.ts` and
+`parse.ts`, the `-` that is the id format `reidentify` reads back, the `'-0'`
+that normalises negative zero, and the `<` that gets escaped on the way out. A
+mutation inside a comment can never be caught by anything, which is what makes
+the two different kinds of thing. **A regular expression in a string is a program
+in a small language, and a template that assembles markup is a serialiser.**
+
+The skip was implemented first, and all 55 sites were read and confirmed to be
+inside literals. That check answers the wrong question -- "inside a literal" is
+not "cannot be a finding" -- and it passed. `2026-08-21b` has the table.
+
+What survived that is the scanner it was built on, which finds comments. **A
+comment cannot be located without tracking the literals around it**: `'/*'` is
+two characters in a string, `` `//` `` is two more, and a `/` opens a regular
+expression or divides depending on the token before it. The check it replaces
+judged a line at a time and had no way to answer either. On this tree the two
+produce an identical list of 3 767 sites, so the change is a class of misread
+fixed rather than a count moved, and no site index shifted.
+
+A literal that does not close on its own line was never one, so the scanner
+unwinds at the newline rather than carrying the state forward. What that costs
+is a comment later on the same misread line, which is one noise survivor
+somebody reads and discards.
+
 **It also refuses a flag it does not know**, which matters more here than
 anywhere else in this tree, because this is the one tool that rewrites the
 source. Listing the sites is `--limit 0`; `--list` is not a flag, and until that
@@ -4143,3 +4173,95 @@ pointer, which is a larger piece and is not built.
 The check is in the `primitives` browser scenario, and it reads the laid-out
 width rather than `textContent`, because a `hidden` element still has its text.
 The question the rule asks is whether a person can see the words.
+
+## 73. A precision derived twice, and a ruler that could not spell
+
+`src/view/rulers.ts` had no test of its own, on the standing argument that it is
+DOM and measurement all the way down. That is true of the ticks and the marks
+and false of one line in it, which was arithmetic and was wrong.
+
+Each label is rounded to the precision its own step needs, and the step comes
+from `rulerTicksFor`. The rounding was worked out beside the label instead:
+
+    const dp = Math.max(0, Math.ceil(-Math.log10(t.step) + 1e-9));
+
+**The epsilon is there to absorb float error in `Math.log10` and it makes it
+instead.** At an exact power of ten `-Math.log10(step)` is an integer, and
+`Math.ceil` of an integer plus a positive epsilon is the next integer up. At a
+step of 1, which is the default grid, every label on both rulers read `10.0`
+where it meant `10`; at 0.1 they read `1.20`. Five of the 27 rungs of the 1-2-5
+ladder are affected and all five are the powers of ten. Subtracting is right in
+both directions, because `0.9999999999999998` and `1.0000000000000002` both
+belong at 1.
+
+Nothing could have caught it. The `guides` scenario does check the labels, and
+it reads them through `+e.textContent`, which turns `"10.0"` into `10` before it
+compares anything: a check of the spacing, which was right, and no check of the
+spelling, which was not.
+
+**The fix is where the step is chosen, not where the label is drawn.**
+`rulerTicksFor` returns `decimals` beside `step` and `labelEvery`, and
+`labelDecimals` is exported for the test to aim at. A precision derived from a
+number chosen somewhere else is a second answer to one question, which is the
+shape §71 found in the slide margin and §74 finds again below.
+
+## 74. One floor, two ways to set a bend
+
+A bend's `looseness` may not go below 0.05, because under that the controls
+collapse onto the chord and the segment stops being a curve anything can grab.
+That number was written three times: in `src/main.ts` where the **loose** field
+commits, in `src/tools/commands.ts` where the keyboard nudges, and as the `min`
+on the field in `index.html`.
+
+The two TypeScript copies are the same operation reached two ways, so a floor
+they disagreed about would leave one segment in two different shapes depending
+on which control last touched it. `MIN_LOOSENESS` and `clampLooseness` live in
+`src/core/bend.ts` now and both callers ask. The `min` attribute is the one copy
+that cannot import, and it carries a comment saying where the real one is.
+
+This is §71's `SLIDE_MARGIN` exactly, found by reading `src/main.ts` rather than
+by anything failing, because `src/main.ts` is one of the two modules no test
+imports and mutation cannot reach.
+
+## 75. The one route to a node without a pointer, and it refused
+
+`Commands.stepNodeSelection` walks the node selection one place along the path,
+and it opens with a branch for having nothing to walk from:
+
+    // Nothing chosen yet: start at the first node of the first selected shape.
+    if (!refs.length) {
+
+**That branch was dead, and it is the whole reason the operation exists for a
+keyboard.** `refs` came from `selectedNodes`, which widens a selected shape to
+every node in it (§47's derivation, doing exactly what it should), so with a
+shape chosen `refs` was the whole path and never empty. The walk then started
+from that path's LAST node: **Next** answered `That is the last node of the
+path.` and **Previous** jumped to the second-from-last.
+
+`main.ts` enables both buttons whenever a shape is selected, with a comment
+saying that is "how you get the first node without a pointer". It was not.
+
+The fix is `selectedRefs`, which is the nodes the selection actually holds. The
+two are named apart on purpose and the wider one is right nearly everywhere:
+Simplify, Offset and Round all mean "and every node of a chosen shape". This is
+the one caller that means the narrower thing, because it is asking whether there
+is a cursor to move rather than what to operate on.
+
+**Once the branch ran it turned out to have a second defect**: it added the node
+and left the shape in the selection, where the walking branch clears it. The
+panel reads the selection back through `selectedNodes`, so the Node group said
+`8 selected` beside a selection of one.
+
+### How the scenario that covers this had been passing
+
+`keyboardNodes` presses `]` with a shape selected and requires `0/0`. It is
+aimed straight at the dead branch and it was green, because the starter document
+is a CLOSED path: the old walk started at the last node, stepped past the end,
+and wrapped to node 0. The right answer by the wrong route. On an open path the
+same scenario would have failed from the day it was written, and the second
+defect was invisible either way because the old route cleared the shape.
+
+That is a class worth the name. A fixture whose symmetry lets two different
+mechanisms agree hides whichever one is wrong, and it is the fixture-too-simple
+problem of §Testing philosophy raised one level: not a value too simple to
+separate two numbers, but a shape too regular to separate two code paths.

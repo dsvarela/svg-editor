@@ -296,7 +296,30 @@ boundary reads its whole operand and not the token beside it. All four tolerance
 lines in `src/view/viewport.ts` are that shape, which is the file that showed
 it: 42 sites to 33, and every one of the 9 removed was a survivor.
 
+**A skip for operators inside strings, templates and regular expressions was
+filed, built and then refused on 2026-08-21, and no site index moved.** Six of
+the 55 sites it removed were mutated by hand and **the suite caught every one**,
+by between 1 and 116 tests each. A mutation inside a comment can never be caught
+by anything, which is what makes the two different kinds of thing: **a regular
+expression in a string is a program in a small language, and a template that
+assembles markup is a serialiser.** All 55 had been read and confirmed to be
+inside literals, and that check passed, which is the trap -- "inside a literal"
+is not "cannot be a finding". **Ask whether the suite disagrees, not where the
+character sits.** The comment skip is one scanner now, because a comment cannot
+be found without tracking the literals around it, and it lists the same 3 767
+sites the old one did.
+
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
+
+**`src/tools/commands.ts` is the layer with the thinnest cover, and its number
+was read on 2026-08-21.** 249 of 427 sites survive, and the count is explained
+rather than scattered: **24 of `Commands`' 58 methods are called by no test at
+all**, which accounts for 143 of them; 64 more sit on a line returning the
+command's own boolean, which nothing asserted; 29 sit inside the sentence it
+writes. Every one of those methods has its geometry tested elsewhere, which is
+what hid it. `test/commands.test.ts` covers six of them and asserts all three of
+the document, the return value and the message. `docs/reviews/2026-08-21b.md`
+has the classes and the one defect it found.
 
 ## Writing
 

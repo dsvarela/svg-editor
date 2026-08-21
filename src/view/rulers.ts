@@ -118,12 +118,12 @@ export class Rulers {
       );
       if (!labelled) continue;
 
-      /* Rounded to the step's own precision. A camera at an awkward zoom puts
-         the label at 12.000000000000002, and a ruler that cannot spell its own
-         numbers is worse than no ruler. */
-      const dp = Math.max(0, Math.ceil(-Math.log10(t.step) + 1e-9));
+      /* Rounded to the step's own precision, which `rulerTicksFor` works out
+         beside the step it chose. A camera at an awkward zoom puts the label at
+         12.000000000000002, and a ruler that cannot spell its own numbers is
+         worse than no ruler. */
       const text = svg('text', { class: 'num' }) as SVGTextElement;
-      text.textContent = v.toFixed(dp);
+      text.textContent = v.toFixed(t.decimals);
       if (axis === 'x') {
         setAttrs(text, { x: px + 2, y: across - LABEL_TICK - 2 });
       } else {

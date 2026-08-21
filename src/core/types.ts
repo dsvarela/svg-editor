@@ -357,6 +357,24 @@ export const OPACITY_DECIMALS = 3;
 export const PATH_DECIMALS = 3;
 
 /**
+ * The range **Output → decimals** may be set to, and the clamp both readers use.
+ *
+ * Nine is where a double stops carrying another place of a coordinate at the
+ * sizes this editor draws at, so a tenth would be a digit the file records and
+ * the number never had. Zero is a legitimate request: whole units is what a
+ * pixel-grid icon wants.
+ *
+ * Here rather than beside either caller. It was spelled `Math.min(9, …)` in
+ * `src/main.ts` where the field commits and again in `invisibleAt` in
+ * `src/model/knots.ts`, which decides what counts as an invisible move -- so a
+ * ceiling raised in one place would have left the second silently disagreeing
+ * about which movements a file can record. §74 makes the same argument for the
+ * bend floor. The `max` on the field in `index.html` is the copy that cannot
+ * import this.
+ */
+export const clampDecimals = (d: number): number => Math.max(0, Math.min(9, d));
+
+/**
  * Below this, a movement of the drawing is one the saved file cannot record.
  *
  * Half of the last decimal a coordinate keeps. Not a tolerance for geometry --

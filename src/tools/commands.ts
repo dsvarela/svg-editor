@@ -101,6 +101,7 @@ import { BOOLEAN_LABEL, booleanShapes, booleanSubpaths } from '../io/boolean';
 import type { BooleanOp } from '../io/boolean';
 import { FLAT, referencePoint } from '../model/transform';
 import type { Store } from '../model/store';
+import { clampLooseness } from '../core/bend';
 import type { Bend } from '../core/bend';
 import { fmt } from './readout';
 
@@ -319,7 +320,14 @@ export class Commands {
    */
   stepNodeSelection(by: 1 | -1, extend = false): boolean {
     const s = this.store.state;
-    const refs = selectedNodes(s.doc, s.selection);
+    /* `selectedRefs`, which is the nodes the selection actually holds, and NOT
+       `selectedNodes`, which widens a selected shape to every node in it. With
+       the wider one the branch below was dead: a selected shape made `refs` the
+       whole path, so the walk started from its LAST node and **Next** answered
+       `That is the last node of the path.` on the first press. That is the one
+       route to a node without a pointer, and `main.ts` enables the button for a
+       selected shape on the strength of it. */
+    const refs = selectedRefs(s.doc, s.selection);
 
     // Nothing chosen yet: start at the first node of the first selected shape.
     if (!refs.length) {
@@ -332,6 +340,12 @@ export class Commands {
       this.store.update((st) => {
         st.selection.nodes.clear();
         st.selection.nodes.add(sp.nodes[by > 0 ? 0 : sp.nodes.length - 1].id);
+        /* The shape goes, as it does in the walking branch below. Left in, the
+           panel reads the wider selection back -- `selectedNodes` widens a shape
+           to every node in it -- so choosing one node reported the whole path
+           and the Node panel showed `8 selected` rather than `0/0`. A second
+           defect in the same branch, invisible while the branch was dead. */
+        st.selection.shapes.clear();
       });
       return true;
     }
@@ -2606,7 +2620,7 @@ export class Commands {
     if (!seg || !seg.bend) return;
     this.setActiveBend({
       angle: seg.bend.angle + dAngle,
-      looseness: Math.max(0.05, seg.bend.looseness + dLoose),
+      looseness: clampLooseness(seg.bend.looseness + dLoose),
     });
   }
 

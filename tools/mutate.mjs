@@ -111,39 +111,150 @@ function sources(path) {
   return readdirSync(path).flatMap((e) => sources(join(path, e)));
 }
 
+/** What may precede a `/` that opens a regular expression rather than divides. */
+const OPENS_REGEX = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '~', '^', '<', '>']);
+const KEYWORDS_BEFORE_REGEX = new Set([
+  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'case', 'do', 'else',
+  'yield', 'await',
+]);
+
 /**
- * Which lines of a file are prose a mutation may not touch.
+ * Which columns of each line are comment, and may not be mutated.
  *
- * A comment is not code, and a swap inside one is always a survivor, which
- * would bury the real findings in noise.
+ * A swap inside a comment is always a survivor, which buries the real findings.
  *
- * Tracked across lines rather than judged one at a time. Asking whether a line
- * starts with `//`, `*` or `/*` misses the continuation of a block comment that
- * happens to start with anything else -- a wrapped sentence opening with a
- * backtick, say. `src/io/session.ts:204` is one, and it was reported as a
- * survivor.
+ * **Strings, templates and regular expressions are tracked and deliberately not
+ * returned.** Tracked because a comment cannot be found without them: `'/*'` is
+ * two characters in a string, and a `/` opens a regular expression or divides
+ * depending on the token before it. Not skipped because an operator inside one
+ * is usually real logic -- a regular expression in a string is a program in a
+ * small language. The argument is under "Testing philosophy" in
+ * `docs/ARCHITECTURE.md`, and the measurement that refused the skip is in
+ * `docs/reviews/2026-08-21b.md`.
  *
- * A `/*` inside a string literal costs one skipped line, which is the trade the
- * line-at-a-time version already made: missing a mutation is cheaper here than
- * reporting one that cannot be a finding.
+ * The interpolation of a template is code and so is the text around it; the
+ * distinction only matters for finding a comment that may follow either.
+ *
+ * **A quote or a slash that does not close on its own line was never one**, so
+ * the state is unwound at the newline. What that costs is a comment later on the
+ * same line, which is one noise survivor somebody reads and discards.
  */
-function proseLines(lines) {
-  const out = new Set();
-  let inBlock = false;
-  lines.forEach((line, n) => {
-    const t = line.trim();
-    if (inBlock) {
-      out.add(n);
-      if (t.includes('*/')) inBlock = false;
-      return;
+function commentCols(lines) {
+  const cols = lines.map(() => new Set());
+  const frames = [];
+  let state = 'code';
+  let depth = 0;
+  let prevChar = '';
+  let word = '';
+  let inWord = false;
+  let inClass = false;
+
+  /* What a `/` here means turns on the token before it, so the last one is
+     carried across lines: a regular expression may open on the line after the
+     `=` that assigns it. */
+  const toCode = (c) => {
+    state = 'code';
+    prevChar = c;
+    word = '';
+    inWord = false;
+  };
+
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n];
+    const mark = (i) => cols[n].add(i);
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      const next = line[i + 1] ?? '';
+
+      if (state === 'code') {
+        if (c === '/' && next === '/') {
+          state = 'lineComment';
+          mark(i);
+          mark(i + 1);
+          i++;
+        } else if (c === '/' && next === '*') {
+          state = 'block';
+          mark(i);
+          mark(i + 1);
+          i++;
+        } else if (c === '/' && (KEYWORDS_BEFORE_REGEX.has(word) || (!word && OPENS_REGEX.has(prevChar)))) {
+          state = 'regex';
+          inClass = false;
+        } else if (c === "'" || c === '"') {
+          state = c;
+        } else if (c === '`') {
+          frames.push(depth);
+          state = 'template';
+        } else if (c === '{') {
+          depth++;
+          prevChar = c;
+          word = '';
+          inWord = false;
+        } else if (c === '}' && depth === 0 && frames.length) {
+          state = 'template';
+        } else if (/[\w$]/.test(c)) {
+          word = inWord ? word + c : c;
+          inWord = true;
+          prevChar = c;
+        } else if (/\s/.test(c)) {
+          inWord = false;
+        } else {
+          if (c === '}') depth--;
+          prevChar = c;
+          word = '';
+          inWord = false;
+        }
+        continue;
+      }
+
+      if (state === 'lineComment') {
+        mark(i);
+        continue;
+      }
+      if (state === 'block') {
+        mark(i);
+        if (c === '*' && next === '/') {
+          mark(i + 1);
+          i++;
+          state = 'code';
+        }
+        continue;
+      }
+      /* Past here the state is a literal, whose columns are code as far as this
+         is concerned. Only its END matters, because that is where a comment can
+         start again. */
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (state === "'" || state === '"') {
+        if (c === state) toCode(c);
+      } else if (state === 'regex') {
+        if (c === '[') inClass = true;
+        else if (c === ']') inClass = false;
+        else if (c === '/' && !inClass) toCode(c);
+      } else if (c === '`') {
+        depth = frames.pop();
+        toCode(c);
+      } else if (c === '$' && next === '{') {
+        i++;
+        state = 'code';
+        depth = 0;
+        prevChar = '';
+        word = '';
+        inWord = false;
+      }
     }
-    if (t.startsWith('//')) out.add(n);
-    else if (t.startsWith('/*')) {
-      out.add(n);
-      if (!t.includes('*/')) inBlock = true;
+
+    if (state === 'lineComment') state = 'code';
+    else if (state === "'" || state === '"' || state === 'regex') {
+      state = 'code';
+      prevChar = '';
+      word = '';
+      inWord = false;
     }
-  });
-  return out;
+  }
+  return cols;
 }
 
 /**
@@ -341,13 +452,13 @@ const tolerances = toleranceNames('src');
 const sites = [];
 for (const file of files) {
   const lines = readFileSync(file, 'utf8').split('\n');
-  const prose = proseLines(lines);
+  const prose = commentCols(lines);
   lines.forEach((line, n) => {
-    if (prose.has(n)) return;
     const types = typeArgumentCols(line);
     const tol = toleranceCols(line, tolerances);
     for (const rule of RULES) {
       for (const m of line.matchAll(rule.find)) {
+        if (prose[n].has(m.index)) continue;
         if (types.has(m.index)) continue;
         if (tol.has(m.index)) continue;
         sites.push({ file, line: n, col: m.index, was: m[0], now: rule.to });

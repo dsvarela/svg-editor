@@ -70,6 +70,36 @@ describe('transform parsing', () => {
     expect(parseTransform('')).toEqual([1, 0, 0, 1, 0, 0]);
     expect(parseTransform('nonsense(1 2)')).toEqual([1, 0, 0, 1, 0, 0]);
   });
+
+  /**
+   * A sign, which nothing here had ever given it.
+   *
+   * Every fixture above is positive, so the `[-+]?` at the head of the number
+   * pattern decided nothing: drop it and `translate(-10 -20)` matches `10` and
+   * `20`, the drawing lands on the wrong side of both axes, and every test in
+   * this file stays green. A `<g transform="translate(-40 0)">` is ordinary in
+   * a hand-written file, so this is a shape landing somewhere else on import.
+   *
+   * An exponent gets the same treatment, because its sign is a second use of
+   * the same pattern and it had never been given one either.
+   */
+  it('reads a negative number, which decides whether the sign in its pattern does anything', () => {
+    expect(parseTransform('translate(-10 -20)')).toEqual([1, 0, 0, 1, -10, -20]);
+    expect(parseTransform('scale(-1 1)')).toEqual([-1, 0, 0, 1, 0, 0]);
+    expect(parseTransform('matrix(1 0 0 1 -5 -6)')).toEqual([1, 0, 0, 1, -5, -6]);
+  });
+
+  it('reads an explicit plus and an exponent of either sign', () => {
+    expect(parseTransform('translate(+10 +20)')).toEqual([1, 0, 0, 1, 10, 20]);
+    expect(parseTransform('translate(1e+2 1e-2)')).toEqual([1, 0, 0, 1, 100, 0.01]);
+  });
+
+  it('rotates the other way, so the sign reaches the angle as well', () => {
+    // -90 about the origin maps (10, 0) to (0, -10); +90 maps it to (0, 10).
+    const m = parseTransform('rotate(-90)');
+    expect(m[0] * 10 + m[4]).toBeCloseTo(0, 9);
+    expect(m[1] * 10 + m[5]).toBeCloseTo(-10, 9);
+  });
 });
 
 describe('primitive conversion', () => {
@@ -163,6 +193,73 @@ describe('primitive conversion', () => {
     const b = primitiveToPath(el('<rect width="10" height="10" rx="5"/>'))!;
     expect(a).toBe(b);
     expect(cornerGap(a, [0, 0])).toBeGreaterThan(1.4);
+  });
+
+  /**
+   * Two different radii, which no fixture here had ever given a rect.
+   *
+   * Every rect above sets `rx` and `ry` to the same number, or sets one and
+   * lets the spec copy it. **While they agree, the two are interchangeable
+   * everywhere in that branch**: swap `rx` for `ry` in all eight places the
+   * template writes them and every test in this file still passes. An
+   * `<rect rx="8" ry="2">` then imports as a rect rounded the wrong way round.
+   *
+   * The fixture-too-simple class, and the same one `2026-08-19d` found in
+   * `ops.test.ts` where every path started at the origin.
+   *
+   * Measured where the two radii differ rather than by reading the `d` string:
+   * the outline leaves the top edge `rx` from the corner and the left edge
+   * `ry` from it, so those two distances name which radius went where.
+   */
+  /**
+   * The two radii the outline actually has, read off the drawing.
+   *
+   * The straight run along the top starts `rx` in from the left corner, and the
+   * run down the left side starts `ry` down from it, so those two distances are
+   * the radii and they are told apart by which edge they are measured along.
+   *
+   * Measured rather than compared against a second call. Two rects built by the
+   * same expression degrade together, so `expect(a).toBe(b)` passes for the
+   * mutation as well as for the code -- which is what the first version of the
+   * clamp test below did, and it could not fail.
+   */
+  const radiiOf = (d: string): [number, number] => {
+    const pts = samplePts({ subpaths: parsePath(d) } as Shape, 400);
+    const top = Math.min(...pts.map((p) => p[1]));
+    const left = Math.min(...pts.map((p) => p[0]));
+    const onTop = pts.filter((p) => Math.abs(p[1] - top) < 1e-6).map((p) => p[0]);
+    const onLeft = pts.filter((p) => Math.abs(p[0] - left) < 1e-6).map((p) => p[1]);
+    return [Math.min(...onTop) - left, Math.min(...onLeft) - top];
+  };
+
+  it('keeps rx and ry apart, which a fixture with both the same cannot show', () => {
+    /**
+     * Every other rect here sets the two to the same number, or sets one and
+     * lets the spec copy it. **While they agree the two are interchangeable**:
+     * swap `rx` for `ry` in all eight places the template writes them and every
+     * test in this file still passes, while an `<rect rx="8" ry="2">` imports
+     * rounded the wrong way round. The fixture-too-simple class, and the same
+     * one `2026-08-19d` found in `ops.test.ts` where every path was at the
+     * origin.
+     */
+    const d = primitiveToPath(el('<rect x="0" y="0" width="20" height="20" rx="8" ry="2"/>'))!;
+    const [rx, ry] = radiiOf(d);
+    expect(rx).toBeCloseTo(8, 2);
+    expect(ry).toBeCloseTo(2, 2);
+
+    // And the box is still the rect's, so the two above are not being read off
+    // a shape that came out the wrong size.
+    const b = bbox({ subpaths: parsePath(d) } as Shape);
+    expect([b.x0, b.y0, b.x1, b.y1].map((v) => +v.toFixed(6))).toEqual([0, 0, 20, 20]);
+  });
+
+  it('clamps each radius against its own side', () => {
+    /* `rx` against the width and `ry` against the height, which a square cannot
+       tell apart. On a 20 by 6 rect a radius of 9 is legal across and too large
+       down, so `rx` is kept whole and `ry` is cut to half the height. */
+    const [rx, ry] = radiiOf(primitiveToPath(el('<rect width="20" height="6" rx="9" ry="9"/>'))!);
+    expect(rx).toBeCloseTo(9, 2);
+    expect(ry).toBeCloseTo(3, 2);
   });
 
   /* A rect with no height, which is the other half of the guard. Only a

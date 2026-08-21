@@ -37,7 +37,8 @@ import {
   cornerAt,
   filletAt,
 } from './model/corner';
-import { continuityOf, INVISIBLE_MOVE } from './core/types';
+import { clampLooseness } from './core/bend';
+import { clampDecimals, continuityOf, INVISIBLE_MOVE } from './core/types';
 import type { Shape, Style, Subpath, ViewBox } from './core/types';
 import { clampCorners, clampRatio } from './core/primitives';
 import { serialisePath } from './core/serialise';
@@ -608,9 +609,11 @@ if (!restored) {
 }
 bindCheck('#touchButtons', 'touchButtons');
 
-/* Angular snap's three numbers. The step is clamped above zero because a step
-   of 0 asks for infinitely many rays; the base is free, since any angle is a
-   legitimate place for the first one. */
+/* Angular snap's three numbers. A step of 0 is allowed and turns the tier off,
+   the way a grid step of 0 does: `nearestRay` refuses it and `#angleinfo` says
+   `no step`, so nothing is left claiming to snap while doing nothing. Negatives
+   are refused, because a ray every -15 degrees is not a request. The base is
+   free, since any angle is a legitimate place for the first one. */
 const angleStep = $('#angleStep') as HTMLInputElement;
 angleStep.value = String(store.state.angleStep);
 resyncers.push(() => (angleStep.value = String(store.state.angleStep)));
@@ -1062,7 +1065,7 @@ const decInput = $('#decimals') as HTMLInputElement;
 decInput.value = String(store.state.decimals);
 resyncers.push(() => (decInput.value = String(store.state.decimals)));
 decInput.addEventListener('input', () =>
-  store.update((s) => (s.decimals = Math.min(9, Math.max(0, Number(decInput.value) || 0)))),
+  store.update((s) => (s.decimals = clampDecimals(Number(decInput.value) || 0))),
 );
 
 /* -------------------------------------------------------- node inspector */
@@ -1296,7 +1299,7 @@ const commitBend = (): void => {
   const a = Number(bendAngle.value);
   const l = Number(bendLoose.value);
   if (!Number.isFinite(a) || !Number.isFinite(l)) return;
-  commands.setActiveBend({ angle: a, looseness: Math.max(0.05, l) });
+  commands.setActiveBend({ angle: a, looseness: clampLooseness(l) });
 };
 for (const inp of [bendAngle, bendLoose]) {
   inp.addEventListener('change', commitBend);
@@ -2092,7 +2095,14 @@ function traceOffThread(req: TraceRequest): Promise<TraceResult> | null {
  */
 async function traceBackdrop(): Promise<void> {
   const b = store.state.backdrop;
-  if (!b || tracing) {
+  /* Two conditions, two sentences. One sentence for both told somebody with a
+     trace already running to load an image, which is the opposite of true. The
+     button is disabled while a trace is in flight, so nobody has read it. */
+  if (tracing) {
+    say('A trace is already running. Wait for it to finish.', false);
+    return;
+  }
+  if (!b) {
     say('Load an image in the Backdrop panel first.', false);
     return;
   }
@@ -3955,7 +3965,6 @@ for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')
      the exception: it acts on nothing selected, and it is where the drawing
      leaves the editor, so landing on the Document tab and finding every group
      shut would put Download SVG two presses from anywhere. */
-  const group = head.closest('.group');
   const keepOpen = ['Style', 'Node', 'Shapes', 'File'].includes(head.querySelector('span')?.textContent ?? '');
   const set = (open: boolean): void => {
     head.setAttribute('aria-expanded', String(open));
@@ -3968,7 +3977,6 @@ for (const head of document.querySelectorAll<HTMLButtonElement>('button.glabel')
   };
   set(keepOpen);
   head.addEventListener('click', () => set(head.getAttribute('aria-expanded') !== 'true'));
-  void group;
 }
 
 /**

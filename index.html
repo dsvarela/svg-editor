@@ -558,6 +558,10 @@
               <input type="number" id="bendAngle" step="5" aria-label="Bend angle" />
               <button class="btn" id="bendFlat" title="Straighten this segment">Flat</button>
               <label for="bendLoose">loose</label>
+              <!-- The bound is `MIN_LOOSENESS` in `src/core/bend.ts`, and this
+                   is the copy of it that cannot import it. Below it the controls
+                   collapse onto the chord, so it is a value the document does
+                   not hold and this must not offer. -->
               <input type="number" id="bendLoose" step="0.1" min="0.05" aria-label="Looseness" />
               <button class="btn" id="bendFree" title="Release into free handles">Free</button>
             </div>
@@ -806,7 +810,11 @@
             </div>
             <div class="row">
               <label for="traceNoise">Noise</label>
-              <input type="number" id="traceNoise" value="8" min="3" step="1" />
+              <!-- Floored at 0, which is where `traceImage` floors it. This said
+                   3, and a stray pixel traces to a four-point ring: at a minimum
+                   of 3 the spinner could not reach the values that tell a speck
+                   from a shape, which is the case the control is for. -->
+              <input type="number" id="traceNoise" value="8" min="0" step="1" />
             </div>
             <button class="btn wide" id="traceGo" type="button" title="Turn the backdrop into shapes, one per colour">Trace</button>
           
