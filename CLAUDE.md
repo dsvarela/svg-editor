@@ -332,8 +332,16 @@ sites survived on 2026-08-21, and the count was explained rather than scattered:
 for 143 of them; 64 more sat on a line returning the command's own boolean, which
 nothing asserted; 29 sat inside the sentence it writes.
 `docs/reviews/2026-08-21b.md` has the classes and the one defect it found. All
-three groups were closed on 2026-08-21, and `docs/reviews/2026-08-21c.md` has
-the second number.
+three groups were closed on 2026-08-21 and the file measured **75 of 425**.
+
+**A third of what is left is a guard on a lookup that cannot fail**, and no test
+can reach one. `Store` mutates the document in place and `tryEdit` runs its
+callback synchronously, so `findShape(st.doc, id)` inside an edit returns the
+object the method already resolved outside it. Twenty-two of those re-lookups
+remain. Under a store that copied on write the guard would find a shape and it
+would be the wrong one, so it defends the impossible case and fails the
+possible one. `docs/reviews/2026-08-21c.md` has the argument and does not settle
+it.
 
 **Every sentence the layer writes is asserted, and five are asserted by nothing
 because nothing can reach them.** 105 strings across 58 methods is more than a

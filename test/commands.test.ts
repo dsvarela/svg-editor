@@ -1006,7 +1006,13 @@ describe('the active segment and its bend', () => {
   });
 
   it('leaves bend mode by making the two handles genuinely unequal', () => {
-    const { store, commands } = editor(withShapes(['p', ELL]));
+    /* Away from the origin on purpose. The handle is written as
+       `pt + (hOut - pt) * 1.001`, and at `pt = [0, 0]` that is
+       `0 + (h - 0)` -- indistinguishable from `0 + (h + 0)`, so the subtraction
+       inside the brackets can be flipped and nothing moves. Every fixture in
+       this file starts at the origin, which is exactly the shape §Testing
+       philosophy warns about. */
+    const { store, commands } = editor(withShapes(['p', 'M17 23 H57 V63 H97']));
     selectNodes(store, 'p', 0, 1);
     commands.setActiveBend({ angle: 30, looseness: 1 });
     expect(segmentBend(sub(store, 'p'), 0)).not.toBe(null);
@@ -1742,5 +1748,216 @@ describe('the branches that cannot be reached, and the one that can', () => {
       message: 'Nothing to trace. Every region was smaller than the noise floor.',
       ok: false,
     });
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The survivors that were real.
+ *
+ * Reading the 98 that came through the sweep of 2026-08-21c sorted them in
+ * two. Most are guards on lookups that cannot fail, and no test can reach
+ * those. The rest are these: arithmetic and sentences that nothing had ever
+ * exercised, each found by a mutation nothing disagreed with.
+ * ------------------------------------------------------------------------ */
+
+describe('the arithmetic nothing had checked', () => {
+  it('nudges along both axes, not only the one a test happened to use', () => {
+    /* `moveAnchor(sp, i, [pt[0] + d[0], pt[1] + d[1]])` is two additions, and
+       `repeat.test.ts` nudges by `[20, 0]`, which pins the first and leaves the
+       second free to be a subtraction. */
+    const { store, commands } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    commands.nudge([3, 7]);
+    expect(sub(store, 'p').nodes[0].pt).toEqual([3, 7]);
+    commands.nudge([-1, -2]);
+    expect(sub(store, 'p').nodes[0].pt).toEqual([2, 5]);
+  });
+
+  it('turns the whole drawing about the average of its points when nothing is selected', () => {
+    /* The branch with no selection box, which averages every node instead.
+       Both halves of that average were survivors, because every other test of
+       `applyTransform` has something selected and takes the other branch.
+
+       A triangle and a square, so the two shapes contribute 3 nodes and 4. The
+       average of the points and the centre of the bounding box then differ,
+       and a fixture of two rectangles cannot tell those apart however
+       asymmetrically it is placed. */
+    const { store, commands } = editor(withShapes(['a', 'M0 0 H10 V10 Z'], ['b', 'M50 0 H60 V10 H50 Z']));
+    const all = (): [number, number][] =>
+      store.state.doc.shapes.flatMap((sh) =>
+        sh.subpaths.flatMap((sp) => sp.nodes.map((n) => [n.pt[0], n.pt[1]] as [number, number])),
+      );
+    const before = all();
+    const cx = before.reduce((a, p) => a + p[0], 0) / before.length;
+    const cy = before.reduce((a, p) => a + p[1], 0) / before.length;
+    expect(cx).not.toBeCloseTo(30, 6); // and so not the box centre either
+
+    commands.applyTransform('rotate', 180);
+    // A half turn about a point sends p to 2c - p, node for node.
+    all().forEach((p, i) => {
+      expect(p[0]).toBeCloseTo(2 * cx - before[i][0], 6);
+      expect(p[1]).toBeCloseTo(2 * cy - before[i][1], 6);
+    });
+  });
+
+  it('falls back to a step of one when the grid is off', () => {
+    /* `s.gridStep || 1` in two places. With the grid at its default of 1 the
+       fallback and the value agree, so only a grid of 0 separates them -- and
+       a duplicate that lands exactly under its original is the symptom §46
+       exists to prevent being invisible. */
+    const { store, commands } = editor(withShapes(['p', SQUARE]));
+    store.update((s) => (s.gridStep = 0));
+    select(store, 'p');
+    expect(commands.duplicateSelection()).toBe(true);
+
+    const copy = store.state.doc.shapes[1];
+    expect(copy.subpaths[0].nodes[0].pt).toEqual([2, 2]);
+  });
+
+  it('fits to a lattice of one when the grid is off', () => {
+    // `s.gridStep > 0 ? s.gridStep : 1`, which is the same fallback again and
+    // reads 0 rather than 1 if the comparison is loosened.
+    const doc = withShapes(['sq', 'M0.3 0.3 H40.3 V40.3 H0.3 Z']);
+    doc.shapes[0].style = { ...doc.shapes[0].style, stroke: '#000', strokeWidth: 2 };
+    const { store, commands } = editor(doc);
+    store.update((s) => (s.gridStep = 0));
+    select(store, 'sq');
+    expect(commands.fitToPixels()).toBe(true);
+    expect(sub(store, 'sq').nodes[0].pt).toEqual([0, 0]);
+  });
+});
+
+describe('the sentences whose numbers nothing had checked', () => {
+  it('counts the corners a round could not cut', () => {
+    /* `Skipped n.` is a sum across three refusal reasons, and it was never
+       read. A closed square has four corners and refuses none, so the sum is
+       zero there and any arithmetic at all produces the same sentence. An OPEN
+       path is the fixture that reaches it: its two end nodes have one segment
+       each and no corner to cut, so two are rounded and two are refused. */
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    select(store, 'p');
+    expect(commands.roundSelection(5)).toBe(true);
+    expect(said()!.message).toBe('Rounded 2 corners to r 5. Skipped 2.');
+  });
+
+  it('says nothing about skipping when nothing was skipped', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40 V40 H0 Z']));
+    select(store, 'p');
+    expect(commands.roundSelection(5)).toBe(true);
+    expect(said()!.message).toBe('Rounded 4 corners to r 5.');
+  });
+
+  it('says corner rather than corners for one', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0);
+    expect(commands.roundSelection(5)).toBe(true);
+    expect(said()!.message).toBe('Rounded 1 corner to r 5.');
+  });
+
+  it('names the fill rule the surviving shape kept', () => {
+    /* `keep.style.fillRule === 'evenodd' ? 'Even-odd' : 'Nonzero'`, and every
+       fixture until now used the default, which is the other branch. */
+    const doc = withShapes(['a', SQUARE], ['b', 'M10 10 H30 V30 H10 Z']);
+    doc.shapes[0].style = { ...doc.shapes[0].style, fillRule: 'evenodd' };
+    const { store, commands } = editor(doc);
+    select(store, 'a', 'b');
+    const r = commands.makeOneShape();
+    expect(r.ok).toBe(true);
+    expect(r.message).toMatch(/The rule is Even-odd\.$/);
+  });
+
+  it('warns when the shapes it merged did not look alike', () => {
+    /* Three style fields joined by `||`. A fixture differing in all three
+       passes with any one of them deleted, so each is varied on its own. */
+    const differing = (patch: Record<string, unknown>): string => {
+      const doc = withShapes(['a', SQUARE], ['b', 'M10 10 H30 V30 H10 Z']);
+      doc.shapes[1].style = { ...doc.shapes[1].style, ...patch };
+      const { store, commands } = editor(doc);
+      select(store, 'a', 'b');
+      return commands.makeOneShape().message;
+    };
+    expect(differing({ fill: '#f00' })).toContain('The other colours are gone');
+    expect(differing({ stroke: '#0f0' })).toContain('The other colours are gone');
+    expect(differing({ strokeWidth: 9 })).toContain('The other colours are gone');
+    // And the quiet sentence when they agree, which is the other branch.
+    expect(differing({})).not.toContain('The other colours are gone');
+  });
+
+  it('counts the paths a boolean produced, singular and plural', () => {
+    const two = editor(withShapes(['a', 'M0 0 H10 V10 H0 Z'], ['b', 'M20 0 H30 V10 H20 Z']));
+    select(two.store, 'a', 'b');
+    // Disjoint, so a union keeps both regions and the plural is reachable.
+    expect(two.commands.booleanSelection('unite').message).toMatch(/2 shapes → 2 paths\.$/);
+
+    const one = editor(withShapes(['a', 'M0 0 H20 V20 H0 Z'], ['b', 'M10 10 H30 V30 H10 Z']));
+    select(one.store, 'a', 'b');
+    expect(one.commands.booleanSelection('unite').message).toMatch(/2 shapes → 1 path\.$/);
+  });
+
+  it('counts what a split produced, from one shape and from more', () => {
+    /* `from + made` against `made + 1`: with one shape holding two paths the
+       two spellings agree at 2, so the fixture needs two shapes. */
+    const one = editor(withShapes(['a', 'M0 0 H10 V10 H0 Z M20 0 H30 V10 H20 Z']));
+    select(one.store, 'a');
+    expect(one.commands.splitShapes().message).toBe('a split into 2 shapes.');
+
+    const two = editor(
+      withShapes(['a', 'M0 0 H10 V10 H0 Z M20 0 H30 V10 H20 Z'], ['b', 'M0 20 H10 V30 H0 Z M20 20 H30 V30 H20 Z']),
+    );
+    select(two.store, 'a', 'b');
+    expect(two.commands.splitShapes().message).toBe('2 shapes split into 4.');
+  });
+});
+
+describe('what the buttons are enabled from', () => {
+  it('offers Group at two shapes and not at one', () => {
+    const { store, commands } = editor(withShapes(['a', SQUARE], ['b', 'M60 0 H100 V40 Z']));
+    expect(commands.canGroup).toBe(false);
+    select(store, 'a');
+    expect(commands.canGroup).toBe(false);
+    select(store, 'a', 'b');
+    expect(commands.canGroup).toBe(true);
+  });
+
+  it('offers Ungroup only when something selected is in a group', () => {
+    const { store, commands } = editor(withShapes(['a', SQUARE], ['b', 'M60 0 H100 V40 Z']));
+    select(store, 'a', 'b');
+    expect(commands.canUngroup).toBe(false);
+    commands.groupSelection();
+    expect(commands.canUngroup).toBe(true);
+
+    /* A shape outside the group, selected on its own. The `&&` reads "selected
+       AND grouped"; loosened to `||` it answers true for any selection at all,
+       and a fixture where everything is grouped cannot tell. */
+    const loose = shapeFromPath('M200 0 H210 V10 Z');
+    loose.name = 'c';
+    store.edit((s) => s.doc.shapes.push(loose));
+    select(store, 'c');
+    expect(commands.canUngroup).toBe(false);
+  });
+
+  it('spaces at a typed gap, and evenly when the gap is not a number', () => {
+    /* `gap !== null && Number.isFinite(gap) ? gap : null`. Passing null and
+       passing NaN both mean "space them evenly", and nothing had passed
+       either, so the guard could be inverted without a test noticing. */
+    const three = (): ReturnType<typeof editor> => {
+      const e = editor(
+        withShapes(['a', 'M0 0 H10 V10 H0 Z'], ['b', 'M15 0 H25 V10 H15 Z'], ['c', 'M90 0 H100 V10 H90 Z']),
+      );
+      select(e.store, 'a', 'b', 'c');
+      return e;
+    };
+    const lefts = (store: Store): number[] =>
+      store.state.doc.shapes.map((sh) => Math.min(...sh.subpaths[0].nodes.map((n) => n.pt[0])));
+
+    const typed = three();
+    expect(typed.commands.spaceShapes('h', 'selection', 5)).toBe(true);
+    expect(lefts(typed.store)).toEqual([0, 15, 30]);
+
+    const even = three();
+    expect(even.commands.spaceShapes('h', 'selection', Number.NaN)).toBe(true);
+    // Evenly across the span the three already occupied, not at a gap of NaN.
+    expect(lefts(even.store).every((v) => Number.isFinite(v))).toBe(true);
+    expect(lefts(even.store)).toEqual([0, 45, 90]);
   });
 });

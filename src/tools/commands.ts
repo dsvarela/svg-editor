@@ -1337,12 +1337,18 @@ export class Commands {
       return false;
     }
 
+    /* Resolved once, here, and used inside the edit as well. `Store.tryEdit`
+       runs its callback synchronously against the same `doc` object this reads
+       -- §Store mutates in place, and `snapshot` clones into the undo stack
+       rather than out of the document -- so a second lookup inside would return
+       these same four objects and its guard could never fire. What it would do
+       is refuse from inside the edit, after a checkpoint has been taken. */
     const [ra, rb] = refs;
-    const resolve = (r: NodeRef): Subpath | null =>
-      findShape(s.doc, r.shape)?.subpaths[r.sp] ?? null;
-    const spa = resolve(ra);
-    const spb = resolve(rb);
-    if (!spa || !spb) return false;
+    const shapeA = findShape(s.doc, ra.shape);
+    const shapeB = findShape(s.doc, rb.shape);
+    const spa = shapeA?.subpaths[ra.sp];
+    const spb = shapeB?.subpaths[rb.sp];
+    if (!shapeA || !shapeB || !spa || !spb) return false;
 
     if (!isPathEnd(spa, ra.i) || !isPathEnd(spb, rb.i)) {
       this.onMessage?.(
@@ -1359,14 +1365,8 @@ export class Commands {
 
     let closed = false;
     const ok = this.store.tryEdit((st) => {
-      const shapeA = findShape(st.doc, ra.shape);
-      const shapeB = findShape(st.doc, rb.shape);
-      const a = shapeA?.subpaths[ra.sp];
-      const b = shapeB?.subpaths[rb.sp];
-      if (!shapeA || !shapeB || !a || !b) return false;
-
       const join = mode === 'merge' ? mergeEnds : connectEnds;
-      const joined = join({ sp: a, i: ra.i }, { sp: b, i: rb.i });
+      const joined = join({ sp: spa, i: ra.i }, { sp: spb, i: rb.i });
       if (!joined) return false;
 
       if (sameSubpath) {
