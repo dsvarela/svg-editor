@@ -28,7 +28,10 @@ import { reorderShapes } from '../src/model/arrange';
 import { exportSvg, importSvg } from '../src/io/svg';
 import type { Doc } from '../src/core/types';
 
-function editor(count = 3): { store: Store; commands: Commands } {
+function editor(
+  count = 3,
+  busy = false,
+): { store: Store; commands: Commands; said: () => { message: string; ok: boolean } | null } {
   const doc = emptyDoc();
   for (let i = 0; i < count; i++) {
     const sh = shapeFromPath(`M${i * 20} 0 L${i * 20 + 10} 0 L${i * 20 + 10} 10 Z`);
@@ -36,7 +39,10 @@ function editor(count = 3): { store: Store; commands: Commands } {
     doc.shapes.push(sh);
   }
   const store = new Store(doc);
-  return { store, commands: new Commands(store, () => false) };
+  const commands = new Commands(store, () => busy);
+  let last: { message: string; ok: boolean } | null = null;
+  commands.onMessage = (message, ok) => (last = { message, ok });
+  return { store, commands, said: () => last };
 }
 
 const names = (doc: Doc): string[] => doc.shapes.map((sh) => sh.name);
@@ -64,21 +70,32 @@ function contiguous(doc: Doc): boolean {
 
 describe('grouping', () => {
   it('refuses fewer than two shapes', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     expect(commands.groupSelection()).toBe(false);
     select(store, 's0');
     expect(commands.groupSelection()).toBe(false);
     expect(store.state.doc.groups ?? []).toHaveLength(0);
+    expect(said()).toEqual({ message: 'Group needs two or more shapes selected.', ok: false });
   });
 
   it('puts the selected shapes in one group', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     select(store, 's0', 's1');
     expect(commands.groupSelection()).toBe(true);
     const doc = store.state.doc;
     expect(doc.groups).toHaveLength(1);
     expect(shapesInGroup(doc, doc.groups![0].id).map((sh) => sh.name)).toEqual(['s0', 's1']);
     expect(contiguous(doc)).toBe(true);
+    expect(said()).toEqual({ message: 'Grouped 2 shapes.', ok: true });
+  });
+
+  it('counts what it grouped rather than what was in the document', () => {
+    // Four shapes, three of them selected. A count read from the wrong array
+    // gives 4 and every other assertion here still passes.
+    const { store, commands, said } = editor(4);
+    select(store, 's0', 's1', 's2');
+    expect(commands.groupSelection()).toBe(true);
+    expect(said()!.message).toBe('Grouped 3 shapes.');
   });
 
   /* The reordering, which is the part that is not optional. Grouping the outermost
@@ -136,11 +153,27 @@ describe('grouping', () => {
 
 describe('ungrouping', () => {
   it('takes the shapes out and drops the group', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     select(store, 's0', 's1');
     commands.groupSelection();
     expect(commands.ungroupSelection()).toBe(true);
     expect(store.state.doc.groups ?? []).toHaveLength(0);
+    expect(store.state.doc.shapes.every((sh) => !sh.group)).toBe(true);
+    expect(said()).toEqual({ message: 'Ungrouped.', ok: true });
+  });
+
+  it('counts the groups it freed when there is more than one', () => {
+    /* Two groups, one press. The plain `Ungrouped.` is the singular branch, and
+       a selection spanning two groups is the only fixture that separates them. */
+    const { store, commands, said } = editor(4);
+    select(store, 's0', 's1');
+    commands.groupSelection();
+    select(store, 's2', 's3');
+    commands.groupSelection();
+
+    select(store, 's0', 's2');
+    expect(commands.ungroupSelection()).toBe(true);
+    expect(said()).toEqual({ message: 'Ungrouped 2 groups.', ok: true });
     expect(store.state.doc.shapes.every((sh) => !sh.group)).toBe(true);
   });
 
@@ -164,9 +197,18 @@ describe('ungrouping', () => {
   });
 
   it('refuses when nothing selected is in a group', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     select(store, 's0', 's1');
     expect(commands.ungroupSelection()).toBe(false);
+    expect(said()).toEqual({ message: 'Nothing selected is in a group.', ok: false });
+  });
+
+  it('says something different when nothing is selected at all', () => {
+    // Two refusals behind one `false`, and only the sentence tells you which
+    // of "you picked the wrong thing" and "you picked nothing" you are in.
+    const { commands, said } = editor();
+    expect(commands.ungroupSelection()).toBe(false);
+    expect(said()).toEqual({ message: 'Ungroup needs a shape selected.', ok: false });
   });
 
   it('moves nothing in the paint order', () => {
@@ -497,28 +539,41 @@ describe('selecting the group a shape is in', () => {
       .sort();
 
   it('refuses with nothing selected', () => {
-    const { commands } = editor();
+    const { commands, said } = editor();
     expect(commands.selectGroup()).toBe(false);
+    expect(said()).toEqual({ message: 'Select group needs a shape selected.', ok: false });
   });
 
   it('refuses when the selection is in no group', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     select(store, 's0');
     expect(commands.selectGroup()).toBe(false);
     expect(picked(store)).toEqual(['s0']);
+    expect(said()).toEqual({ message: 'Nothing selected is in a group.', ok: false });
+  });
+
+  it('refuses mid-drag, because widening hands the gesture shapes it never took', () => {
+    const { store, commands, said } = editor(3, true);
+    select(store, 's0', 's1');
+    expect(commands.groupSelection()).toBe(true);
+    select(store, 's0');
+    expect(commands.selectGroup()).toBe(false);
+    expect(picked(store)).toEqual(['s0']);
+    expect(said()).toEqual({ message: 'Finish the drag first.', ok: false });
   });
 
   it('widens one shape to the whole group', () => {
-    const { store, commands } = editor();
+    const { store, commands, said } = editor();
     select(store, 's0', 's1');
     commands.groupSelection();
     select(store, 's0');
     expect(commands.selectGroup()).toBe(true);
     expect(picked(store)).toEqual(['s0', 's1']);
+    expect(said()).toEqual({ message: 'Selected the group: 2 shapes.', ok: true });
   });
 
   it('goes one level further out on the next press', () => {
-    const { store, commands } = editor(3);
+    const { store, commands, said } = editor(3);
     /* Outer first, then a subset of it: that is the only way to nest here.
        `groupSelection` nests when every chosen shape is already in one group
        together, and otherwise puts the new group at the top -- so grouping the
@@ -534,9 +589,12 @@ describe('selecting the group a shape is in', () => {
     expect(picked(store)).toEqual(['s0', 's1']);
     expect(commands.selectGroup()).toBe(true);
     expect(picked(store)).toEqual(['s0', 's1', 's2']);
-    // And there is nowhere left to go.
+    // And there is nowhere left to go. A different sentence from the refusal
+    // above: this one means you are already at the top, not that there is no
+    // group to find.
     expect(commands.selectGroup()).toBe(false);
     expect(picked(store)).toEqual(['s0', 's1', 's2']);
+    expect(said()).toEqual({ message: 'That is already the whole group.', ok: false });
   });
 
   /* The level is read off the selection, so how you arrived at it cannot

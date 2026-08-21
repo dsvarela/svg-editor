@@ -38,11 +38,18 @@ function collisions(doc: Doc): [string, number][] {
 const SQUARE = 'M10 10 L40 10 L40 40 L10 40 Z';
 const OPEN = 'M10 10 L40 10 L40 40 L70 40';
 
-function editor(...paths: string[]): { store: Store; commands: Commands } {
+function editor(...paths: string[]): {
+  store: Store;
+  commands: Commands;
+  said: () => { message: string; ok: boolean } | null;
+} {
   const doc = emptyDoc();
   for (const d of paths) doc.shapes.push(shapeFromPath(d));
   const store = new Store(doc);
-  return { store, commands: new Commands(store, () => false) };
+  const commands = new Commands(store, () => false);
+  let last: { message: string; ok: boolean } | null = null;
+  commands.onMessage = (message, ok) => (last = { message, ok });
+  return { store, commands, said: () => last };
 }
 
 describe('breaking a path', () => {
@@ -66,11 +73,14 @@ describe('breaking a path', () => {
      property can hold while the document is still wrong -- and this is the thing
      a person would report. */
   it('leaves each new end selectable on its own', () => {
-    const { store, commands } = editor(SQUARE);
+    const { store, commands, said } = editor(SQUARE);
     const doc = store.state.doc;
     store.update((s) => s.selection.nodes.add(nodeIdAt(doc, doc.shapes[0].id, 0, 1)));
     expect(commands.breakAtSelection()).toBe(true);
     expect(collisions(store.state.doc)).toEqual([]);
+    // Opening a ring leaves one path; the two-piece sentence belongs to the
+    // open case below, and a closed fixture alone cannot tell them apart.
+    expect(said()).toEqual({ message: 'Opened the path at that node.', ok: true });
 
     // Pick either end and it resolves to exactly one position.
     const opened = store.state.doc.shapes[0].subpaths[0];
@@ -86,11 +96,23 @@ describe('breaking a path', () => {
 
 describe('duplicating a shape', () => {
   it('gives the copy nodes of its own', () => {
-    const { store, commands } = editor(SQUARE);
+    const { store, commands, said } = editor(SQUARE);
     store.update((s) => s.selection.shapes.add(s.doc.shapes[0].id));
     expect(commands.duplicateSelection()).toBe(true);
     expect(store.state.doc.shapes).toHaveLength(2);
     expect(collisions(store.state.doc)).toEqual([]);
+    /* Says nothing, and that is the decision rather than an omission: the copy
+       arrives offset by two grid steps and selected, so the screen has already
+       answered the question a sentence would. The refusal below does speak,
+       because nothing visible happens there. */
+    expect(said()).toBe(null);
+  });
+
+  it('refuses with nothing selected', () => {
+    const { store, commands, said } = editor(SQUARE);
+    expect(commands.duplicateSelection()).toBe(false);
+    expect(store.state.doc.shapes).toHaveLength(1);
+    expect(said()).toEqual({ message: 'Select a shape to duplicate.', ok: false });
   });
 
   /* The symptom that was reported: click one anchor of the copy and the original
@@ -129,19 +151,38 @@ describe('the clipboard', () => {
     });
 
   it('refuses a paste before anything has been copied', () => {
-    const { commands } = editor(SQUARE);
+    const { commands, said } = editor(SQUARE);
     expect(commands.canPaste).toBe(false);
     expect(commands.paste()).toBe(false);
+    expect(said()).toEqual({ message: 'Nothing copied yet.', ok: false });
+  });
+
+  it('refuses a copy with nothing selected', () => {
+    const { commands, said } = editor(SQUARE);
+    expect(commands.copySelection()).toBe(false);
+    expect(said()).toEqual({ message: 'Nothing selected to copy.', ok: false });
+  });
+
+  it('says pieces of path rather than shapes for a copied run of nodes', () => {
+    /* The two halves of the same sentence. A whole shape and a run of nodes
+       both land as shapes on the clipboard, so the count and the paste are
+       identical either way and only the noun says which you took. */
+    const { store, commands, said } = editor(SQUARE);
+    selectNodes(store, 0, 1);
+    expect(commands.copySelection()).toBe(true);
+    expect(said()).toEqual({ message: 'Copied 1 piece of path.', ok: true });
   });
 
   it('pastes a copied shape as a second shape with nodes of its own', () => {
-    const { store, commands } = editor(SQUARE);
+    const { store, commands, said } = editor(SQUARE);
     selectShape(store);
     expect(commands.copySelection()).toBe(true);
+    expect(said()).toEqual({ message: 'Copied 1 shape.', ok: true });
     expect(commands.canPaste).toBe(true);
     expect(commands.paste()).toBe(true);
     expect(store.state.doc.shapes).toHaveLength(2);
     expect(collisions(store.state.doc)).toEqual([]);
+    expect(said()).toEqual({ message: 'Pasted 1 shape.', ok: true });
   });
 
   /* The clipboard survives, so the copy can be put back more than once. Undoing

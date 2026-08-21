@@ -251,12 +251,27 @@ the same reason, and it applies to a hand edit just as much.
 **And it runs the other way, which is the direction that bites.** `mutate.mjs`
 rewrites the file it is measuring and puts it back between sites, so an edit
 made while a sweep is up is reverted by the sweep, silently, with the editor
-none the wiser. A sweep outlives the session that started it. Before touching
-`src/`, `pgrep -af mutate.mjs`; if one is up, kill it, then read `git diff src/`
-and put back whatever the sweep left. **There is no `--recover` flag**, and the
-line here claimed one until 2026-08-20: recovery is automatic, from a record in
-`tmpdir()`, on the next run that reaches the same working tree. Two edits were
-lost this way on 2026-08-19 and both had to be made twice.
+none the wiser. A sweep outlives the session that started it. **There is no
+`--recover` flag**, and the line here claimed one until 2026-08-20: recovery is
+automatic, from a record in `tmpdir()`, on the next run that reaches the same
+working tree. Two edits were lost this way on 2026-08-19 and both had to be made
+twice.
+
+**So a sweep gets its own worktree, and then neither direction can happen.**
+Three commands, and the main tree stays editable for the whole three hours a
+full-scope run takes:
+
+    git worktree add --detach <dir> HEAD
+    ln -s "$PWD/node_modules" <dir>/node_modules
+    cd <dir> && node tools/mutate.mjs <target>
+
+**Do not check for a running sweep with `pgrep` and no `-f`.** The process name
+is `node`; `mutate.mjs` is only in the argument list, so `pgrep -c mutate.mjs`
+prints `0` whatever is running. It printed `0` on 2026-08-21 for a sweep that
+then rewrote `src/tools/commands.ts` for eleven more minutes underneath a test
+run, and that is the seventh time a signal here has been worth nothing. Use
+`pgrep -af mutate.mjs`, and read `git status --porcelain src/` before believing
+any of it.
 
 **A flag `mutate.mjs` does not know is refused, and was silently dropped until
 2026-08-20.** Listing the sites is `--limit 0`; `--list` is not a flag, and it
@@ -311,15 +326,32 @@ sites the old one did.
 
 `docs/ARCHITECTURE.md` has the full argument under "Testing philosophy".
 
-**`src/tools/commands.ts` is the layer with the thinnest cover, and its number
-was read on 2026-08-21.** 249 of 427 sites survive, and the count is explained
-rather than scattered: **24 of `Commands`' 58 methods are called by no test at
-all**, which accounts for 143 of them; 64 more sit on a line returning the
-command's own boolean, which nothing asserted; 29 sit inside the sentence it
-writes. Every one of those methods has its geometry tested elsewhere, which is
-what hid it. `test/commands.test.ts` covers six of them and asserts all three of
-the document, the return value and the message. `docs/reviews/2026-08-21b.md`
-has the classes and the one defect it found.
+**`src/tools/commands.ts` was the layer with the thinnest cover.** 249 of 427
+sites survived on 2026-08-21, and the count was explained rather than scattered:
+**24 of `Commands`' 58 methods were called by no test at all**, which accounted
+for 143 of them; 64 more sat on a line returning the command's own boolean, which
+nothing asserted; 29 sat inside the sentence it writes.
+`docs/reviews/2026-08-21b.md` has the classes and the one defect it found. All
+three groups were closed on 2026-08-21, and `docs/reviews/2026-08-21c.md` has
+the second number.
+
+**Every sentence the layer writes is asserted, and five are asserted by nothing
+because nothing can reach them.** 105 strings across 58 methods is more than a
+reading can hold, so the check is mechanical: list the strings, grep `test/` for
+each. It found 42 unasserted. The five left are listed with their mechanisms in
+`2026-08-21c`, and each guards an assumption about another module rather than
+about the caller. **Strip comments from the test corpus before searching**: the
+comment explaining why those five have no test quotes all five, and the checker
+counted them as covered until it stopped reading its own excuses.
+
+**`src/main.ts` is loaded by `test/main.test.ts`, and that is all it is.** 4 019
+lines that nothing imported until 2026-08-21. `$` is
+`document.querySelector(sel) as T`, so a selector that misses is a `TypeError`
+at the first listener bound to it, and importing the module against a jsdom
+document built from `index.html` catches every renamed id in one go. It stubs
+`matchMedia`, `ResizeObserver` and `URL.createObjectURL`, and mocks the worker
+import. **It proves the app assembles and says nothing about what is painted**,
+because jsdom lays nothing out. Geometry stays in `npm run drive`.
 
 ## Writing
 

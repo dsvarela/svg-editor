@@ -28,9 +28,17 @@ import { describe, expect, it } from 'vitest';
 import { Store } from '../src/model/store';
 import { Commands } from '../src/tools/commands';
 import { emptyDoc, findShape, shapeFromPath } from '../src/model/doc';
-import type { Doc, Shape } from '../src/core/types';
+import { segmentAsCubic, segmentCount, segmentIsLine } from '../src/core/types';
+import { cubicAt } from '../src/core/bezier';
+import { segmentBend } from '../src/model/ops';
+import { clampLooseness } from '../src/core/bend';
+import type { Cubic, Doc, NodeContinuity, Shape, Subpath } from '../src/core/types';
 
 const SQUARE = 'M0 0 H40 V40 H0 Z';
+/** Open, four nodes, so a segment count is not the node count. */
+const ELL = 'M0 0 H40 V40 H80';
+/** One cubic, bowed, so a split can be checked for changing the curve. */
+const ARC = 'M0 0 C10 -20 30 -20 40 0';
 
 /** A store, its commands, and whatever the last message was. */
 function editor(doc: Doc): {
@@ -487,5 +495,1252 @@ describe('landing a finished trace', () => {
     );
     expect(said()!.ok).toBe(false);
     expect(said()!.message).toMatch(/noise floor/);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The methods no test named at all.
+ *
+ * The 2026-08-21 sweep found 24 of `Commands`' 58 methods with no test caller,
+ * carrying 143 of the 249 survivors between them. Six were covered above. What
+ * follows is the rest, and it keeps the same three assertions: the document,
+ * the boolean, and the sentence.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * How far the point at `t` of `seg` is from the point at `u` of `curve`.
+ *
+ * Two curves are compared through their parameters and never through a cloud of
+ * samples. A sampled comparison has a floor: `ARC` leaves its first node at
+ * three times the handle's length, so 200 samples sit up to 0.167 apart there,
+ * and nothing measured against them can resolve better than half of that. That
+ * is coarse enough to call a split that visibly moved the curve exact.
+ */
+const gap = (seg: Cubic, t: number, curve: Cubic, u: number): number => {
+  const p = cubicAt(seg, t);
+  const q = cubicAt(curve, u);
+  return Math.hypot(p[0] - q[0], p[1] - q[1]);
+};
+
+const sub = (store: Store, name: string): Subpath => named(store.state.doc, name)!.subpaths[0];
+
+describe('inserting a node between two selected nodes', () => {
+  it('adds one node to the segment they name and selects it', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.insertInSelection()).toBe(true);
+
+    const sp = sub(store, 'p');
+    expect(sp.nodes).toHaveLength(5);
+    // Between the two that were picked, at the middle of their segment.
+    expect(sp.nodes[2].pt).toEqual([40, 20]);
+    expect(store.state.selection.nodes.size).toBe(1);
+    expect(store.state.selection.nodes.has(sp.nodes[2].id)).toBe(true);
+    expect(said()).toEqual({ message: 'Node inserted, and the curve is unchanged.', ok: true });
+  });
+
+  it('leaves the curve where it was, which is what the message claims', () => {
+    /* The claim is about geometry, so it is measured rather than trusted: a
+       split that moved the curve would still add a node, still return true and
+       still say this.
+
+       The two halves are checked against the parameters they came from -- the
+       first half's `t` against `t / 2` of the original, the second's against
+       `0.5 + t / 2`. That is exact where a sampled comparison is not, and it
+       pins the split to the middle at the same time: a split at any other `t`
+       fails this while tracing the identical curve. */
+    const { store, commands } = editor(withShapes(['p', ARC]));
+    const whole = segmentAsCubic(sub(store, 'p'), 0);
+    selectNodes(store, 'p', 0, 1);
+    expect(commands.insertInSelection()).toBe(true);
+
+    const sp = sub(store, 'p');
+    expect(segmentCount(sp)).toBe(2);
+    const [first, second] = [segmentAsCubic(sp, 0), segmentAsCubic(sp, 1)];
+    for (let k = 0; k <= 40; k++) {
+      const t = k / 40;
+      expect(gap(first, t, whole, t / 2)).toBeLessThan(1e-9);
+      expect(gap(second, t, whole, 0.5 + t / 2)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('treats the closing segment as a segment like any other', () => {
+    // Last node and first are neighbours on a closed path, so the pair that
+    // wraps names the closing segment rather than nothing.
+    const { store, commands } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0, 3);
+    expect(commands.insertInSelection()).toBe(true);
+    const sp = sub(store, 'p');
+    expect(sp.nodes).toHaveLength(5);
+    expect(sp.nodes[4].pt).toEqual([0, 20]);
+  });
+
+  it('refuses the same pair on an open path, where they are two ends', () => {
+    /* The fixture the `sp.closed` term needs. Nodes 0 and 3 of `ELL` are as far
+       apart as nodes 0 and 3 of `SQUARE`; only the flag says whether they touch,
+       so a version that dropped it passes the test above and fails this one. */
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 3);
+    expect(commands.insertInSelection()).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({
+      message: 'Those two nodes are not the ends of one segment.',
+      ok: false,
+    });
+  });
+
+  it('refuses two nodes with a third between them', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 2);
+    expect(commands.insertInSelection()).toBe(false);
+    expect(said()!.message).toBe('Those two nodes are not the ends of one segment.');
+  });
+
+  it('refuses anything that is not exactly two nodes', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    expect(commands.insertInSelection()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Select the two nodes either side of a segment.',
+      ok: false,
+    });
+  });
+
+  it('refuses two nodes on different shapes', () => {
+    const { store, commands, said } = editor(withShapes(['a', ELL], ['b', 'M0 60 H40']));
+    store.update((s) => {
+      s.selection.shapes.clear();
+      s.selection.nodes.clear();
+      s.selection.nodes.add(named(s.doc, 'a')!.subpaths[0].nodes[0].id);
+      s.selection.nodes.add(named(s.doc, 'b')!.subpaths[0].nodes[0].id);
+    });
+    expect(commands.insertInSelection()).toBe(false);
+    expect(said()!.message).toBe('Select the two nodes either side of a segment.');
+  });
+});
+
+describe('fusing nodes together', () => {
+  it('welds a chosen pair and says how far each moved', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.fuseSelection()).toBe(true);
+
+    const sp = sub(store, 'p');
+    expect(sp.nodes).toHaveLength(3);
+    // The weld lands midway between the two, so each travelled half the chord.
+    expect(sp.nodes[1].pt).toEqual([40, 20]);
+    expect(said()).toEqual({ message: 'Fused the two nodes. Each moved 20 to meet.', ok: true });
+    // Nothing is left selected: the two nodes it named no longer both exist.
+    expect(store.state.selection.nodes.size).toBe(0);
+  });
+
+  it('says they were already together when the distance is zero', () => {
+    // The other branch of the same sentence, which needs a path carrying a
+    // zero-length segment to reach.
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40 H40 V40']));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.fuseSelection()).toBe(true);
+    expect(said()).toEqual({
+      message: 'Fused the two nodes. They were already on the same point.',
+      ok: true,
+    });
+  });
+
+  it('refuses two nodes that are not neighbours', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 2);
+    expect(commands.fuseSelection()).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({
+      message: 'Fuse needs two nodes next to each other along the path.',
+      ok: false,
+    });
+  });
+
+  it('points at Merge ends for the two ends of an open path', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40']));
+    selectNodes(store, 'p', 0, 1);
+    expect(commands.fuseSelection()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Those are the two ends of the path. Merge ends welds them.',
+      ok: false,
+    });
+  });
+
+  it('refuses a pair on two different paths', () => {
+    const { store, commands, said } = editor(withShapes(['a', ELL], ['b', 'M0 60 H40']));
+    store.update((s) => {
+      s.selection.shapes.clear();
+      s.selection.nodes.clear();
+      s.selection.nodes.add(named(s.doc, 'a')!.subpaths[0].nodes[0].id);
+      s.selection.nodes.add(named(s.doc, 'b')!.subpaths[0].nodes[0].id);
+    });
+    expect(commands.fuseSelection()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Fuse works within one path. Those two nodes are on different ones.',
+      ok: false,
+    });
+  });
+
+  it('sweeps a whole shape for zero-length segments, and counts them', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40 H40 V40 V40 H0 Z']));
+    select(store, 'p');
+    expect(commands.fuseSelection()).toBe(true);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({ message: 'Fused 2 zero-length segments away.', ok: true });
+  });
+
+  it('says segment rather than segments when there is one', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40 H40 V40 H0 Z']));
+    select(store, 'p');
+    expect(commands.fuseSelection()).toBe(true);
+    expect(said()!.message).toBe('Fused 1 zero-length segment away.');
+  });
+
+  it('says so when a swept shape has nothing degenerate in it', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.fuseSelection()).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({ message: 'No two nodes there sit on the same point.', ok: false });
+  });
+
+  it('refuses with nothing selected', () => {
+    const { commands, said } = editor(withShapes(['p', SQUARE]));
+    expect(commands.fuseSelection()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Select two adjacent nodes, or a shape to sweep.',
+      ok: false,
+    });
+  });
+});
+
+describe('fitting a selection to the pixel lattice', () => {
+  const offGrid = (width: number): Doc => {
+    const doc = withShapes(['sq', 'M0 0 H40 V40 H0 Z']);
+    doc.shapes[0].style = { ...doc.shapes[0].style, stroke: '#000', strokeWidth: width };
+    return doc;
+  };
+
+  it('puts a 1-wide stroke on half pixels, where its painted edges are whole', () => {
+    const { store, commands, said } = editor(offGrid(1));
+    select(store, 'sq');
+    expect(commands.fitToPixels()).toBe(true);
+    expect(sub(store, 'sq').nodes.map((n) => n.pt)).toEqual([
+      [0.5, 0.5],
+      [40.5, 0.5],
+      [40.5, 40.5],
+      [0.5, 40.5],
+    ]);
+    expect(said()).toEqual({
+      message: 'Fitted 4 nodes to half pixels. The furthest moved 0.707.',
+      ok: true,
+    });
+  });
+
+  it('puts a 2-wide stroke on whole pixels instead', () => {
+    /* The phase is read from the stroke and not fixed, so the same shape lands
+       half a unit away under a different width. A fixture at one width cannot
+       tell a computed phase from a hardcoded one. */
+    const doc = offGrid(2);
+    doc.shapes[0].subpaths[0].nodes.forEach((n) => (n.pt = [n.pt[0] + 0.4, n.pt[1] + 0.4]));
+    const { store, commands, said } = editor(doc);
+    select(store, 'sq');
+    expect(commands.fitToPixels()).toBe(true);
+    expect(sub(store, 'sq').nodes[0].pt).toEqual([0, 0]);
+    expect(said()!.message).toMatch(/^Fitted 4 nodes to whole pixels\./);
+  });
+
+  it('carries handles along, so a curve keeps its shape', () => {
+    const doc = withShapes(['c', ARC]);
+    doc.shapes[0].style = { ...doc.shapes[0].style, stroke: '#000', strokeWidth: 2 };
+    const { store, commands } = editor(doc);
+    // Both anchors off the lattice, so both have to move. Only the anchors:
+    // the handles stay where they were, which is what makes each reach below a
+    // number the fit has to preserve rather than a number it already had.
+    store.update((s) => {
+      const ns = s.doc.shapes[0].subpaths[0].nodes;
+      ns[0].pt = [0.3, 0.3];
+      ns[1].pt = [39.7, 0.4];
+    });
+
+    const before = sub(store, 'c');
+    const reach = (sp: Subpath): number[] => [
+      sp.nodes[0].hOut![0] - sp.nodes[0].pt[0],
+      sp.nodes[0].hOut![1] - sp.nodes[0].pt[1],
+      sp.nodes[1].hIn![0] - sp.nodes[1].pt[0],
+      sp.nodes[1].hIn![1] - sp.nodes[1].pt[1],
+    ];
+    const was = reach(before);
+
+    select(store, 'c');
+    expect(commands.fitToPixels()).toBe(true);
+    const sp = sub(store, 'c');
+    expect(sp.nodes[0].pt).toEqual([0, 0]);
+    expect(sp.nodes[1].pt).toEqual([40, 0]);
+    // Each handle sits where it sat relative to its own anchor: the anchors
+    // moved and the curve was carried, not flattened towards the grid.
+    reach(sp).forEach((v, i) => expect(v).toBeCloseTo(was[i], 9));
+  });
+
+  it('refuses a selection whose stroke widths disagree', () => {
+    const doc = offGrid(1);
+    const second = shapeFromPath('M60 0 H100 V40 H60 Z');
+    second.name = 'other';
+    second.style = { ...second.style, stroke: '#000', strokeWidth: 2 };
+    doc.shapes.push(second);
+    const { store, commands, said } = editor(doc);
+    select(store, 'sq', 'other');
+    expect(commands.fitToPixels()).toBe(false);
+    expect(sub(store, 'sq').nodes[0].pt).toEqual([0, 0]);
+    expect(said()).toEqual({
+      message:
+        'Those shapes have different stroke widths, so no one lattice fits them all. Fit them one at a time.',
+      ok: false,
+    });
+  });
+
+  it('refuses with nothing selected', () => {
+    const { commands, said } = editor(offGrid(1));
+    expect(commands.fitToPixels()).toBe(false);
+    expect(said()).toEqual({ message: 'Select a shape, or some of its nodes, to fit.', ok: false });
+  });
+
+  it('says so when everything is already on the lattice', () => {
+    const doc = offGrid(1);
+    doc.shapes[0].subpaths[0].nodes.forEach((n) => (n.pt = [n.pt[0] + 0.5, n.pt[1] + 0.5]));
+    const { store, commands, said } = editor(doc);
+    select(store, 'sq');
+    expect(commands.fitToPixels()).toBe(false);
+    expect(said()).toEqual({ message: 'Already on the pixel grid. Nothing to move.', ok: false });
+  });
+});
+
+describe('clearing the guides', () => {
+  it('removes them all in one step and counts what went', () => {
+    const { store, commands, said } = editor(emptyDoc());
+    commands.addGuideAt('x', 10);
+    commands.addGuideAt('y', 20);
+    expect(commands.clearGuides()).toBe(true);
+    expect(store.state.guides).toHaveLength(0);
+    expect(said()).toEqual({ message: 'Removed 2 guides.', ok: true });
+  });
+
+  it('says guide rather than guides when there is one', () => {
+    const { commands, said } = editor(emptyDoc());
+    commands.addGuideAt('x', 10);
+    expect(commands.clearGuides()).toBe(true);
+    expect(said()!.message).toBe('Removed 1 guide.');
+  });
+
+  it('refuses with no guides, and says nothing rather than Removed 0', () => {
+    const { commands, said } = editor(emptyDoc());
+    expect(commands.clearGuides()).toBe(false);
+    expect(said()).toBe(null);
+  });
+});
+
+describe('where the angle rays come from', () => {
+  it('pins them to the middle of the selection and turns angle snap on', () => {
+    const { store, commands, said } = editor(withShapes(['sq', SQUARE]));
+    select(store, 'sq');
+    expect(commands.setAngleOrigin()).toBe(true);
+    expect(store.state.angleOrigin).toEqual([20, 20]);
+    expect(store.state.snapToAngles).toBe(true);
+    expect(said()).toEqual({ message: 'Angles from 20, 20.', ok: true });
+  });
+
+  it('takes the middle of the box and not the first node', () => {
+    /* `SQUARE` starts at the origin, so a centre computed as `(x0 + x1) / 2`
+       and one computed as `x0` differ by 20 there and by nothing at all if the
+       fixture were symmetric about zero. This one is placed away from both. */
+    const { store, commands } = editor(withShapes(['r', 'M10 30 H50 V70 H10 Z']));
+    select(store, 'r');
+    commands.setAngleOrigin();
+    expect(store.state.angleOrigin).toEqual([30, 50]);
+  });
+
+  it('refuses with nothing selected and leaves the old origin alone', () => {
+    const { store, commands, said } = editor(withShapes(['sq', SQUARE]));
+    store.update((s) => (s.angleOrigin = [7, 7]));
+    expect(commands.setAngleOrigin()).toBe(false);
+    expect(store.state.angleOrigin).toEqual([7, 7]);
+    expect(said()).toEqual({ message: 'Select something to put the origin on.', ok: false });
+  });
+
+  it('goes back to the gesture when cleared', () => {
+    const { store, commands, said } = editor(withShapes(['sq', SQUARE]));
+    select(store, 'sq');
+    commands.setAngleOrigin();
+    commands.clearAngleOrigin();
+    expect(store.state.angleOrigin).toBe(null);
+    expect(said()).toEqual({ message: 'Angles from wherever a gesture starts.', ok: true });
+  });
+});
+
+describe('typing a node’s coordinates', () => {
+  it('moves the axis it was given and leaves the other one', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    commands.setNodeCoord('anchor', 0, 12);
+    expect(sub(store, 'p').nodes[1].pt).toEqual([12, 0]);
+    commands.setNodeCoord('anchor', 1, 5);
+    expect(sub(store, 'p').nodes[1].pt).toEqual([12, 5]);
+  });
+
+  it('creates a handle that does not exist yet', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    expect(sub(store, 'p').nodes[1].hOut).toBe(null);
+    selectNodes(store, 'p', 1);
+    commands.setNodeCoord('out', 1, -10);
+    const h = sub(store, 'p').nodes[1].hOut;
+    expect(h).not.toBe(null);
+    // The axis asked for is the one typed; the other comes from where the
+    // hollow ghost already sat.
+    expect(h![1]).toBe(-10);
+  });
+
+  it('ignores a value that is not a number', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    commands.setNodeCoord('anchor', 0, Number.NaN);
+    expect(sub(store, 'p').nodes[1].pt).toEqual([40, 0]);
+  });
+
+  it('does nothing unless exactly one node is selected', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    commands.setNodeCoord('anchor', 0, 12);
+    expect(sub(store, 'p').nodes[1].pt).toEqual([40, 0]);
+    expect(sub(store, 'p').nodes[2].pt).toEqual([40, 40]);
+  });
+});
+
+describe('what the inspector counts', () => {
+  it('counts a whole shape’s nodes when the shape is what is selected', () => {
+    const { store, commands } = editor(withShapes(['a', SQUARE], ['b', ELL]));
+    select(store, 'a');
+    expect(commands.selectionCount()).toBe(4);
+    select(store, 'a', 'b');
+    expect(commands.selectionCount()).toBe(8);
+  });
+
+  it('counts a shape and one of its own nodes once, not twice', () => {
+    /* The two branches answer by different routes -- a sum for shapes alone, a
+       deduped list once a node is named -- and this is the case that separates
+       them. A fixture selecting only shapes, or only nodes, cannot. */
+    const { store, commands } = editor(withShapes(['a', SQUARE]));
+    store.update((s) => {
+      s.selection.shapes.add(s.doc.shapes[0].id);
+      s.selection.nodes.add(s.doc.shapes[0].subpaths[0].nodes[0].id);
+    });
+    expect(commands.selectionCount()).toBe(4);
+  });
+
+  it('names the single selected node, and nothing when there are two', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 2);
+    const one = commands.singleSelectedNode();
+    expect(one?.node.pt).toEqual([40, 40]);
+    expect(one?.ref.i).toBe(2);
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.singleSelectedNode()).toBe(null);
+  });
+
+  it('counts nodes and segments over the whole drawing', () => {
+    /* Closed and open together, because a closed subpath has as many segments
+       as nodes and an open one has one fewer. With only closed shapes the two
+       counts agree and either could stand in for the other. */
+    const { commands } = editor(withShapes(['sq', SQUARE], ['l', ELL]));
+    expect(commands.countNodes()).toBe(8);
+    expect(commands.countSegments()).toBe(7);
+  });
+});
+
+describe('the active segment and its bend', () => {
+  it('names the one segment both of whose ends are selected', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.activeSegment()).toMatchObject({ sp: 0, seg: 1 });
+  });
+
+  it('names nothing when two segments qualify', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 1, 2);
+    expect(commands.activeSegment()).toBe(null);
+  });
+
+  it('names nothing for a single node, which is half a segment', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    expect(commands.activeSegment()).toBe(null);
+  });
+
+  it('sets the bend it is given, and reads it back', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 1);
+    commands.setActiveBend({ angle: 30, looseness: 1.2 });
+    const bend = segmentBend(sub(store, 'p'), 0);
+    expect(bend!.angle).toBeCloseTo(30, 6);
+    expect(bend!.looseness).toBeCloseTo(1.2, 6);
+  });
+
+  it('does nothing when no one segment is active', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 1, 2);
+    commands.setActiveBend({ angle: 30, looseness: 1.2 });
+    expect(segmentIsLine(sub(store, 'p'), 0)).toBe(true);
+  });
+
+  it('nudges the angle and holds looseness at the floor', () => {
+    /* A straight segment reads as angle 0, looseness 1, so a nudge of -5 asks
+       for -4 and must arrive at the floor instead. The floor is module-private
+       on purpose; what is asserted here is that this method goes through the
+       clamp rather than writing the sum. */
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 1);
+    commands.adjustBend(15, -5);
+    const bend = segmentBend(sub(store, 'p'), 0);
+    expect(bend!.angle).toBeCloseTo(15, 6);
+    expect(bend!.looseness).toBeCloseTo(clampLooseness(1 - 5), 9);
+  });
+
+  it('leaves bend mode by making the two handles genuinely unequal', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 1);
+    commands.setActiveBend({ angle: 30, looseness: 1 });
+    expect(segmentBend(sub(store, 'p'), 0)).not.toBe(null);
+    const before = sub(store, 'p').nodes[0].hOut!.slice() as [number, number];
+
+    commands.freeActiveSegment();
+    expect(segmentBend(sub(store, 'p'), 0)).toBe(null);
+    expect(segmentIsLine(sub(store, 'p'), 0)).toBe(false);
+
+    /* And how far it moved, which is the half that matters. The method's whole
+       argument is that a tenth of a percent is below what the eye can see and
+       above what `bendOf` calls symmetric, so "the bend is gone" is true of any
+       displacement at all and says nothing about this one. */
+    const after = sub(store, 'p').nodes[0].hOut!;
+    const anchor = sub(store, 'p').nodes[0].pt;
+    const reach = Math.hypot(before[0] - anchor[0], before[1] - anchor[1]);
+    const moved = Math.hypot(after[0] - before[0], after[1] - before[1]);
+    expect(moved).toBeCloseTo(reach * 0.001, 9);
+  });
+
+  it('does not leave bend mode on a segment that was never in it', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    // Free handles: an `hOut` with no matching `hIn` is not a bend.
+    store.edit((s) => (s.doc.shapes[0].subpaths[0].nodes[1].hOut = [50, 10]));
+    const before = sub(store, 'p').nodes[1].hOut!.slice();
+    commands.freeActiveSegment();
+    expect(sub(store, 'p').nodes[1].hOut).toEqual(before);
+  });
+});
+
+describe('sliding a node along the curve it splits', () => {
+  /** A cubic split in two, which is the shape a slid node lives on. */
+  const split = (): { store: Store; commands: Commands; arc: Cubic } => {
+    const e = editor(withShapes(['p', ARC]));
+    const arc = segmentAsCubic(e.store.state.doc.shapes[0].subpaths[0], 0);
+    selectNodes(e.store, 'p', 0, 1);
+    e.commands.insertInSelection();
+    return { store: e.store, commands: e.commands, arc };
+  };
+
+  it('names the middle node’s parent curve', () => {
+    const { store, commands } = split();
+    selectNodes(store, 'p', 1);
+    expect(commands.activeSlide()?.ref.i).toBe(1);
+  });
+
+  it('names nothing for an end of an open path', () => {
+    const { store, commands } = split();
+    selectNodes(store, 'p', 0);
+    expect(commands.activeSlide()).toBe(null);
+  });
+
+  it('names nothing for a whole shape or for two nodes', () => {
+    const { store, commands } = split();
+    select(store, 'p');
+    expect(commands.activeSlide()).toBe(null);
+    selectNodes(store, 'p', 0, 1);
+    expect(commands.activeSlide()).toBe(null);
+  });
+
+  it('puts the node where the percentage says, on the curve it came from', () => {
+    /* Against the parent's own parameter, not against a cloud of samples. The
+       node splits `ARC` in two and the split was exact, so the curve it slides
+       along is `ARC` and 25% of it is `cubicAt(arc, 0.25)` to float error. A
+       sampled comparison would accept anything within about 0.04 of that. */
+    const { store, commands, arc } = split();
+    selectNodes(store, 'p', 1);
+    commands.slideActiveTo(25);
+
+    const moved = sub(store, 'p').nodes[1].pt;
+    const want = cubicAt(arc, 0.25);
+    expect(Math.hypot(moved[0] - want[0], moved[1] - want[1])).toBeLessThan(1e-6);
+    // And a quarter along rather than the half it was split at.
+    expect(moved[0]).toBeLessThan(20);
+  });
+
+  it('holds the node clear of the end it was sent to', () => {
+    /* Zero percent is a node on top of its neighbour, which is the zero-length
+       segment nothing can simplify again. `clampSlide` is what stops it, and it
+       is the same margin the drag obeys. */
+    const { store, commands } = split();
+    selectNodes(store, 'p', 1);
+    commands.slideActiveTo(0);
+    const sp = sub(store, 'p');
+    const gap = Math.hypot(sp.nodes[1].pt[0] - sp.nodes[0].pt[0], sp.nodes[1].pt[1] - sp.nodes[0].pt[1]);
+    expect(gap).toBeGreaterThan(0);
+  });
+
+  it('does nothing when nothing can slide', () => {
+    const { store, commands } = split();
+    selectNodes(store, 'p', 0);
+    const before = sub(store, 'p').nodes[0].pt.slice();
+    commands.slideActiveTo(50);
+    expect(sub(store, 'p').nodes[0].pt).toEqual(before);
+  });
+});
+
+describe('curving and straightening the selected segments', () => {
+  it('curves only the segment whose two ends are both selected', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    commands.setSelectedSegmentsCurved(true);
+
+    const sp = sub(store, 'p');
+    expect(segmentIsLine(sp, 1)).toBe(false);
+    // The segments trailing off either end have one selected node each, which
+    // is not enough to say which segment was meant.
+    expect(segmentIsLine(sp, 0)).toBe(true);
+    expect(segmentIsLine(sp, 2)).toBe(true);
+  });
+
+  it('straightens the same segment back', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    commands.setSelectedSegmentsCurved(true);
+    commands.setSelectedSegmentsCurved(false);
+    expect(segmentIsLine(sub(store, 'p'), 1)).toBe(true);
+  });
+
+  it('curves every segment of a shape that is selected whole', () => {
+    const { store, commands } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    commands.setSelectedSegmentsCurved(true);
+    const sp = sub(store, 'p');
+    expect([0, 1, 2, 3].every((i) => !segmentIsLine(sp, i))).toBe(true);
+  });
+
+  it('does nothing with no nodes named', () => {
+    const { store, commands } = editor(withShapes(['p', ELL]));
+    commands.setSelectedSegmentsCurved(true);
+    expect(segmentIsLine(sub(store, 'p'), 1)).toBe(true);
+  });
+});
+
+describe('tracing the backdrop', () => {
+  /** Two flat colours side by side, which is what this tracer is for. */
+  const raster = (): { data: number[]; width: number; height: number } => {
+    const w = 12;
+    const h = 12;
+    const data: number[] = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) data.push(x < 6 ? 255 : 0, 0, x < 6 ? 0 : 255, 255);
+    }
+    return { data, width: w, height: h };
+  };
+
+  const withBackdrop = (): ReturnType<typeof editor> => {
+    const e = editor(emptyDoc());
+    e.store.update((s) => {
+      s.backdrop = {
+        src: 'data:,',
+        name: 'ref.png',
+        x: 4,
+        y: 8,
+        w: 24,
+        h: 24,
+        naturalW: 12,
+        naturalH: 12,
+        opacity: 1,
+        visible: true,
+        locked: true,
+      };
+    });
+    return e;
+  };
+
+  it('traces the image into shapes at the backdrop’s placement', () => {
+    const { store, commands, said } = withBackdrop();
+    expect(commands.traceBackdrop(raster(), { colours: 4, tolerance: 1, minPoints: 4 })).toBe(true);
+
+    expect(store.state.doc.shapes.length).toBeGreaterThan(0);
+    expect(said()!.ok).toBe(true);
+    expect(said()!.message).toMatch(/^Traced \d+ colours? into \d+ paths?: \d+ nodes fitted to \d+\.$/);
+
+    /* The placement it traced into is the backdrop's, not the image's pixel
+       box. A tracer wired to the raster's own 12 by 12 would put every shape in
+       the top-left corner, and every assertion about shape count would pass. */
+    const xs = store.state.doc.shapes.flatMap((sh) =>
+      sh.subpaths.flatMap((sp) => sp.nodes.map((n) => n.pt[0])),
+    );
+    const ys = store.state.doc.shapes.flatMap((sh) =>
+      sh.subpaths.flatMap((sp) => sp.nodes.map((n) => n.pt[1])),
+    );
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(4 - 1e-6);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(28 + 1e-6);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(8 - 1e-6);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(32 + 1e-6);
+  });
+
+  it('refuses with no backdrop loaded', () => {
+    const { store, commands, said } = editor(emptyDoc());
+    expect(commands.traceBackdrop(raster(), { colours: 4, tolerance: 1, minPoints: 4 })).toBe(false);
+    expect(store.state.doc.shapes).toHaveLength(0);
+    expect(said()).toEqual({ message: 'Load an image in the Backdrop panel first.', ok: false });
+  });
+
+  it('says so when every region fell below the noise floor', () => {
+    const { store, commands, said } = withBackdrop();
+    expect(commands.traceBackdrop(raster(), { colours: 4, tolerance: 1, minPoints: 9999 })).toBe(
+      false,
+    );
+    expect(store.state.doc.shapes).toHaveLength(0);
+    expect(said()!.message).toMatch(/noise floor/);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The sentences.
+ *
+ * 29 of the 249 survivors sat inside a message and 64 on the boolean beside
+ * one, because the tests that ran these methods read the document alone. What
+ * a refusal SAYS is the whole of what separates two refusals that both return
+ * `false` and both leave the drawing exactly as it was.
+ *
+ * `scratchpad/msgcheck.mjs` in the review of 2026-08-21c is what found them:
+ * it lists every string this class writes and greps `test/` for it. 42 of 105
+ * were asserted by nothing.
+ * ------------------------------------------------------------------------ */
+
+describe('placing a guide by number', () => {
+  it('places one and turns the guides on', () => {
+    const { store, commands, said } = editor(emptyDoc());
+    store.update((s) => (s.showGuides = false));
+    expect(commands.addGuideAt('x', 12.5)).toBe(true);
+    expect(store.state.guides).toEqual([{ axis: 'x', at: 12.5 }]);
+    // Placing one you cannot see would be the same as not placing it.
+    expect(store.state.showGuides).toBe(true);
+    expect(said()).toEqual({ message: 'Guide at x = 12.5.', ok: true });
+  });
+
+  it('refuses a second guide on the same line, and says which line', () => {
+    const { store, commands, said } = editor(emptyDoc());
+    commands.addGuideAt('y', 40);
+    expect(commands.addGuideAt('y', 40)).toBe(false);
+    expect(store.state.guides).toHaveLength(1);
+    expect(said()).toEqual({ message: 'There is already a guide at y = 40.', ok: false });
+    // The same number on the other axis is a different line.
+    expect(commands.addGuideAt('x', 40)).toBe(true);
+  });
+});
+
+describe('what breaking a path says', () => {
+  it('names the two pieces when the path was open', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    expect(commands.breakAtSelection()).toBe(true);
+    expect(sub(store, 'p').nodes).toHaveLength(2);
+    expect(named(store.state.doc, 'p')!.subpaths).toHaveLength(2);
+    expect(said()).toEqual({ message: 'Broke the path into two.', ok: true });
+  });
+
+  it('refuses a node that is already an end', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0);
+    expect(commands.breakAtSelection()).toBe(false);
+    expect(named(store.state.doc, 'p')!.subpaths).toHaveLength(1);
+    expect(said()).toEqual({ message: 'That node already ends the path.', ok: false });
+  });
+
+  it('refuses anything but exactly one node', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.breakAtSelection()).toBe(false);
+    expect(said()).toEqual({ message: 'Break needs exactly one node selected.', ok: false });
+  });
+});
+
+describe('what joining two ends says', () => {
+  /** Two open paths whose near ends are a short way apart. */
+  const twoEnds = (): Doc => withShapes(['a', 'M0 0 H20'], ['b', 'M30 0 H50']);
+
+  const pickEnds = (store: Store): void =>
+    store.update((s) => {
+      s.selection.shapes.clear();
+      s.selection.nodes.clear();
+      s.selection.nodes.add(named(s.doc, 'a')!.subpaths[0].nodes[1].id);
+      s.selection.nodes.add(named(s.doc, 'b')!.subpaths[0].nodes[0].id);
+    });
+
+  it('names the segment it drew when connecting', () => {
+    const { store, commands, said } = editor(twoEnds());
+    pickEnds(store);
+    expect(commands.joinSelection('connect')).toBe(true);
+    expect(store.state.doc.shapes).toHaveLength(1);
+    expect(said()).toEqual({ message: 'Connected the two ends with a segment.', ok: true });
+  });
+
+  it('names the weld when merging, which is the other operation', () => {
+    /* Same selection, same `true`, one shape either way. The two differ by a
+       node -- connect keeps both ends, merge makes them one -- and by the
+       sentence, which is what tells you which button you pressed. */
+    const { store, commands, said } = editor(twoEnds());
+    pickEnds(store);
+    expect(commands.joinSelection('merge')).toBe(true);
+    expect(said()).toEqual({ message: 'Merged the two ends into one node.', ok: true });
+    expect(named(store.state.doc, 'a')!.subpaths[0].nodes).toHaveLength(3);
+  });
+
+  it('says the path closed when both ends are its own', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 3);
+    expect(commands.joinSelection('connect')).toBe(true);
+    expect(sub(store, 'p').closed).toBe(true);
+    expect(said()).toEqual({ message: 'Closed the path.', ok: true });
+  });
+
+  it('refuses to close a path with too few nodes to draw one', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H20']));
+    selectNodes(store, 'p', 0, 1);
+    expect(commands.joinSelection('merge')).toBe(false);
+    expect(sub(store, 'p').closed).toBe(false);
+    expect(said()).toEqual({ message: 'That path is too short to close.', ok: false });
+  });
+
+  it('names the verb the caller asked for when the count is wrong', () => {
+    // One method, two buttons. The refusal has to name the one that was pressed.
+    const { store, commands, said } = editor(twoEnds());
+    selectNodes(store, 'a', 0);
+    expect(commands.joinSelection('merge')).toBe(false);
+    expect(said()!.message).toBe('Merge needs exactly two nodes selected.');
+    expect(commands.joinSelection('connect')).toBe(false);
+    expect(said()!.message).toBe('Connect needs exactly two nodes selected.');
+  });
+
+  it('refuses two nodes that are not free ends', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1, 2);
+    expect(commands.joinSelection('connect')).toBe(false);
+    expect(said()!.message).toBe(
+      'Connect needs two free ends. Both nodes have to start or finish an open path.',
+    );
+  });
+
+  it('refuses a pair where only one of the two is a free end', () => {
+    /* The fixture the `||` in that guard needs. With two interior nodes the
+       test above passes under `&&` as well, because both halves are true; only
+       a mixed pair separates "either is not an end" from "neither is". */
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0, 2);
+    expect(commands.joinSelection('connect')).toBe(false);
+    expect(named(store.state.doc, 'p')!.subpaths[0].closed).toBe(false);
+    expect(said()!.message).toBe(
+      'Connect needs two free ends. Both nodes have to start or finish an open path.',
+    );
+  });
+});
+
+describe('what simplify and keep say', () => {
+  it('refuses a tolerance that is not a number', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.simplifySelection(Number.NaN)).toBe(false);
+    expect(said()).toEqual({
+      message: 'Within has to be a number, and not a negative one.',
+      ok: false,
+    });
+    expect(commands.simplifySelection(-1)).toBe(false);
+  });
+
+  it('tells you to raise Within when a positive tolerance gave up nothing', () => {
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40']));
+    select(store, 'p');
+    expect(commands.simplifySelection(0.5)).toBe(false);
+    expect(said()).toEqual({
+      message: 'Nothing to simplify. Raise Within to give up more of the shape.',
+      ok: false,
+    });
+  });
+
+  it('says something different at a tolerance of zero', () => {
+    /* Zero is not a refusal, it is "move nothing", so the sentence has to
+       explain that every node is load-bearing rather than that nothing fitted.
+       Both branches return `false` and leave the path alone. */
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40']));
+    select(store, 'p');
+    expect(commands.simplifySelection(0)).toBe(false);
+    expect(said()).toEqual({
+      message: 'Every node here is carrying the shape. Raise Within to remove some anyway.',
+      ok: false,
+    });
+  });
+
+  it('refuses fewer than two nodes to keep', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0);
+    expect(commands.keepSelectedNodes()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Select the nodes to keep. Two is the fewest a path can have.',
+      ok: false,
+    });
+  });
+
+  it('says nothing else could go when the selection is the whole path', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0, 1, 2, 3);
+    expect(commands.keepSelectedNodes()).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({ message: 'Nothing else could go.', ok: false });
+  });
+});
+
+describe('what rounding, reversing and ordering say', () => {
+  it('refuses a radius of zero or less', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.roundSelection(0)).toBe(false);
+    expect(said()).toEqual({ message: 'Round needs a radius above zero.', ok: false });
+    expect(commands.roundSelection(-3)).toBe(false);
+  });
+
+  it('refuses to round with nothing selected', () => {
+    const { commands, said } = editor(withShapes(['p', SQUARE]));
+    expect(commands.roundSelection(4)).toBe(false);
+    expect(said()).toEqual({
+      message: 'Select a shape, or some of its nodes, to round.',
+      ok: false,
+    });
+  });
+
+  it('counts the subpaths it reversed', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    const first = sub(store, 'p').nodes[0].pt;
+    expect(commands.reverseSelection()).toBe(true);
+    // Turned round: the node after the first is the one that used to be last.
+    expect(sub(store, 'p').nodes[0].pt).toEqual(first);
+    expect(sub(store, 'p').nodes[1].pt).toEqual([0, 40]);
+    expect(said()).toEqual({ message: 'Reversed 1 subpath.', ok: true });
+  });
+
+  it('says subpaths rather than subpath for more than one', () => {
+    const { store, commands, said } = editor(withShapes(['a', SQUARE], ['b', ELL]));
+    select(store, 'a', 'b');
+    expect(commands.reverseSelection()).toBe(true);
+    expect(said()!.message).toBe('Reversed 2 subpaths.');
+  });
+
+  it('refuses to reverse with nothing selected', () => {
+    const { commands, said } = editor(withShapes(['p', SQUARE]));
+    expect(commands.reverseSelection()).toBe(false);
+    expect(said()).toEqual({ message: 'Select a shape or some nodes to reverse.', ok: false });
+  });
+
+  it('refuses to reorder with nothing selected', () => {
+    const { commands, said } = editor(withShapes(['p', SQUARE]));
+    expect(commands.reorderSelection('front')).toBe(false);
+    expect(said()).toEqual({ message: 'Order needs a shape selected.', ok: false });
+  });
+});
+
+describe('what fitting the canvas says', () => {
+  it('gives the new canvas in the units the drawing is in', () => {
+    const doc = withShapes(['p', 'M10 10 H50 V30 H10 Z']);
+    doc.viewBox = { x: 0, y: 0, w: 200, h: 200 };
+    const { store, commands, said } = editor(doc);
+    expect(commands.fitCanvasToDrawing()).toBe(true);
+    const vb = store.state.doc.viewBox;
+    expect(vb.w).toBeGreaterThan(0);
+    expect(said()!.ok).toBe(true);
+    expect(said()!.message).toBe(
+      `Canvas is now ${vb.w} × ${vb.h} at ${vb.x}, ${vb.y}.`,
+    );
+  });
+
+  it('says the canvas already fits when it does', () => {
+    const doc = withShapes(['p', 'M10 10 H50 V30 H10 Z']);
+    doc.viewBox = { x: 0, y: 0, w: 200, h: 200 };
+    const { store, commands, said } = editor(doc);
+    commands.fitCanvasToDrawing();
+    const vb = { ...store.state.doc.viewBox };
+    expect(commands.fitCanvasToDrawing()).toBe(false);
+    expect(store.state.doc.viewBox).toEqual(vb);
+    expect(said()).toEqual({ message: 'The canvas already fits the drawing.', ok: false });
+  });
+
+  it('says so with nothing drawn', () => {
+    const { commands, said } = editor(emptyDoc());
+    expect(commands.fitCanvasToDrawing()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Nothing drawn yet, so there is nothing to fit the canvas to.',
+      ok: false,
+    });
+  });
+});
+
+describe('what arranging says when it cannot', () => {
+  it('asks for two shapes to align to each other and one to align to the canvas', () => {
+    /* Two different floors behind one `false`, and the sentence is what says
+       which one you hit. Aligning one shape to the canvas is a real operation;
+       aligning one shape to itself is not. */
+    const { store, commands, said } = editor(withShapes(['a', SQUARE]));
+    select(store, 'a');
+    expect(commands.alignShapes('left', 'selection')).toBe(false);
+    expect(said()).toEqual({ message: 'Align needs two shapes selected.', ok: false });
+
+    expect(commands.alignShapes('left', 'canvas')).toBe(true);
+
+    store.update((s) => s.selection.shapes.clear());
+    expect(commands.alignShapes('left', 'canvas')).toBe(false);
+    expect(said()).toEqual({ message: 'Align needs a shape selected.', ok: false });
+  });
+
+  it('asks for three shapes to distribute and two to space', () => {
+    const { store, commands, said } = editor(withShapes(['a', SQUARE], ['b', 'M60 0 H100 V40 Z']));
+    select(store, 'a', 'b');
+    expect(commands.distributeShapes('left', 'selection')).toBe(false);
+    expect(said()).toEqual({ message: 'Distribute needs three shapes selected.', ok: false });
+
+    select(store, 'a');
+    expect(commands.spaceShapes('h', 'selection', 10)).toBe(false);
+    expect(said()).toEqual({ message: 'Spacing needs two shapes selected.', ok: false });
+  });
+});
+
+describe('what continuity says when it changes nothing', () => {
+  it('explains that symmetric is already smooth', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    commands.setSelectedContinuity('symmetric');
+    commands.setSelectedContinuity('smooth');
+    expect(said()).toEqual({
+      message: 'Already smooth. Symmetric is smooth with equal handle lengths; drag one to differ.',
+      ok: true,
+    });
+  });
+
+  it('explains that an end of a path has only one handle', () => {
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 0);
+    commands.setSelectedContinuity('smooth');
+    expect(said()).toEqual({
+      message: 'That node ends the path. There is no second handle to line up with.',
+      ok: false,
+    });
+  });
+
+  it.each([
+    ['cusp', 'Already a cusp.'],
+    ['smooth', 'Already smooth.'],
+    ['symmetric', 'Already symmetric.'],
+  ] as [NodeContinuity, string][])('names %s when the node already is', (kind, message) => {
+    /* All three words of the ternary. One of them tested is one branch tested,
+       and the other two can then say anything at all.
+
+       `smooth` needs the awkward fixture: setting it on a bare node produces
+       equal handles, which reads back as symmetric and lands in the sentence
+       above rather than this one. So one handle is stretched first, which is
+       smooth and not symmetric, and is what the word actually names. */
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 1);
+    commands.setSelectedContinuity(kind);
+    if (kind === 'smooth') {
+      store.edit((st) => {
+        const n = st.doc.shapes[0].subpaths[0].nodes[1];
+        n.hOut = [n.pt[0] + (n.hOut![0] - n.pt[0]) * 2, n.pt[1] + (n.hOut![1] - n.pt[1]) * 2];
+      });
+    }
+    commands.setSelectedContinuity(kind);
+    expect(said()).toEqual({ message, ok: true });
+  });
+
+  it('explains the far end of the path as well as the near one', () => {
+    /* `r.i === 0 || r.i === sp.nodes.length - 1` is two ends, and a fixture at
+       node 0 leaves the second half of it saying whatever it likes. */
+    const { store, commands, said } = editor(withShapes(['p', ELL]));
+    selectNodes(store, 'p', 3);
+    commands.setSelectedContinuity('smooth');
+    expect(said()).toEqual({
+      message: 'That node ends the path. There is no second handle to line up with.',
+      ok: false,
+    });
+  });
+});
+
+describe('what copy and cut say when they cannot', () => {
+  it('asks for a run rather than a lone node', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0);
+    expect(commands.copySelection()).toBe(false);
+    expect(said()).toEqual({
+      message: 'Copy needs two nodes next to each other on a path, or a whole shape.',
+      ok: false,
+    });
+  });
+
+  it('takes the shape away and leaves it on the clipboard', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.cutSelection()).toBe(true);
+    expect(store.state.doc.shapes).toHaveLength(0);
+    expect(commands.canPaste).toBe(true);
+    expect(said()).toEqual({ message: 'Cut.', ok: true });
+  });
+
+  it('refuses a cut for the same reason a copy is refused', () => {
+    // Cut is copy then delete, so a copy that cannot happen stops it first and
+    // the sentence is the copy's, not a second one saying the same thing.
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    selectNodes(store, 'p', 0);
+    expect(commands.cutSelection()).toBe(false);
+    expect(store.state.doc.shapes).toHaveLength(1);
+    expect(said()!.message).toMatch(/^Copy needs two nodes/);
+  });
+
+  /* `Copied, but nothing could be removed.` is deliberately not tested, because
+     nothing can reach it. It needs `deleteSelection` to report zero deleted
+     after a copy succeeded, and `deleteNode` refuses only an index outside the
+     array -- which `selectedRefs` cannot hand it, since every ref it returns is
+     a position it just read. §Class 6 of `docs/reviews/2026-08-21c.md`. */
+});
+
+describe('the last of the sentences', () => {
+  it('refuses a node count below two', () => {
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.simplifyToCount(1)).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(4);
+    expect(said()).toEqual({
+      message: 'Keep how many? Two is the fewest a path can have.',
+      ok: false,
+    });
+  });
+
+  it('reports what a simplify gave up and how far it moved', () => {
+    /* The success sentence, which is three numbers: how many paths, the node
+       count either side, and the worst displacement. Nothing read it, so the
+       `+` joining its two halves was a survivor and would have shipped `NaN`. */
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 L10 0.2 L20 0 L30 0.2 L40 0']));
+    select(store, 'p');
+    expect(commands.simplifySelection(1)).toBe(true);
+    const left = sub(store, 'p').nodes.length;
+    expect(left).toBeLessThan(5);
+    expect(said()!.ok).toBe(true);
+    expect(said()!.message).toBe(
+      `Simplified 1 path: 5 nodes to ${left}. Nothing moved further than 0.2.`,
+    );
+  });
+
+  it('says a second round at the same radius changed nothing, and calls it a success', () => {
+    /* Not a refusal: every corner it was asked to cut is already cut. The `true`
+       and the sentence go together, and the branch below it says the opposite
+       with the same `done === 0`. */
+    const { store, commands, said } = editor(withShapes(['p', SQUARE]));
+    select(store, 'p');
+    expect(commands.roundSelection(5)).toBe(true);
+    const after = sub(store, 'p').nodes.length;
+
+    select(store, 'p');
+    expect(commands.roundSelection(5)).toBe(true);
+    expect(sub(store, 'p').nodes).toHaveLength(after);
+    expect(said()).toEqual({ message: 'Already rounded to r 5.', ok: true });
+  });
+
+  it('refuses to land a trace mid-drag', () => {
+    const store = new Store(emptyDoc());
+    const commands = new Commands(store, () => true);
+    let last: { message: string; ok: boolean } | null = null;
+    commands.onMessage = (message, ok) => (last = { message, ok });
+    store.update((s) => {
+      s.backdrop = {
+        src: 'data:,', name: 'ref.png', x: 0, y: 0, w: 20, h: 10,
+        naturalW: 40, naturalH: 20, opacity: 1, visible: true, locked: true,
+      };
+    });
+    const r = { shapes: [shapeFromPath('M0 0 H5 V5 H0 Z')], paths: 1, nodesBefore: 8, nodesAfter: 4, colours: 1 };
+    expect(commands.applyTrace(r, { x: 0, y: 0, w: 20, h: 10 })).toBe(false);
+    expect(store.state.doc.shapes).toHaveLength(0);
+    expect(last).toEqual({ message: 'Finish the drag first, then trace.', ok: false });
+  });
+
+  it('refuses to fuse a path with nothing left to fuse into', () => {
+    // A closed path of two nodes: neither is an end, they are adjacent, and
+    // welding them would leave one node, which draws nothing.
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H40 Z']));
+    selectNodes(store, 'p', 0, 1);
+    expect(commands.fuseSelection()).toBe(false);
+    expect(sub(store, 'p').nodes).toHaveLength(2);
+    expect(said()).toEqual({
+      message: 'That path is too short to fuse. Two nodes is the least that draws.',
+      ok: false,
+    });
+  });
+
+  it('says so when an offset produced nothing', () => {
+    /* Inside a small shape by more than its own half-width: every subpath
+       collapses, so there is nothing to add. A different sentence from the
+       zero-distance refusal above, and the same `false`. */
+    const { store, commands, said } = editor(withShapes(['p', 'M0 0 H4 V4 H0 Z']));
+    select(store, 'p');
+    expect(commands.offsetSelection(-20)).toBe(false);
+    expect(store.state.doc.shapes).toHaveLength(1);
+    expect(said()).toEqual({ message: 'Nothing there could be offset.', ok: false });
+  });
+});
+
+describe('the branches that cannot be reached, and the one that can', () => {
+  /**
+   * Five of this class's 105 sentences are asserted by nothing, because nothing
+   * can reach them: each guards an assumption about another module rather than
+   * about the caller, and the guards it would have to get past are the same
+   * ones the method already applies. A mutation survivor at any of the five is
+   * explained rather than open. `docs/reviews/2026-08-21c.md` lists them with
+   * the mechanism for each.
+   */
+
+  it('says an outline came apart when the stroke is wider than the shape', () => {
+    // The sixth, which is reachable: offsetting inward by half of 40 collapses
+    // a 6-wide square, so there is no inner contour to make a band from.
+    const doc = withShapes(['sq', 'M0 0 H6 V6 H0 Z']);
+    doc.shapes[0].style = { ...doc.shapes[0].style, stroke: '#f00', strokeWidth: 40 };
+    const { store, commands, said } = editor(doc);
+    select(store, 'sq');
+    expect(commands.strokeToPath('butt')).toBe(false);
+    expect(named(store.state.doc, 'sq')!.subpaths).toHaveLength(1);
+    expect(said()).toEqual({
+      message: 'That outline comes apart; nothing was changed.',
+      ok: false,
+    });
+  });
+
+  it('names the noise floor exactly, not just in passing', () => {
+    const { store, commands, said } = editor(emptyDoc());
+    store.update((s) => {
+      s.backdrop = {
+        src: 'data:,', name: 'ref.png', x: 0, y: 0, w: 20, h: 10,
+        naturalW: 40, naturalH: 20, opacity: 1, visible: true, locked: true,
+      };
+    });
+    const empty = { shapes: [], paths: 0, nodesBefore: 0, nodesAfter: 0, colours: 0 };
+    expect(commands.applyTrace(empty, { x: 0, y: 0, w: 20, h: 10 })).toBe(false);
+    expect(said()).toEqual({
+      message: 'Nothing to trace. Every region was smaller than the noise floor.',
+      ok: false,
+    });
   });
 });

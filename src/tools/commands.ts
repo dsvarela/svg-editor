@@ -1895,11 +1895,9 @@ export class Commands {
 
     const ids = new Set(chosen.map((sh) => sh.id));
     const name = `group of ${chosen.length}`;
-    let made = '';
 
     this.store.edit((st) => {
       const group: Group = { id: nextId('group'), name, parent: null };
-      made = group.id;
 
       /* Nested where every one of them was already in one group together: grouping
          two shapes out of a group of five makes a group inside it rather than
@@ -1923,7 +1921,6 @@ export class Commands {
     });
 
     this.onMessage?.(`Grouped ${chosen.length} shapes.`, true);
-    void made;
     return true;
   }
 
@@ -2754,7 +2751,6 @@ export class Commands {
         });
       }
     });
-    void s;
   }
 
   countNodes(): number {

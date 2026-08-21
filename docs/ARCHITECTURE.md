@@ -2010,6 +2010,17 @@ in all three was the same — an assertion that looked strict but wasn't:
 - A flip-involution test used a shape symmetric about the flip axis. It would
   have passed with flipping entirely broken.
 
+**A sampled comparison cannot be sharper than its sample spacing, and the
+spacing of a cubic in `t` is not its spacing in space.** The first of the three
+above was replaced by projected deviation; the same trap caught a test written
+on 2026-08-21 to check that inserting a node leaves the curve alone. It sampled
+before and after at 200 points and read 0.167, which looks like a defect and is
+the floor of the measurement: the fixture leaves its first node at three times
+the handle length, so consecutive samples there are 0.335 apart. Two curves that
+came from one split are compared through their parameters now, the first half's
+`t` against `t / 2` of the original, which is exact and pins the split point at
+the same time.
+
 The same reasoning drives the boolean tests: they assert enclosed **area**, not
 path strings. A boolean is obliged to produce a region, not a particular
 spelling of one. A fourth bad test was caught while wiring them up — it checked
@@ -4265,3 +4276,94 @@ That is a class worth the name. A fixture whose symmetry lets two different
 mechanisms agree hides whichever one is wrong, and it is the fixture-too-simple
 problem of §Testing philosophy raised one level: not a value too simple to
 separate two numbers, but a shape too regular to separate two code paths.
+
+## 76. The wiring file, and the only instrument that reaches it
+
+`src/main.ts` is 4 019 lines and nothing imports it. It runs at module scope, it
+expects `index.html`'s DOM to already be there, and it is where the store, the
+canvas, the controller, the commands and 228 controls are joined to each other.
+Every unit test in this tree imports a module and calls it; none of them can do
+that here, because importing this one *is* starting the application.
+
+So until 2026-08-21 its only instrument was a person reading it. That works, and
+it does not scale: the read of `2026-08-21b` found four defects and the next
+read would find more, one at a time, for as long as anyone kept reading.
+
+### What a load proves that a reading does not
+
+`$` is one line:
+
+```ts
+export const $ = <T extends HTMLElement = HTMLElement>(sel: string): T =>
+  document.querySelector(sel) as T;
+```
+
+The cast is the whole story. A selector that matches nothing returns `null`,
+`null` is cast to `HTMLElement`, and the program continues until something calls
+a method on it. In this file that is almost always `.addEventListener`, one line
+later. **An id renamed in the markup, a control deleted from a panel, or a
+handler wired to a selector that never matched is therefore a `TypeError` at
+import**, and it is a `TypeError` that no type checker can predict, because the
+selector is a string and the markup is a different file.
+
+That makes importing the module against the shipped markup a real test. It is
+not a deep one. It is the one that covers the class this file actually fails at.
+
+### How it is arranged
+
+`test/main.test.ts` imports `index.html` with `?raw`, takes everything between
+`<body>` and `</body>`, drops the script tag Vite injects, and assigns the rest
+to `document.body.innerHTML` under jsdom. Then it imports `src/main.ts`.
+
+Three browser APIs are stubbed because jsdom does not implement them, and each
+is stubbed to the smallest thing that is honest:
+
+| Stub | Why the app wants it |
+|---|---|
+| `matchMedia` | the `pointer: coarse` question a first visit asks |
+| `ResizeObserver` | the canvas refit, in three places |
+| `URL.createObjectURL` | only ever handed to an `<a download>` or an `<img src>` |
+
+The worker is mocked outright. `import TraceWorker from './model/trace.worker?worker&inline'`
+has no meaning outside a Vite build, and what matters here is that the module
+graph resolves; the tracer is measured in `test/trace.test.ts` and driven in the
+`traceWorker` scenario.
+
+`localStorage.clear()` runs before the import, because a stored session decides
+which tool is selected and which panels are open, and the assertions below are
+about the starter state. §59 is why that is not enough in a browser and is
+enough here: there is no `pagehide` to write it back.
+
+### What it asserts, and what it must not be asked to
+
+Seven things: the module loads; the starter document reaches the DOM; no `d`
+attribute holds `NaN`, `Infinity` or `undefined`; pressing a tool button moves
+`aria-pressed` off the previous one; a guide placed by number reaches `#status`
+with the class that says it succeeded; and Group is disabled rather than left to
+refuse.
+
+The fifth is the one worth naming. It crosses two joins that nothing else in the
+unit suite can see: `commands.onMessage = say` lives in the file nothing
+imports, and `#status` is an id that has to be the same in the markup and in a
+string. A rename on either side breaks it silently, and neither side's tests
+would notice.
+
+**It is not a substitute for a browser scenario and must not grow into one.**
+jsdom lays nothing out: every box is zero by zero, so nothing about position,
+size, overlap or hit-testing means anything here. Geometry stays in
+`npm run drive`, which runs a real engine. What this file owns is assembly.
+
+### It was watched failing before it was believed
+
+Three breaks, each restored afterwards:
+
+| Break | Result |
+|---|---|
+| `on('#guideAddV', ...)` renamed to `#guideAddVv` | `TypeError` at import, all 7 skipped |
+| `commands.onMessage = say` deleted | 1 red |
+| the `ok` ternary on the status class inverted | 1 red |
+
+The first is the class the file exists for and it is the one that skips
+everything, which is worth knowing: a wiring failure does not fail one
+assertion, it fails the import, and the report reads `7 skipped` rather than
+`1 failed`.
